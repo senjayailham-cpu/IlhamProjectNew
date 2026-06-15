@@ -1,0 +1,816 @@
+import React, { useState } from 'react';
+import { Project, TimesheetEntry, Employee } from '../types';
+import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle } from 'lucide-react';
+
+interface DashboardViewProps {
+  projects: Project[];
+  timesheets: TimesheetEntry[];
+  employees: Employee[];
+  selectedMonth: string;
+  setSelectedMonth: (val: string) => void;
+  openSpotlight: (id: string) => void;
+}
+
+const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
+const STATUS_COLORS = {
+  active: '#4a90d9',
+  pending: '#e8a020',
+  completed: '#4caf7d',
+  'on-hold': '#7a7870'
+};
+
+export default function DashboardView({
+  projects,
+  timesheets,
+  employees,
+  selectedMonth,
+  setSelectedMonth,
+  openSpotlight
+}: DashboardViewProps) {
+  const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
+
+  // --------------------------------------------------------------------------
+  // DYNAMIC OVERDUE BLOCKER & DEPENDENCY ALERT CALCULATIONS
+  // --------------------------------------------------------------------------
+  const getAssemblyPct = (asm: any): number => {
+    if (!asm.tasks || asm.tasks.length === 0) return 100;
+    const total = asm.tasks.reduce((sum: number, t: any) => sum + (t.pct || 0), 0);
+    return Math.round(total / asm.tasks.length);
+  };
+
+  const daysDiff = (d1Str: string, d2Str: string) => {
+    const d1 = new Date(d1Str);
+    const d2 = new Date(d2Str);
+    const diffTime = d1.getTime() - d2.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  };
+
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const projectMap = new Map<string, Project>();
+  projects.forEach(p => projectMap.set(p.id, p));
+
+  const assemblyMap = new Map<string, { proj: Project; asm: any }>();
+  projects.forEach(p => {
+    (p.assemblies || []).forEach(a => {
+      assemblyMap.set(a.id, { proj: p, asm: a });
+    });
+  });
+
+  // Calculate Overdue Blockers List
+  const overdueBlockers = (() => {
+    const list: Array<{
+      id: string;
+      type: 'project' | 'assembly';
+      blockedName: string;
+      blockedClient: string;
+      blockedProjectId: string;
+      blockingName: string;
+      blockingProjectId: string;
+      blockingDue?: string;
+      daysOverdue: number;
+      progress: number;
+    }> = [];
+
+    projects.forEach(blockedProj => {
+      if (blockedProj.status === 'completed') return;
+
+      // Project level predecessor dependency
+      (blockedProj.predecessors || []).forEach(dep => {
+        if (dep.key.startsWith('p:')) {
+          const blockingId = dep.key.substring(2);
+          const blockingProj = projectMap.get(blockingId);
+          if (blockingProj && blockingProj.status !== 'completed') {
+            const due = blockingProj.due;
+            if (due && due < todayStr) {
+              const days = daysDiff(todayStr, due);
+              list.push({
+                id: `block-p-${blockedProj.id}-${blockingProj.id}`,
+                type: 'project',
+                blockedName: blockedProj.name,
+                blockedClient: blockedProj.client,
+                blockedProjectId: blockedProj.id,
+                blockingName: blockingProj.name,
+                blockingProjectId: blockingProj.id,
+                blockingDue: due,
+                daysOverdue: days,
+                progress: calcPct(blockingProj)
+              });
+            }
+          }
+        }
+      });
+
+      // Assembly level predecessor dependency
+      (blockedProj.assemblies || []).forEach(blockedAsm => {
+        const blockedAsmPct = getAssemblyPct(blockedAsm);
+        if (blockedAsmPct >= 100) return;
+
+        (blockedAsm.predecessors || []).forEach(dep => {
+          if (dep.key.startsWith('a:')) {
+            const parts = dep.key.split(':');
+            if (parts.length >= 3) {
+              const blockingAsmId = parts[2];
+              const data = assemblyMap.get(blockingAsmId);
+              if (data) {
+                const { proj: blockingProj, asm: blockingAsm } = data;
+                const blockingAsmPct = getAssemblyPct(blockingAsm);
+                if (blockingAsmPct < 100) {
+                  const finish = blockingAsm.finish;
+                  if (finish && finish < todayStr) {
+                    const days = daysDiff(todayStr, finish);
+                    list.push({
+                      id: `block-a-${blockedProj.id}-${blockedAsm.id}-${blockingAsm.id}`,
+                      type: 'assembly',
+                      blockedName: `${blockedAsm.name}`,
+                      blockedClient: blockedProj.client,
+                      blockedProjectId: blockedProj.id,
+                      blockingName: `${blockingAsm.name} (${blockingProj.name})`,
+                      blockingProjectId: blockingProj.id,
+                      blockingDue: finish,
+                      daysOverdue: days,
+                      progress: blockingAsmPct
+                    });
+                  }
+                }
+              }
+            }
+          }
+        });
+      });
+    });
+
+    return list;
+  })();
+
+  // Calculate Dependency & Resource Alerts List
+  const dependencyAlerts = (() => {
+    const list: Array<{
+      id: string;
+      severity: 'high' | 'medium' | 'info';
+      category: 'schedule' | 'sequence' | 'resource' | 'missing-date';
+      message: string;
+      targetId: string;
+      badgeText: string;
+    }> = [];
+
+    const absentEmpNames = new Set<string>();
+    const leaveEmpNames = new Set<string>();
+    const todayTimesheets = timesheets.filter(ts => ts.date === todayStr);
+
+    todayTimesheets.forEach(ts => {
+      if (ts.status === 'absent') {
+        absentEmpNames.add(ts.empName);
+      } else if (ts.status === 'leave') {
+        leaveEmpNames.add(ts.empName);
+      }
+    });
+
+    projects.forEach(bProj => {
+      if (bProj.status === 'completed') return;
+
+      // Project level predecessors check
+      (bProj.predecessors || []).forEach((dep, idx) => {
+        if (dep.key.startsWith('p:')) {
+          const blockingId = dep.key.substring(2);
+          const aProj = projectMap.get(blockingId);
+          if (aProj) {
+            // Schedule Overlap/Mismatch check
+            if (aProj.due && bProj.start && aProj.due > bProj.start) {
+              list.push({
+                id: `alert-p-mismatch-${bProj.id}-${aProj.id}-${idx}`,
+                severity: 'high',
+                category: 'schedule',
+                badgeText: 'Timeline Overlap',
+                message: `Sequence Conflict: Project "${bProj.name}" is scheduled to start on ${bProj.start}, before its predecessor "${aProj.name}" finishes (${aProj.due}).`,
+                targetId: bProj.id
+              });
+            }
+
+            // Out-of-Sequence work execution check
+            const pctA = calcPct(aProj);
+            const pctB = calcPct(bProj);
+            if (pctA < 100 && (pctB > 0 || bProj.status === 'active')) {
+              list.push({
+                id: `alert-p-seq-${bProj.id}-${aProj.id}-${idx}`,
+                severity: 'medium',
+                category: 'sequence',
+                badgeText: 'Out of Sequence',
+                message: `Premature Progress: "${bProj.name}" is ${bProj.status} (${pctB}% complete) but its blocking predecessor "${aProj.name}" is only ${pctA}% complete.`,
+                targetId: bProj.id
+              });
+            }
+          }
+        }
+      });
+
+      // Assembly level within Project
+      (bProj.assemblies || []).forEach(bAsm => {
+        const bAsmPct = getAssemblyPct(bAsm);
+        if (bAsmPct >= 100) return;
+
+        (bAsm.predecessors || []).forEach((dep, idx) => {
+          if (dep.key.startsWith('a:')) {
+            const parts = dep.key.split(':');
+            if (parts.length >= 3) {
+              const blockingAsmId = parts[2];
+              const data = assemblyMap.get(blockingAsmId);
+              if (data) {
+                const { proj: aProj, asm: aAsm } = data;
+                const aAsmPct = getAssemblyPct(aAsm);
+
+                // Schedule Overlap check
+                if (aAsm.finish && bAsm.start && aAsm.finish > bAsm.start) {
+                  list.push({
+                    id: `alert-a-mismatch-${bProj.id}-${bAsm.id}-${aAsm.id}-${idx}`,
+                    severity: 'high',
+                    category: 'schedule',
+                    badgeText: 'Sub-Assembly Clash',
+                    message: `Timeline Overlap: Sub-assembly "${bAsm.name}" starts on ${bAsm.start}, before its predecessor "${aAsm.name}" inside "${aProj.name}" finishes (${aAsm.finish}).`,
+                    targetId: bProj.id
+                  });
+                }
+
+                // Out of sequence work execution check
+                if (aAsmPct < 100 && bAsmPct > 0) {
+                  list.push({
+                    id: `alert-a-seq-${bProj.id}-${bAsm.id}-${aAsm.id}-${idx}`,
+                    severity: 'medium',
+                    category: 'sequence',
+                    badgeText: 'Sequence Warning',
+                    message: `Sequence warning: Sub-assembly "${bAsm.name}" shows ${bAsmPct}% work progress while predecessor "${aAsm.name}" is incomplete (${aAsmPct}%).`,
+                    targetId: bProj.id
+                  });
+                }
+              }
+            }
+          }
+        });
+
+        // Resource absent alerts
+        if (bProj.status === 'active') {
+          (bAsm.tasks || []).forEach(t => {
+            if (t.pct < 100 && !t.done && t.assigned) {
+              const assignedName = t.assigned.trim();
+              const assignedLower = assignedName.toLowerCase();
+              let matchedName = '';
+              let isLeave = false;
+
+              absentEmpNames.forEach(name => {
+                if (name.toLowerCase() === assignedLower || assignedLower.includes(name.toLowerCase())) {
+                  matchedName = name;
+                }
+              });
+              leaveEmpNames.forEach(name => {
+                if (name.toLowerCase() === assignedLower || assignedLower.includes(name.toLowerCase())) {
+                  matchedName = name;
+                  isLeave = true;
+                }
+              });
+
+              if (matchedName) {
+                list.push({
+                  id: `alert-resource-${bProj.id}-${bAsm.id}-${t.id}`,
+                  severity: 'medium',
+                  category: 'resource',
+                  badgeText: isLeave ? 'On Leave' : 'Absent',
+                  message: `Crew Outage: "${assignedName}" is logged as ${isLeave ? 'ON LEAVE' : 'ABSENT'} today, but has task "${t.name}" assigned in active sub-assembly "${bAsm.name}".`,
+                  targetId: bProj.id
+                });
+              }
+            }
+          });
+        }
+      });
+    });
+
+    return list;
+  })();
+
+  const shiftMonth = (delta: number) => {
+    const [y, m] = selectedMonth.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const jumpToToday = () => {
+    const today = new Date();
+    setSelectedMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+  };
+
+  const isCurrentMonth = () => {
+    const today = new Date();
+    const curYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    return selectedMonth === curYM;
+  };
+
+  const formatMonthLabel = (ym: string) => {
+    const [y, m] = ym.split('-').map(Number);
+    const date = new Date(y, m - 1, 1);
+    return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+  };
+
+  // Filter projects by month and workshop
+  const filteredProjects = projects.filter(p => {
+    if (p.status === 'completed' && p.completedDate) {
+      // Completed projects belong to their completed month
+      return p.completedDate.slice(0, 7) === selectedMonth;
+    }
+    const createdYM = (p.start || p.created || '').slice(0, 7);
+    const dueYM = (p.due || '').slice(0, 7);
+    return (createdYM === selectedMonth || dueYM === selectedMonth || (createdYM === '' && isCurrentMonth()));
+  }).filter(p => {
+    if (dashLoc === 'all') return true;
+    return p.location === dashLoc;
+  });
+
+  // Task statistics
+  let totalTasks = 0;
+  let doneTasks = 0;
+  filteredProjects.forEach(p => {
+    const counts = calcTaskCounts(p);
+    totalTasks += counts.total;
+    doneTasks += counts.done;
+  });
+
+  const overallPct = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+
+  // Status statistics counts
+  const statusCounts = { active: 0, pending: 0, completed: 0, 'on-hold': 0 };
+  filteredProjects.forEach(p => {
+    if (p.status in statusCounts) {
+      statusCounts[p.status as keyof typeof statusCounts]++;
+    }
+  });
+
+  // KPI Calculations
+  const activeCount = filteredProjects.filter(p => p.status === 'active').length;
+  const completedCount = filteredProjects.filter(p => p.status === 'completed').length;
+  const overdueCount = filteredProjects.filter(p => p.due && p.due < todayStr && p.status !== 'completed').length;
+
+  // Attendance metrics based on today's logs
+  const todayTimesheets = timesheets.filter(ts => ts.date === todayStr);
+  const presentCount = todayTimesheets.filter(ts => ts.status === 'present' || ts.status === 'late').length;
+  const absentCount = todayTimesheets.filter(ts => ts.status === 'absent' || ts.status === 'leave').length;
+
+  // Ring circular coordinates
+  const radius = 36;
+  const circ = 2 * Math.PI * radius;
+  const strokeDashoffset = circ - (circ * overallPct) / 100;
+
+  // Donut chart segments calculation
+  const totalProjCount = filteredProjects.length || 1;
+  const statusKeys: ('active' | 'pending' | 'completed' | 'on-hold')[] = ['active', 'pending', 'completed', 'on-hold'];
+
+  let currentOffset = 0;
+  const donutCircles = statusKeys.map((s) => {
+    const count = statusCounts[s];
+    if (count === 0) return null;
+    const fraction = count / totalProjCount;
+    const dash = circ * fraction;
+    const gap = circ * (1 - fraction);
+    const strokeOffset = (-currentOffset * circ) / totalProjCount + circ * 0.25;
+    currentOffset += count;
+
+    return (
+      <circle
+        key={s}
+        cx="60"
+        cy="60"
+        r={radius}
+        fill="none"
+        stroke={STATUS_COLORS[s]}
+        strokeWidth="14"
+        strokeDasharray={`${dash.toFixed(2)} ${gap.toFixed(2)}`}
+        strokeDashoffset={strokeOffset.toFixed(2)}
+        transform="rotate(-90 60 60)"
+        opacity="0.9"
+        className="transition-all duration-500 ease-in-out"
+      />
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      {/* Hero card */}
+      <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-6 sm:p-8 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-6 dark:from-[#151921] dark:to-[#1b212c]">
+        {/* Decorative background details */}
+        <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-radial from-base-accent-dim to-transparent opacity-40 pointer-events-none" />
+        <div className="absolute -bottom-12 left-1/3 w-48 h-48 rounded-full bg-radial from-base-blue-dim to-transparent opacity-40 pointer-events-none" />
+
+        <div className="flex-1 space-y-4 relative z-10">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center bg-base-surface2 border border-base-border2 rounded-lg p-1">
+              <button
+                onClick={() => shiftMonth(-1)}
+                className="p-1.5 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text"
+              >
+                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
+              </button>
+              <span
+                onClick={jumpToToday}
+                className="font-condensed font-bold text-sm tracking-wide text-base-text px-4 cursor-pointer hover:bg-base-surface3 rounded py-1 transition-colors"
+              >
+                {formatMonthLabel(selectedMonth)}
+              </span>
+              <button
+                onClick={() => shiftMonth(1)}
+                className="p-1.5 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text"
+              >
+                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
+              </button>
+            </div>
+            <button
+              onClick={jumpToToday}
+              className="px-3.5 py-1.5 border border-base-accent/25 hover:bg-base-accent-dim text-base-accent rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+            >
+              Today
+            </button>
+            {isCurrentMonth() && (
+              <span className="px-2.5 py-1 text-xs rounded-full font-condensed font-bold uppercase tracking-wider bg-base-green-dim text-base-green border border-base-green/20">
+                Current month
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <h1 className="text-3xl sm:text-4xl font-extrabold font-condensed tracking-tight text-base-text">
+              Project <span className="text-base-accent">Overview</span>
+            </h1>
+            <p className="text-xs sm:text-sm text-base-muted2">
+              {doneTasks} of {totalTasks} tasks completed across {filteredProjects.length} project
+              {filteredProjects.length !== 1 ? 's' : ''} {dashLoc !== 'all' ? `— ${dashLoc === 'workshop1' ? 'Workshop 1' : 'Workshop 2'}` : ''}
+            </p>
+          </div>
+
+          {/* Workshop location chips */}
+          <div className="flex gap-2 items-center flex-wrap pt-1">
+            <button
+              onClick={() => setDashLoc('all')}
+              className={`px-3 py-1.5 text-xs rounded-full font-condensed font-bold uppercase tracking-wider border cursor-pointer transition-colors ${
+                dashLoc === 'all'
+                  ? 'bg-base-accent text-white border-base-accent'
+                  : 'bg-base-surface border-base-border hover:bg-base-surface3 text-base-muted2'
+              }`}
+            >
+              All locations
+            </button>
+            <button
+              onClick={() => setDashLoc('workshop1')}
+              className={`px-3 py-1.5 text-xs rounded-full font-condensed font-bold uppercase tracking-wider border cursor-pointer transition-colors flex items-center gap-1.5 ${
+                dashLoc === 'workshop1'
+                  ? 'bg-base-accent text-white border-base-accent'
+                  : 'bg-base-surface border-base-border hover:bg-base-surface3 text-base-muted2'
+              }`}
+            >
+              Workshop 1
+            </button>
+            <button
+              onClick={() => setDashLoc('workshop2')}
+              className={`px-3 py-1.5 text-xs rounded-full font-condensed font-bold uppercase tracking-wider border cursor-pointer transition-colors flex items-center gap-1.5 ${
+                dashLoc === 'workshop2'
+                  ? 'bg-base-accent text-white border-base-accent'
+                  : 'bg-base-surface border-base-border hover:bg-base-surface3 text-base-muted2'
+              }`}
+            >
+              Workshop 2
+            </button>
+          </div>
+        </div>
+
+        {/* Big circular progress gauge */}
+        <div className="flex flex-col items-center gap-2 relative z-10 flex-shrink-0">
+          <div className="relative">
+            <svg className="h-24 w-24" viewBox="0 0 90 90">
+              {/* Background trace */}
+              <circle cx="45" cy="45" r={radius} fill="none" stroke="rgba(0, 0, 0, 0.05)" strokeWidth="10" />
+              {/* Core arc */}
+              <circle
+                cx="45"
+                cy="45"
+                r={radius}
+                fill="none"
+                stroke="var(--accent)"
+                strokeWidth="10"
+                strokeLinecap="round"
+                strokeDasharray={circ}
+                strokeDashoffset={strokeDashoffset}
+                transform="rotate(-90 45 45)"
+                style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+              />
+              <text
+                x="45"
+                y="51"
+                textAnchor="middle"
+                fill="var(--text)"
+                className="font-condensed font-extrabold text-lg tracking-tight"
+              >
+                {overallPct}%
+              </text>
+            </svg>
+          </div>
+          <span className="font-condensed font-bold text-xs uppercase tracking-widest text-base-muted">Overall progress</span>
+        </div>
+      </div>
+
+      {/* KPI Cards Grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+        {/* KPI: Total Projects */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-accent">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <Folder className="h-4.5 w-4.5 text-base-accent" />
+            Total projects
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">{filteredProjects.length}</div>
+          <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
+        </div>
+
+        {/* KPI: Active Projects */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-blue">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <Clock className="h-4.5 w-4.5 text-base-blue" />
+            Active
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{activeCount}</div>
+          <p className="text-xs text-base-muted2 mt-1">in progress</p>
+        </div>
+
+        {/* KPI: Completed Projects */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-green">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <CheckCircle className="h-4.5 w-4.5 text-base-green" />
+            Completed
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{completedCount}</div>
+          <p className="text-xs text-base-muted2 mt-1">finished</p>
+        </div>
+
+        {/* KPI: Overdue Projects */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-red">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
+            Overdue
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{overdueCount}</div>
+          <p className="text-xs text-base-muted2 mt-1">past due date</p>
+        </div>
+
+        {/* KPI: Man-hours */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-blue">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <Clock className="h-4.5 w-4.5 text-base-blue" />
+            Man-hours
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(timesheets))}h</div>
+          <p className="text-xs text-base-muted2 mt-1">logged total</p>
+        </div>
+
+        {/* KPI: Present Today */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-green">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <Users className="h-4.5 w-4.5 text-base-green" />
+            Present
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{presentCount}</div>
+          <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
+        </div>
+
+        {/* KPI: Absent Today */}
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-red">
+          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
+            <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
+            Absent
+          </div>
+          <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
+          <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
+        </div>
+      </div>
+
+      {/* Dynamic Overdue Blocker & Dependency Alerts Panel */}
+      <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-6 space-y-6 relative overflow-hidden">
+        {/* Top visual accents */}
+        <div className="absolute top-0 inset-x-0 h-1.5 bg-linear-to-r from-base-red via-base-accent to-base-blue opacity-90" />
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h2 className="font-condensed font-extrabold text-xl uppercase tracking-wider text-base-text flex items-center gap-2">
+              <ShieldAlert className="h-5.5 w-5.5 text-base-red" />
+              Critical Path Blockers & Dependency Safety Checks
+            </h2>
+            <p className="text-xs text-base-muted2">
+              Dynamic detection of sequence-interrupted schedules, overdue predecessor assemblies, and craftsman attendance shortfalls.
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`px-2.5 py-1 text-xs rounded-full font-condensed font-bold uppercase tracking-wider ${
+              overdueBlockers.length > 0
+                ? 'bg-base-red-dim text-base-red border border-base-red/20'
+                : 'bg-base-green-dim text-base-green border border-base-green/20'
+            }`}>
+              {overdueBlockers.length} Active Blockers
+            </span>
+            <span className={`px-2.5 py-1 text-xs rounded-full font-condensed font-bold uppercase tracking-wider ${
+              dependencyAlerts.length > 0
+                ? 'bg-base-accent-dim text-base-accent border border-base-accent/20'
+                : 'bg-base-green-dim text-base-green border border-base-green/20'
+            }`}>
+              {dependencyAlerts.length} Risks Detected
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+          {/* Column 1: Overdue Blockers list */}
+          <div className="space-y-3">
+            <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted flex items-center gap-1.5 border-b border-base-border pb-2">
+              <AlertTriangle className="h-4 w-4 text-base-red" />
+              Overdue Blockers (Work Order Bottlenecks)
+            </h3>
+            
+            {overdueBlockers.length === 0 ? (
+              <div className="p-8 text-center bg-base-surface2 border border-base-border border-dashed rounded-xl flex flex-col items-center justify-center space-y-2">
+                <CheckCircle className="h-8 w-8 text-base-green/85" />
+                <p className="text-xs font-semibold text-base-text">No active bottlenecks</p>
+                <p className="text-[11px] text-base-muted max-w-[280px]">
+                  All current active successors are unblocked or have completed predecessor phases. Great job!
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+                {overdueBlockers.map(item => (
+                  <div 
+                    key={item.id}
+                    onClick={() => openSpotlight(item.blockedProjectId)}
+                    className="p-3.5 bg-[#fcf2f2]/60 dark:bg-[#251b1c]/50 hover:bg-[#faebee] dark:hover:bg-[#2e1d1f] border border-base-red/20 hover:border-base-red/40 rounded-xl transition-all cursor-pointer flex items-start gap-3 relative group"
+                  >
+                    <div className="p-1 px-1.5 mt-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider bg-base-red-dim text-base-red border border-base-red/10 flex-shrink-0">
+                      {item.type}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0 space-y-1.5">
+                      <div className="flex items-center justify-between gap-1.5 flex-wrap">
+                        <span className="font-semibold text-xs text-base-text truncate">
+                          {item.blockedName}
+                        </span>
+                        <span className="font-mono text-[9px] font-bold text-base-blue uppercase bg-base-blue-dim px-1.5 rounded">
+                          {item.blockedClient}
+                        </span>
+                      </div>
+                      
+                      <div className="text-[11px] text-base-muted2 leading-normal flex items-center gap-1 flex-wrap">
+                        <span>Blocked by:</span>
+                        <strong className="text-base-text font-bold">{item.blockingName}</strong>
+                      </div>
+                      
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="text-base-red font-medium flex items-center gap-1 font-condensed font-bold uppercase tracking-wider">
+                          <Clock className="h-3.5 w-3.5" />
+                          Overdue by {item.daysOverdue} days (Finished {item.blockingDue})
+                        </span>
+                        <span className="font-condensed font-extrabold text-[10px] uppercase text-base-muted">
+                          Predecessor: {item.progress}%
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-base-muted">
+                      <ExternalLink className="h-4 w-4 text-base-red" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Column 2: Dependency Alerts list */}
+          <div className="space-y-3">
+            <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted flex items-center gap-1.5 border-b border-base-border pb-2">
+              <AlertCircle className="h-4 w-4 text-base-accent" />
+              Schedule & Resource Safety Warnings
+            </h3>
+            
+            {dependencyAlerts.length === 0 ? (
+              <div className="p-8 text-center bg-base-surface2 border border-base-border border-dashed rounded-xl flex flex-col items-center justify-center space-y-2">
+                <CheckCircle className="h-8 w-8 text-base-green/85" />
+                <p className="text-xs font-semibold text-base-text">No timeline warnings</p>
+                <p className="text-[11px] text-base-muted max-w-[280px]">
+                  All scheduled start dates align with sequence requirements and no technicians are overdue/absent today.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
+                {dependencyAlerts.map(alert => (
+                  <div 
+                    key={alert.id}
+                    onClick={() => openSpotlight(alert.targetId)}
+                    className="p-3.5 bg-[#fbf9f4]/60 dark:bg-[#25221b]/50 hover:bg-[#faf5ea]/80 dark:hover:bg-[#2f2a1d] border border-base-accent/25 hover:border-base-accent/50 rounded-xl transition-all cursor-pointer flex items-start gap-3 relative group"
+                  >
+                    <div className="p-1 px-1.5 mt-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider bg-base-accent-dim text-base-accent border border-base-accent/10 flex-shrink-0">
+                      {alert.badgeText}
+                    </div>
+                    
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <p className="text-xs text-base-text leading-relaxed pr-6">
+                        {alert.message}
+                      </p>
+                      
+                      <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted flex items-center gap-1 hover:text-base-accent transition-colors">
+                        <span>Click to investigate sheet</span>
+                        <ArrowRight className="h-3 w-3" />
+                      </div>
+                    </div>
+
+                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-base-muted">
+                      <ExternalLink className="h-4 w-4 text-base-accent" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Breakdown sections layout (Columns side by side) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Project progress lists */}
+        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
+            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="18" y1="20" x2="18" y2="10" />
+              <line x1="12" y1="20" x2="12" y2="4" />
+              <line x1="6" y1="20" x2="6" y2="14" />
+            </svg>
+            <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Project Progress</h3>
+          </div>
+          <div className="p-5 divide-y divide-base-border/50">
+            {filteredProjects.length === 0 ? (
+              <div className="text-base-muted text-xs py-4 text-center">No projects assigned during this period.</div>
+            ) : (
+              filteredProjects.map((p, i) => {
+                const pct = calcPct(p);
+                const col = BAR_COLORS[i % BAR_COLORS.length];
+                return (
+                  <div
+                    key={p.id}
+                    onClick={() => openSpotlight(p.id)}
+                    className="py-3 flex items-center gap-4 cursor-pointer hover:bg-base-surface2/30 px-2 rounded-lg transition-colors group"
+                  >
+                    <span className="text-sm font-semibold flex-1 min-width-0 overflow-hidden text-ellipsis whitespace-nowrap text-base-text group-hover:text-base-accent transition-colors">
+                      {p.name}
+                    </span>
+                    <div className="flex-1 max-w-[124px] sm:max-w-[200px] h-2 bg-base-border/20 rounded-full overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: col }} />
+                    </div>
+                    <span className="font-condensed font-bold text-sm text-base-muted min-width-[36px] text-right">{pct}%</span>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+
+        {/* Status Distribution */}
+        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+          <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
+            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <circle cx="12" cy="12" r="10" />
+              <polyline points="12 6 12 12 16 14" />
+            </svg>
+            <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Status Breakdown</h3>
+          </div>
+          <div className="p-5 flex flex-col sm:flex-row items-center justify-around gap-6">
+            {/* Donut graphic */}
+            <div className="relative h-[120px] w-[120px]">
+              <svg className="h-[120px] w-[120px]" viewBox="0 0 120 120">
+                {/* Background base */}
+                <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(0,0,0,0.04)" strokeWidth="14" />
+                {donutCircles}
+              </svg>
+            </div>
+
+            {/* Donut Map legends list */}
+            <div className="space-y-2 flex-1 max-w-[200px]">
+              {statusKeys.map(s => (
+                <div key={s} className="flex items-center justify-between text-xs py-1 border-b border-base-border/30 last:border-none">
+                  <div className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s] }} />
+                    <span className="text-base-muted2 font-medium capitalize">{s}</span>
+                  </div>
+                  <span className="font-condensed font-bold text-sm" style={{ color: STATUS_COLORS[s] }}>
+                    {statusCounts[s]}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,147 @@
+@import url('https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700;800;900&family=Barlow:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+:root {
+  --bg: #f4f5f7;
+  --surface: #ffffff;
+  --surface2: #fafbfc;
+  --surface3: #f0f2f5;
+  --border: rgba(0, 0, 0, 0.08);
+  --border2: rgba(0, 0, 0, 0.14);
+  --text: #1d2129;
+  --muted: #8c929c;
+  --muted2: #5c6370;
+  --accent: #d4880a;
+  --accent2: #b87008;
+  --accent-dim: rgba(212, 136, 10, 0.09);
+  --green: #2a9a5a;
+  --green-dim: rgba(42, 154, 90, 0.10);
+  --red: #cc3f36;
+  --red-dim: rgba(204, 63, 54, 0.10);
+  --blue: #2c6eb3;
+  --blue-dim: rgba(44, 110, 179, 0.10);
+  
+  /* Depth tokens */
+  --shadow-card: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
+  --shadow-modal: 0 12px 32px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.06);
+  --shadow-elevated: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+}
+
+.dark {
+  --bg: #0d1014;
+  --surface: #151921;
+  --surface2: #1b212c;
+  --surface3: #232a39;
+  --border: rgba(255, 255, 255, 0.07);
+  --border2: rgba(255, 255, 255, 0.14);
+  --text: #eae8e2;
+  --muted: #737068;
+  --muted2: #9e9b94;
+  --accent: #f0a832;
+  --accent2: #d4880a;
+  --accent-dim: rgba(240, 168, 50, 0.15);
+  --green: #4caf7d;
+  --green-dim: rgba(76, 175, 125, 0.15);
+  --red: #d45a4d;
+  --red-dim: rgba(212, 90, 77, 0.15);
+  --blue: #4a90d9;
+  --blue-dim: rgba(74, 144, 217, 0.15);
+  
+  --shadow-card: 0 2px 8px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.2);
+  --shadow-modal: 0 20px 48px rgba(0,0,0,.55), 0 8px 16px rgba(0,0,0,.3);
+  --shadow-elevated: 0 8px 24px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.25);
+}
+
+@theme {
+  --color-base-bg: var(--bg);
+  --color-base-surface: var(--surface);
+  --color-base-surface2: var(--surface2);
+  --color-base-surface3: var(--surface3);
+  --color-base-border: var(--border);
+  --color-base-border2: var(--border2);
+  --color-base-text: var(--text);
+  --color-base-muted: var(--muted);
+  --color-base-muted2: var(--muted2);
+  --color-base-accent: var(--accent);
+  --color-base-accent2: var(--accent2);
+  --color-base-accent-dim: var(--accent-dim);
+  --color-base-green: var(--green);
+  --color-base-green-dim: var(--green-dim);
+  --color-base-red: var(--red);
+  --color-base-red-dim: var(--red-dim);
+  --color-base-blue: var(--blue);
+  --color-base-blue-dim: var(--blue-dim);
+
+  --font-sans: "Barlow", ui-sans-serif, system-ui, sans-serif;
+  --font-condensed: "Barlow Condensed", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Base Body Styles */
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: "Barlow", sans-serif;
+  transition: background-color 0.25s ease, color 0.25s ease;
+  overflow-y: auto;
+}
+
+/* Custom Scrollbar Styles */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.24);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+
+/* Glassy header or sidebar shadows */
+.shadow-card {
+  box-shadow: var(--shadow-card);
+}
+.shadow-modal {
+  box-shadow: var(--shadow-modal);
+}
+.shadow-elevated {
+  box-shadow: var(--shadow-elevated);
+}
+
+/* Focus rings */
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-dim);
+}
+
+/* Custom search highlight pulse animation */
+@keyframes pulse-highlight {
+  0%, 100% {
+    box-shadow: 0 0 0 4px var(--accent-dim), var(--shadow-card);
+    border-color: var(--accent);
+  }
+  50% {
+    box-shadow: 0 0 0 10px rgba(212, 136, 10, 0.22), var(--shadow-elevated);
+    border-color: var(--accent);
+  }
+}
+
+.animate-pulse-highlight {
+  animation: pulse-highlight 2s infinite ease-in-out;
+}
+

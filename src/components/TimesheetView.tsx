@@ -1,0 +1,453 @@
+import React, { useState } from 'react';
+import { TimesheetEntry, Employee, Project } from '../types';
+import { fmtHrs, esc } from '../utils/projectUtils';
+import { Clock, Check, Calendar, AlertTriangle, ArrowRight, ClipboardList, Trash2, Edit, ExternalLink } from 'lucide-react';
+
+interface TimesheetViewProps {
+  timesheets: TimesheetEntry[];
+  employees: Employee[];
+  projects: Project[];
+  timesheetDate: string;
+  setTimesheetDate: (date: string) => void;
+  openAddTimesheet: () => void;
+  openEditTimesheet: (id: string) => void;
+  deleteTsEntry: (id: string) => void;
+  exportTimesheetDaily: () => void;
+  openSpotlight?: (pid: string) => void;
+}
+
+const STATUS_PILLS = {
+  present: 'bg-base-green-dim text-base-green border border-base-green/20',
+  late: 'bg-yellow-400/10 text-yellow-600 dark:text-yellow-400 border border-yellow-500/20',
+  absent: 'bg-base-red-dim text-base-red border border-base-red/20',
+  leave: 'bg-base-blue-dim text-base-blue border border-base-blue/20'
+};
+
+export default function TimesheetView({
+  timesheets,
+  employees,
+  projects,
+  timesheetDate,
+  setTimesheetDate,
+  openAddTimesheet,
+  openEditTimesheet,
+  deleteTsEntry,
+  exportTimesheetDaily,
+  openSpotlight
+}: TimesheetViewProps) {
+  const [tsGroupCollapsed, setTsGroupCollapsed] = useState<Record<string, boolean>>({});
+
+  const shiftDate = (d: number) => {
+    const dt = new Date(timesheetDate + 'T00:00:00');
+    dt.setDate(dt.getDate() + d);
+    setTimesheetDate(dt.toISOString().slice(0, 10));
+  };
+
+  const jumpToday = () => {
+    setTimesheetDate(new Date().toISOString().slice(0, 10));
+  };
+
+  const formattedDateLabel = () => {
+    const dt = new Date(timesheetDate + 'T00:00:00');
+    return dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }).toUpperCase();
+  };
+
+  const currentDateObj = new Date(timesheetDate + 'T12:00:00');
+  const curYear = currentDateObj.getFullYear();
+  const curMonth = currentDateObj.getMonth();
+  const curDay = currentDateObj.getDate();
+
+  const handleMonthChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = parseInt(e.target.value, 10);
+    const d = new Date(curYear, val, 1);
+    const maxDays = new Date(curYear, val + 1, 0).getDate();
+    const targetDay = Math.min(curDay, maxDays);
+    d.setDate(targetDay);
+    setTimesheetDate(d.toISOString().slice(0, 10));
+  };
+
+  const handleDayChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = parseInt(e.target.value, 10);
+    const d = new Date(curYear, curMonth, val);
+    setTimesheetDate(d.toISOString().slice(0, 10));
+  };
+
+  const handleYearChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const val = parseInt(e.target.value, 10);
+    const d = new Date(val, curMonth, 1);
+    const maxDays = new Date(val, curMonth + 1, 0).getDate();
+    const targetDay = Math.min(curDay, maxDays);
+    d.setDate(targetDay);
+    setTimesheetDate(d.toISOString().slice(0, 10));
+  };
+
+  const MONTHS_LIST = [
+    { value: 0, label: 'Jan' },
+    { value: 1, label: 'Feb' },
+    { value: 2, label: 'Mar' },
+    { value: 3, label: 'Apr' },
+    { value: 4, label: 'May' },
+    { value: 5, label: 'Jun' },
+    { value: 6, label: 'Jul' },
+    { value: 7, label: 'Aug' },
+    { value: 8, label: 'Sep' },
+    { value: 9, label: 'Oct' },
+    { value: 10, label: 'Nov' },
+    { value: 11, label: 'Dec' }
+  ];
+
+  const daysCount = new Date(curYear, curMonth + 1, 0).getDate();
+  const daysArray = Array.from({ length: daysCount }, (_, i) => i + 1);
+  const yearsArray = Array.from({ length: 11 }, (_, i) => 2024 + i); // 2024 to 2034
+
+  const dayEntries = timesheets.filter(e => e.date === timesheetDate);
+
+  // Group stats counts
+  const counts = { present: 0, late: 0, absent: 0, leave: 0 };
+  dayEntries.forEach(e => {
+    if (e.status in counts) {
+      counts[e.status as keyof typeof counts]++;
+    }
+  });
+
+  const totalHrsToday = dayEntries.reduce((s, e) => s + (e.totalHours || 0), 0);
+
+  // Group rows by Coordinator
+  const coordGroups: Record<string, TimesheetEntry[]> = {};
+  dayEntries.forEach(e => {
+    const emp = employees.find(x => x.id === e.empId);
+    const coord = (emp?.coordinator || '').trim() || '— No coordinator —';
+    if (!coordGroups[coord]) {
+      coordGroups[coord] = [];
+    }
+    coordGroups[coord].push(e);
+  });
+
+  const coordNames = Object.keys(coordGroups).sort((a, b) => {
+    if (a === '— No coordinator —') return 1;
+    if (b === '— No coordinator —') return -1;
+    return a.localeCompare(b);
+  });
+
+  const toggleGroup = (coord: string) => {
+    setTsGroupCollapsed(prev => ({ ...prev, [coord]: !prev[coord] }));
+  };
+
+  // Compile Cumulative Work Order totals (all-time)
+  const workOrderAccumulator: Record<string, { hrs: number; list: Set<string> }> = {};
+  timesheets.forEach(e => {
+    if (!e.workOrder) return;
+    if (!workOrderAccumulator[e.workOrder]) {
+      workOrderAccumulator[e.workOrder] = { hrs: 0, list: new Set() };
+    }
+    workOrderAccumulator[e.workOrder].hrs += e.totalHours || 0;
+    workOrderAccumulator[e.workOrder].list.add(e.empId || e.empName);
+  });
+
+  const sortedWOs = Object.entries(workOrderAccumulator).sort((a, b) => b[1].hrs - a[1].hrs);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="font-condensed font-extrabold uppercase text-lg tracking-wider text-base-text">
+            Daily <span className="text-base-accent">Timesheets</span>
+          </h2>
+
+          {/* Date Picker Switcher */}
+          <div className="flex items-center bg-base-surface2 border border-base-border rounded-lg p-1 gap-1">
+            <button
+              onClick={() => shiftDate(-1)}
+              className="p-1 rounded hover:bg-base-surface3 transition-colors text-base-muted"
+              title="Previous Day"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+
+            <div className="flex items-center gap-0.5 font-condensed font-bold text-xs">
+              {/* Day Dropdown */}
+              <select
+                value={curDay}
+                onChange={handleDayChange}
+                className="bg-transparent text-base-text py-0.5 px-1 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors text-center"
+              >
+                {daysArray.map(d => (
+                  <option key={d} value={d} className="bg-base-surface2 text-base-text font-sans">
+                    {String(d).padStart(2, '0')}
+                  </option>
+                ))}
+              </select>
+
+              <span className="text-base-muted/40">/</span>
+
+              {/* Month Dropdown */}
+              <select
+                value={curMonth}
+                onChange={handleMonthChange}
+                className="bg-transparent text-base-text py-0.5 px-1 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors uppercase text-center"
+              >
+                {MONTHS_LIST.map(m => (
+                  <option key={m.value} value={m.value} className="bg-base-surface2 text-base-text font-sans">
+                    {m.label.toUpperCase()}
+                  </option>
+                ))}
+              </select>
+
+              <span className="text-base-muted/40">/</span>
+
+              {/* Year Dropdown */}
+              <select
+                value={curYear}
+                onChange={handleYearChange}
+                className="bg-transparent text-base-text py-0.5 px-0.5 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors text-center"
+              >
+                {yearsArray.map(y => (
+                  <option key={y} value={y} className="bg-base-surface2 text-base-text font-sans">
+                    {y}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <button
+              onClick={() => shiftDate(1)}
+              className="p-1 rounded hover:bg-base-surface3 transition-colors text-base-muted"
+              title="Next Day"
+            >
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="9 18 15 12 9 6" />
+              </svg>
+            </button>
+          </div>
+
+          <button
+            onClick={jumpToday}
+            className="px-2.5 py-1.5 border border-base-accent/25 hover:bg-base-accent-dim text-base-accent rounded-lg font-condensed font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer"
+          >
+            Today
+          </button>
+        </div>
+
+        {/* Global Action Handlers */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={exportTimesheetDaily}
+            className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer"
+          >
+            <ClipboardList className="h-4 w-4 text-base-blue animate-pulse" />
+            <span>Export Daily</span>
+          </button>
+          <button
+            onClick={openAddTimesheet}
+            className="btn btn-accent btn-sm flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+          >
+            <Clock className="h-4 w-4" />
+            <span>Add Entry</span>
+          </button>
+        </div>
+      </div>
+
+      {/* KPI Dashboard widget cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5">
+        <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-border">
+          <div className="text-[26px] font-condensed font-extrabold text-base-text leading-none">{dayEntries.length}</div>
+          <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Total entries</div>
+        </div>
+        <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-accent">
+          <div className="text-[26px] font-condensed font-extrabold text-base-accent leading-none">{fmtHrs(totalHrsToday)}h</div>
+          <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Man-hours today</div>
+        </div>
+        <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-green">
+          <div className="text-[26px] font-condensed font-extrabold text-base-green leading-none">{counts.present + counts.late}</div>
+          <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Present/Late</div>
+        </div>
+        <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-red">
+          <div className="text-[26px] font-condensed font-extrabold text-base-red leading-none">{counts.absent}</div>
+          <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Absent</div>
+        </div>
+        <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-blue">
+          <div className="text-[26px] font-condensed font-extrabold text-base-blue leading-none">{counts.leave}</div>
+          <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Leave</div>
+        </div>
+      </div>
+
+      {/* Cumulative Work order statistics */}
+      {sortedWOs.length > 0 && (
+        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+          <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center gap-2">
+            <ClipboardList className="h-4 w-4 text-base-accent" />
+            <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Project Hours (All Time)</h3>
+          </div>
+          <div className="divide-y divide-base-border/50">
+            {sortedWOs.map(([wo, info]) => {
+              const proj = projects.find(x => (x.client || '').trim().toLowerCase() === (wo || '').trim().toLowerCase());
+              return (
+                <div
+                  key={wo}
+                  onClick={() => proj && openSpotlight?.(proj.id)}
+                  className={`flex px-4 py-3 items-center justify-between gap-4 text-xs group transition-all duration-150 ${
+                    proj ? 'hover:bg-base-surface2/60 cursor-pointer' : ''
+                  }`}
+                  title={proj ? `Click to view project: ${proj.name}` : undefined}
+                >
+                  <div className="font-condensed font-extrabold text-sm text-base-blue flex-shrink-0 min-w-[100px] uppercase tracking-wide flex items-center gap-1.5">
+                    <span>{wo}</span>
+                    {proj && (
+                      <ExternalLink className="h-3 w-3 text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
+                    )}
+                  </div>
+                  <div className="flex-1 font-medium text-base-muted2 whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-base-text transition-colors">
+                    {proj ? proj.name : 'Unassociated work order scope'}
+                  </div>
+                  <div className="text-right flex items-center gap-3">
+                    <span className="text-[10px] text-base-muted">{info.list.size} manpower</span>
+                    <span className="font-condensed font-extrabold text-base text-base-accent bg-base-accent-dim/20 px-2 py-0.5 rounded-sm">
+                      {fmtHrs(info.hrs)}h
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Main timesheet groups by Coordinator */}
+      <div className="space-y-4">
+        {dayEntries.length === 0 ? (
+          <div className="bg-base-surface border border-base-border rounded-xl p-12 text-center text-base-muted flex flex-col items-center justify-center shadow-card">
+            <Calendar className="h-10 w-10 text-base-border/80 mb-3" />
+            <p className="text-sm font-semibold">No timesheet records submitted for this date.</p>
+            <button
+              onClick={openAddTimesheet}
+              className="mt-4 px-4 py-2 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer"
+            >
+              Log hours now
+            </button>
+          </div>
+        ) : (
+          coordNames.map(coord => {
+            const list = coordGroups[coord];
+            const isColl = !!tsGroupCollapsed[coord];
+            const coordHrs = list.reduce((s, e) => s + (e.totalHours || 0), 0);
+
+            return (
+              <div key={coord} className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+                {/* Collapsible Coordinator header */}
+                <div
+                  onClick={() => toggleGroup(coord)}
+                  className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center justify-between gap-4 cursor-pointer select-none transition-colors hover:bg-base-surface3/40"
+                >
+                  <div className="flex items-center gap-2">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className={`h-4 w-4 text-base-muted transition-transform ${isColl ? '-rotate-90' : ''}`}
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                    >
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                    <span className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text">{coord}</span>
+                    <span className="px-2 py-0.5 text-[10px] bg-base-border/20 rounded font-semibold text-base-muted leading-none">
+                      {list.length} log{list.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                  <span className="font-condensed font-extrabold text-sm text-base-accent">{fmtHrs(coordHrs)}h logged</span>
+                </div>
+
+                {/* Timesheets log list */}
+                {!isColl && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="bg-base-surface2/30 text-left text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-b border-base-border/50">
+                          <th className="py-2.5 px-4">Employee</th>
+                          <th className="py-2.5 px-3">Work Order</th>
+                          <th className="py-2.5 px-3">Hours</th>
+                          <th className="py-2.5 px-3">Description</th>
+                          <th className="py-2.5 px-3">Status</th>
+                          <th className="py-2.5 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-base-border/30 text-xs">
+                        {list.map(e => {
+                          const emp = employees.find(x => x.id === e.empId);
+                          return (
+                            <tr key={e.id} className="hover:bg-base-surface2/20 transition-colors">
+                              <td className="py-3 px-4">
+                                <div>
+                                  <div className="font-bold text-base-text">{e.empName}</div>
+                                  <div className="text-[10px] text-base-muted mt-0.5">{emp?.position || 'Crew'}</div>
+                                </div>
+                              </td>
+                              <td className="py-3 px-3">
+                                {(() => {
+                                  const proj = projects.find(
+                                    x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
+                                  );
+                                  return (
+                                    <div>
+                                      {proj ? (
+                                        <button
+                                          onClick={() => openSpotlight?.(proj.id)}
+                                          className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide hover:underline hover:text-base-accent cursor-pointer flex items-center gap-1 group text-left"
+                                          title={`View Project Spotlight: ${proj.name}`}
+                                        >
+                                          <span>{e.workOrder || '—'}</span>
+                                          <ExternalLink className="h-3 w-3 inline text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
+                                        </button>
+                                      ) : (
+                                        <div className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide">
+                                          {e.workOrder || '—'}
+                                        </div>
+                                      )}
+                                      {e.assemblyName && (
+                                        <div className="text-[10px] text-base-muted2 font-medium mt-0.5">{e.assemblyName}</div>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
+                              </td>
+                              <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent">
+                                {fmtHrs(e.totalHours || 0)}h
+                              </td>
+                              <td className="py-3 px-3 max-w-[200px] truncate text-base-muted2" title={e.desc}>
+                                {e.desc || '—'}
+                              </td>
+                              <td className="py-3 px-3">
+                                <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider ${STATUS_PILLS[e.status]}`}>
+                                  {e.status}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                                <button
+                                  onClick={() => openEditTimesheet(e.id)}
+                                  className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer inline-flex items-center justify-center mr-1"
+                                >
+                                  <Edit className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => deleteTsEntry(e.id)}
+                                  className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer inline-flex items-center justify-center"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  );
+}
