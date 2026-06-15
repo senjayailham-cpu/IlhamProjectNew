@@ -1,6 +1,6 @@
 {
-  "name": "",
-  "description": "",
+  "name": "Austin Batam Project Tracking Console",
+  "description": "Project tracking, budget hours compliance, and scheduling system for Austin Batam.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
