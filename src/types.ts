@@ -212,6 +212,16 @@ export interface Task {
    * Optional completion or target finish date assigned to this task, formatted as YYYY-MM-DD.
    */
   finishDate?: string;
+
+  /**
+   * List of links pointing to predecessor items this task depends on.
+   */
+  predecessors?: Dependency[];
+
+  /**
+   * List of links pointing to successor items dependent on this task.
+   */
+  successors?: Dependency[];
 }
 
 /**

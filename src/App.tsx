@@ -1030,18 +1030,23 @@ export default function App() {
       // Purge old inverse connections
       setProjects(prev => prev.map(p => {
         const clearInverseDir = (arr?: Dependency[]) => (arr || []).filter(x => x.key !== key);
-        const pKey = `p:${p.id}`;
         let updatedP = {
           ...p,
           [inverseField]: clearInverseDir(p[inverseField])
         };
 
         updatedP.assemblies = (p.assemblies || []).map(a => {
-          const aKey = `a:${p.id}:${a.id}`;
-          return {
+          const updatedA = {
             ...a,
             [inverseField]: clearInverseDir(a[inverseField])
           };
+          updatedA.tasks = (a.tasks || []).map(t => {
+            return {
+              ...t,
+              [inverseField]: clearInverseDir(t[inverseField])
+            };
+          });
+          return updatedA;
         });
 
         return updatedP;
@@ -1066,7 +1071,19 @@ export default function App() {
                 return { ...a, [inverseField]: [...arr, { key, type: dep.type, lag: dep.lag }] };
               }
             }
-            return a;
+
+            const updatedTasks = (a.tasks || []).map(t => {
+              const tKey = `t:${p.id}:${a.id}:${t.id}`;
+              if (tKey === dep.key) {
+                const arr = t[inverseField] || [];
+                if (!arr.some(x => x.key === key)) {
+                  return { ...t, [inverseField]: [...arr, { key, type: dep.type, lag: dep.lag }] };
+                }
+              }
+              return t;
+            });
+
+            return { ...a, tasks: updatedTasks };
           });
 
           return p;
@@ -1081,15 +1098,24 @@ export default function App() {
         return { ...p, predecessors: predsArr, successors: succsArr };
       }
 
-      p.assemblies = (p.assemblies || []).map(a => {
+      const updatedAssemblies = (p.assemblies || []).map(a => {
         const aKey = `a:${p.id}:${a.id}`;
         if (aKey === rowKey) {
           return { ...a, predecessors: predsArr, successors: succsArr };
         }
-        return a;
+
+        const updatedTasks = (a.tasks || []).map(t => {
+          const tKey = `t:${p.id}:${a.id}:${t.id}`;
+          if (tKey === rowKey) {
+            return { ...t, predecessors: predsArr, successors: succsArr };
+          }
+          return t;
+        });
+
+        return { ...a, tasks: updatedTasks };
       });
 
-      return p;
+      return { ...p, assemblies: updatedAssemblies };
     }));
 
     updateRelations(predsArr, 'successors', rowKey);
@@ -1489,7 +1515,7 @@ export default function App() {
                             <span>{pct}% ({tasksInfo.done}/{tasksInfo.total} tasks)</span>
                           </div>
                           <div className="h-2 bg-base-border/20 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-base-accent transition-all duration-300" style={{ width: `${pct}%` }} />
+                            <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
                           </div>
                         </div>
 

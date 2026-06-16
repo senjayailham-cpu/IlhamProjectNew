@@ -20,7 +20,7 @@ const DEP_COLORS = {
 
 interface RowMeta {
   key: string;
-  type: 'project' | 'assembly';
+  type: 'project' | 'assembly' | 'task';
   name: string;
   pct: number;
   start?: string;
@@ -256,6 +256,51 @@ export default function GanttView({
           barEndX: aBarEndX
         });
         currentY += aRowH;
+
+        // If the sub-assembly is NOT collapsed, push its tasks into the Gantt chart row list
+        if (!ganttCollapsed[aKey]) {
+          (a.tasks || []).forEach(t => {
+            const tRowH = 28;
+            const tKey = `t:${p.id}:${a.id}:${t.id}`;
+            const tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
+            const tEnd = t.finishDate ? new Date(t.finishDate + 'T00:00:00') : aEnd;
+
+            let tBarLeft: number | undefined;
+            let tBarWidth = 0;
+            let tBarStartX: number | undefined;
+            let tBarEndX: number | undefined;
+
+            const visTS = tStart < mStart ? mStart : (tStart > mEnd ? null : tStart);
+            const visTE = tEnd > mEnd ? mEnd : (tEnd < mStart ? null : tEnd);
+
+            if (visTS && visTE) {
+              tBarLeft = getDayX(visTS.getDate());
+              tBarWidth = getDayXRight(visTE.getDate()) - tBarLeft;
+              tBarStartX = tBarLeft;
+              tBarEndX = tBarLeft + tBarWidth;
+            } else if (tStart <= mEnd && tEnd >= mStart) {
+              tBarLeft = getDayX(1);
+              tBarWidth = getDayXRight(totalDays) - tBarLeft;
+              tBarStartX = tBarLeft;
+              tBarEndX = tBarLeft + tBarWidth;
+            }
+
+            rowList.push({
+              key: tKey,
+              type: 'task',
+              name: t.name,
+              pct: t.pct || 0,
+              start: t.date,
+              due: t.finishDate,
+              color: pColor,
+              height: tRowH,
+              midY: currentY + tRowH / 2,
+              barStartX: tBarStartX,
+              barEndX: tBarEndX
+            });
+            currentY += tRowH;
+          });
+        }
       });
     }
   });
@@ -273,12 +318,19 @@ export default function GanttView({
       if (rowKey.startsWith('p:')) {
         const p = projects.find(x => x.id === rowKey.slice(2));
         return (p && p.predecessors) || [];
-      } else {
+      } else if (rowKey.startsWith('a:')) {
         const [, pid, aid] = rowKey.split(':');
         const p = projects.find(x => x.id === pid);
         const a = p && p.assemblies.find(x => x.id === aid);
         return (a && a.predecessors) || [];
+      } else if (rowKey.startsWith('t:')) {
+        const [, pid, aid, tid] = rowKey.split(':');
+        const p = projects.find(x => x.id === pid);
+        const a = p && p.assemblies.find(x => x.id === aid);
+        const t = a && a.tasks.find(x => x.id === tid);
+        return (t && t.predecessors) || [];
       }
+      return [];
     };
 
     rowList.forEach(row => {
@@ -370,12 +422,19 @@ export default function GanttView({
       const p = projects.find(x => x.id === rowKey.slice(2));
       predsCount = (p?.predecessors || []).length;
       succsCount = (p?.successors || []).length;
-    } else {
+    } else if (rowKey.startsWith('a:')) {
       const [, pid, aid] = rowKey.split(':');
       const p = projects.find(x => x.id === pid);
       const a = p?.assemblies.find(x => x.id === aid);
       predsCount = (a?.predecessors || []).length;
       succsCount = (a?.successors || []).length;
+    } else if (rowKey.startsWith('t:')) {
+      const [, pid, aid, tid] = rowKey.split(':');
+      const p = projects.find(x => x.id === pid);
+      const a = p?.assemblies.find(x => x.id === aid);
+      const t = a?.tasks.find(x => x.id === tid);
+      predsCount = (t?.predecessors || []).length;
+      succsCount = (t?.successors || []).length;
     }
 
     return (
@@ -473,6 +532,36 @@ export default function GanttView({
           >
             Today
           </button>
+
+          {/* Collapse/Expand Controls */}
+          <div className="flex items-center bg-base-surface2 border border-base-border rounded-lg p-1 gap-1">
+            <button
+              onClick={() => {
+                const newCollapsed: Record<string, boolean> = {};
+                projects.forEach(p => {
+                  newCollapsed[p.id] = true;
+                  (p.assemblies || []).forEach(a => {
+                    newCollapsed[`a:${p.id}:${a.id}`] = true;
+                  });
+                });
+                setGanttCollapsed(newCollapsed);
+              }}
+              className="px-2 py-1 text-[10px] uppercase font-condensed font-bold tracking-wider rounded text-base-muted hover:text-base-text hover:bg-base-surface3 transition-colors cursor-pointer"
+              title="Collapse all rows (projects and assemblies)"
+            >
+              Collapse All
+            </button>
+            <div className="w-[1px] h-3 bg-base-border" />
+            <button
+              onClick={() => {
+                setGanttCollapsed({});
+              }}
+              className="px-2 py-1 text-[10px] uppercase font-condensed font-bold tracking-wider rounded text-base-muted hover:text-base-text hover:bg-base-surface3 transition-colors cursor-pointer"
+              title="Expand all rows (projects and assemblies)"
+            >
+              Expand All
+            </button>
+          </div>
 
           {/* Category tags */}
           <div className="flex items-center gap-1 bg-base-surface2 border border-base-border rounded-lg p-1.5">
@@ -652,38 +741,94 @@ export default function GanttView({
                       {!isColl &&
                         (p.assemblies || []).map(a => {
                           const aKey = `a:${p.id}:${a.id}`;
+                          const isAssemblyColl = !!ganttCollapsed[aKey];
                           const aDone = a.tasks.filter(t => t.done).length;
                           const aTotal = a.tasks.length;
                           const aPct = aTotal > 0 ? Math.round((aDone / aTotal) * 100) : 0;
 
                           return (
-                            <tr key={a.id} className="h-9 border-b border-base-border/50 hover:bg-base-surface2/30 group">
-                              <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-6 pr-2">
-                                <div className="flex items-center gap-1.5 justify-between">
-                                  <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                    <span className="text-base-muted font-bold text-xs select-none">↳</span>
-                                    <span className="text-xs font-semibold text-base-muted2 overflow-hidden text-ellipsis whitespace-nowrap block" title={a.name}>
-                                      {a.name}
-                                    </span>
+                            <React.Fragment key={a.id}>
+                              <tr className="h-9 border-b border-base-border/50 hover:bg-base-surface2/30 group">
+                                <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-6 pr-2">
+                                  <div className="flex items-center gap-1.5 justify-between">
+                                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                                      <span className="text-base-muted font-bold text-xs select-none">↳</span>
+                                      
+                                      <button
+                                        onClick={() => toggleCollapse(aKey)}
+                                        className="p-0.5 rounded hover:bg-base-surface3 text-base-muted2 cursor-pointer flex items-center justify-center shrink-0"
+                                        title={isAssemblyColl ? "Expand tasks" : "Collapse tasks"}
+                                      >
+                                        <svg
+                                          viewBox="0 0 24 24"
+                                          className={`h-2.5 w-2.5 transition-transform ${isAssemblyColl ? '' : 'rotate-90'}`}
+                                          fill="none"
+                                          stroke="currentColor"
+                                          strokeWidth="3.5"
+                                        >
+                                          <polyline points="9 18 15 12 9 6" />
+                                        </svg>
+                                      </button>
+
+                                      <span className="text-xs font-semibold text-base-muted2 overflow-hidden text-ellipsis whitespace-nowrap block" title={a.name}>
+                                        {a.name}
+                                      </span>
+                                    </div>
+                                    <span className="font-condensed font-bold text-xs text-base-muted2 pr-2">{aPct}%</span>
+                                    {renderDepsBadges(aKey)}
                                   </div>
-                                  <span className="font-condensed font-bold text-xs text-base-muted2 pr-2">{aPct}%</span>
-                                  {renderDepsBadges(aKey)}
-                                </div>
-                              </td>
-                              {dayNums.map(d => {
-                                const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
-                                return (
-                                  <td
-                                    key={d}
-                                    className={`border-r border-base-border/20 border-b border-base-border/20 relative ${
-                                      d === todayNum ? 'bg-base-accent/5' : isWE ? 'bg-base-surface3/15' : ''
-                                    }`}
-                                  >
-                                    {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
-                                  </td>
-                                );
-                              })}
-                            </tr>
+                                </td>
+                                {dayNums.map(d => {
+                                  const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                                  return (
+                                    <td
+                                      key={d}
+                                      className={`border-r border-base-border/20 border-b border-base-border/20 relative ${
+                                        d === todayNum ? 'bg-base-accent/5' : isWE ? 'bg-base-surface3/15' : ''
+                                      }`}
+                                    >
+                                      {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+
+                              {/* Task list rows under assembly */}
+                              {!isAssemblyColl &&
+                                (a.tasks || []).map(t => {
+                                  return (
+                                    <tr key={t.id} className="h-7 border-b border-base-border/30 hover:bg-base-surface2/30 group bg-base-surface2/5">
+                                      <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-10 pr-2">
+                                        <div className="flex items-center gap-1.5 justify-between">
+                                          <div className="flex items-center gap-1 min-w-0 flex-1">
+                                            <span className="text-base-muted2/50 font-bold text-[10px] select-none">↳</span>
+                                            <span className="text-[11px] text-base-muted overflow-hidden text-ellipsis whitespace-nowrap block" title={t.name}>
+                                              {t.name} {t.assigned ? `(${t.assigned})` : ''}
+                                            </span>
+                                          </div>
+                                          <div className="flex items-center gap-1.5 shrink-0">
+                                            <span className="font-condensed font-bold text-[10px] text-base-muted2 pr-1">{t.pct}%</span>
+                                            {renderDepsBadges(`t:${p.id}:${a.id}:${t.id}`)}
+                                          </div>
+                                        </div>
+                                      </td>
+                                      {dayNums.map(d => {
+                                        const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                                        return (
+                                          <td
+                                            key={d}
+                                            className={`border-r border-base-border/15 border-b border-base-border/15 relative ${
+                                              d === todayNum ? 'bg-base-accent/3' : isWE ? 'bg-base-surface3/10' : ''
+                                            }`}
+                                          >
+                                            {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                            </React.Fragment>
                           );
                         })}
                     </React.Fragment>
@@ -726,8 +871,10 @@ export default function GanttView({
                 if (barWidth <= 0) return null;
 
                 // Standard progress indicator bars
-                const barH = isProject ? 20 : 10;
+                const barH = type === 'project' ? 20 : (type === 'assembly' ? 12 : 7);
                 const completedW = Math.max(pct > 0 ? 5 : 0, Math.round((pct / 100) * barWidth));
+                const barOpacity = type === 'project' ? 0.95 : (type === 'assembly' ? 0.75 : 0.85);
+                const barRadius = type === 'project' ? '4px' : '2px';
 
                 return (
                   <div key={key} className="absolute overflow-hidden" style={{ left: `${barStartX}px`, top: `${midY - barH / 2}px`, width: `${barWidth}px`, height: `${barH}px` }}>
@@ -744,8 +891,8 @@ export default function GanttView({
                         style={{
                           width: `${completedW}px`,
                           backgroundColor: color,
-                          borderRadius: isProject ? '4px' : '2px',
-                          opacity: isProject ? 0.95 : 0.75
+                          borderRadius: barRadius,
+                          opacity: barOpacity
                         }}
                         title={`${row.name} — ${pct}% completion`}
                       >
@@ -760,7 +907,7 @@ export default function GanttView({
                       </div>
                     )}
                     {/* Right side due month labels */}
-                    {!isProject && pct > 0 && (
+                    {type !== 'project' && pct > 0 && (
                       <span
                         className="absolute text-[9px] font-condensed font-bold text-base-muted2 select-none pointer-events-none"
                         style={{ left: `${completedW + 5}px`, top: '50%', transform: 'translateY(-50%)' }}

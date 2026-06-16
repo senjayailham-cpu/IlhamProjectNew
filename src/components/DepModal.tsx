@@ -30,21 +30,29 @@ export default function DepModal({
   const [addSuccLag, setAddSuccLag] = useState<string>('');
 
   // Assemble full row mappings
-  const allRows: { key: string; label: string; type: 'project' | 'assembly' }[] = [];
+  const allRows: { key: string; label: string; type: 'project' | 'assembly' | 'task' }[] = [];
   projects.forEach(p => {
-    allRows.push({ key: `p:${p.id}`, label: p.name, type: 'project' });
+    allRows.push({ key: `p:${p.id}`, label: `[P] ${p.name}`, type: 'project' });
     (p.assemblies || []).forEach(a => {
-      allRows.push({ key: `a:${p.id}:${a.id}`, label: `${p.name} → ${a.name}`, type: 'assembly' });
+      allRows.push({ key: `a:${p.id}:${a.id}`, label: `[A] ${a.name} (${p.name})`, type: 'assembly' });
+      (a.tasks || []).forEach(t => {
+        allRows.push({ key: `t:${p.id}:${a.id}:${t.id}`, label: `[T] ${t.name} (${a.name})`, type: 'task' });
+      });
     });
   });
 
   const getRowObj = (key: string) => {
     if (key.startsWith('p:')) {
       return projects.find(x => x.id === key.slice(2));
-    } else {
+    } else if (key.startsWith('a:')) {
       const [, pid, aid] = key.split(':');
       const proj = projects.find(x => x.id === pid);
       return proj ? (proj.assemblies || []).find(a => a.id === aid) : null;
+    } else {
+      const [, pid, aid, tid] = key.split(':');
+      const proj = projects.find(x => x.id === pid);
+      const ass = proj ? (proj.assemblies || []).find(a => a.id === aid) : null;
+      return ass ? (ass.tasks || []).find(t => t.id === tid) : null;
     }
   };
 
@@ -146,7 +154,7 @@ export default function DepModal({
             <Link2 className="h-5 w-5 text-base-accent" />
             <div>
               <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Task Dependencies Map</h3>
-              <p className="text-[11px] text-base-muted mt-0.5 max-w-[400px] truncate" title={currentInfo.label}>
+              <p className="text-[11px] text-base-muted mt-0.5 max-w-[240px] sm:max-w-[380px] truncate" title={currentInfo.label}>
                 Editing: {currentInfo.label}
               </p>
             </div>
@@ -155,7 +163,7 @@ export default function DepModal({
         </div>
 
         {/* Body content (Predecessors on top, Successors bottom) */}
-        <div className="flex-1 overflow-y-auto p-5 space-y-5 text-xs">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden p-5 space-y-5 text-xs">
           
           {/* Predecessors list management */}
           <div className="space-y-2">
@@ -206,7 +214,7 @@ export default function DepModal({
               <select
                 value={addPredTarget}
                 onChange={(e) => setAddPredTarget(e.target.value)}
-                className="flex-1 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer"
+                className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer truncate"
               >
                 <option value="">— Select Predecessor —</option>
                 {allRows.filter(r => r.key !== rowKey).map(r => (
@@ -288,7 +296,7 @@ export default function DepModal({
               <select
                 value={addSuccTarget}
                 onChange={(e) => setAddSuccTarget(e.target.value)}
-                className="flex-1 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer"
+                className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer truncate"
               >
                 <option value="">— Select Successor —</option>
                 {allRows.filter(r => r.key !== rowKey).map(r => (
@@ -324,15 +332,15 @@ export default function DepModal({
         </div>
 
         {/* Global actions row */}
-        <div className="px-5 py-3 border-t border-base-border flex items-center justify-between flex-shrink-0 bg-base-surface2 text-xs">
+        <div className="px-5 py-3.5 border-t border-base-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 flex-shrink-0 bg-base-surface2 text-xs">
           <div className="text-[10px] text-base-muted font-condensed font-semibold leading-relaxed">
             <b>FS</b>=Finish→Start | <b>SS</b>=Start→Start | <b>FF</b>=Finish→Finish | <b>SF</b>=Start→Finish
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 justify-end self-end sm:self-auto">
             <button onClick={onClose} className="px-3.5 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
             <button
               onClick={() => onSave(rowKey, preds, succs)}
-              className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer"
+              className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer whitespace-nowrap"
             >
               Save dependencies
             </button>

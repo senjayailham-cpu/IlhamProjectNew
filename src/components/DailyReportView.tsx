@@ -339,7 +339,7 @@ export default function DailyReportView({
                     <div key={pid} className="flex px-4 py-3 items-center justify-between gap-4 text-xs">
                       <div className="font-bold text-base-text flex-1 truncate min-width-0" title={info.name}>{info.name}</div>
                       <div className="flex-1 max-w-[200px] h-1.5 bg-base-border/20 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-base-accent" style={{ width: `${curPct}%` }} />
+                        <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${curPct}%` }} />
                       </div>
                       <div className="font-condensed font-bold text-sm text-base-muted2 min-width-[34px] text-right">{curPct}%</div>
                       <span className={`font-condensed font-extrabold text-sm ml-4 min-width-[40px] text-right ${

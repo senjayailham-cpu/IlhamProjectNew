@@ -294,7 +294,7 @@ export default function SpotlightModal({
                           )}
 
                           <div className="w-12 h-1.5 bg-base-border/20 rounded-full overflow-hidden hidden md:block">
-                            <div className="h-full rounded-full bg-base-blue animate-pulse" style={{ width: `${aPct}%` }} />
+                            <div className="h-full rounded-full bg-base-blue transition-all duration-500 ease-out" style={{ width: `${aPct}%` }} />
                           </div>
                           <span className="font-condensed font-bold text-xs text-base-muted2">{aPct}%</span>
                           <span className="text-[10px] text-base-muted font-medium bg-base-border/20 px-1.5 py-0.5 rounded leading-none whitespace-nowrap">{aDone}/{aTotal}</span>
