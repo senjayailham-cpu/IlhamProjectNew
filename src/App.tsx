@@ -3,6 +3,11 @@ import { User, Project, Employee, TimesheetEntry, ActivityLog, Task, Dependency,
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS } from './mockData';
 import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportProjectsCSV } from './utils/projectUtils';
 
+// Firebase imports
+import { db, auth, googleProvider, signInWithPopup, signOut } from './firebase';
+import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+
 // Modular Subviews
 import ThemeToggle from './components/ThemeToggle';
 import DashboardView from './components/DashboardView';
@@ -160,6 +165,17 @@ export default function App() {
   // 1. Unified state loader
   useEffect(() => {
     const initializeDataAndUsers = async () => {
+      // Check current login session first
+      const sess = sessionStorage.getItem('w2proj_session_v1');
+      if (sess) {
+        const parsed = JSON.parse(sess);
+        // Skip default local load if it was a Google Developer login (which will be handled by Firebase Auth listener)
+        if (parsed.id.startsWith('google-') || parsed.id.length > 20) {
+          return;
+        }
+        setCurrentUser(parsed);
+      }
+
       // Boot users
       let loadedUsers = localStorage.getItem('w2proj_users_v1');
       if (!loadedUsers) {
@@ -168,12 +184,6 @@ export default function App() {
         setUsers(defaults);
       } else {
         setUsers(JSON.parse(loadedUsers));
-      }
-
-      // Check current login session
-      const sess = sessionStorage.getItem('w2proj_session_v1');
-      if (sess) {
-        setCurrentUser(JSON.parse(sess));
       }
 
       // Boot projects
@@ -234,6 +244,99 @@ export default function App() {
     initializeDataAndUsers();
   }, []);
 
+  // Listen for Firebase Auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        if (firebaseUser.email === 'senjayailham@gmail.com') {
+          // Authorized Developer Admin
+          const session: User = {
+            id: firebaseUser.uid,
+            name: firebaseUser.displayName || 'Senjaya Ilham',
+            role: 'admin',
+            allowedFeatures: [],
+            allowedPermissions: {}
+          };
+          setCurrentUser(session);
+          sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+          setLoginError('');
+        } else {
+          // Unauthorized email, log out immediately and block
+          await signOut(auth);
+          setCurrentUser(null);
+          sessionStorage.removeItem('w2proj_session_v1');
+          setLoginError(`Access Denied: ${firebaseUser.email} is not whitelisted.`);
+        }
+      } else {
+        // Not authenticated with Firebase, fallback to traditional session if not Google-based
+        const sess = sessionStorage.getItem('w2proj_session_v1');
+        if (sess) {
+          const parsed = JSON.parse(sess);
+          if (parsed.id.length > 20 || parsed.id.startsWith('google-')) {
+            setCurrentUser(null);
+            sessionStorage.removeItem('w2proj_session_v1');
+          } else {
+            setCurrentUser(parsed);
+          }
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Real-time Firestore Sync for Authorized Developer
+  useEffect(() => {
+    if (!currentUser || !auth.currentUser || auth.currentUser.email !== 'senjayailham@gmail.com') {
+      return;
+    }
+
+    const unsubscribers: (() => void)[] = [];
+
+    // Generic helper to listen & seed collection
+    const listenToCollection = (colName: string, stateSetter: (data: any) => void, defaultData: any) => {
+      const colRef = collection(db, colName);
+      const unsub = onSnapshot(colRef, (snapshot) => {
+        const list: any[] = [];
+        snapshot.forEach((d) => {
+          list.push(d.data());
+        });
+
+        if (list.length > 0) {
+          stateSetter(list);
+        } else {
+          // If Firestore is empty, seed it with initial defaults
+          const promises = defaultData.map((item: any) => setDoc(doc(db, colName, item.id), item));
+          Promise.all(promises).then(() => {
+            stateSetter(defaultData);
+          }).catch(err => {
+            console.error(`Error seeding initial ${colName} to cloud:`, err);
+          });
+        }
+      }, (error) => {
+        console.error(`Firestore real-time error on ${colName}:`, error);
+      });
+      unsubscribers.push(unsub);
+    };
+
+    // Listen to all core collections
+    listenToCollection('projects', setProjects, DEFAULT_PROJECTS);
+    listenToCollection('employees', setEmployees, DEFAULT_EMPLOYEES);
+    listenToCollection('timesheets', setTimesheets, DEFAULT_TIMESHEETS);
+    listenToCollection('activities', setActivities, DEFAULT_ACTIVITIES);
+    listenToCollection('problemReports', setProblemReports, DEFAULT_PROBLEM_REPORTS);
+    listenToCollection('inspections', setInspections, DEFAULT_INSPECTION_REQUESTS);
+
+    // Load default users to seed user management
+    DEFAULT_USERS().then(defUsers => {
+      listenToCollection('users', setUsers, defUsers);
+    });
+
+    return () => {
+      unsubscribers.forEach((unsub) => unsub());
+    };
+  }, [currentUser]);
+
   // Recurrent Auto Save Scheduler
   useEffect(() => {
     if (!currentUser) return;
@@ -269,7 +372,7 @@ export default function App() {
     }
   }, [users, currentUser]);
 
-  const saveNow = () => {
+  const saveNow = async () => {
     localStorage.setItem('w2proj_v1', JSON.stringify(projects));
     localStorage.setItem('w2proj_employees_v1', JSON.stringify(employees));
     localStorage.setItem('w2proj_timesheet_v1', JSON.stringify(timesheets));
@@ -280,7 +383,50 @@ export default function App() {
 
     setIsChanged(false);
     const tmStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    setLastSavedLabel(`Last saved at ${tmStr}`);
+    setLastSavedLabel(`Saving...`);
+
+    // Synchronization to Firebase Cloud if authenticated Google Developer
+    if (auth.currentUser && auth.currentUser.email === 'senjayailham@gmail.com') {
+      try {
+        const syncList = async (colName: string, items: any[]) => {
+          // Write current state documents
+          const writePromises = items.map((item) => setDoc(doc(db, colName, item.id), item));
+          await Promise.all(writePromises);
+
+          // Get all existing documents in this Firestore collection to clean up deleted ones
+          const qSnap = await getDocs(collection(db, colName));
+          const currentIds = new Set(items.map((i) => i.id));
+          const deletePromises: Promise<void>[] = [];
+
+          qSnap.forEach((docSnapshot) => {
+            if (!currentIds.has(docSnapshot.id)) {
+              deletePromises.push(deleteDoc(docSnapshot.ref));
+            }
+          });
+
+          if (deletePromises.length > 0) {
+            await Promise.all(deletePromises);
+          }
+        };
+
+        await Promise.all([
+          syncList('projects', projects),
+          syncList('employees', employees),
+          syncList('timesheets', timesheets),
+          syncList('activities', activities),
+          syncList('users', users),
+          syncList('problemReports', problemReports),
+          syncList('inspections', inspections),
+        ]);
+
+        setLastSavedLabel(`Synced online at ${tmStr}`);
+      } catch (err) {
+        console.error("error during live cloud sync:", err);
+        setLastSavedLabel(`Saved local (sync failed)`);
+      }
+    } else {
+      setLastSavedLabel(`Last saved at ${tmStr}`);
+    }
   };
 
   const verifyMarkChanged = () => {
@@ -374,8 +520,15 @@ export default function App() {
     setLoginPass('');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
     if (!confirm('Are you sure you want to log out of the session?')) return;
+    try {
+      if (auth.currentUser) {
+        await signOut(auth);
+      }
+    } catch (err) {
+      console.error("Error signing out:", err);
+    }
     setCurrentUser(null);
     sessionStorage.removeItem('w2proj_session_v1');
     setLoginId('');
@@ -1171,6 +1324,34 @@ export default function App() {
             >
               <Lock className="h-4 w-4" />
               <span>Log in to portal</span>
+            </button>
+
+            <div className="relative my-4 flex py-2 items-center">
+              <div className="flex-grow border-t border-base-border"></div>
+              <span className="flex-shrink mx-3 text-[10px] text-base-muted font-bold font-condensed uppercase tracking-wider">or sign in with</span>
+              <div className="flex-grow border-t border-base-border"></div>
+            </div>
+
+            <button
+              type="button"
+              onClick={async () => {
+                setLoginError('');
+                try {
+                  await signInWithPopup(auth, googleProvider);
+                } catch (err: any) {
+                  console.error("Google Auth error:", err);
+                  setLoginError(err?.message || "Failed to sign in with Google.");
+                }
+              }}
+              className="w-full py-2 bg-base-surface border border-base-border hover:bg-base-surface2 text-base-text font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
+            >
+              <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
+                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.87-2.6-2.86-4.53-5.29-4.53z" fill="#FBBC05" />
+                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
+              </svg>
+              <span>Google Account</span>
             </button>
           </form>
         </div>

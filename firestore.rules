@@ -1,0 +1,43 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isDev() {
+      return isSignedIn() &&
+             request.auth.token.email == "senjayailham@gmail.com" &&
+             request.auth.token.email_verified == true;
+    }
+
+    // Restrict all collections strictly to the verified developer email
+    match /projects/{projectId} {
+      allow read, write: if isDev();
+    }
+    match /employees/{employeeId} {
+      allow read, write: if isDev();
+    }
+    match /timesheets/{timesheetId} {
+      allow read, write: if isDev();
+    }
+    match /activities/{activityId} {
+      allow read, write: if isDev();
+    }
+    match /users/{userId} {
+      allow read, write: if isDev();
+    }
+    match /problemReports/{reportId} {
+      allow read, write: if isDev();
+    }
+    match /inspections/{inspectionId} {
+      allow read, write: if isDev();
+    }
+  }
+}
