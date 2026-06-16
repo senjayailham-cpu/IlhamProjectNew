@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Project, Assembly } from '../types';
+import { Project, Assembly, Task } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2 } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus } from 'lucide-react';
 
 interface SpotlightModalProps {
   isOpen: boolean;
@@ -45,6 +45,10 @@ export default function SpotlightModal({
   canUpdateTask = true
 }: SpotlightModalProps) {
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
+  const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
+  const [quickTaskAssigned, setQuickTaskAssigned] = useState<Record<string, string>>({});
+  const [quickTaskDates, setQuickTaskDates] = useState<Record<string, string>>({});
+  const [quickTaskFinishDates, setQuickTaskFinishDates] = useState<Record<string, string>>({});
 
   if (!isOpen || !projectId) return null;
   const p = projects.find(x => x.id === projectId);
@@ -56,6 +60,49 @@ export default function SpotlightModal({
 
   const toggleAsm = (aid: string) => {
     setCollapsedAsms(prev => ({ ...prev, [aid]: !prev[aid] }));
+  };
+
+  const handleQuickAddTask = (a: Assembly) => {
+    const nameVal = quickTaskNames[a.id] || '';
+    if (!nameVal.trim()) return;
+
+    const newTask: Task = {
+      id: 'tsk-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+      name: nameVal.trim(),
+      assigned: (quickTaskAssigned[a.id] || '').trim(),
+      pct: 0,
+      done: false,
+      date: quickTaskDates[a.id] || undefined,
+      finishDate: quickTaskFinishDates[a.id] || undefined
+    };
+
+    const updatedAssemblies = asms.map(asm => {
+      if (asm.id !== a.id) return asm;
+      return {
+        ...asm,
+        tasks: [...(asm.tasks || []), newTask]
+      };
+    });
+
+    if (onUpdateProject) {
+      onUpdateProject({
+        ...p,
+        assemblies: updatedAssemblies
+      }, {
+        type: 'task_add',
+        action: `Added task "${newTask.name}" to assembly "${a.name}"`,
+        asmName: a.name,
+        task: newTask.name,
+        oldP: undefined,
+        newP: 0
+      });
+    }
+
+    // Reset inputs
+    setQuickTaskNames(prev => ({ ...prev, [a.id]: '' }));
+    setQuickTaskAssigned(prev => ({ ...prev, [a.id]: '' }));
+    setQuickTaskDates(prev => ({ ...prev, [a.id]: '' }));
+    setQuickTaskFinishDates(prev => ({ ...prev, [a.id]: '' }));
   };
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -258,7 +305,7 @@ export default function SpotlightModal({
                       {!isColl && (
                         <div className="p-3 divide-y divide-base-border/40 select-text">
                           {tasks.length === 0 ? (
-                            <div className="text-xs text-base-muted italic py-1 text-center">No tasks assigned to this assembly.</div>
+                            <div className="text-xs text-base-muted italic py-3 text-center bg-base-surface3/20 rounded-lg">No tasks assigned to this assembly.</div>
                           ) : (
                             tasks.map(t => {
                               const handlePctChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -324,25 +371,116 @@ export default function SpotlightModal({
                                         {t.done && <span className="text-[10px]">✓</span>}
                                       </div>
                                     )}
-                                    <span className={`text-base-text truncate ${t.done ? 'line-through text-base-muted font-normal' : ''}`} title={t.name}>
-                                      {t.name}
-                                    </span>
+                                    <div className="min-w-0 flex-1 flex flex-col sm:flex-row sm:items-center gap-1.5">
+                                      <span className={`text-base-text truncate ${t.done ? 'line-through text-base-muted font-normal' : ''}`} title={t.name}>
+                                        {t.name}
+                                      </span>
+                                      
+                                      {/* Task date display / edit badge */}
+                                      {canUpdateTask ? (
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          {/* Start Date */}
+                                          <div className="flex items-center gap-0.5" title="Set Task Start/Due Date">
+                                            <span className="text-[9px] text-base-muted font-bold">S:</span>
+                                            <Calendar className="w-2.5 h-2.5 text-base-muted" />
+                                            <input
+                                              type="date"
+                                              value={t.date || ''}
+                                              onChange={(e) => {
+                                                const updatedAssemblies = asms.map(asm => {
+                                                  if (asm.id !== a.id) return asm;
+                                                  return {
+                                                    ...asm,
+                                                    tasks: asm.tasks.map(tsk => {
+                                                      if (tsk.id !== t.id) return tsk;
+                                                      return { ...tsk, date: e.target.value || undefined };
+                                                    })
+                                                  };
+                                                });
+                                                onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
+                                              }}
+                                              className="text-[10px] bg-transparent text-base-muted hover:text-base-text border-0 p-0 cursor-pointer outline-none w-22 leading-none focus:text-base-accent"
+                                            />
+                                          </div>
+                                          {/* Finish Date */}
+                                          <div className="flex items-center gap-0.5" title="Set Task Finish Date">
+                                            <span className="text-[9px] text-emerald-500 font-bold">F:</span>
+                                            <Calendar className="w-2.5 h-2.5 text-emerald-500/60" />
+                                            <input
+                                              type="date"
+                                              value={t.finishDate || ''}
+                                              onChange={(e) => {
+                                                const updatedAssemblies = asms.map(asm => {
+                                                  if (asm.id !== a.id) return asm;
+                                                  return {
+                                                    ...asm,
+                                                    tasks: asm.tasks.map(tsk => {
+                                                      if (tsk.id !== t.id) return tsk;
+                                                      return { ...tsk, finishDate: e.target.value || undefined };
+                                                    })
+                                                  };
+                                                });
+                                                onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
+                                              }}
+                                              className="text-[10px] bg-transparent text-emerald-600 hover:text-emerald-500 border-0 p-0 cursor-pointer outline-none w-22 leading-none focus:text-base-accent"
+                                            />
+                                          </div>
+                                        </div>
+                                      ) : (
+                                        <div className="flex items-center gap-2 shrink-0 text-[10px]">
+                                          {t.date && (
+                                            <span className="text-base-muted font-normal flex items-center gap-0.5 leading-none">
+                                              <span className="font-bold text-[9px]">S:</span>
+                                              <Calendar className="w-2.5 h-2.5" />
+                                              <span>{t.date}</span>
+                                            </span>
+                                          )}
+                                          {t.finishDate && (
+                                            <span className="text-emerald-600 font-normal flex items-center gap-0.5 leading-none">
+                                              <span className="font-bold text-[9px]">F:</span>
+                                              <Calendar className="w-2.5 h-2.5" />
+                                              <span>{t.finishDate}</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+                                    </div>
                                   </div>
                                   
-                                  <div className="flex items-center gap-3">
-                                    {t.assigned && (
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    {canUpdateTask ? (
+                                      <input
+                                        type="text"
+                                        placeholder="Assignee..."
+                                        value={t.assigned || ''}
+                                        onChange={(e) => {
+                                          const updatedAssemblies = asms.map(asm => {
+                                            if (asm.id !== a.id) return asm;
+                                            return {
+                                              ...asm,
+                                              tasks: asm.tasks.map(tsk => {
+                                                if (tsk.id !== t.id) return tsk;
+                                                return { ...tsk, assigned: e.target.value };
+                                              })
+                                            };
+                                          });
+                                          onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
+                                        }}
+                                        className="w-16 sm:w-24 px-1 py-0.5 bg-transparent border-b border-transparent hover:border-base-border focus:border-base-accent outline-none text-[10px] text-base-muted hover:text-base-text transition-all italic text-right focus:not-italic"
+                                      />
+                                    ) : t.assigned ? (
                                       <span className="text-[10px] text-base-muted italic hidden sm:inline">By {t.assigned}</span>
-                                    )}
+                                    ) : null}
                                     
                                     {canUpdateTask ? (
-                                      <div className="flex items-center gap-1.5">
+                                      <div className="flex items-center gap-1">
                                         <input
                                           type="number"
                                           min="0"
                                           max="100"
                                           value={t.pct}
                                           onChange={handlePctChange}
-                                          className={`w-13 px-1.5 py-0.5 bg-base-bg text-center font-mono text-xs font-extrabold border rounded-md focus:border-base-accent outline-none ${t.pct >= 100 ? 'text-base-green border-base-green/25' : t.pct > 50 ? 'text-base-accent border-base-accent/25' : 'text-base-blue border-base-border'}`}
+                                          className={`w-12 px-1.5 py-0.5 bg-base-bg text-center font-mono text-xs font-extrabold border rounded focus:border-base-accent outline-none ${t.pct >= 100 ? 'text-base-green border-base-green/25' : t.pct > 50 ? 'text-base-accent border-base-accent/25' : 'text-base-blue border-base-border'}`}
                                         />
                                         <span className="text-[10px] text-base-muted font-bold">%</span>
                                       </div>
@@ -351,10 +489,96 @@ export default function SpotlightModal({
                                         {t.pct}%
                                       </span>
                                     )}
+
+                                    {/* Inline Delete Button */}
+                                    {canUpdateTask && (
+                                      <button
+                                        onClick={() => {
+                                          if (!confirm(`Are you sure you want to delete task "${t.name}"?`)) return;
+                                          const updatedAssemblies = asms.map(asm => {
+                                            if (asm.id !== a.id) return asm;
+                                            return {
+                                              ...asm,
+                                              tasks: asm.tasks.filter(tsk => tsk.id !== t.id)
+                                            };
+                                          });
+                                          onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies }, {
+                                            type: 'task_delete',
+                                            action: `Deleted task "${t.name}" from assembly "${a.name}"`,
+                                            asmName: a.name,
+                                            task: t.name
+                                          });
+                                        }}
+                                        className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-colors"
+                                        title="Delete Task"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
                                   </div>
                                 </div>
                               );
                             })
+                          )}
+
+                          {/* Quick Add Form Section */}
+                          {canUpdateTask && (
+                            <div className="pt-3 pb-1 border-t border-base-border/30 mt-1.5">
+                              <div className="flex flex-col sm:flex-row gap-2">
+                                <input
+                                  type="text"
+                                  placeholder="Quick add new task name..."
+                                  value={quickTaskNames[a.id] || ''}
+                                  onChange={(e) => setQuickTaskNames(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleQuickAddTask(a);
+                                    }
+                                  }}
+                                  className="flex-1 px-3 py-1.5 text-xs bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold"
+                                />
+                                <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
+                                  <input
+                                    type="text"
+                                    placeholder="Assignee (opt)"
+                                    value={quickTaskAssigned[a.id] || ''}
+                                    onChange={(e) => setQuickTaskAssigned(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleQuickAddTask(a);
+                                      }
+                                    }}
+                                    className="w-24 px-2 py-1.5 text-xs bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold"
+                                  />
+                                  <div className="flex gap-1 items-center flex-wrap sm:flex-nowrap">
+                                    <input
+                                      type="date"
+                                      value={quickTaskDates[a.id] || ''}
+                                      onChange={(e) => setQuickTaskDates(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                      className="w-24 px-1 py-1 text-[10px] bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold cursor-pointer text-base-muted"
+                                      title="Start Date"
+                                    />
+                                    <span className="text-[10px] text-base-muted font-bold">to</span>
+                                    <input
+                                      type="date"
+                                      value={quickTaskFinishDates[a.id] || ''}
+                                      onChange={(e) => setQuickTaskFinishDates(prev => ({ ...prev, [a.id]: e.target.value }))}
+                                      className="w-24 px-1 py-1 text-[10px] bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold cursor-pointer text-emerald-600"
+                                      title="Finish Date"
+                                    />
+                                    <button
+                                      onClick={() => handleQuickAddTask(a)}
+                                      className="px-3 py-1.5 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-xs uppercase tracking-wider rounded transition-colors flex items-center justify-center gap-1 shrink-0 ml-1"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Add</span>
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           )}
                         </div>
                       )}

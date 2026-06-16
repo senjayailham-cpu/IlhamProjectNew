@@ -87,3 +87,65 @@ export function fmtHrs(h: number): string {
 export function esc(s?: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
+
+function csvEsc(val: any): string {
+  if (val === null || val === undefined) return '';
+  const str = String(val);
+  if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+}
+
+export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntry[]) {
+  const headers = [
+    'Project ID',
+    'Project Name',
+    'Work Order',
+    'Status',
+    'Category',
+    'Location',
+    'Start Date',
+    'Due Date',
+    'Completed Date',
+    'Budget Hours',
+    'Actual Man-Hours Used',
+    'Archived'
+  ];
+
+  const csvRows = [headers.join(',')];
+
+  projects.forEach(p => {
+    const actualHours = getManHoursForWorkOrder(p.client, timesheets);
+    const row = [
+      csvEsc(p.id),
+      csvEsc(p.name),
+      csvEsc(p.client),
+      csvEsc(p.status),
+      csvEsc(p.category),
+      csvEsc(p.location === 'workshop1' ? 'Workshop 1' : 'Workshop 2'),
+      csvEsc(p.start || ''),
+      csvEsc(p.due || ''),
+      csvEsc(p.completedDate || ''),
+      csvEsc(p.budgetHours !== undefined ? p.budgetHours : ''),
+      csvEsc(actualHours),
+      csvEsc(p.isArchived ? 'Yes' : 'No')
+    ];
+    csvRows.push(row.join(','));
+  });
+
+  const csvString = csvRows.join('\r\n');
+  const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  
+  const d = new Date();
+  const dateStr = d.toISOString().slice(0, 10);
+  link.setAttribute('download', `austin_batam_projects_${dateStr}.csv`);
+  link.style.visibility = 'hidden';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+}
+

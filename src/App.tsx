@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { User, Project, Employee, TimesheetEntry, ActivityLog, Task, Dependency, UserRole, Assembly, ProblemReport, InspectionRequest } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS } from './mockData';
-import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder } from './utils/projectUtils';
+import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportProjectsCSV } from './utils/projectUtils';
 
 // Modular Subviews
 import ThemeToggle from './components/ThemeToggle';
@@ -15,12 +15,13 @@ import SpotlightModal from './components/SpotlightModal';
 import DepModal from './components/DepModal';
 import Focus24View from './components/Focus24View';
 import InspectionView from './components/InspectionView';
+import UsersAccessView from './components/UsersAccessView';
 
 // Lucide Icons
 import {
   Folder, Clock, CheckCircle, AlertTriangle, Users, BookOpen, FileText,
   UserPlus, Upload, ShieldCheck, Trash2, Edit, Copy, ChevronDown, LogOut, Save, Search, Lock,
-  Archive, RotateCcw
+  Archive, RotateCcw, Download
 } from 'lucide-react';
 
 const PERMISSIONS = {
@@ -136,7 +137,7 @@ export default function App() {
   const [aFinish, setAFinish] = useState<string>('');
   const [aNotes, setANotes] = useState<string>('');
   const [aBudgetHours, setABudgetHours] = useState<string>('');
-  const [aTasksDraft, setATasksDraft] = useState<{ id: string; name: string; assigned: string; pct: number; done: boolean }[]>([]);
+  const [aTasksDraft, setATasksDraft] = useState<{ id: string; name: string; assigned: string; pct: number; done: boolean; date?: string; finishDate?: string }[]>([]);
 
   const [copyName, setCopyName] = useState<string>('');
   const [copyStart, setCopyStart] = useState<string>('');
@@ -244,6 +245,30 @@ export default function App() {
     return () => clearInterval(interval);
   }, [isChanged, projects, employees, timesheets, activities, users, problemReports, inspections]);
 
+  // Synchronize currentUser details if the user list changes (for live permission/access update)
+  useEffect(() => {
+    if (currentUser && users.length > 0) {
+      const match = users.find(u => u.id === currentUser.id);
+      if (match) {
+        const featuresMatch = JSON.stringify(match.allowedFeatures) === JSON.stringify(currentUser.allowedFeatures);
+        const permMatch = JSON.stringify(match.allowedPermissions) === JSON.stringify(currentUser.allowedPermissions);
+        const nameMatch = match.name === currentUser.name;
+        const roleMatch = match.role === currentUser.role;
+        if (!featuresMatch || !permMatch || !nameMatch || !roleMatch) {
+          const updatedSession: User = {
+            ...currentUser,
+            name: match.name,
+            role: match.role,
+            allowedFeatures: match.allowedFeatures,
+            allowedPermissions: match.allowedPermissions
+          };
+          setCurrentUser(updatedSession);
+          sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updatedSession));
+        }
+      }
+    }
+  }, [users, currentUser]);
+
   const saveNow = () => {
     localStorage.setItem('w2proj_v1', JSON.stringify(projects));
     localStorage.setItem('w2proj_employees_v1', JSON.stringify(employees));
@@ -273,6 +298,9 @@ export default function App() {
 
   const can = (perm: keyof typeof PERMISSIONS.admin): boolean => {
     if (!currentUser) return false;
+    if (currentUser.allowedPermissions && currentUser.allowedPermissions[perm] !== undefined) {
+      return !!currentUser.allowedPermissions[perm];
+    }
     return !!PERMISSIONS[currentUser.role]?.[perm];
   };
 
@@ -330,7 +358,13 @@ export default function App() {
       return;
     }
 
-    const session: User = { id: testUser.id, name: testUser.name, role: testUser.role };
+    const session: User = { 
+      id: testUser.id, 
+      name: testUser.name, 
+      role: testUser.role,
+      allowedFeatures: testUser.allowedFeatures,
+      allowedPermissions: testUser.allowedPermissions
+    };
     setCurrentUser(session);
     sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
 
@@ -491,7 +525,7 @@ export default function App() {
   };
 
   const addDraftTaskNode = () => {
-    setATasksDraft(prev => [...prev, { id: uid(), name: '', assigned: '', pct: 0, done: false }]);
+    setATasksDraft(prev => [...prev, { id: uid(), name: '', assigned: '', pct: 0, done: false, date: '', finishDate: '' }]);
   };
 
   const removeDraftTaskNode = (idx: number) => {
@@ -541,7 +575,7 @@ export default function App() {
         budgetHours: parsedAsmBudget,
         tasks: aTasksDraft
           .filter(t => t.name.trim())
-          .map(t => ({ id: uid(), name: t.name.trim(), assigned: t.assigned.trim(), pct: 0, done: false }))
+          .map(t => ({ id: uid(), name: t.name.trim(), assigned: t.assigned.trim(), pct: 0, done: false, date: t.date?.trim() || undefined, finishDate: t.finishDate?.trim() || undefined }))
       };
 
       setProjects(prev => prev.map(proj => {
@@ -1131,7 +1165,8 @@ export default function App() {
     { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
     { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
     { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
-    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' }
+    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
+    { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] }
   ];
 
   return (
@@ -1174,26 +1209,27 @@ export default function App() {
             </button>
           </div>
 
-          {can('manageUsers') && (
-            <button
-              onClick={() => {
-                setUserFormOpen(false);
-                setUserMgmtOpen(true);
-              }}
-              className="px-3.5 py-1.5 bg-base-surface text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer font-condensed font-bold text-xs border border-base-border rounded-lg uppercase tracking-wider"
-            >
-              Users
-            </button>
-          )}
+
 
           {can('exportData') && (
-            <button
-              onClick={saveNow}
-              className="p-2 border border-base-border bg-base-surface text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer rounded-lg flex items-center justify-center shadow-xs"
-              title="Save Portal database"
-            >
-              <Save className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => exportProjectsCSV(projects, timesheets)}
+                className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 transition-all cursor-pointer font-condensed font-bold text-xs rounded-lg uppercase tracking-wider flex items-center gap-1.5 shadow-xs"
+                title="Export projects and man-hours to CSV"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Export CSV</span>
+              </button>
+
+              <button
+                onClick={saveNow}
+                className="p-2 border border-base-border bg-base-surface text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer rounded-lg flex items-center justify-center shadow-xs"
+                title="Save Portal database"
+              >
+                <Save className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </div>
       </header>
@@ -1201,7 +1237,18 @@ export default function App() {
       {/* Navigation Tab selection row */}
       <nav className="bg-base-surface2 px-6 border-b border-base-border flex items-center gap-1 overflow-x-auto whitespace-nowrap scrollbar-none shadow-card sticky top-14.5 z-30">
         {activeTabsList
-          .filter(t => t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role)))
+          .filter(t => {
+            if (t.id === 'users') {
+              if (currentUser && currentUser.allowedFeatures) {
+                return currentUser.allowedFeatures.includes('users');
+              }
+              return can('manageUsers');
+            }
+            if (currentUser && currentUser.allowedFeatures) {
+              return currentUser.allowedFeatures.includes(t.id);
+            }
+            return t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role));
+          })
           .map(t => {
             const hasCountsBadge = t.id === 'completed';
             const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
@@ -1644,6 +1691,20 @@ export default function App() {
             openSpotlight={(pid) => { setSpotlightProjectId(pid); setSpotlightOpen(true); }}
           />
         )}
+
+        {activeTab === 'users' && (
+          <UsersAccessView
+            users={users}
+            currentUser={currentUser}
+            onUpdateUsers={(updated) => {
+              setUsers(updated);
+              setIsChanged(true);
+            }}
+            activeTabsList={activeTabsList}
+            defaultPermissions={PERMISSIONS}
+            sha256={sha256}
+          />
+        )}
       </main>
 
       {/* Auto saving persistent footer message */}
@@ -1868,22 +1929,53 @@ export default function App() {
                     </button>
                   </div>
 
-                  <div className="space-y-2 max-h-36 overflow-y-auto">
+                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {aTasksDraft.map((t, idx) => (
-                      <div key={t.id} className="flex gap-1.5 items-center">
-                        <input
-                          type="text"
-                          value={t.name}
-                          onChange={(e) => handleDraftTaskField(idx, 'name', e.target.value)}
-                          placeholder="Task name..."
-                          className="flex-1 px-2 py-1 bg-base-surface2 border border-base-border rounded text-xs"
-                        />
-                        <button
-                          onClick={() => removeDraftTaskNode(idx)}
-                          className="px-1.5 py-1 text-base-red hover:bg-base-red/10 rounded cursor-pointer"
-                        >
-                          ✕
-                        </button>
+                      <div key={t.id} className="flex flex-col gap-1.5 p-2 bg-base-surface2 border border-base-border/50 rounded-lg relative">
+                        <div className="flex gap-1.5 items-center">
+                          <input
+                            type="text"
+                            value={t.name}
+                            onChange={(e) => handleDraftTaskField(idx, 'name', e.target.value)}
+                            placeholder="Task name..."
+                            className="flex-1 px-2 py-1 bg-base-bg border border-base-border rounded text-xs font-semibold"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeDraftTaskNode(idx)}
+                            className="px-1.5 py-1 text-base-red hover:bg-base-red/10 rounded cursor-pointer shrink-0"
+                            title="Remove Task"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <div className="flex gap-1.5 flex-wrap sm:flex-nowrap">
+                          <input
+                            type="text"
+                            value={t.assigned || ''}
+                            onChange={(e) => handleDraftTaskField(idx, 'assigned', e.target.value)}
+                            placeholder="Assignee"
+                            className="flex-1 min-w-[70px] px-1.5 py-1 bg-base-bg border border-base-border rounded text-[10px]"
+                          />
+                          <div className="flex items-center gap-0.5 shrink-0" title="Start Date">
+                            <span className="text-[9px] text-base-muted font-bold">S:</span>
+                            <input
+                              type="date"
+                              value={t.date || ''}
+                              onChange={(e) => handleDraftTaskField(idx, 'date', e.target.value)}
+                              className="w-24 px-1 py-1 bg-base-bg border border-base-border rounded text-[10px] cursor-pointer text-base-muted font-semibold"
+                            />
+                          </div>
+                          <div className="flex items-center gap-0.5 shrink-0" title="Finish Date">
+                            <span className="text-[9px] text-emerald-500 font-bold">F:</span>
+                            <input
+                              type="date"
+                              value={t.finishDate || ''}
+                              onChange={(e) => handleDraftTaskField(idx, 'finishDate', e.target.value)}
+                              className="w-24 px-1 py-1 bg-base-bg border border-base-border rounded text-[10px] cursor-pointer text-emerald-600 font-semibold"
+                            />
+                          </div>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2032,143 +2124,7 @@ export default function App() {
         onSave={saveDependenciesHandler}
       />
 
-      {/* Users Admin Control Modal */}
-      {userMgmtOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-lg p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150">
-            <div className="flex justify-between items-center border-b border-base-border pb-2.5">
-              <span className="font-condensed font-extrabold uppercase text-base text-base-text">Port User Administration</span>
-              <button
-                onClick={() => {
-                  setEditingUserId(null);
-                  setUfId('');
-                  setUfName('');
-                  setUfRole('technician');
-                  setUfPass('');
-                  setUserFormOpen(true);
-                }}
-                className="btn btn-accent btn-sm p-1.5 font-condensed font-bold uppercase text-[10px] tracking-wider"
-              >
-                + New user
-              </button>
-            </div>
 
-            {/* In-app user drafting section */}
-            {userFormOpen && (
-              <div className="bg-base-surface2 border border-base-border p-4 rounded-lg space-y-3.5 text-xs font-semibold">
-                <div className="font-condensed font-bold uppercase tracking-widest text-[#9b1c2e]" style={{ fontSize: '10px' }}>User Parameters Form</div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">User ID ID</label>
-                    <input type="text" value={ufId} disabled={!!editingUserId} onChange={(e) => setUfId(e.target.value)} className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border border rounded" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Display name</label>
-                    <input type="text" value={ufName} onChange={(e) => setUfName(e.target.value)} className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border border rounded" />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Portal Role</label>
-                    <select
-                      value={ufRole}
-                      onChange={(e: any) => setUfRole(e.target.value)}
-                      className="w-full px-2 py-1.5 bg-base-bg border border-base-border border rounded outline-none font-bold"
-                    >
-                      <option value="admin">Admin (Full Control)</option>
-                      <option value="manager">Manager (Edit Scope)</option>
-                      <option value="technician">Coordinator (Update Tasks)</option>
-                      <option value="viewer">Viewer (Read Only)</option>
-                      <option value="facility maintanance">Facility Maintanance</option>
-                      <option value="quality control">Quality Control</option>
-                      <option value="safety">Safety</option>
-                      <option value="project control">Project Control</option>
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Password</label>
-                    <input type="password" value={ufPass} onChange={(e) => setUfPass(e.target.value)} className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border border rounded" />
-                  </div>
-                </div>
-                <div className="flex gap-2 justify-end text-xs pt-1">
-                  <button onClick={() => setUserFormOpen(false)} className="px-2.5 py-1 text-[10px] uppercase font-condensed border border-base-border hover:bg-base-surface3 text-base-muted2 rounded">Cancel</button>
-                  <button
-                    onClick={async () => {
-                      if (!ufId.trim() || !ufName.trim()) return alert('Complete all columns.');
-                      const passValue = ufPass.trim();
-                      if (!editingUserId && !passValue) return alert('Input temporary password.');
-
-                      let nextUsers = [...users];
-                      if (editingUserId) {
-                        nextUsers = nextUsers.map(u => {
-                          if (u.id === editingUserId) {
-                            const updated: User = { ...u, name: ufName.trim(), role: ufRole };
-                            return updated;
-                          }
-                          return u;
-                        });
-                      } else {
-                        if (nextUsers.some(u => u.id === ufId.trim())) return alert('ID duplicate!');
-                        nextUsers.push({ id: ufId.trim(), name: ufName.trim(), role: ufRole, passHash: await sha256(passValue) });
-                      }
-                      setUsers(nextUsers);
-                      setUserFormOpen(false);
-                      setIsChanged(true);
-                      alert('Roster users changes processed!');
-                    }}
-                    className="px-3.5 py-1 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded text-[10px]"
-                  >
-                    Keep Form
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Users grid list display */}
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {users.map(u => (
-                <div key={u.id} className="flex px-3 py-2 bg-base-surface2 border border-base-border rounded-lg items-center justify-between text-xs font-semibold">
-                  <div>
-                    <div className="text-base-text font-bold">{u.name} (<span className="text-base-accent font-condensed font-extrabold uppercase text-[10px] tracking-wide">{u.id}</span>)</div>
-                    <div className="text-[10px] text-base-muted uppercase font-condensed mt-0.5 font-bold tracking-wider">{u.role}</div>
-                  </div>
-                  <div className="flex gap-1.5 items-center">
-                    <button
-                      onClick={() => {
-                        setEditingUserId(u.id);
-                        setUfId(u.id);
-                        setUfName(u.name);
-                        setUfRole(u.role);
-                        setUfPass('');
-                        setUserFormOpen(true);
-                      }}
-                      className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 cursor-pointer"
-                    >
-                      <Edit className="h-3.5 w-3.5" />
-                    </button>
-                    {u.id !== currentUser.id && (
-                      <button
-                        onClick={() => {
-                          if (!confirm(`Delete user "${u.name}" permanently?`)) return;
-                          setUsers(prev => prev.filter(x => x.id !== u.id));
-                          setIsChanged(true);
-                        }}
-                        className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/15 cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button onClick={() => setUserMgmtOpen(false)} className="px-4 py-1.5 bg-base-surface border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer">Close panel</button>
-            </div>
-          </div>
-        </div>
-      )}
 
     </div>
   );

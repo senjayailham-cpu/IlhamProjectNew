@@ -162,6 +162,16 @@ export interface User {
    * Secure cryptographic SHA-256 hash representation of the password credential.
    */
   passHash?: string;
+
+  /**
+   * Optional custom menu features keys that this user is explicitly allowed to view.
+   */
+  allowedFeatures?: string[];
+
+  /**
+   * Optional dynamic action rules overrides that toggle individual controls state.
+   */
+  allowedPermissions?: Record<string, boolean>;
 }
 
 /**
@@ -192,6 +202,16 @@ export interface Task {
    * Quick status boolean for task completion. Setting pct to 100 sets done to true.
    */
   done: boolean;
+
+  /**
+   * Optional date (due date) assigned to this specific task, formatted as YYYY-MM-DD.
+   */
+  date?: string;
+
+  /**
+   * Optional completion or target finish date assigned to this task, formatted as YYYY-MM-DD.
+   */
+  finishDate?: string;
 }
 
 /**
