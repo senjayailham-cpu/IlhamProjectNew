@@ -19,7 +19,9 @@ const permissionMeta = [
   { id: 'deleteAssembly', label: 'Delete Sub-Assemblies', desc: 'Allows deleting assembly blocks' },
   { id: 'addTask', label: 'Create Tasks', desc: 'Allows adding new tasks to sub-assembly lists' },
   { id: 'deleteTask', label: 'Delete Tasks', desc: 'Allows removing specific task list items' },
-  { id: 'updateTask', label: 'Update Task Progress', desc: 'Allows modifying percent progress, assignee and due dates on tasks' },
+  { id: 'updateTask', label: 'Update Task Progress', desc: 'Allows modifying percent progress and due dates on tasks' },
+  { id: 'addDifficulty', label: 'Add / Edit Task Difficulty', desc: 'Allows setting and editing task difficulty parameters weight (1-20)' },
+  { id: 'addTaskInline', label: 'Add Task Inside Project Pop-up', desc: 'Allows adding new tasks to sub-assembly lists directly inside the project overview modal' },
   { id: 'manageUsers', label: 'Manage Users & Access', desc: 'Allows editing user profiles, visible tabs and admin rules' },
   { id: 'exportData', label: 'Export Reports', desc: 'Allows exporting excel spreadsheets and CSV log files' },
   { id: 'importData', label: 'Import Excel Records', desc: 'Allows seeding data via excel file uploads' }
@@ -40,7 +42,7 @@ export default function UsersAccessView({
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
   const [newUserId, setNewUserId] = useState<string>('');
   const [newUserName, setNewUserName] = useState<string>('');
-  const [newUserRole, setNewUserRole] = useState<UserRoleType>('technician');
+  const [newUserRole, setNewUserRole] = useState<UserRoleType>('coordinator');
   const [newUserPass, setNewUserPass] = useState<string>('');
 
   // Password Edit States
@@ -96,7 +98,7 @@ export default function UsersAccessView({
     // Reset Form
     setNewUserId('');
     setNewUserName('');
-    setNewUserRole('technician');
+    setNewUserRole('coordinator');
     setNewUserPass('');
     setShowAddForm(false);
   };
@@ -313,7 +315,7 @@ export default function UsersAccessView({
               >
                 <option value="admin">Admin (Full Control)</option>
                 <option value="manager">Manager (Edit Scope)</option>
-                <option value="technician">Coordinator (Update Tasks)</option>
+                <option value="coordinator">Coordinator (Update Tasks)</option>
                 <option value="viewer">Viewer (Read Only)</option>
                 <option value="facility maintanance">Facility Maintanance</option>
                 <option value="quality control">Quality Control</option>
@@ -431,7 +433,7 @@ export default function UsersAccessView({
                     >
                       <option value="admin">Admin</option>
                       <option value="manager">Manager</option>
-                      <option value="technician">Coordinator</option>
+                      <option value="coordinator">Coordinator</option>
                       <option value="viewer">Viewer</option>
                       <option value="facility maintanance">Facility Maintanance</option>
                       <option value="quality control">Quality Control</option>

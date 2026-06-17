@@ -23,6 +23,9 @@ interface SpotlightModalProps {
     }
   ) => void;
   canUpdateTask?: boolean;
+  canAddTaskInline?: boolean;
+  canAddDifficulty?: boolean;
+  canDeleteTask?: boolean;
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -42,13 +45,24 @@ export default function SpotlightModal({
   onEdit,
   onEditAssembly,
   onUpdateProject,
-  canUpdateTask = true
+  canUpdateTask = true,
+  canAddTaskInline = true,
+  canAddDifficulty = true,
+  canDeleteTask = true
 }: SpotlightModalProps) {
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
-  const [quickTaskAssigned, setQuickTaskAssigned] = useState<Record<string, string>>({});
+  const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
   const [quickTaskDates, setQuickTaskDates] = useState<Record<string, string>>({});
   const [quickTaskFinishDates, setQuickTaskFinishDates] = useState<Record<string, string>>({});
+
+  // Dedicated Add Task Pop-up Modal States
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [activeTargetAssembly, setActiveTargetAssembly] = useState<Assembly | null>(null);
+  const [taskName, setTaskName] = useState('');
+  const [taskDifficulty, setTaskDifficulty] = useState(1);
+  const [taskStart, setTaskStart] = useState('');
+  const [taskFinish, setTaskFinish] = useState('');
 
   if (!isOpen || !projectId) return null;
   const p = projects.find(x => x.id === projectId);
@@ -69,7 +83,7 @@ export default function SpotlightModal({
     const newTask: Task = {
       id: 'tsk-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
       name: nameVal.trim(),
-      assigned: (quickTaskAssigned[a.id] || '').trim(),
+      difficulty: quickTaskDifficulty[a.id] || 1,
       pct: 0,
       done: false,
       date: quickTaskDates[a.id] || undefined,
@@ -100,17 +114,63 @@ export default function SpotlightModal({
 
     // Reset inputs
     setQuickTaskNames(prev => ({ ...prev, [a.id]: '' }));
-    setQuickTaskAssigned(prev => ({ ...prev, [a.id]: '' }));
+    setQuickTaskDifficulty(prev => ({ ...prev, [a.id]: 1 }));
     setQuickTaskDates(prev => ({ ...prev, [a.id]: '' }));
     setQuickTaskFinishDates(prev => ({ ...prev, [a.id]: '' }));
+  };
+
+  const handleSaveNewTask = () => {
+    if (!activeTargetAssembly) return;
+    if (!taskName.trim()) return;
+
+    const newTask: Task = {
+      id: 'tsk-' + Date.now() + '-' + Math.random().toString(36).substring(2, 9),
+      name: taskName.trim(),
+      difficulty: taskDifficulty,
+      pct: 0,
+      done: false,
+      date: taskStart || undefined,
+      finishDate: taskFinish || undefined
+    };
+
+    const updatedAssemblies = asms.map(asm => {
+      if (asm.id !== activeTargetAssembly.id) return asm;
+      return {
+        ...asm,
+        tasks: [...(asm.tasks || []), newTask]
+      };
+    });
+
+    if (onUpdateProject) {
+      onUpdateProject({
+        ...p,
+        assemblies: updatedAssemblies
+      }, {
+        type: 'task_add',
+        action: `Added task "${newTask.name}" to assembly "${activeTargetAssembly.name}"`,
+        asmName: activeTargetAssembly.name,
+        task: newTask.name,
+        oldP: undefined,
+        newP: 0
+      });
+    }
+
+    // Reset and close
+    setTaskName('');
+    setTaskDifficulty(1);
+    setTaskStart('');
+    setTaskFinish('');
+    setIsTaskModalOpen(false);
+    setActiveTargetAssembly(null);
   };
 
   const todayStr = new Date().toISOString().slice(0, 10);
   const isOverdue = p.due && p.due < todayStr && p.status !== 'completed';
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
-      <div className="bg-base-bg border border-base-border2 rounded-xl shadow-modal w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 ease-out duration-150">
+    <>
+      <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+      <div className="bg-base-bg border border-base-border2 rounded-xl shadow-modal w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 ease-out duration-150">
         
         {/* Header Band */}
         <div className="px-5 py-4 border-b border-base-border flex items-start gap-3 bg-linear-to-b from-base-accent-dim/20 to-transparent relative">
@@ -170,7 +230,7 @@ export default function SpotlightModal({
         {/* Center body columns */}
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Metadata parameters */}
-          <div className="grid grid-cols-2 gap-3.5">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
             {p.client && (
               <div className="bg-base-surface border border-base-border rounded-lg p-3 flex items-center gap-3">
                 <div className="h-7 w-7 rounded bg-base-blue-dim flex items-center justify-center flex-shrink-0 text-base-blue">
@@ -303,9 +363,28 @@ export default function SpotlightModal({
 
                       {/* Accordion task cards inside assembly */}
                       {!isColl && (
-                        <div className="p-3 divide-y divide-base-border/40 select-text">
+                        <div className="p-4 divide-y divide-base-border/40 select-text space-y-3">
                           {tasks.length === 0 ? (
-                            <div className="text-xs text-base-muted italic py-3 text-center bg-base-surface3/20 rounded-lg">No tasks assigned to this assembly.</div>
+                            <div className="text-xs text-base-muted py-8 px-4 text-center bg-base-surface3/10 rounded-xl border border-dashed border-base-border flex flex-col items-center gap-3">
+                              <span className="italic">No tasks assigned to this sub-assembly yet.</span>
+                              {canAddTaskInline && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveTargetAssembly(a);
+                                    setTaskName('');
+                                    setTaskDifficulty(1);
+                                    setTaskStart('');
+                                    setTaskFinish('');
+                                    setIsTaskModalOpen(true);
+                                  }}
+                                  className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-extrabold uppercase tracking-wider text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Add First Task</span>
+                                </button>
+                              )}
+                            </div>
                           ) : (
                             tasks.map(t => {
                               const handlePctChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -448,29 +527,36 @@ export default function SpotlightModal({
                                   </div>
                                   
                                   <div className="flex items-center gap-3 shrink-0">
-                                    {canUpdateTask ? (
-                                      <input
-                                        type="text"
-                                        placeholder="Assignee..."
-                                        value={t.assigned || ''}
-                                        onChange={(e) => {
-                                          const updatedAssemblies = asms.map(asm => {
-                                            if (asm.id !== a.id) return asm;
-                                            return {
-                                              ...asm,
-                                              tasks: asm.tasks.map(tsk => {
-                                                if (tsk.id !== t.id) return tsk;
-                                                return { ...tsk, assigned: e.target.value };
-                                              })
-                                            };
-                                          });
-                                          onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
-                                        }}
-                                        className="w-16 sm:w-24 px-1 py-0.5 bg-transparent border-b border-transparent hover:border-base-border focus:border-base-accent outline-none text-[10px] text-base-muted hover:text-base-text transition-all italic text-right focus:not-italic"
-                                      />
-                                    ) : t.assigned ? (
-                                      <span className="text-[10px] text-base-muted italic hidden sm:inline">By {t.assigned}</span>
-                                    ) : null}
+                                    {canAddDifficulty ? (
+                                      <div className="flex items-center gap-1.5 bg-base-surface3/30 px-2 py-1 rounded border border-base-border/50">
+                                        <span className="text-[9px] text-base-muted font-bold select-none uppercase tracking-wider font-condensed">Diff:</span>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max="20"
+                                          value={typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}
+                                          onChange={(e) => {
+                                            const val = Math.max(1, parseInt(e.target.value) || 1);
+                                            const updatedAssemblies = asms.map(asm => {
+                                              if (asm.id !== a.id) return asm;
+                                              return {
+                                                ...asm,
+                                                tasks: asm.tasks.map(tsk => {
+                                                  if (tsk.id !== t.id) return tsk;
+                                                  return { ...tsk, difficulty: val };
+                                                })
+                                              };
+                                            });
+                                            onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
+                                          }}
+                                          className="w-10 text-center bg-base-bg border border-base-border rounded text-[10px] text-base-text font-bold outline-none focus:border-base-accent"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <span className="text-[10px] text-base-muted select-none flex items-center gap-1 bg-base-surface3/20 px-2 py-0.5 rounded">
+                                        Diff: <span className="font-bold text-base-accent font-mono">{typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}</span>
+                                      </span>
+                                    )}
                                     
                                     {canUpdateTask ? (
                                       <div className="flex items-center gap-1">
@@ -491,7 +577,7 @@ export default function SpotlightModal({
                                     )}
 
                                     {/* Inline Delete Button */}
-                                    {canUpdateTask && (
+                                    {canDeleteTask && (
                                       <button
                                         onClick={() => {
                                           if (!confirm(`Are you sure you want to delete task "${t.name}"?`)) return;
@@ -521,9 +607,30 @@ export default function SpotlightModal({
                             })
                           )}
 
+                          {/* Dedicated Add Task Pop-up Trigger Button */}
+                          {canAddTaskInline && tasks.length > 0 && (
+                            <div className="pt-4 pb-1 border-t border-base-border/30 mt-3 flex justify-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setActiveTargetAssembly(a);
+                                  setTaskName('');
+                                  setTaskDifficulty(1);
+                                  setTaskStart('');
+                                  setTaskFinish('');
+                                  setIsTaskModalOpen(true);
+                                }}
+                                className="w-full sm:w-auto px-5 py-2.5 bg-base-accent/10 border border-base-accent/25 hover:border-base-accent text-base-accent hover:bg-base-accent hover:text-white rounded-xl font-condensed font-extrabold uppercase tracking-wider text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all duration-200 animate-in fade-in"
+                              >
+                                <Plus className="w-4 h-4" />
+                                <span>Add Task to {a.name}</span>
+                              </button>
+                            </div>
+                          )}
+
                           {/* Quick Add Form Section */}
-                          {canUpdateTask && (
-                            <div className="pt-3 pb-1 border-t border-base-border/30 mt-1.5">
+                          {canAddTaskInline && (
+                            <div className="pt-3 pb-1 border-t border-base-border/30 mt-1.5 hidden">
                               <div className="flex flex-col sm:flex-row gap-2">
                                 <input
                                   type="text"
@@ -539,19 +646,26 @@ export default function SpotlightModal({
                                   className="flex-1 px-3 py-1.5 text-xs bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold"
                                 />
                                 <div className="flex gap-2 items-center flex-wrap sm:flex-nowrap">
-                                  <input
-                                    type="text"
-                                    placeholder="Assignee (opt)"
-                                    value={quickTaskAssigned[a.id] || ''}
-                                    onChange={(e) => setQuickTaskAssigned(prev => ({ ...prev, [a.id]: e.target.value }))}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        e.preventDefault();
-                                        handleQuickAddTask(a);
-                                      }
-                                    }}
-                                    className="w-24 px-2 py-1.5 text-xs bg-base-bg border border-base-border rounded focus:border-base-accent outline-none font-semibold"
-                                  />
+                                  <div className="flex items-center gap-1 bg-base-bg border border-base-border rounded focus-within:border-base-accent px-2 py-1">
+                                    <span className="text-[10px] text-base-muted font-bold select-none">Diff:</span>
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="20"
+                                      value={quickTaskDifficulty[a.id] || 1}
+                                      onChange={(e) => {
+                                        const val = Math.max(1, parseInt(e.target.value) || 1);
+                                        setQuickTaskDifficulty(prev => ({ ...prev, [a.id]: val }));
+                                      }}
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') {
+                                          e.preventDefault();
+                                          handleQuickAddTask(a);
+                                        }
+                                      }}
+                                      className="w-10 text-center bg-transparent border-none outline-none font-bold text-xs text-base-text"
+                                    />
+                                  </div>
                                   <div className="flex gap-1 items-center flex-wrap sm:flex-nowrap">
                                     <input
                                       type="date"
@@ -610,5 +724,103 @@ export default function SpotlightModal({
 
       </div>
     </div>
-  );
+
+    {/* Dedicated Add Task Pop-up Modal */}
+    {isTaskModalOpen && activeTargetAssembly && (
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/70 backdrop-blur-md animate-in fade-in duration-100">
+        <div className="bg-base-surface border border-base-border2 rounded-2xl shadow-modal w-full max-w-md p-6 space-y-5 animate-in zoom-in-95 ease-out duration-150 relative text-base-text select-text">
+          <div className="flex items-center gap-2.5 border-b border-base-border pb-3.5">
+            <div className="h-9 w-9 rounded-lg bg-base-accent-dim border border-base-accent/20 flex items-center justify-center shrink-0">
+              <Plus className="h-5 w-5 text-base-accent" />
+            </div>
+            <div>
+              <h3 className="font-condensed font-extrabold uppercase text-sm tracking-wide text-base-text leading-none">Add Task to Assembly</h3>
+              <p className="text-[10px] font-medium text-base-muted2 uppercase tracking-wider mt-1.5 truncate max-w-[280px]" title={activeTargetAssembly.name}>
+                For: {activeTargetAssembly.name}
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-4 text-xs font-semibold">
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-accent block">Task Name</label>
+              <input
+                type="text"
+                autoFocus
+                value={taskName}
+                onChange={(e) => setTaskName(e.target.value)}
+                placeholder="e.g. Panel structural check"
+                className="w-full px-3.5 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-xs font-semibold text-base-text transition-all"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleSaveNewTask();
+                  }
+                }}
+              />
+            </div>
+
+            {canAddDifficulty ? (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Difficulty (1-20)</label>
+                <input
+                  type="number"
+                  min="1"
+                  max="20"
+                  value={taskDifficulty}
+                  onChange={(e) => setTaskDifficulty(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                  className="w-full px-3.5 py-2 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-xs font-bold text-base-text transition-all"
+                />
+              </div>
+            ) : (
+              <input type="hidden" value={taskDifficulty} />
+            )}
+
+            <div className="grid grid-cols-2 gap-3.5">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Start Date (S)</label>
+                <input
+                  type="date"
+                  value={taskStart}
+                  onChange={(e) => setTaskStart(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-[11px] font-semibold text-base-text transition-all cursor-pointer"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Finish Date (F)</label>
+                <input
+                  type="date"
+                  value={taskFinish}
+                  onChange={(e) => setTaskFinish(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-[11px] font-semibold text-emerald-600 transition-all cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2.5 border-t border-base-border/30 pt-3.5 mt-1 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setIsTaskModalOpen(false);
+                setActiveTargetAssembly(null);
+              }}
+              className="px-4 py-2 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-extrabold uppercase tracking-wider cursor-pointer transition-all"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveNewTask}
+              disabled={!taskName.trim()}
+              className="px-5 py-2 bg-base-accent text-white hover:bg-base-accent2 disabled:opacity-55 disabled:cursor-not-allowed rounded-lg font-condensed font-extrabold uppercase tracking-wider cursor-pointer transition-all shadow-md"
+            >
+              Save Task
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
+);
 }

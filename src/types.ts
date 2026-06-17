@@ -22,7 +22,7 @@
 export enum UserRole {
   Admin = 'admin',
   Manager = 'manager',
-  Technician = 'technician',
+  Coordinator = 'coordinator',
   Viewer = 'viewer',
   FacilityMaintanance = 'facility maintanance',
   QualityControl = 'quality control',
@@ -33,7 +33,7 @@ export enum UserRole {
 /**
  * Helper Union Type covering UserRole enum values or direct matching string literals.
  */
-export type UserRoleType = UserRole | 'admin' | 'manager' | 'technician' | 'viewer' | 'facility maintanance' | 'quality control' | 'safety' | 'project control';
+export type UserRoleType = UserRole | 'admin' | 'manager' | 'coordinator' | 'viewer' | 'facility maintanance' | 'quality control' | 'safety' | 'project control';
 
 
 /**
@@ -191,7 +191,12 @@ export interface Task {
   /**
    * Assigned personnel name handling the installation or welding of this element.
    */
-  assigned: string;
+  assigned?: string;
+
+  /**
+   * Difficulty level of the task (higher = harder, weights the completion progress calculation).
+   */
+  difficulty?: number;
 
   /**
    * Completion score slider scale percentage, from 0 to 100.

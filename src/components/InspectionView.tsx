@@ -74,8 +74,8 @@ export default function InspectionView({
   const selectedFormProject = projects.find(p => p.id === formProjectId);
   const formAssemblies = selectedFormProject?.assemblies || [];
 
-  // Allowed to create: Admin, Manager, Technician/Coordinator, Project Control
-  const canRequest = currentUser && ['admin', 'manager', 'technician', 'project control'].includes(currentUser.role);
+  // Allowed to create: Admin, Manager, Coordinator, Project Control
+  const canRequest = currentUser && ['admin', 'manager', 'coordinator', 'project control'].includes(currentUser.role);
   // Allowed to inspect: Admin, Manager, Quality Control
   const canInspect = currentUser && ['admin', 'manager', 'quality control'].includes(currentUser.role);
 
@@ -835,7 +835,7 @@ export default function InspectionView({
                 </div>
               )}
 
-              {/* Rework submit action for technicians */}
+              {/* Rework submit action for coordinators */}
               {canRequest && selectedRfi.status === 'Rejected / Punchlist' && (
                 <div className="bg-amber-500/5 border border-amber-500/20 rounded-xl p-4 text-center space-y-3">
                   <p className="text-xs text-base-muted leading-relaxed">

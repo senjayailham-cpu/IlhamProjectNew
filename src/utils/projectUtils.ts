@@ -15,16 +15,17 @@ export function calcTaskCounts(project: Project) {
 }
 
 export function calcPct(project: Project): number {
-  let totalTasks = 0;
-  let accumulatedPct = 0;
+  let totalWeight = 0;
+  let accumulatedWeightedPct = 0;
   (project.assemblies || []).forEach(a => {
     (a.tasks || []).forEach(t => {
-      totalTasks++;
-      accumulatedPct += t.pct || 0;
+      const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+      totalWeight += difficulty;
+      accumulatedWeightedPct += (t.pct || 0) * difficulty;
     });
   });
-  if (totalTasks === 0) return 0;
-  return Math.round(accumulatedPct / totalTasks);
+  if (totalWeight === 0) return 0;
+  return Math.round(accumulatedWeightedPct / totalWeight);
 }
 
 export function calcDuration(startStr?: string, endStr?: string) {

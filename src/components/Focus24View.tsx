@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { ProblemReport, Project, Employee, UserRoleType } from '../types';
+import { storage } from '../firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -106,6 +108,8 @@ export default function Focus24View({
   const [formProjectId, setFormProjectId] = useState<string>('');
   const [formReporter, setFormReporter] = useState<string>(currentUser?.name || '');
   const [formPhoto, setFormPhoto] = useState<string | null>(null);
+  const [formPhotoFile, setFormPhotoFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
 
   // Direct toggle states for inline resolutions
@@ -129,7 +133,7 @@ export default function Focus24View({
   const projectsInIssues = Array.from(new Set(problemReports.map(r => r.projectId).filter(Boolean))) as string[];
 
   // Form validation & processing
-  const handleCreateReport = (e: React.FormEvent) => {
+  const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: Record<string, string> = {};
     if (!formDesc.trim()) errors.desc = 'Description is required';
@@ -144,6 +148,24 @@ export default function Focus24View({
       return;
     }
 
+    setIsUploading(true);
+    let uploadedPhotoUrl = undefined;
+
+    if (formPhotoFile) {
+      try {
+        const fileExt = formPhotoFile.name.split('.').pop() || 'jpg';
+        const uniquePath = `problems/photo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
+        const imageRef = ref(storage, uniquePath);
+        const snapshot = await uploadBytes(imageRef, formPhotoFile);
+        uploadedPhotoUrl = await getDownloadURL(snapshot.ref);
+      } catch (err) {
+        console.error("Firebase Storage Upload Error:", err);
+        alert("Photo upload to Firebase Storage failed. Please check your Firebase rules and internet connection.");
+        setIsUploading(false);
+        return;
+      }
+    }
+
     const selectedProj = projects.find(p => p.id === formProjectId);
 
     onAddProblemReport({
@@ -154,7 +176,7 @@ export default function Focus24View({
       assignedPosition: formPosition.trim(),
       reportedBy: formReporter.trim(),
       status: 'Open',
-      photo: formPhoto || undefined
+      photo: uploadedPhotoUrl || undefined
     });
 
     // Reset fields
@@ -164,7 +186,9 @@ export default function Focus24View({
     setFormProjectId('');
     setFormReporter(currentUser?.name || '');
     setFormPhoto(null);
+    setFormPhotoFile(null);
     setFormErrors({});
+    setIsUploading(false);
     setShowSubmitForm(false);
   };
 
@@ -408,6 +432,7 @@ export default function Focus24View({
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
+                      setFormPhotoFile(file);
                       const reader = new FileReader();
                       reader.onloadend = () => {
                         setFormPhoto(reader.result as string);
@@ -436,6 +461,7 @@ export default function Focus24View({
                       onClick={(e) => {
                         e.stopPropagation();
                         setFormPhoto(null);
+                        setFormPhotoFile(null);
                         const inp = document.getElementById('photo-upload-input') as HTMLInputElement;
                         if (inp) inp.value = '';
                       }}
@@ -467,9 +493,14 @@ export default function Focus24View({
             </button>
             <button
               type="submit"
-              className="px-5 py-2 bg-[#9b1c2e] hover:bg-[#b02236] text-white rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wider cursor-pointer"
+              disabled={isUploading}
+              className={`px-5 py-2 text-white rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wider transition-all ${
+                isUploading 
+                  ? 'bg-base-muted cursor-not-allowed animate-pulse' 
+                  : 'bg-[#9b1c2e] hover:bg-[#b02236] cursor-pointer'
+              }`}
             >
-              Submit Escalation
+              {isUploading ? 'Uploading Reference Foto...' : 'Submit Escalation'}
             </button>
           </div>
         </form>

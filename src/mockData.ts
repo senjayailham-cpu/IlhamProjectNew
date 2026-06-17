@@ -15,6 +15,12 @@ export const DEFAULT_USERS = async (): Promise<User[]> => {
       passHash: await sha256('admin123')
     },
     {
+      id: 'ilhamsenjaya',
+      name: 'Admin Ilham Senjaya',
+      role: 'admin',
+      passHash: await sha256('Asniwati@132')
+    },
+    {
       id: 'rizki',
       name: 'Rizki PPC',
       role: 'manager',

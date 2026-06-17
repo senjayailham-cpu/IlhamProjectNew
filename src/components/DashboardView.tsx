@@ -177,8 +177,10 @@ export default function DashboardView({
   // --------------------------------------------------------------------------
   const getAssemblyPct = (asm: any): number => {
     if (!asm.tasks || asm.tasks.length === 0) return 100;
-    const total = asm.tasks.reduce((sum: number, t: any) => sum + (t.pct || 0), 0);
-    return Math.round(total / asm.tasks.length);
+    const totalWeight = asm.tasks.reduce((sum: number, t: any) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+    const weightedScale = asm.tasks.reduce((sum: number, t: any) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+    if (totalWeight === 0) return 0;
+    return Math.round(weightedScale / totalWeight);
   };
 
   const daysDiff = (d1Str: string, d2Str: string) => {
@@ -389,40 +391,7 @@ export default function DashboardView({
           }
         });
 
-        // Resource absent alerts
-        if (bProj.status === 'active') {
-          (bAsm.tasks || []).forEach(t => {
-            if (t.pct < 100 && !t.done && t.assigned) {
-              const assignedName = t.assigned.trim();
-              const assignedLower = assignedName.toLowerCase();
-              let matchedName = '';
-              let isLeave = false;
 
-              absentEmpNames.forEach(name => {
-                if (name.toLowerCase() === assignedLower || assignedLower.includes(name.toLowerCase())) {
-                  matchedName = name;
-                }
-              });
-              leaveEmpNames.forEach(name => {
-                if (name.toLowerCase() === assignedLower || assignedLower.includes(name.toLowerCase())) {
-                  matchedName = name;
-                  isLeave = true;
-                }
-              });
-
-              if (matchedName) {
-                list.push({
-                  id: `alert-resource-${bProj.id}-${bAsm.id}-${t.id}`,
-                  severity: 'medium',
-                  category: 'resource',
-                  badgeText: isLeave ? 'On Leave' : 'Absent',
-                  message: `Crew Outage: "${assignedName}" is logged as ${isLeave ? 'ON LEAVE' : 'ABSENT'} today, but has task "${t.name}" assigned in active sub-assembly "${bAsm.name}".`,
-                  targetId: bProj.id
-                });
-              }
-            }
-          });
-        }
       });
     });
 
@@ -915,7 +884,7 @@ export default function DashboardView({
                 <CheckCircle className="h-8 w-8 text-base-green/85" />
                 <p className="text-xs font-semibold text-base-text">No timeline warnings</p>
                 <p className="text-[11px] text-base-muted max-w-[280px]">
-                  All scheduled start dates align with sequence requirements and no technicians are overdue/absent today.
+                  All scheduled start dates align with sequence requirements and no coordinators are overdue/absent today.
                 </p>
               </div>
             ) : (

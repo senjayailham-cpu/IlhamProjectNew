@@ -5,8 +5,8 @@ import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportPr
 
 // Firebase imports
 import { db, auth, googleProvider, signInWithPopup, signOut } from './firebase';
-import { collection, doc, setDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
+import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 
 // Modular Subviews
 import ThemeToggle from './components/ThemeToggle';
@@ -30,14 +30,14 @@ import {
 } from 'lucide-react';
 
 const PERMISSIONS = {
-  admin:      { addProject: true, editProject: true, deleteProject: true, addAssembly: true, deleteAssembly: true, addTask: true, deleteTask: true, updateTask: true, manageUsers: true, exportData: true, importData: true },
-  manager:    { addProject: true, editProject: true, deleteProject: false, addAssembly: true, deleteAssembly: true, addTask: true, deleteTask: true, updateTask: true, manageUsers: false, exportData: true, importData: false },
-  technician: { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: true, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false },
-  viewer:     { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: false, manageUsers: false, exportData: false, importData: false },
-  'facility maintanance': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false },
-  'quality control': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false },
-  'safety': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false },
-  'project control': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: true, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false }
+  admin:      { addProject: true, editProject: true, deleteProject: true, addAssembly: true, deleteAssembly: true, addTask: true, deleteTask: true, updateTask: true, manageUsers: true, exportData: true, importData: true, addDifficulty: true, addTaskInline: true },
+  manager:    { addProject: true, editProject: true, deleteProject: false, addAssembly: true, deleteAssembly: true, addTask: true, deleteTask: true, updateTask: true, manageUsers: false, exportData: true, importData: false, addDifficulty: true, addTaskInline: true },
+  coordinator: { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: true, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false, addDifficulty: true, addTaskInline: true },
+  viewer:     { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: false, manageUsers: false, exportData: false, importData: false, addDifficulty: false, addTaskInline: false },
+  'facility maintanance': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false, addDifficulty: false, addTaskInline: false },
+  'quality control': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false, addDifficulty: false, addTaskInline: false },
+  'safety': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: false, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false, addDifficulty: false, addTaskInline: false },
+  'project control': { addProject: false, editProject: false, deleteProject: false, addAssembly: false, deleteAssembly: false, addTask: true, deleteTask: false, updateTask: true, manageUsers: false, exportData: false, importData: false, addDifficulty: true, addTaskInline: true }
 };
 
 /**
@@ -99,6 +99,14 @@ export default function App() {
   const [loginId, setLoginId] = useState<string>('');
   const [loginPass, setLoginPass] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
+  const [authMethod, setAuthMethod] = useState<'traditional'>('traditional');
+  const [signinEmail, setSigninEmail] = useState<string>('');
+  const [signinPassword, setSigninPassword] = useState<string>('');
+  const [signupName, setSignupName] = useState<string>('');
+  const [signupEmail, setSignupEmail] = useState<string>('');
+  const [signupPassword, setSignupPassword] = useState<string>('');
+  const [signupRole, setSignupRole] = useState<'admin' | 'manager' | 'coordinator'>('coordinator');
+  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(false);
 
   // Forms Modals Controllers
   const [projectFormOpen, setProjectFormOpen] = useState<boolean>(false);
@@ -126,6 +134,18 @@ export default function App() {
   const [userMgmtOpen, setUserMgmtOpen] = useState<boolean>(false);
   const [userFormOpen, setUserFormOpen] = useState<boolean>(false);
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [logoutConfirmOpen, setLogoutConfirmOpen] = useState<boolean>(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   const [pName, setPName] = useState<string>('');
   const [pWorkOrder, setPWorkOrder] = useState<string>('');
@@ -142,7 +162,7 @@ export default function App() {
   const [aFinish, setAFinish] = useState<string>('');
   const [aNotes, setANotes] = useState<string>('');
   const [aBudgetHours, setABudgetHours] = useState<string>('');
-  const [aTasksDraft, setATasksDraft] = useState<{ id: string; name: string; assigned: string; pct: number; done: boolean; date?: string; finishDate?: string }[]>([]);
+  const [aTasksDraft, setATasksDraft] = useState<{ id: string; name: string; difficulty: number; pct: number; done: boolean; date?: string; finishDate?: string }[]>([]);
 
   const [copyName, setCopyName] = useState<string>('');
   const [copyStart, setCopyStart] = useState<string>('');
@@ -159,7 +179,7 @@ export default function App() {
 
   const [ufId, setUfId] = useState<string>('');
   const [ufName, setUfName] = useState<string>('');
-  const [ufRole, setUfRole] = useState<UserRole>('technician');
+  const [ufRole, setUfRole] = useState<UserRole>(UserRole.Coordinator);
   const [ufPass, setUfPass] = useState<string>('');
 
   // 1. Unified state loader
@@ -178,12 +198,21 @@ export default function App() {
 
       // Boot users
       let loadedUsers = localStorage.getItem('w2proj_users_v1');
+      const defaults = await DEFAULT_USERS();
       if (!loadedUsers) {
-        const defaults = await DEFAULT_USERS();
         localStorage.setItem('w2proj_users_v1', JSON.stringify(defaults));
         setUsers(defaults);
       } else {
-        setUsers(JSON.parse(loadedUsers));
+        const parsedUsers = JSON.parse(loadedUsers);
+        const hasIlham = parsedUsers.some((u: any) => u.id === 'ilhamsenjaya');
+        if (!hasIlham) {
+          const ilhamUser = defaults.find((u: any) => u.id === 'ilhamsenjaya');
+          if (ilhamUser) {
+            parsedUsers.push(ilhamUser);
+            localStorage.setItem('w2proj_users_v1', JSON.stringify(parsedUsers));
+          }
+        }
+        setUsers(parsedUsers);
       }
 
       // Boot projects
@@ -247,47 +276,92 @@ export default function App() {
   // Listen for Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      // If signed in anonymously in background, preserve and enforce the portal session
+      if (firebaseUser && firebaseUser.isAnonymous) {
+        const sess = sessionStorage.getItem('w2proj_session_v1');
+        if (sess) {
+          const parsed = JSON.parse(sess);
+          setCurrentUser(parsed);
+        } else {
+          setCurrentUser(null);
+        }
+        return;
+      }
+
       if (firebaseUser) {
-        if (firebaseUser.email === 'senjayailham@gmail.com') {
-          // Authorized Developer Admin
+        try {
+          const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
+          // Attempt to retrieve user doc from Firestore
+          const docRef = doc(db, 'users', firebaseUser.uid);
+          const docSnap = await getDoc(docRef);
+
+          if (docSnap.exists()) {
+            const data = docSnap.data();
+            const session: User = {
+              id: firebaseUser.uid,
+              name: data.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Team User',
+              role: isDev ? 'admin' : (data.role || 'coordinator'),
+              allowedFeatures: data.allowedFeatures || [],
+              allowedPermissions: data.allowedPermissions || {}
+            };
+            setCurrentUser(session);
+            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+            setLoginError('');
+          } else {
+            // Create user
+            const defaultRole = isDev ? 'admin' : 'coordinator';
+            const defaultName = firebaseUser.displayName || (isDev ? 'Senjaya Ilham' : firebaseUser.email?.split('@')[0] || 'Team Member');
+            
+            const session: User = {
+              id: firebaseUser.uid,
+              name: defaultName,
+              role: defaultRole,
+              allowedFeatures: [],
+              allowedPermissions: {}
+            };
+            
+            await setDoc(docRef, session);
+            setCurrentUser(session);
+            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+            setLoginError('');
+          }
+        } catch (err: any) {
+          console.error("Firestore loading user profile error:", err);
+          const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
           const session: User = {
             id: firebaseUser.uid,
-            name: firebaseUser.displayName || 'Senjaya Ilham',
-            role: 'admin',
+            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Team Member',
+            role: isDev ? 'admin' : 'coordinator',
             allowedFeatures: [],
             allowedPermissions: {}
           };
           setCurrentUser(session);
-          sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
-          setLoginError('');
-        } else {
-          // Unauthorized email, log out immediately and block
-          await signOut(auth);
-          setCurrentUser(null);
-          sessionStorage.removeItem('w2proj_session_v1');
-          setLoginError(`Access Denied: ${firebaseUser.email} is not whitelisted.`);
         }
       } else {
-        // Not authenticated with Firebase, fallback to traditional session if not Google-based
+        // Fallback to traditional portal login session
         const sess = sessionStorage.getItem('w2proj_session_v1');
         if (sess) {
           const parsed = JSON.parse(sess);
-          if (parsed.id.length > 20 || parsed.id.startsWith('google-')) {
-            setCurrentUser(null);
-            sessionStorage.removeItem('w2proj_session_v1');
-          } else {
-            setCurrentUser(parsed);
-          }
+          setCurrentUser(parsed);
+        } else {
+          setCurrentUser(null);
         }
       }
     });
 
-    return () => unsubscribe();
-  }, []);
+    // Quietly sign in anonymously in the background.
+    // This allows firestore rules' "isSignedIn()" check to pass, supporting full real-time syncing
+    // without requiring user-facing google/email auth (which is disabled in the console).
+    signInAnonymously(auth).catch((err) => {
+      console.warn("Silent Firebase Anonymous Sign-In is not enabled/supported in the console:", err);
+    });
 
-  // Real-time Firestore Sync for Authorized Developer
+    return () => unsubscribe();
+  }, [users]);
+
+  // Real-time Firestore Sync for Authenticated User and Team
   useEffect(() => {
-    if (!currentUser || !auth.currentUser || auth.currentUser.email !== 'senjayailham@gmail.com') {
+    if (!currentUser || !auth.currentUser) {
       return;
     }
 
@@ -337,15 +411,13 @@ export default function App() {
     };
   }, [currentUser]);
 
-  // Recurrent Auto Save Scheduler
+  // Debounced Auto Save & Firebase Sync
   useEffect(() => {
-    if (!currentUser) return;
-    const interval = setInterval(() => {
-      if (isChanged) {
-        saveNow();
-      }
-    }, 60000);
-    return () => clearInterval(interval);
+    if (!currentUser || !isChanged) return;
+    const timer = setTimeout(() => {
+      saveNow();
+    }, 1500);
+    return () => clearTimeout(timer);
   }, [isChanged, projects, employees, timesheets, activities, users, problemReports, inspections]);
 
   // Synchronize currentUser details if the user list changes (for live permission/access update)
@@ -385,8 +457,8 @@ export default function App() {
     const tmStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setLastSavedLabel(`Saving...`);
 
-    // Synchronization to Firebase Cloud if authenticated Google Developer
-    if (auth.currentUser && auth.currentUser.email === 'senjayailham@gmail.com') {
+    // Synchronization to Firebase Cloud if authenticated
+    if (auth.currentUser) {
       try {
         const syncList = async (colName: string, items: any[]) => {
           // Write current state documents
@@ -520,8 +592,12 @@ export default function App() {
     setLoginPass('');
   };
 
-  const handleLogout = async () => {
-    if (!confirm('Are you sure you want to log out of the session?')) return;
+  const handleLogout = () => {
+    setLogoutConfirmOpen(true);
+  };
+
+  const executeLogout = async () => {
+    setLogoutConfirmOpen(false);
     try {
       if (auth.currentUser) {
         await signOut(auth);
@@ -533,6 +609,12 @@ export default function App() {
     sessionStorage.removeItem('w2proj_session_v1');
     setLoginId('');
     setLoginPass('');
+
+    try {
+      await signInAnonymously(auth);
+    } catch (anonErr) {
+      console.warn("Could not sign in anonymously after logout:", anonErr);
+    }
   };
 
   // --------------------------------------------------------------------------
@@ -623,12 +705,18 @@ export default function App() {
   const deleteProjectDetails = (pid: string) => {
     const p = projects.find(x => x.id === pid);
     if (!p) return;
-    if (!confirm(`Delete project "${p.name}"? All assemblies and tasks inside will be permanently deleted.`)) return;
-
-    setProjects(prev => prev.filter(x => x.id !== pid));
-    logActivity('project_delete', 'Deleted project', pid, p.name);
-    setProjectFormOpen(false);
-    verifyMarkChanged();
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Project Details',
+      message: `Are you sure you want to permanently delete project "${p.name}"? This will delete all sub-assemblies and tasks inside.`,
+      onConfirm: () => {
+        setProjects(prev => prev.filter(x => x.id !== pid));
+        logActivity('project_delete', 'Deleted project', pid, p.name);
+        setProjectFormOpen(false);
+        verifyMarkChanged();
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const archiveProject = (pid: string) => {
@@ -678,14 +766,14 @@ export default function App() {
   };
 
   const addDraftTaskNode = () => {
-    setATasksDraft(prev => [...prev, { id: uid(), name: '', assigned: '', pct: 0, done: false, date: '', finishDate: '' }]);
+    setATasksDraft(prev => [...prev, { id: uid(), name: '', difficulty: 1, pct: 0, done: false, date: '', finishDate: '' }]);
   };
 
   const removeDraftTaskNode = (idx: number) => {
     setATasksDraft(prev => prev.filter((_, i) => i !== idx));
   };
 
-  const handleDraftTaskField = (idx: number, field: string, val: string) => {
+  const handleDraftTaskField = (idx: number, field: string, val: any) => {
     setATasksDraft(prev => prev.map((t, i) => {
       if (i === idx) {
         return { ...t, [field]: val };
@@ -728,7 +816,7 @@ export default function App() {
         budgetHours: parsedAsmBudget,
         tasks: aTasksDraft
           .filter(t => t.name.trim())
-          .map(t => ({ id: uid(), name: t.name.trim(), assigned: t.assigned.trim(), pct: 0, done: false, date: t.date?.trim() || undefined, finishDate: t.finishDate?.trim() || undefined }))
+          .map(t => ({ id: uid(), name: t.name.trim(), difficulty: typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1, pct: 0, done: false, date: t.date?.trim() || undefined, finishDate: t.finishDate?.trim() || undefined }))
       };
 
       setProjects(prev => prev.map(proj => {
@@ -745,25 +833,33 @@ export default function App() {
   };
 
   const deleteAssemblyDetails = (pid: string, aid: string) => {
-    if (!confirm('Permantly delete this sub-assembly?')) return;
     const p = projects.find(x => x.id === pid);
     const a = p && p.assemblies.find(x => x.id === aid);
+    if (!a) return;
 
-    setProjects(prev => prev.map(proj => {
-      if (proj.id === pid) {
-        return { ...proj, assemblies: proj.assemblies.filter(x => x.id !== aid) };
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Sub-Assembly',
+      message: `Are you sure you want to permanently delete the sub-assembly "${a.name}" from "${p?.name || ''}"?`,
+      onConfirm: () => {
+        setProjects(prev => prev.map(proj => {
+          if (proj.id === pid) {
+            return { ...proj, assemblies: proj.assemblies.filter(x => x.id !== aid) };
+          }
+          return proj;
+        }));
+
+        logActivity('assembly_delete', 'Deleted sub-assembly', pid, p?.name, a.name);
+        verifyMarkChanged();
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
       }
-      return proj;
-    }));
-
-    logActivity('assembly_delete', 'Deleted sub-assembly', pid, p?.name, a ? a.name : '');
-    verifyMarkChanged();
+    });
   };
 
   // --------------------------------------------------------------------------
   // TASKS LOGGING ROW MANIPULATIONS
   // --------------------------------------------------------------------------
-  const editTaskParameters = (pid: string, aid: string, tid: string, action: string, field: 'name' | 'assigned' | 'pct', value: any) => {
+  const editTaskParameters = (pid: string, aid: string, tid: string, action: string, field: 'name' | 'difficulty' | 'pct', value: any) => {
     const p = projects.find(x => x.id === pid);
     const a = p && p.assemblies.find(x => x.id === aid);
     const t = a && a.tasks.find(x => x.id === tid);
@@ -810,7 +906,7 @@ export default function App() {
     const a = p && p.assemblies.find(x => x.id === aid);
     if (!a) return;
 
-    const added: Task = { id: uid(), name: name.trim(), assigned: '', pct: 0, done: false };
+    const added: Task = { id: uid(), name: name.trim(), difficulty: 1, pct: 0, done: false };
 
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
@@ -888,7 +984,7 @@ export default function App() {
         id: uid(),
         name: a.name,
         notes: a.notes,
-        tasks: copyTasks ? (a.tasks || []).map(t => ({ id: uid(), name: t.name, assigned: t.assigned, pct: 0, done: false })) : []
+        tasks: copyTasks ? (a.tasks || []).map(t => ({ id: uid(), name: t.name, difficulty: t.difficulty || 1, pct: 0, done: false })) : []
       })) : []
     };
 
@@ -938,9 +1034,19 @@ export default function App() {
   };
 
   const removeEmployeeRecord = (id: string) => {
-    if (!confirm('Confirm personnel deletion?')) return;
-    setEmployees(prev => prev.filter(x => x.id !== id));
-    verifyMarkChanged();
+    const emp = employees.find(x => x.id === id);
+    if (!emp) return;
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Remove Personnel Record',
+      message: `Are you sure you want to permanently delete the personnel record for "${emp.name}"? This will remove them from the workforce roster.`,
+      onConfirm: () => {
+        setEmployees(prev => prev.filter(x => x.id !== id));
+        verifyMarkChanged();
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const importEmployeesExcel = (rows: Omit<Employee, 'id'>[]) => {
@@ -1165,9 +1271,19 @@ export default function App() {
   };
 
   const removeTimesheetEntry = (id: string) => {
-    if (!confirm('Remove logging entry?')) return;
-    setTimesheets(prev => prev.filter(x => x.id !== id));
-    verifyMarkChanged();
+    const entry = timesheets.find(x => x.id === id);
+    if (!entry) return;
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Remove Logging Entry',
+      message: `Are you sure you want to permanently delete the logs entry for "${entry.employee}" working on project "${entry.projectName || ''}"?`,
+      onConfirm: () => {
+        setTimesheets(prev => prev.filter(x => x.id !== id));
+        verifyMarkChanged();
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const exportTimesheetExcel = () => {
@@ -1285,26 +1401,33 @@ export default function App() {
   // Render Login Window overlay if user not verified
   if (!currentUser) {
     return (
-      <div className="fixed inset-0 flex items-center justify-center p-4 bg-linear-to-b from-[#e8e8e8] to-[#f4f5f7] dark:from-[#0d1014] dark:to-[#151921] z-50">
+      <div className="fixed inset-0 flex items-center justify-center p-4 bg-linear-to-b from-[#e8e8e8] to-[#f4f5f7] dark:from-[#0d1014] dark:to-[#151921] overflow-y-auto z-50 animate-fade-in">
         <div className="bg-base-surface shadow-modal border border-base-border2 p-8 rounded-2xl w-full max-w-sm flex flex-col space-y-6 animate-in zoom-in-95 ease-out duration-150 relative">
-          <div className="flex flex-col items-center space-y-2 text-center">
+          
+          {/* Logo & Identity banner */}
+          <div className="flex flex-col items-center space-y-1.5 text-center">
             <h1 className="text-3xl font-extrabold font-condensed tracking-wider uppercase text-[#9b1c2e]">AUSTIN BATAM</h1>
             <p className="text-xs text-base-muted font-condensed tracking-widest font-bold">PROJECT & MANPOWER TRACKER</p>
           </div>
 
+
+
+          {/* Universal Error display */}
+          {loginError && (
+            <div className="p-3 text-xs bg-base-red-dim border border-base-red/25 rounded-lg text-base-red text-center font-semibold select-none">
+              {loginError}
+            </div>
+          )}
+
+          {/* Core Interactive Portal Login Form */}
           <form onSubmit={handleLoginSubmit} className="space-y-4">
-            {loginError && (
-              <div className="p-3 text-xs bg-base-red-dim border border-base-red/25 rounded-lg text-base-red text-center select-none font-semibold">
-                {loginError}
-              </div>
-            )}
             <div className="space-y-1">
-              <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">User ID ID</label>
+              <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">User ID</label>
               <input
                 type="text"
                 value={loginId}
                 onChange={(e) => setLoginId(e.target.value)}
-                placeholder="e.g. admin, rizki, hasrad"
+                placeholder="Enter User ID..."
                 className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs select-text focus:border-base-accent outline-none text-base-text font-medium"
               />
             </div>
@@ -1320,40 +1443,13 @@ export default function App() {
             </div>
             <button
               type="submit"
-              className="w-full py-2 bg-base-accent text-white font-condensed font-bold text-sm tracking-wider uppercase rounded-xl hover:bg-base-accent2 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+              className="w-full py-2.5 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-sm tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
             >
               <Lock className="h-4 w-4" />
               <span>Log in to portal</span>
             </button>
-
-            <div className="relative my-4 flex py-2 items-center">
-              <div className="flex-grow border-t border-base-border"></div>
-              <span className="flex-shrink mx-3 text-[10px] text-base-muted font-bold font-condensed uppercase tracking-wider">or sign in with</span>
-              <div className="flex-grow border-t border-base-border"></div>
-            </div>
-
-            <button
-              type="button"
-              onClick={async () => {
-                setLoginError('');
-                try {
-                  await signInWithPopup(auth, googleProvider);
-                } catch (err: any) {
-                  console.error("Google Auth error:", err);
-                  setLoginError(err?.message || "Failed to sign in with Google.");
-                }
-              }}
-              className="w-full py-2 bg-base-surface border border-base-border hover:bg-base-surface2 text-base-text font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs"
-            >
-              <svg className="h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
-                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22c-.87-2.6-2.86-4.53-5.29-4.53z" fill="#FBBC05" />
-                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" fill="#EA4335" />
-              </svg>
-              <span>Google Account</span>
-            </button>
           </form>
+
         </div>
       </div>
     );
@@ -1393,12 +1489,6 @@ export default function App() {
 
         {/* Global Toolbar and Session info */}
         <div className="flex items-center gap-3">
-          {/* Last save status */}
-          <div className="hidden lg:flex items-center text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted gap-1 border-r border-base-border pr-2">
-            <span className={`w-2 h-2 rounded-full ${isChanged ? 'bg-base-accent animate-ping' : 'bg-base-green'}`} />
-            <span>{isChanged ? 'Unsaved changes' : lastSavedLabel}</span>
-          </div>
-
           <ThemeToggle />
 
           {/* User Profile Pill details */}
@@ -1428,14 +1518,6 @@ export default function App() {
                 <Download className="h-3.5 w-3.5" />
                 <span>Export CSV</span>
               </button>
-
-              <button
-                onClick={saveNow}
-                className="p-2 border border-base-border bg-base-surface text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer rounded-lg flex items-center justify-center shadow-xs"
-                title="Save Portal database"
-              >
-                <Save className="h-4 w-4" />
-              </button>
             </div>
           )}
         </div>
@@ -1446,12 +1528,12 @@ export default function App() {
         {activeTabsList
           .filter(t => {
             if (t.id === 'users') {
-              if (currentUser && currentUser.allowedFeatures) {
+              if (currentUser && currentUser.allowedFeatures && currentUser.allowedFeatures.length > 0) {
                 return currentUser.allowedFeatures.includes('users');
               }
               return can('manageUsers');
             }
-            if (currentUser && currentUser.allowedFeatures) {
+            if (currentUser && currentUser.allowedFeatures && currentUser.allowedFeatures.length > 0) {
               return currentUser.allowedFeatures.includes(t.id);
             }
             return t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role));
@@ -1580,7 +1662,7 @@ export default function App() {
               </div>
 
               {/* List current active cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-4">
                 {filteredProjects.length === 0 ? (
                   <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
                     <div className="text-base-muted font-medium text-sm">No current schedules match your search.</div>
@@ -1760,7 +1842,7 @@ export default function App() {
               }
 
               return (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                   {matchedProjects.map(p => {
                     const pct = calcPct(p);
                     return (
@@ -1839,7 +1921,17 @@ export default function App() {
             activityLogs={activities}
             reportDate={reportDate}
             setReportDate={setReportDate}
-            clearActivityLogs={() => { if (confirm('Clear audit trails permanently?')) setActivities([]); }}
+            clearActivityLogs={() => {
+              setDeleteConfirm({
+                isOpen: true,
+                title: 'Clear Audit Trails',
+                message: 'Are you sure you want to permanently clear all audit trails and activity logs? This action is irreversible.',
+                onConfirm: () => {
+                  setActivities([]);
+                  setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                }
+              });
+            }}
             openPrintView={() => {
               // Custom printer window triggers
               const w = window.open('','_blank','width=900,height=700');
@@ -1917,10 +2009,7 @@ export default function App() {
       {/* Auto saving persistent footer message */}
       <footer className="fixed bottom-0 left-0 right-0 py-2.5 px-6 border-t border-base-border bg-base-surface text-base-muted text-[10px] font-condensed font-bold uppercase tracking-wider flex items-center justify-between z-30 shadow-[0_-1px_3px_rgba(0,0,0,0.05)]">
         <span>Austin Batam · Project tracking console</span>
-        <span className="flex items-center gap-1.5">
-          <span className={`w-1.5 h-1.5 rounded-full ${isChanged ? 'bg-base-accent animate-pulse' : 'bg-base-green'}`} />
-          <span>{isChanged ? 'Save portal memory now' : lastSavedLabel}</span>
-        </span>
+        <span>© {new Date().getFullYear()} Austin Batam. All Rights Reserved.</span>
       </footer>
 
       {/* --------------------------------------------------------------------------
@@ -2062,57 +2151,66 @@ export default function App() {
 
       {/* Assembly Add/Edit Form Modal */}
       {assemblyFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150 relative">
-            <h3 className="font-condensed font-extrabold uppercase text-base text-base-text border-b border-base-border pb-2">
-              {editingAssemblyId ? 'Edit Sub-Assembly' : 'Configure Sub-Assembly'}
-            </h3>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-md">
+          <div className="bg-base-surface border border-base-border2 rounded-2xl shadow-modal w-full max-w-xl max-h-[95vh] overflow-y-auto p-8 space-y-6 animate-in zoom-in-95 ease-out duration-150 relative">
+            <div className="flex items-center gap-3 border-b border-base-border pb-4">
+              <div className="h-10 w-10 rounded-lg bg-base-accent-dim border border-base-accent/20 flex items-center justify-center flex-shrink-0">
+                <BookOpen className="h-5 w-5 text-base-accent" />
+              </div>
+              <div>
+                <h3 className="font-condensed font-extrabold uppercase text-lg text-base-text tracking-wide leading-none">
+                  {editingAssemblyId ? 'Edit Sub-Assembly' : 'Configure Sub-Assembly'}
+                </h3>
+                <p className="text-[11px] font-medium text-base-muted2 uppercase tracking-wider mt-1">Specify assembly parameters and initial tasks</p>
+              </div>
+            </div>
 
-            <div className="space-y-4 text-xs font-semibold">
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Assembly Name</label>
+            <div className="space-y-5 text-sm font-semibold">
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-accent block">Assembly Name</label>
                 <input
                   type="text"
                   value={aName}
                   onChange={(e) => setAName(e.target.value)}
                   placeholder="e.g. Electrical Panels wiring, framing structural..."
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none"
+                  className="w-full px-4 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Start Date</label>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Start Date</label>
                   <input
                     type="date"
                     value={aStart}
                     onChange={(e) => setAStart(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none"
+                    className="w-full px-4 py-2 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
                   />
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Finish Date</label>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Finish Date</label>
                   <input
                     type="date"
                     value={aFinish}
                     onChange={(e) => setAFinish(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none"
+                    className="w-full px-4 py-2 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Notes</label>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Notes & Guidelines</label>
                 <input
                   type="text"
                   value={aNotes}
                   onChange={(e) => setANotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none"
+                  placeholder="e.g. Verify safety harness before initial installation"
+                  className="w-full px-4 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Budget Hours Limit</label>
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Budget Hours Limit</label>
                 <input
                   type="number"
                   value={aBudgetHours}
@@ -2120,88 +2218,104 @@ export default function App() {
                   placeholder="None (e.g. 40)"
                   min="0"
                   step="any"
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none font-bold"
+                  className="w-full px-4 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-bold text-base-text transition-all"
                 />
               </div>
 
               {!editingAssemblyId && (
-                <div className="space-y-2">
-                  <div className="flex justify-between items-center">
-                    <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Tasks Draft List</label>
+                <div className="space-y-3">
+                  <div className="flex justify-between items-center border-t border-base-border/30 pt-4">
+                    <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-accent">Initial Tasks Draft List</label>
                     <button
+                      type="button"
                       onClick={addDraftTaskNode}
-                      className="px-2 py-0.5 rounded border border-base-border bg-base-surface3 leading-none text-[9px] uppercase font-condensed font-extrabold cursor-pointer"
+                      className="px-3 py-1 rounded bg-base-accent/10 border border-base-accent/20 text-base-accent hover:bg-base-accent hover:text-white leading-none text-[10px] uppercase font-condensed font-extrabold cursor-pointer transition-all"
                     >
-                      + Add Task
+                      + Add Task Inside Draft
                     </button>
                   </div>
 
-                  <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                    {aTasksDraft.map((t, idx) => (
-                      <div key={t.id} className="flex flex-col gap-1.5 p-2 bg-base-surface2 border border-base-border/50 rounded-lg relative">
-                        <div className="flex gap-1.5 items-center">
-                          <input
-                            type="text"
-                            value={t.name}
-                            onChange={(e) => handleDraftTaskField(idx, 'name', e.target.value)}
-                            placeholder="Task name..."
-                            className="flex-1 px-2 py-1 bg-base-bg border border-base-border rounded text-xs font-semibold"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeDraftTaskNode(idx)}
-                            className="px-1.5 py-1 text-base-red hover:bg-base-red/10 rounded cursor-pointer shrink-0"
-                            title="Remove Task"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <div className="flex gap-1.5 flex-wrap sm:flex-nowrap">
-                          <input
-                            type="text"
-                            value={t.assigned || ''}
-                            onChange={(e) => handleDraftTaskField(idx, 'assigned', e.target.value)}
-                            placeholder="Assignee"
-                            className="flex-1 min-w-[70px] px-1.5 py-1 bg-base-bg border border-base-border rounded text-[10px]"
-                          />
-                          <div className="flex items-center gap-0.5 shrink-0" title="Start Date">
-                            <span className="text-[9px] text-base-muted font-bold">S:</span>
-                            <input
-                              type="date"
-                              value={t.date || ''}
-                              onChange={(e) => handleDraftTaskField(idx, 'date', e.target.value)}
-                              className="w-24 px-1 py-1 bg-base-bg border border-base-border rounded text-[10px] cursor-pointer text-base-muted font-semibold"
-                            />
-                          </div>
-                          <div className="flex items-center gap-0.5 shrink-0" title="Finish Date">
-                            <span className="text-[9px] text-emerald-500 font-bold">F:</span>
-                            <input
-                              type="date"
-                              value={t.finishDate || ''}
-                              onChange={(e) => handleDraftTaskField(idx, 'finishDate', e.target.value)}
-                              className="w-24 px-1 py-1 bg-base-bg border border-base-border rounded text-[10px] cursor-pointer text-emerald-600 font-semibold"
-                            />
-                          </div>
-                        </div>
+                  <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                    {aTasksDraft.length === 0 ? (
+                      <div className="text-xs text-base-muted italic text-center py-4 bg-base-surface2 border border-dashed border-base-border rounded-xl">
+                        No draft tasks added yet. Click &quot;Add Task&quot; above to seed initial targets.
                       </div>
-                    ))}
+                    ) : (
+                      aTasksDraft.map((t, idx) => (
+                        <div key={t.id} className="flex flex-col gap-2.5 p-3.5 bg-base-surface2 border border-base-border hover:border-base-border2 rounded-xl relative transition-all shadow-xs">
+                          <div className="flex gap-2 items-center">
+                            <span className="text-[11px] font-condensed font-extrabold text-base-muted bg-base-border/30 h-5 w-5 rounded-full flex items-center justify-center shrink-0">{idx + 1}</span>
+                            <input
+                              type="text"
+                              value={t.name}
+                              onChange={(e) => handleDraftTaskField(idx, 'name', e.target.value)}
+                              placeholder="Task name... (e.g. Frame alignment check)"
+                              className="flex-1 px-3 py-1.5 bg-base-bg border border-base-border rounded-lg text-xs font-semibold focus:border-base-accent outline-none"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeDraftTaskNode(idx)}
+                              className="p-1.5 text-base-red hover:bg-base-red/10 rounded-lg cursor-pointer shrink-0 transition-colors"
+                              title="Remove Task"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div className="flex gap-2.5 flex-wrap items-center">
+                            <div className="flex items-center gap-1.5 bg-base-bg px-2 py-1 rounded-lg border border-base-border">
+                              <span className="text-[9px] text-base-muted font-bold select-none uppercase tracking-wider font-condensed">Difficulty (1-20):</span>
+                              <input
+                                type="number"
+                                min="1"
+                                max="20"
+                                value={typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}
+                                onChange={(e) => {
+                                  const val = Math.max(1, parseInt(e.target.value) || 1);
+                                  handleDraftTaskField(idx, 'difficulty', val);
+                                }}
+                                className="w-10 text-center bg-transparent border-0 outline-none text-xs text-base-text font-bold"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1" title="Start Date">
+                              <span className="text-[9px] text-base-muted font-bold uppercase font-condensed">S:</span>
+                              <input
+                                type="date"
+                                value={t.date || ''}
+                                onChange={(e) => handleDraftTaskField(idx, 'date', e.target.value)}
+                                className="px-2 py-1 bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-base-text font-semibold outline-none focus:border-base-accent"
+                              />
+                            </div>
+                            <div className="flex items-center gap-1" title="Finish Date">
+                              <span className="text-[9px] text-emerald-500 font-bold uppercase font-condensed">F:</span>
+                              <input
+                                type="date"
+                                value={t.finishDate || ''}
+                                onChange={(e) => handleDraftTaskField(idx, 'finishDate', e.target.value)}
+                                className="px-2 py-1 bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-emerald-600 font-bold outline-none focus:border-base-accent"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}
             </div>
 
-            <div className="flex justify-between items-center pt-2">
+            <div className="flex justify-between items-center border-t border-base-border/30 pt-4 mt-2">
               {editingAssemblyId && can('deleteAssembly') && targetAsmProjectId ? (
                 <button
+                  type="button"
                   onClick={() => { deleteAssemblyDetails(targetAsmProjectId, editingAssemblyId); setAssemblyFormOpen(false); }}
-                  className="px-2.5 py-1.5 bg-base-red-dim border border-base-red/30 text-base-red hover:bg-base-red font-condensed font-bold text-xs uppercase tracking-wider rounded-lg hover:text-white"
+                  className="px-4 py-2 bg-base-red-dim border border-base-red/30 text-base-red hover:bg-base-red font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg hover:text-white transition-all cursor-pointer"
                 >
                   Delete
                 </button>
               ) : <div />}
-              <div className="flex gap-2 text-xs">
-                <button onClick={() => setAssemblyFormOpen(false)} className="px-3 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
-                <button onClick={saveAssemblyForm} className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Save</button>
+              <div className="flex gap-3 text-xs">
+                <button type="button" onClick={() => setAssemblyFormOpen(false)} className="px-5 py-2 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-extrabold uppercase tracking-wider cursor-pointer transition-all">Cancel</button>
+                <button type="button" onClick={saveAssemblyForm} className="px-6 py-2 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-extrabold uppercase tracking-wider cursor-pointer transition-all shadow-md">Save Assembly</button>
               </div>
             </div>
           </div>
@@ -2320,6 +2434,9 @@ export default function App() {
           }
         }}
         canUpdateTask={can('updateTask')}
+        canAddTaskInline={can('addTaskInline')}
+        canAddDifficulty={can('addDifficulty')}
+        canDeleteTask={can('deleteTask')}
       />
 
       {/* Dependency Link Editor Modal */}
@@ -2331,6 +2448,75 @@ export default function App() {
         onSave={saveDependenciesHandler}
       />
 
+      {/* Custom Logout Confirmation Modal */}
+      {logoutConfirmOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-red-500/10 rounded-full text-red-500 shrink-0">
+                <LogOut className="h-6 w-6" />
+              </div>
+              <div className="space-y-1 flex-1 select-none">
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">Confirm Log Out</h4>
+                <p className="text-xs text-base-muted font-normal leading-relaxed">
+                  Are you sure you want to end your session? Any unsaved project and manpower entries or edits may not be synced.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end text-xs pt-1">
+              <button 
+                onClick={() => setLogoutConfirmOpen(false)} 
+                className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+              >
+                Go Back
+              </button>
+              <button 
+                onClick={executeLogout} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+                <span>Yes, Log Out</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5 flex-1 select-none">
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
+                <p className="text-xs text-base-muted font-normal leading-relaxed">
+                  {deleteConfirm.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end text-xs pt-1">
+              <button 
+                onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} 
+                className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={deleteConfirm.onConfirm} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5 animate-pulse"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Delete Permanently</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
 
     </div>

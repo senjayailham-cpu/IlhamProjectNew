@@ -214,9 +214,9 @@ export default function GanttView({
       (p.assemblies || []).forEach(a => {
         const aStart = a.start ? new Date(a.start + 'T00:00:00') : pStart;
         const aEnd = a.finish ? new Date(a.finish + 'T00:00:00') : pEnd;
-        const aDone = a.tasks.filter(t => t.done).length;
-        const aTotal = a.tasks.length;
-        const aPct = aTotal > 0 ? Math.round((aDone / aTotal) * 100) : 0;
+        const aTotalWeight = (a.tasks || []).reduce((sum, t) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+        const aWeightedScale = (a.tasks || []).reduce((sum, t) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+        const aPct = aTotalWeight > 0 ? Math.round(aWeightedScale / aTotalWeight) : 0;
 
         const aRowH = 36;
         const aMidY = currentY + aRowH / 2;
@@ -742,9 +742,9 @@ export default function GanttView({
                         (p.assemblies || []).map(a => {
                           const aKey = `a:${p.id}:${a.id}`;
                           const isAssemblyColl = !!ganttCollapsed[aKey];
-                          const aDone = a.tasks.filter(t => t.done).length;
-                          const aTotal = a.tasks.length;
-                          const aPct = aTotal > 0 ? Math.round((aDone / aTotal) * 100) : 0;
+                          const aTotalWeight = (a.tasks || []).reduce((sum, t) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+                          const aWeightedScale = (a.tasks || []).reduce((sum, t) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
+                          const aPct = aTotalWeight > 0 ? Math.round(aWeightedScale / aTotalWeight) : 0;
 
                           return (
                             <React.Fragment key={a.id}>
@@ -803,7 +803,13 @@ export default function GanttView({
                                           <div className="flex items-center gap-1 min-w-0 flex-1">
                                             <span className="text-base-muted2/50 font-bold text-[10px] select-none">↳</span>
                                             <span className="text-[11px] text-base-muted overflow-hidden text-ellipsis whitespace-nowrap block" title={t.name}>
-                                              {t.name} {t.assigned ? `(${t.assigned})` : ''}
+                                              {t.name}
+                                            </span>
+                                            <span 
+                                              className="text-[9px] px-1 bg-base-accent/10 text-base-accent rounded font-mono font-bold shrink-0 select-none"
+                                              title="Task Difficulty Level"
+                                            >
+                                              D:{typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}
                                             </span>
                                           </div>
                                           <div className="flex items-center gap-1.5 shrink-0">
