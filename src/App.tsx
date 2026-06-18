@@ -65,6 +65,7 @@ const highlightText = (text: string, search: string) => {
 export default function App() {
   // Global States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [fbUser, setFbUser] = useState<any>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -277,6 +278,8 @@ export default function App() {
   // Listen for Firebase Auth state changes
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setFbUser(firebaseUser || null);
+
       // If signed in anonymously in background, preserve and enforce the portal session
       if (firebaseUser && firebaseUser.isAnonymous) {
         const sess = sessionStorage.getItem('w2proj_session_v1');
@@ -353,16 +356,18 @@ export default function App() {
     // Quietly sign in anonymously in the background.
     // This allows firestore rules' "isSignedIn()" check to pass, supporting full real-time syncing
     // without requiring user-facing google/email auth (which is disabled in the console).
-    signInAnonymously(auth).catch((err) => {
-      console.warn("Silent Firebase Anonymous Sign-In is not enabled/supported in the console:", err);
-    });
+    if (!auth.currentUser) {
+      signInAnonymously(auth).catch((err) => {
+        console.warn("Silent Firebase Anonymous Sign-In is not enabled/supported in the console:", err);
+      });
+    }
 
     return () => unsubscribe();
-  }, [users]);
+  }, []);
 
   // Real-time Firestore Sync for Authenticated User and Team
   useEffect(() => {
-    if (!currentUser || !auth.currentUser) {
+    if (!currentUser || !fbUser) {
       return;
     }
 
@@ -410,7 +415,7 @@ export default function App() {
     return () => {
       unsubscribers.forEach((unsub) => unsub());
     };
-  }, [currentUser]);
+  }, [currentUser, fbUser]);
 
   // Debounced Auto Save & Firebase Sync
   useEffect(() => {
@@ -2264,16 +2269,7 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="space-y-1.5">
-                <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Notes & Guidelines</label>
-                <input
-                  type="text"
-                  value={aNotes}
-                  onChange={(e) => setANotes(e.target.value)}
-                  placeholder="e.g. Verify safety harness before initial installation"
-                  className="w-full px-4 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
-                />
-              </div>
+
 
               <div className="space-y-1.5">
                 <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Budget Hours Limit</label>

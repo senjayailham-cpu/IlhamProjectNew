@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Employee } from '../types';
 import { esc } from '../utils/projectUtils';
-import { Search, UserPlus, Upload, ShieldCheck, Heart, User, Trash2, Edit } from 'lucide-react';
+import { Search, UserPlus, Upload, ShieldCheck, Heart, User, Trash2, Edit, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -62,6 +62,18 @@ export default function EmployeesView({
     if (b === '— No coordinator —') return -1;
     return a.localeCompare(b);
   });
+
+  const collapseAll = () => {
+    const next: Record<string, boolean> = {};
+    coordNames.forEach(c => {
+      next[c] = true;
+    });
+    setCollapsedGroups(next);
+  };
+
+  const expandAll = () => {
+    setCollapsedGroups({});
+  };
 
   // Lazy-load SheetJS on-demand for spreadsheet uploading
   const triggerExcelUpload = () => {
@@ -166,6 +178,29 @@ export default function EmployeesView({
               placeholder="Search name, position, location, manager..."
               className="pl-9 pr-4 py-1.5 bg-base-surface text-base-text text-xs rounded-lg border border-base-border focus:border-base-accent outline-none w-64 transition-all"
             />
+          </div>
+
+          {/* Collapse / Uncollapse All buttons */}
+          <div id="employee-collapse-controls" className="flex items-center gap-1 bg-base-surface border border-base-border rounded-lg p-0.5 shadow-sm">
+            <button
+              id="emp-collapse-all-btn"
+              onClick={collapseAll}
+              title="Collapse All Groups"
+              className="px-2 py-1 rounded hover:bg-base-surface3 hover:text-base-text text-base-muted flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <ChevronsDownUp className="h-3.5 w-3.5 text-base-accent" />
+              <span className="font-condensed font-bold uppercase text-[10px] tracking-wider">Collapse All</span>
+            </button>
+            <div className="h-4 w-px bg-base-border" />
+            <button
+              id="emp-expand-all-btn"
+              onClick={expandAll}
+              title="Uncollapse All Groups"
+              className="px-2 py-1 rounded hover:bg-base-surface3 hover:text-base-text text-base-muted flex items-center gap-1.5 transition-colors cursor-pointer"
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5 text-base-accent" />
+              <span className="font-condensed font-bold uppercase text-[10px] tracking-wider">Uncollapse All</span>
+            </button>
           </div>
         </div>
 
