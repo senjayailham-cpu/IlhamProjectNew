@@ -6,43 +6,31 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
-    function isAdmin() {
-      return isSignedIn() && (
-        request.auth.uid == "psToBehuTudgpMsgg5xT3h63H6C3" ||
-        request.auth.token.email == "senjayailham@gmail.com"
-      );
-    }
-
-    // Restrict all collections strictly to signed-in users, ensuring admin always has complete access
+    // Restrict all collections strictly to signed-in or unsigned/anonymous users dynamically
     match /projects/{projectId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /employees/{employeeId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /timesheets/{timesheetId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /activities/{activityId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /users/{userId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /problemReports/{reportId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
     match /inspections/{inspectionId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read, write: if true;
     }
 
     match /system_config/{configId} {
-      allow read, write: if isSignedIn();
+      allow read, write: if true;
     }
   }
 }

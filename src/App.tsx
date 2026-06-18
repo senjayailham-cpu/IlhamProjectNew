@@ -422,10 +422,6 @@ export default function App() {
 
   // Real-time Firestore Sync for Authenticated User and Team
   useEffect(() => {
-    if (!fbUser) {
-      return;
-    }
-
     const unsubscribers: (() => void)[] = [];
     let active = true;
 
@@ -548,8 +544,8 @@ export default function App() {
     const tmStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     setLastSavedLabel(`Saving...`);
 
-    // Synchronization to Firebase Cloud if authenticated
-    if (auth.currentUser) {
+    // Synchronization to Firebase Cloud (Unconditional for multi-device live sync)
+    if (db) {
       try {
         const syncList = async (colName: string, items: any[]) => {
           // Write current state documents
