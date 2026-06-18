@@ -62,6 +62,53 @@ const highlightText = (text: string, search: string) => {
   );
 };
 
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
 export default function App() {
   // Global States
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -372,47 +419,77 @@ export default function App() {
     }
 
     const unsubscribers: (() => void)[] = [];
+    let active = true;
 
-    // Generic helper to listen & seed collection
-    const listenToCollection = (colName: string, stateSetter: (data: any) => void, defaultData: any) => {
-      const colRef = collection(db, colName);
-      const unsub = onSnapshot(colRef, (snapshot) => {
-        const list: any[] = [];
-        snapshot.forEach((d) => {
-          list.push(d.data());
-        });
-
-        if (list.length > 0) {
-          stateSetter(list);
-        } else {
-          // If Firestore is empty, seed it with initial defaults
-          const promises = defaultData.map((item: any) => setDoc(doc(db, colName, item.id), item));
-          Promise.all(promises).then(() => {
-            stateSetter(defaultData);
-          }).catch(err => {
-            console.error(`Error seeding initial ${colName} to cloud:`, err);
-          });
+    const setupSync = async () => {
+      try {
+        const initDocRef = doc(db, 'system_config', 'status');
+        let initDocSnap;
+        try {
+          initDocSnap = await getDoc(initDocRef);
+        } catch (error) {
+          handleFirestoreError(error, OperationType.GET, 'system_config/status');
+          return;
         }
-      }, (error) => {
-        console.error(`Firestore real-time error on ${colName}:`, error);
-      });
-      unsubscribers.push(unsub);
+
+        const isInitialized = initDocSnap.exists() && initDocSnap.data()?.seeded;
+
+        if (!active) return;
+
+        if (!isInitialized) {
+          const defUsers = await DEFAULT_USERS();
+          const seedPromises = [
+            ...DEFAULT_PROJECTS.map(item => setDoc(doc(db, 'projects', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `projects/${item.id}`))),
+            ...DEFAULT_EMPLOYEES.map(item => setDoc(doc(db, 'employees', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `employees/${item.id}`))),
+            ...DEFAULT_TIMESHEETS.map(item => setDoc(doc(db, 'timesheets', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `timesheets/${item.id}`))),
+            ...DEFAULT_ACTIVITIES.map(item => setDoc(doc(db, 'activities', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `activities/${item.id}`))),
+            ...DEFAULT_PROBLEM_REPORTS.map(item => setDoc(doc(db, 'problemReports', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `problemReports/${item.id}`))),
+            ...DEFAULT_INSPECTION_REQUESTS.map(item => setDoc(doc(db, 'inspections', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `inspections/${item.id}`))),
+            ...defUsers.map(item => setDoc(doc(db, 'users', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${item.id}`))),
+          ];
+          await Promise.all(seedPromises);
+          try {
+            await setDoc(initDocRef, { seeded: true });
+          } catch (error) {
+            handleFirestoreError(error, OperationType.WRITE, 'system_config/status');
+          }
+        }
+
+        if (!active) return;
+
+        // Generic helper to listen to collections without re-seeding recursion
+        const listenToCollection = (colName: string, stateSetter: (data: any) => void) => {
+          const colRef = collection(db, colName);
+          const unsub = onSnapshot(colRef, (snapshot) => {
+            const list: any[] = [];
+            snapshot.forEach((d) => {
+              list.push(d.data());
+            });
+            stateSetter(list);
+          }, (error) => {
+            console.error(`Firestore real-time error on ${colName}:`, error);
+            handleFirestoreError(error, OperationType.GET, colName);
+          });
+          unsubscribers.push(unsub);
+        };
+
+        // Listen to all core collections
+        listenToCollection('projects', setProjects);
+        listenToCollection('employees', setEmployees);
+        listenToCollection('timesheets', setTimesheets);
+        listenToCollection('activities', setActivities);
+        listenToCollection('problemReports', setProblemReports);
+        listenToCollection('inspections', setInspections);
+        listenToCollection('users', setUsers);
+      } catch (err) {
+        console.error("Error setting up Firestore real-time sync & seeding:", err);
+      }
     };
 
-    // Listen to all core collections
-    listenToCollection('projects', setProjects, DEFAULT_PROJECTS);
-    listenToCollection('employees', setEmployees, DEFAULT_EMPLOYEES);
-    listenToCollection('timesheets', setTimesheets, DEFAULT_TIMESHEETS);
-    listenToCollection('activities', setActivities, DEFAULT_ACTIVITIES);
-    listenToCollection('problemReports', setProblemReports, DEFAULT_PROBLEM_REPORTS);
-    listenToCollection('inspections', setInspections, DEFAULT_INSPECTION_REQUESTS);
-
-    // Load default users to seed user management
-    DEFAULT_USERS().then(defUsers => {
-      listenToCollection('users', setUsers, defUsers);
-    });
+    setupSync();
 
     return () => {
+      active = false;
       unsubscribers.forEach((unsub) => unsub());
     };
   }, [currentUser, fbUser]);
