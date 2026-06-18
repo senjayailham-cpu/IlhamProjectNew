@@ -25,7 +25,7 @@ import UsersAccessView from './components/UsersAccessView';
 // Lucide Icons
 import {
   Folder, Clock, CheckCircle, AlertTriangle, Users, BookOpen, FileText,
-  UserPlus, Upload, ShieldCheck, Trash2, Edit, Copy, ChevronDown, LogOut, Save, Search, Lock,
+  UserPlus, Upload, ShieldCheck, Trash2, Edit, Copy, ChevronDown, LogOut, Save, Search, Lock, Key,
   Archive, RotateCcw, Download
 } from 'lucide-react';
 
@@ -148,6 +148,14 @@ export default function App() {
   const [loginId, setLoginId] = useState<string>('');
   const [loginPass, setLoginPass] = useState<string>('');
   const [loginError, setLoginError] = useState<string>('');
+
+  // Change Password Modal States
+  const [changePasswordModalOpen, setChangePasswordModalOpen] = useState<boolean>(false);
+  const [currentPasswordInput, setCurrentPasswordInput] = useState<string>('');
+  const [newPasswordInput, setNewPasswordInput] = useState<string>('');
+  const [confirmPasswordInput, setConfirmPasswordInput] = useState<string>('');
+  const [changePasswordError, setChangePasswordError] = useState<string>('');
+  const [changePasswordSuccess, setChangePasswordSuccess] = useState<string>('');
   const [authMethod, setAuthMethod] = useState<'traditional'>('traditional');
   const [signinEmail, setSigninEmail] = useState<string>('');
   const [signinPassword, setSigninPassword] = useState<string>('');
@@ -414,7 +422,7 @@ export default function App() {
 
   // Real-time Firestore Sync for Authenticated User and Team
   useEffect(() => {
-    if (!currentUser || !fbUser) {
+    if (!fbUser) {
       return;
     }
 
@@ -698,6 +706,61 @@ export default function App() {
     } catch (anonErr) {
       console.warn("Could not sign in anonymously after logout:", anonErr);
     }
+  };
+
+  const handleChangePasswordSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setChangePasswordError('');
+    setChangePasswordSuccess('');
+
+    if (!currentUser) {
+      setChangePasswordError('You must be logged in to change your password.');
+      return;
+    }
+
+    const oldPass = currentPasswordInput.trim();
+    const newPass = newPasswordInput.trim();
+    const confirmPass = confirmPasswordInput.trim();
+
+    if (!oldPass || !newPass || !confirmPass) {
+      setChangePasswordError('Please fill in all the password fields.');
+      return;
+    }
+
+    if (newPass !== confirmPass) {
+      setChangePasswordError('The new passwords do not match.');
+      return;
+    }
+
+    if (newPass.length < 4) {
+      setChangePasswordError('New password must be at least 4 characters long.');
+      return;
+    }
+
+    const testUser = users.find(u => u.id === currentUser.id);
+    if (!testUser) {
+      setChangePasswordError('Unable to locate your user account.');
+      return;
+    }
+
+    const hashedOld = await sha256(oldPass);
+    if (hashedOld !== testUser.passHash) {
+      setChangePasswordError('Incorrect current password.');
+      return;
+    }
+
+    const hashedNew = await sha256(newPass);
+
+    // Update users state
+    setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, passHash: hashedNew } : u));
+    setIsChanged(true);
+
+    logActivity('user_edit', `Changed own password`, undefined, undefined, undefined, undefined, undefined, undefined, `User ${currentUser.name} updated their sign-in password`);
+
+    setChangePasswordSuccess('Password updated successfully!');
+    setCurrentPasswordInput('');
+    setNewPasswordInput('');
+    setConfirmPasswordInput('');
   };
 
   // --------------------------------------------------------------------------
@@ -1580,6 +1643,17 @@ export default function App() {
               <span className="text-xs font-bold text-base-text block">{currentUser.name}</span>
               <span className="text-[9px] font-condensed font-extrabold text-base-accent uppercase mt-1 tracking-wider">{currentUser.role}</span>
             </div>
+            <button
+              onClick={() => {
+                setChangePasswordError('');
+                setChangePasswordSuccess('');
+                setChangePasswordModalOpen(true);
+              }}
+              className="p-1 px-1.5 rounded-full text-base-muted hover:text-base-accent hover:bg-base-accent/10 cursor-pointer flex items-center justify-center font-bold"
+              title="Change Password"
+            >
+              <Key className="h-3.5 w-3.5" />
+            </button>
             <button
               onClick={handleLogout}
               className="p-1 px-2.5 rounded-full text-base-muted hover:text-base-red hover:bg-base-red/10 cursor-pointer flex items-center justify-center font-bold text-xs"
@@ -2618,6 +2692,97 @@ export default function App() {
                 <span>Yes, Log Out</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Change Password Modal */}
+      {changePasswordModalOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-4">
+            <div className="flex items-center gap-3 border-b border-base-border pb-3 select-none">
+              <div className="p-2 bg-base-accent/10 rounded-full text-base-accent">
+                <Key className="h-5 w-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">Change Password</h4>
+                <p className="text-[10px] text-base-muted font-normal uppercase tracking-wider">Update your account credentials</p>
+              </div>
+            </div>
+
+            {changePasswordError && (
+              <div className="p-2.5 text-xs bg-base-red-dim border border-base-red/25 rounded-lg text-base-red text-center font-semibold">
+                {changePasswordError}
+              </div>
+            )}
+
+            {changePasswordSuccess && (
+              <div className="p-2.5 text-xs bg-emerald-500/10 border border-emerald-500/25 rounded-lg text-emerald-500 text-center font-semibold">
+                {changePasswordSuccess}
+              </div>
+            )}
+
+            <form onSubmit={handleChangePasswordSubmit} className="space-y-3.5">
+              <div className="space-y-1">
+                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Current Password</label>
+                <input
+                  type="password"
+                  value={currentPasswordInput}
+                  onChange={(e) => setCurrentPasswordInput(e.target.value)}
+                  placeholder="Enter current password..."
+                  required
+                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">New Password</label>
+                <input
+                  type="password"
+                  value={newPasswordInput}
+                  onChange={(e) => setNewPasswordInput(e.target.value)}
+                  placeholder="At least 4 characters..."
+                  required
+                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={confirmPasswordInput}
+                  onChange={(e) => setConfirmPasswordInput(e.target.value)}
+                  placeholder="Re-type new password..."
+                  required
+                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                />
+              </div>
+
+              <div className="flex gap-2.5 justify-end text-xs pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setChangePasswordModalOpen(false);
+                    setCurrentPasswordInput('');
+                    setNewPasswordInput('');
+                    setConfirmPasswordInput('');
+                    setChangePasswordError('');
+                    setChangePasswordSuccess('');
+                  }}
+                  className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+                >
+                  <Save className="h-3.5 w-3.5" />
+                  <span>Update Password</span>
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
