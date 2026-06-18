@@ -49,6 +49,19 @@ export default function UsersAccessView({
   const [showPassReset, setShowPassReset] = useState<boolean>(false);
   const [newPasswordValue, setNewPasswordValue] = useState<string>('');
 
+  // Delete/Action Confirmation States
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   const selectedUser = users.find(u => u.id === selectedUserId);
 
   const getIsTabVisibleByDefault = (tabId: string, role: string) => {
@@ -111,30 +124,42 @@ export default function UsersAccessView({
     const target = users.find(u => u.id === uId);
     if (!target) return;
 
-    if (!confirm(`Are you sure you want to permanently delete user "${target.name}" (${target.id})?`)) return;
-
-    const updated = users.filter(u => u.id !== uId);
-    onUpdateUsers(updated);
-    if (selectedUserId === uId) {
-      setSelectedUserId(updated[0]?.id || '');
-    }
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete User Account',
+      message: `Are you sure you want to permanently delete user "${target.name}" (${target.id})? This will remove all their access permissions.`,
+      onConfirm: () => {
+        const updated = users.filter(u => u.id !== uId);
+        onUpdateUsers(updated);
+        if (selectedUserId === uId) {
+          setSelectedUserId(updated[0]?.id || '');
+        }
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const handleResetToDefaults = () => {
     if (!selectedUser) return;
-    if (!confirm(`Reset "${selectedUser.name}" to standard defaults for the "${selectedUser.role}" role?`)) return;
-
-    const updated = users.map(u => {
-      if (u.id === selectedUser.id) {
-        return {
-          ...u,
-          allowedFeatures: undefined,
-          allowedPermissions: undefined
-        };
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Reset User Defaults',
+      message: `Reset "${selectedUser.name}" to standard defaults for the "${selectedUser.role}" role? This will clear all custom overrides.`,
+      onConfirm: () => {
+        const updated = users.map(u => {
+          if (u.id === selectedUser.id) {
+            return {
+              ...u,
+              allowedFeatures: undefined,
+              allowedPermissions: undefined
+            };
+          }
+          return u;
+        });
+        onUpdateUsers(updated);
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
       }
-      return u;
     });
-    onUpdateUsers(updated);
   };
 
   const handleUpdatePassword = async () => {
@@ -642,6 +667,41 @@ export default function UsersAccessView({
         )}
       </div>
       
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5 text-left">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5 flex-1 select-none">
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
+                <p className="text-xs text-base-muted font-normal leading-relaxed">
+                  {deleteConfirm.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end text-xs pt-1">
+              <button 
+                onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} 
+                className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={deleteConfirm.onConfirm} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Confirm Action</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

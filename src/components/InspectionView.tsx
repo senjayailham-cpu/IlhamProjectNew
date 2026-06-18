@@ -15,7 +15,8 @@ import {
   MessageSquare,
   FileSpreadsheet,
   Check,
-  RotateCcw
+  RotateCcw,
+  Trash2
 } from 'lucide-react';
 
 interface InspectionViewProps {
@@ -69,6 +70,19 @@ export default function InspectionView({
   const [qcComments, setQcComments] = useState('');
   const [qcInspector, setQcInspector] = useState(currentUser?.name || '');
   const [qcPunchlist, setQcPunchlist] = useState('');
+
+  // Delete Action Confirmation Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Derive assemblies based on selected project in form
   const selectedFormProject = projects.find(p => p.id === formProjectId);
@@ -996,10 +1010,16 @@ export default function InspectionView({
                 {onDeleteInspection && currentUser && currentUser.role === 'admin' && (
                   <button
                     onClick={() => {
-                      if (confirm('Delete this inspection record permanently?')) {
-                        onDeleteInspection(selectedRfi.id);
-                        setSelectedRfi(null);
-                      }
+                      setDeleteConfirm({
+                        isOpen: true,
+                        title: 'Delete Inspection Request',
+                        message: `Are you sure you want to permanently delete the inspection record ${selectedRfi.rfiNo} for assembly "${selectedRfi.assemblyName || ''}"? This action is irreversible.`,
+                        onConfirm: () => {
+                          onDeleteInspection(selectedRfi.id);
+                          setSelectedRfi(null);
+                          setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                        }
+                      });
                     }}
                     className="text-[10px] font-condensed font-bold uppercase tracking-wider text-[#9b1c2e] hover:underline"
                   >
@@ -1016,6 +1036,41 @@ export default function InspectionView({
                 className="px-4 py-1.5 bg-base-surface3 border border-base-border hover:bg-base-surface2 text-base-text font-condensed font-bold uppercase text-[10px] tracking-wider rounded-md"
               >
                 Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-[60] animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5 text-left">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5 flex-1 select-none">
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
+                <p className="text-xs text-base-muted font-normal leading-relaxed">
+                  {deleteConfirm.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end text-xs pt-1">
+              <button 
+                onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} 
+                className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={deleteConfirm.onConfirm} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Confirm DeletePermanent</span>
               </button>
             </div>
           </div>

@@ -64,6 +64,19 @@ export default function SpotlightModal({
   const [taskStart, setTaskStart] = useState('');
   const [taskFinish, setTaskFinish] = useState('');
 
+  // Custom Delete Confirmation Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   if (!isOpen || !projectId) return null;
   const p = projects.find(x => x.id === projectId);
   if (!p) return null;
@@ -580,19 +593,26 @@ export default function SpotlightModal({
                                     {canDeleteTask && (
                                       <button
                                         onClick={() => {
-                                          if (!confirm(`Are you sure you want to delete task "${t.name}"?`)) return;
-                                          const updatedAssemblies = asms.map(asm => {
-                                            if (asm.id !== a.id) return asm;
-                                            return {
-                                              ...asm,
-                                              tasks: asm.tasks.filter(tsk => tsk.id !== t.id)
-                                            };
-                                          });
-                                          onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies }, {
-                                            type: 'task_delete',
-                                            action: `Deleted task "${t.name}" from assembly "${a.name}"`,
-                                            asmName: a.name,
-                                            task: t.name
+                                          setDeleteConfirm({
+                                            isOpen: true,
+                                            title: 'Delete Task Record',
+                                            message: `Are you sure you want to permanently delete task "${t.name}"? This will remove its scheduling and tracking records.`,
+                                            onConfirm: () => {
+                                              const updatedAssemblies = asms.map(asm => {
+                                                if (asm.id !== a.id) return asm;
+                                                return {
+                                                  ...asm,
+                                                  tasks: asm.tasks.filter(tsk => tsk.id !== t.id)
+                                                };
+                                              });
+                                              onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies }, {
+                                                type: 'task_delete',
+                                                action: `Deleted task "${t.name}" from assembly "${a.name}"`,
+                                                asmName: a.name,
+                                                task: t.name
+                                              });
+                                              setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                                            }
                                           });
                                         }}
                                         className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-colors"
@@ -816,6 +836,40 @@ export default function SpotlightModal({
               className="px-5 py-2 bg-base-accent text-white hover:bg-base-accent2 disabled:opacity-55 disabled:cursor-not-allowed rounded-lg font-condensed font-extrabold uppercase tracking-wider cursor-pointer transition-all shadow-md"
             >
               Save Task
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+    {/* Custom Delete Confirmation Modal */}
+    {deleteConfirm.isOpen && (
+      <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-[60] animate-fade-in animate-duration-200">
+        <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5 text-left">
+          <div className="flex items-start gap-4">
+            <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <div className="space-y-1.5 flex-1 select-none">
+              <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
+              <p className="text-xs text-base-muted font-normal leading-relaxed">
+                {deleteConfirm.message}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex gap-2.5 justify-end text-xs pt-1">
+            <button 
+              onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} 
+              className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={deleteConfirm.onConfirm} 
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              <span>Confirm Delete</span>
             </button>
           </div>
         </div>

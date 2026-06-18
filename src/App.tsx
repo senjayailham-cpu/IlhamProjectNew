@@ -75,6 +75,7 @@ export default function App() {
 
   // Navigation and Filter parameters
   const [activeTab, setActiveTab] = useState<string>('current');
+  const [currentTabMonthFilter, setCurrentTabMonthFilter] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(() => {
     return new Date().toISOString().slice(0, 7);
   });
@@ -1606,8 +1607,44 @@ export default function App() {
 
         {/* Current Projects tab */}
         {activeTab === 'current' && (() => {
-          const filteredProjects = projects
-            .filter(p => p.status === 'active' || p.status === 'pending')
+          const activePendingProjects = projects.filter(p => p.status === 'active' || p.status === 'pending');
+
+          // Build months filter options from active/pending projects
+          const monthOptionsMap: Record<string, string> = {};
+          activePendingProjects.forEach(p => {
+            if (p.due) {
+              const d = new Date(p.due + 'T00:00:00');
+              if (!isNaN(d.getTime())) {
+                const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                monthOptionsMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+              }
+            }
+            if (p.start) {
+              const d = new Date(p.start + 'T00:00:00');
+              if (!isNaN(d.getTime())) {
+                const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                monthOptionsMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+              }
+            }
+          });
+          const sortedMonthFilterKeys = Object.keys(monthOptionsMap).sort();
+
+          const filteredProjects = activePendingProjects
+            .filter(p => {
+              if (currentTabMonthFilter) {
+                const startStr = p.start || '';
+                const dueStr = p.due || '';
+                const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
+                const matchesDue = dueStr.slice(0, 7) === currentTabMonthFilter;
+                
+                const filterStart = `${currentTabMonthFilter}-01`;
+                const filterEnd = `${currentTabMonthFilter}-31`;
+                const spansFilter = (startStr && dueStr && startStr <= filterEnd && dueStr >= filterStart);
+                
+                if (!matchesStart && !matchesDue && !spansFilter) return false;
+              }
+              return true;
+            })
             .filter(p => {
               if (!projectSearchQuery.trim()) return true;
               const q = projectSearchQuery.toLowerCase();
@@ -1649,6 +1686,24 @@ export default function App() {
                       </button>
                     )}
                   </div>
+
+                  {/* Months Drop-down Filter */}
+                  <div className="relative">
+                    <select
+                      id="current-projects-month-select"
+                      value={currentTabMonthFilter}
+                      onChange={(e) => setCurrentTabMonthFilter(e.target.value)}
+                      className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
+                      title="Filter projects by month"
+                    >
+                      <option value="">All Months</option>
+                      {sortedMonthFilterKeys.map(k => (
+                        <option key={k} value={k} className="font-sans normal-case">
+                          {monthOptionsMap[k]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
 
                 {can('addProject') && (
@@ -1665,16 +1720,27 @@ export default function App() {
               <div className="grid grid-cols-1 gap-4">
                 {filteredProjects.length === 0 ? (
                   <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
-                    <div className="text-base-muted font-medium text-sm">No current schedules match your search.</div>
-                    {projectSearchQuery && (
-                      <button
-                        id="current-projects-no-results-clear-btn"
-                        onClick={() => setProjectSearchQuery('')}
-                        className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase"
-                      >
-                        Clear search filter
-                      </button>
-                    )}
+                    <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
+                    <div className="flex gap-2 justify-center">
+                      {projectSearchQuery && (
+                        <button
+                          id="current-projects-no-results-clear-btn"
+                          onClick={() => setProjectSearchQuery('')}
+                          className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                        >
+                          Clear search filter
+                        </button>
+                      )}
+                      {currentTabMonthFilter && (
+                        <button
+                          id="current-projects-no-results-clear-month-btn"
+                          onClick={() => setCurrentTabMonthFilter('')}
+                          className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                        >
+                          Clear month filter
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   filteredProjects.map(p => {

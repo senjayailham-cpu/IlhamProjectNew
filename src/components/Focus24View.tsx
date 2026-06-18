@@ -116,6 +116,19 @@ export default function Focus24View({
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState<string>('');
 
+  // Delete Action Confirmation Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
   // Prepopulate standard department options
   const standardDepartments = [
     'Project Control',
@@ -790,9 +803,15 @@ export default function Focus24View({
                     {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
                       <button
                         onClick={() => {
-                          if (confirm('Permanently delete this reported problem? This action is irreversible.')) {
-                            onDeleteProblemReport(r.id);
-                          }
+                          setDeleteConfirm({
+                            isOpen: true,
+                            title: 'Delete Reported Issue',
+                            message: `Are you sure you want to permanently delete the reported issue belonging to category "${r.category}" for project "${r.projectName || ''}"? This action is irreversible.`,
+                            onConfirm: () => {
+                              onDeleteProblemReport(r.id);
+                              setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+                            }
+                          });
                         }}
                         className="p-2 text-base-muted hover:text-[#9b1c2e] hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                         title="Delete reported issue"
@@ -838,6 +857,41 @@ export default function Focus24View({
                 className="max-w-full max-h-[68vh] object-contain rounded-lg" 
                 referrerPolicy="no-referrer"
               />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+          <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5 text-left">
+            <div className="flex items-start gap-4">
+              <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
+                <Trash2 className="h-6 w-6" />
+              </div>
+              <div className="space-y-1.5 flex-1 select-none">
+                <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
+                <p className="text-xs text-base-muted font-normal leading-relaxed">
+                  {deleteConfirm.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-2.5 justify-end text-xs pt-1">
+              <button 
+                onClick={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))} 
+                className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={deleteConfirm.onConfirm} 
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>Confirm Delete</span>
+              </button>
             </div>
           </div>
         </div>
