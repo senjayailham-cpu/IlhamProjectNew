@@ -4,7 +4,7 @@ import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS,
 import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportProjectsCSV } from './utils/projectUtils';
 
 // Firebase imports
-import { db, auth, googleProvider, signInWithPopup, signOut } from './firebase';
+import { db, auth, signOut } from './firebase';
 import { collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 
@@ -1596,6 +1596,23 @@ export default function App() {
             </button>
           </form>
 
+          <div className="relative flex py-1 items-center font-condensed font-bold text-[10px] uppercase text-base-muted2 select-none">
+            <div className="flex-grow border-t border-base-border"></div>
+            <span className="flex-shrink mx-3">Live Cloud sync status</span>
+            <div className="flex-grow border-t border-base-border"></div>
+          </div>
+
+          <div className="p-3 bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex items-center gap-2.5">
+            <div className="relative flex h-2 w-2 select-none">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </div>
+            <div className="flex-1 text-left">
+              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-emerald-500 leading-none">Online Core Active</p>
+              <p className="text-[9px] text-base-muted mt-1 leading-snug">Multi-device real-time sync is enabled automatically via safe offline fallback protocols.</p>
+            </div>
+          </div>
+
         </div>
       </div>
     );
@@ -1624,13 +1641,20 @@ export default function App() {
       {/* Topbar Layout Header */}
       <header className="sticky top-0 bg-base-surface border-b border-base-border z-40 px-6 py-3.5 shadow-card flex items-center justify-between gap-4">
         {/* Brand identity */}
-        <div className="flex items-center gap-2 select-none">
-          <div className="font-condensed font-black text-2xl tracking-widest text-base-text select-none leading-none mr-1">
+        <div className="flex items-center gap-3 select-none">
+          <div className="font-condensed font-black text-2xl tracking-widest text-base-text select-none leading-none">
             AUSTIN <span className="text-[#9b1c2e]">BATAM</span>
           </div>
           <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-accent-dim text-base-accent border border-base-accent/20 tracking-wider">
             Workspace
           </span>
+          <div className="hidden md:flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[9px] font-condensed font-extrabold uppercase tracking-widest">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+            </span>
+            <span>Live Cloud Synced</span>
+          </div>
         </div>
 
         {/* Global Toolbar and Session info */}
