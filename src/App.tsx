@@ -1592,22 +1592,7 @@ export default function App() {
             </button>
           </form>
 
-          <div className="relative flex py-1 items-center font-condensed font-bold text-[10px] uppercase text-base-muted2 select-none">
-            <div className="flex-grow border-t border-base-border"></div>
-            <span className="flex-shrink mx-3">Live Cloud sync status</span>
-            <div className="flex-grow border-t border-base-border"></div>
-          </div>
 
-          <div className="p-3 bg-emerald-500/10 dark:bg-emerald-500/5 border border-emerald-500/20 rounded-xl flex items-center gap-2.5">
-            <div className="relative flex h-2 w-2 select-none">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-            </div>
-            <div className="flex-1 text-left">
-              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-emerald-500 leading-none">Online Core Active</p>
-              <p className="text-[9px] text-base-muted mt-1 leading-snug">Multi-device real-time sync is enabled automatically via safe offline fallback protocols.</p>
-            </div>
-          </div>
 
         </div>
       </div>
