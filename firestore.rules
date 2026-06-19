@@ -47,7 +47,9 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isSignedIn();
     }
     match /users/{userId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      // Allow unauthenticated get requests to enable login profile check before background Auth sign-in
+      allow get: if true;
+      allow list, write: if isAdmin() || isSignedIn();
     }
     match /problemReports/{reportId} {
       allow read, write: if isAdmin() || isSignedIn();
