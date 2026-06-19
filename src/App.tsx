@@ -6,7 +6,7 @@ import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportPr
 // Firebase imports
 import { db, auth, googleProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from './firebase';
 import { collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, updatePassword } from 'firebase/auth';
 
 // Modular Subviews
 import ThemeToggle from './components/ThemeToggle';
@@ -350,15 +350,19 @@ export default function App() {
       if (firebaseUser) {
         try {
           const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
+          const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
+            ? firebaseUser.email.split('@')[0].toLowerCase()
+            : firebaseUser.uid;
+
           // Attempt to retrieve user doc from Firestore
-          const docRef = doc(db, 'users', firebaseUser.uid);
+          const docRef = doc(db, 'users', portalId);
           const docSnap = await getDoc(docRef);
 
           if (docSnap.exists()) {
             const data = docSnap.data();
             const session: User = {
-              id: firebaseUser.uid,
-              name: data.name || firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Team User',
+              id: portalId,
+              name: data.name || firebaseUser.displayName || portalId || 'Team User',
               role: isDev ? 'admin' : (data.role || 'coordinator'),
               allowedFeatures: data.allowedFeatures || [],
               allowedPermissions: data.allowedPermissions || {}
@@ -369,10 +373,10 @@ export default function App() {
           } else {
             // Create user
             const defaultRole = isDev ? 'admin' : 'coordinator';
-            const defaultName = firebaseUser.displayName || (isDev ? 'Senjaya Ilham' : firebaseUser.email?.split('@')[0] || 'Team Member');
+            const defaultName = firebaseUser.displayName || (isDev ? 'Senjaya Ilham' : portalId || 'Team Member');
             
             const session: User = {
-              id: firebaseUser.uid,
+              id: portalId,
               name: defaultName,
               role: defaultRole,
               allowedFeatures: [],
@@ -387,9 +391,12 @@ export default function App() {
         } catch (err: any) {
           console.error("Firestore loading user profile error:", err);
           const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
+          const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
+            ? firebaseUser.email.split('@')[0].toLowerCase()
+            : firebaseUser.uid;
           const session: User = {
-            id: firebaseUser.uid,
-            name: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'Team Member',
+            id: portalId,
+            name: firebaseUser.displayName || portalId || 'Team Member',
             role: isDev ? 'admin' : 'coordinator',
             allowedFeatures: [],
             allowedPermissions: {}
@@ -456,8 +463,8 @@ export default function App() {
 
         if (!active) return;
 
-        // Generic helper to listen to collections without re-seeding recursion
-        const listenToCollection = (colName: string, stateSetter: (data: any) => void) => {
+        // Generic helper to listen to collections without re-seeding recursion and write back to local storage
+        const listenToCollection = (colName: string, stateSetter: (data: any) => void, storageKey: string) => {
           const colRef = collection(db, colName);
           const unsub = onSnapshot(colRef, (snapshot) => {
             const list: any[] = [];
@@ -465,6 +472,7 @@ export default function App() {
               list.push(d.data());
             });
             stateSetter(list);
+            localStorage.setItem(storageKey, JSON.stringify(list));
           }, (error) => {
             console.error(`Firestore real-time error on ${colName}:`, error);
             handleFirestoreError(error, OperationType.GET, colName);
@@ -472,14 +480,14 @@ export default function App() {
           unsubscribers.push(unsub);
         };
 
-        // Listen to all core collections
-        listenToCollection('projects', setProjects);
-        listenToCollection('employees', setEmployees);
-        listenToCollection('timesheets', setTimesheets);
-        listenToCollection('activities', setActivities);
-        listenToCollection('problemReports', setProblemReports);
-        listenToCollection('inspections', setInspections);
-        listenToCollection('users', setUsers);
+        // Listen to all core collections and maintain local storage states for off-tab reloads
+        listenToCollection('projects', setProjects, 'w2proj_v1');
+        listenToCollection('employees', setEmployees, 'w2proj_employees_v1');
+        listenToCollection('timesheets', setTimesheets, 'w2proj_timesheet_v1');
+        listenToCollection('activities', setActivities, 'w2proj_activity_v1');
+        listenToCollection('problemReports', setProblemReports, 'w2proj_problem_reports_v1');
+        listenToCollection('inspections', setInspections, 'w2proj_inspections_v1');
+        listenToCollection('users', setUsers, 'w2proj_users_v1');
       } catch (err) {
         console.error("Error setting up Firestore real-time sync & seeding:", err);
       }
@@ -640,13 +648,25 @@ export default function App() {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const targetId = loginId.trim();
+    const targetId = loginId.trim().toLowerCase();
     if (!targetId || !loginPass) {
       setLoginError('Complete ID and password fields.');
       return;
     }
 
-    const testUser = users.find(u => u.id === targetId);
+    let testUser = users.find(u => u.id === targetId);
+
+    // Dynamic online Firestore pre-validation to allow logins on different machines for newly created users
+    try {
+      const docRef = doc(db, 'users', targetId);
+      const docSnap = await getDoc(docRef);
+      if (docSnap.exists()) {
+        testUser = docSnap.data() as User;
+      }
+    } catch (err) {
+      console.warn("Could not fetch user directly from Firestore, falling back to local list:", err);
+    }
+
     if (!testUser) {
       setLoginError('User ID not found or registered.');
       return;
@@ -662,8 +682,8 @@ export default function App() {
       id: testUser.id, 
       name: testUser.name, 
       role: testUser.role,
-      allowedFeatures: testUser.allowedFeatures,
-      allowedPermissions: testUser.allowedPermissions
+      allowedFeatures: testUser.allowedFeatures || [],
+      allowedPermissions: testUser.allowedPermissions || {}
     };
     setCurrentUser(session);
     sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
@@ -676,10 +696,25 @@ export default function App() {
       console.warn("Background Firebase Auth login error (auto-healing):", authErr);
       if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
         try {
-          // Password already verified locally, so we can safely register them in Auth on-the-fly
+          // Password verified locally against Firestore hash, so we can safely register in Auth on-the-fly
           await createUserWithEmailAndPassword(auth, email, loginPass);
         } catch (regErr) {
           console.warn("Could not register on-the-fly Firebase user:", regErr);
+          // Standard backup anonymous authentication to ensure Firestore read/write capabilities are set
+          try {
+            const { signInAnonymously } = await import('firebase/auth');
+            await signInAnonymously(auth);
+          } catch (anonErr) {
+            console.error("Could not complete backup anonymous login:", anonErr);
+          }
+        }
+      } else {
+        // Fallback to anonymous authenticated state if credential update mismatch prevents Standard Auth Login
+        try {
+          const { signInAnonymously } = await import('firebase/auth');
+          await signInAnonymously(auth);
+        } catch (anonErr) {
+          console.error("Could not complete backup anonymous login:", anonErr);
         }
       }
     }
@@ -755,6 +790,16 @@ export default function App() {
     // Update users state
     setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, passHash: hashedNew } : u));
     setIsChanged(true);
+
+    // Synchronize password changes to Firebase Auth
+    if (auth.currentUser) {
+      try {
+        await updatePassword(auth.currentUser, newPass);
+        console.log("Firebase Auth password updated successfully in sync.");
+      } catch (authErr) {
+        console.warn("Could not sync password update to Firebase Auth:", authErr);
+      }
+    }
 
     logActivity('user_edit', `Changed own password`, undefined, undefined, undefined, undefined, undefined, undefined, `User ${currentUser.name} updated their sign-in password`);
 
