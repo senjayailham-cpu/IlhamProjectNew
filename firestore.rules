@@ -6,31 +6,56 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Restrict all collections strictly to signed-in or unsigned/anonymous users dynamically
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        request.auth.uid == "psToBehuTudgpMsgg5xT3h63H6C3" ||
+        request.auth.token.email == "senjayailham@gmail.com" ||
+        request.auth.token.email == "admin@austinbatam.xyz" ||
+        request.auth.token.email == "ilhamsenjaya@austinbatam.xyz" ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
+    }
+
+    // Restrict all collections strictly to signed-in users, ensuring admin always has complete access
     match /projects/{projectId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /employees/{employeeId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /timesheets/{timesheetId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /activities/{activityId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /users/{userId} {
-      allow read, write: if true;
+      // Allow reading metadata or users for all members
+      allow read: if isAdmin() || isSignedIn();
+      // Allow user addition/registration:
+      // - Admins can perform any write
+      // - Users can create their own profile as 'coordinator'
+      allow create: if isAdmin() || (isSignedIn() && request.auth.uid == userId && request.resource.data.role == 'coordinator');
+      // - Users can update non-privileged aspects, keeping role unchanged
+      allow update: if isAdmin() || (isSignedIn() && request.auth.uid == userId && request.resource.data.role == resource.data.role);
+      // Only admins can delete profiles
+      allow delete: if isAdmin();
     }
     match /problemReports/{reportId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /inspections/{inspectionId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
 
     match /system_config/{configId} {
-      allow read, write: if true;
+      allow read, write: if isAdmin() || isSignedIn();
     }
   }
 }
