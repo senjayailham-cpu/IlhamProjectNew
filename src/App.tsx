@@ -480,14 +480,22 @@ export default function App() {
           const defUsers = await DEFAULT_USERS();
           const targetAdminIds = ['admin', 'ilhamsenjaya', 'irwanr'];
           const healPromises = targetAdminIds.map(async (adminId) => {
-            const adminDocRef = doc(db, 'users', adminId);
-            const adminSnap = await getDoc(adminDocRef);
-            if (!adminSnap.exists()) {
-              const defAdmin = defUsers.find(u => u.id === adminId);
-              if (defAdmin && currentUser?.role === 'admin') {
-                console.log(`Self-healing: Seeding missing admin user "${adminId}" directly into Firestore.`);
-                await setDoc(adminDocRef, defAdmin);
+            try {
+              const adminDocRef = doc(db, 'users', adminId);
+              const adminSnap = await getDoc(adminDocRef);
+              if (!adminSnap.exists()) {
+                const defAdmin = defUsers.find(u => u.id === adminId);
+                if (defAdmin && currentUser?.role === 'admin') {
+                  console.log(`Self-healing: Seeding missing admin user "${adminId}" directly into Firestore.`);
+                  try {
+                    await setDoc(adminDocRef, defAdmin);
+                  } catch (writeErr) {
+                    console.warn(`Self-healing write for "${adminId}" denied (probably permission restriction):`, writeErr);
+                  }
+                }
               }
+            } catch (readErr) {
+              console.warn(`Self-healing read for "${adminId}" denied (probably permission restriction):`, readErr);
             }
           });
           await Promise.all(healPromises);
