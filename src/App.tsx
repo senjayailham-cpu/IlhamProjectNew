@@ -484,7 +484,7 @@ export default function App() {
             const adminSnap = await getDoc(adminDocRef);
             if (!adminSnap.exists()) {
               const defAdmin = defUsers.find(u => u.id === adminId);
-              if (defAdmin) {
+              if (defAdmin && currentUser?.role === 'admin') {
                 console.log(`Self-healing: Seeding missing admin user "${adminId}" directly into Firestore.`);
                 await setDoc(adminDocRef, defAdmin);
               }

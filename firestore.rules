@@ -44,18 +44,7 @@ service cloud.firestore {
       allow read, write: if isAdmin() || isSignedIn();
     }
     match /users/{userId} {
-      // Allow individual user lookup globally (e.g. at login screen on a different machine)
-      allow get: if true;
-      // Allow listing users ONLY for signed-in members or admins
-      allow list: if isAdmin() || isSignedIn();
-      // Allow user addition/registration:
-      // - Admins can perform any write
-      // - Users can create their own profile as 'coordinator'
-      allow create: if isAdmin() || (isOwner(userId) && request.resource.data.role == 'coordinator');
-      // - Users can update non-privileged aspects, keeping role unchanged
-      allow update: if isAdmin() || (isOwner(userId) && request.resource.data.role == resource.data.role);
-      // Only admins can delete profiles
-      allow delete: if isAdmin();
+      allow read, write: if isAdmin() || isSignedIn();
     }
     match /problemReports/{reportId} {
       allow read, write: if isAdmin() || isSignedIn();
