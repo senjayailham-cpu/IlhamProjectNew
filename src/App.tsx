@@ -349,7 +349,13 @@ export default function App() {
 
       if (firebaseUser) {
         try {
-          const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
+          const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
+            firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
+            (firebaseUser.email ? [
+              'ilhamsenjaya@austinbatam.xyz',
+              'irwanr@austinbatam.xyz',
+              'admin@austinbatam.xyz'
+            ].includes(firebaseUser.email.toLowerCase()) : false);
           const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
             ? firebaseUser.email.split('@')[0].toLowerCase()
             : firebaseUser.uid;
@@ -390,7 +396,13 @@ export default function App() {
           }
         } catch (err: any) {
           console.error("Firestore loading user profile error:", err);
-          const isDev = firebaseUser.email === 'senjayailham@gmail.com' || firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3';
+          const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
+            firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
+            (firebaseUser.email ? [
+              'ilhamsenjaya@austinbatam.xyz',
+              'irwanr@austinbatam.xyz',
+              'admin@austinbatam.xyz'
+            ].includes(firebaseUser.email.toLowerCase()) : false);
           const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
             ? firebaseUser.email.split('@')[0].toLowerCase()
             : firebaseUser.uid;
@@ -459,6 +471,26 @@ export default function App() {
           } catch (error) {
             handleFirestoreError(error, OperationType.WRITE, 'system_config/status');
           }
+        }
+
+        // Proactive self-healing check to ensure critical admin users always exist in Firestore
+        try {
+          const defUsers = await DEFAULT_USERS();
+          const targetAdminIds = ['admin', 'ilhamsenjaya', 'irwanr'];
+          const healPromises = targetAdminIds.map(async (adminId) => {
+            const adminDocRef = doc(db, 'users', adminId);
+            const adminSnap = await getDoc(adminDocRef);
+            if (!adminSnap.exists()) {
+              const defAdmin = defUsers.find(u => u.id === adminId);
+              if (defAdmin) {
+                console.log(`Self-healing: Seeding missing admin user "${adminId}" directly into Firestore.`);
+                await setDoc(adminDocRef, defAdmin);
+              }
+            }
+          });
+          await Promise.all(healPromises);
+        } catch (healErr) {
+          console.warn("Self-healing admin user check failed:", healErr);
         }
 
         if (!active) return;
@@ -648,7 +680,10 @@ export default function App() {
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
-    const targetId = loginId.trim().toLowerCase();
+    let targetId = loginId.trim().toLowerCase();
+    if (targetId.endsWith('@austinbatam.xyz')) {
+      targetId = targetId.split('@')[0];
+    }
     if (!targetId || !loginPass) {
       setLoginError('Complete ID and password fields.');
       return;
@@ -690,14 +725,15 @@ export default function App() {
 
     // Background Firebase Auth Email/Password sync
     const email = `${testUser.id.toLowerCase()}@austinbatam.xyz`;
+    const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
     try {
-      await signInWithEmailAndPassword(auth, email, loginPass);
+      await signInWithEmailAndPassword(auth, email, firebasePass);
     } catch (authErr: any) {
       console.warn("Background Firebase Auth login error (auto-healing):", authErr);
       if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
         try {
           // Password verified locally against Firestore hash, so we can safely register in Auth on-the-fly
-          await createUserWithEmailAndPassword(auth, email, loginPass);
+          await createUserWithEmailAndPassword(auth, email, firebasePass);
         } catch (regErr) {
           console.warn("Could not register on-the-fly Firebase user:", regErr);
           // Standard backup anonymous authentication to ensure Firestore read/write capabilities are set
@@ -705,7 +741,7 @@ export default function App() {
             const { signInAnonymously } = await import('firebase/auth');
             await signInAnonymously(auth);
           } catch (anonErr) {
-            console.error("Could not complete backup anonymous login:", anonErr);
+            console.warn("Could not complete backup anonymous login (this is expected if anonymous auth is disabled in console):", anonErr);
           }
         }
       } else {
@@ -714,7 +750,7 @@ export default function App() {
           const { signInAnonymously } = await import('firebase/auth');
           await signInAnonymously(auth);
         } catch (anonErr) {
-          console.error("Could not complete backup anonymous login:", anonErr);
+          console.warn("Could not complete backup anonymous login (this is expected if anonymous auth is disabled in console):", anonErr);
         }
       }
     }
@@ -794,7 +830,8 @@ export default function App() {
     // Synchronize password changes to Firebase Auth
     if (auth.currentUser) {
       try {
-        await updatePassword(auth.currentUser, newPass);
+        const firebaseNewPass = newPass.length >= 6 ? newPass : `${newPass}_austin`;
+        await updatePassword(auth.currentUser, firebaseNewPass);
         console.log("Firebase Auth password updated successfully in sync.");
       } catch (authErr) {
         console.warn("Could not sync password update to Firebase Auth:", authErr);
