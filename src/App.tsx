@@ -261,13 +261,15 @@ export default function App() {
         setUsers(defaults);
       } else {
         const parsedUsers = JSON.parse(loadedUsers);
-        const hasIlham = parsedUsers.some((u: any) => u.id === 'ilhamsenjaya');
-        if (!hasIlham) {
-          const ilhamUser = defaults.find((u: any) => u.id === 'ilhamsenjaya');
-          if (ilhamUser) {
-            parsedUsers.push(ilhamUser);
-            localStorage.setItem('w2proj_users_v1', JSON.stringify(parsedUsers));
+        let updated = false;
+        for (const defU of defaults) {
+          if (!parsedUsers.some((u: any) => u.id === defU.id)) {
+            parsedUsers.push(defU);
+            updated = true;
           }
+        }
+        if (updated) {
+          localStorage.setItem('w2proj_users_v1', JSON.stringify(parsedUsers));
         }
         setUsers(parsedUsers);
       }
@@ -690,16 +692,33 @@ export default function App() {
     }
 
     let testUser = users.find(u => u.id === targetId);
+    let foundDef: User | undefined;
 
     // Dynamic online Firestore pre-validation to allow logins on different machines for newly created users
     try {
       const docRef = doc(db, 'users', targetId);
-      const docSnap = await getDoc(docRef);
+      let docSnap = await getDoc(docRef);
+      const defUsers = await DEFAULT_USERS();
+      foundDef = defUsers.find(u => u.id === targetId);
+
+      if (!docSnap.exists() && foundDef) {
+        console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+        try {
+          await setDoc(docRef, foundDef);
+          docSnap = await getDoc(docRef);
+        } catch (writeErr) {
+          console.warn("Could not write missing default user during login (probably unauthenticated):", writeErr);
+        }
+      }
       if (docSnap.exists()) {
         testUser = docSnap.data() as User;
       }
     } catch (err) {
       console.warn("Could not fetch user directly from Firestore, falling back to local list:", err);
+    }
+
+    if (!testUser && foundDef) {
+      testUser = foundDef;
     }
 
     if (!testUser) {
