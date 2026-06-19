@@ -573,6 +573,23 @@ export default function App() {
     }
   }, [users, currentUser]);
 
+  const cleanFirestoreData = (obj: any): any => {
+    if (obj === null || typeof obj !== 'object') {
+      return obj === undefined ? null : obj;
+    }
+    if (Array.isArray(obj)) {
+      return obj.map(cleanFirestoreData);
+    }
+    const cleaned: any = {};
+    for (const key of Object.keys(obj)) {
+      const value = obj[key];
+      if (value !== undefined) {
+        cleaned[key] = cleanFirestoreData(value);
+      }
+    }
+    return cleaned;
+  };
+
   const saveNow = async () => {
     localStorage.setItem('w2proj_v1', JSON.stringify(projects));
     localStorage.setItem('w2proj_employees_v1', JSON.stringify(employees));
@@ -591,7 +608,10 @@ export default function App() {
       try {
         const syncList = async (colName: string, items: any[]) => {
           // Write current state documents
-          const writePromises = items.map((item) => setDoc(doc(db, colName, item.id), item));
+          const writePromises = items.map((item) => {
+            const cleaned = cleanFirestoreData(item);
+            return setDoc(doc(db, colName, item.id), cleaned);
+          });
           await Promise.all(writePromises);
 
           // Get all existing documents in this Firestore collection to clean up deleted ones
