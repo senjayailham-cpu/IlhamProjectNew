@@ -7,6 +7,7 @@ import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportPr
 import { db, auth, googleProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from './firebase';
 import { collection, doc, setDoc, getDoc, deleteDoc, onSnapshot, getDocs } from 'firebase/firestore';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
+import firebaseConfig from '../firebase-applet-config.json';
 
 // Modular Subviews
 import ThemeToggle from './components/ThemeToggle';
@@ -351,15 +352,13 @@ export default function App() {
 
       if (firebaseUser) {
         try {
+          const emailPrefix = firebaseUser.email ? firebaseUser.email.split('@')[0].toLowerCase() : '';
+          const isAppletEmailDomain = firebaseUser.email ? (firebaseUser.email.endsWith('@austinbatam.xyz') || firebaseUser.email.includes('.austinbatam.xyz')) : false;
           const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
             firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
-            (firebaseUser.email ? [
-              'ilhamsenjaya@austinbatam.xyz',
-              'irwanr@austinbatam.xyz',
-              'admin@austinbatam.xyz'
-            ].includes(firebaseUser.email.toLowerCase()) : false);
-          const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
-            ? firebaseUser.email.split('@')[0].toLowerCase()
+            (isAppletEmailDomain && ['ilhamsenjaya', 'irwanr', 'admin'].includes(emailPrefix));
+          const portalId = (firebaseUser.email && isAppletEmailDomain)
+            ? emailPrefix
             : firebaseUser.uid;
 
           // Attempt to retrieve user doc from Firestore
@@ -398,15 +397,13 @@ export default function App() {
           }
         } catch (err: any) {
           console.error("Firestore loading user profile error:", err);
+          const emailPrefix = firebaseUser.email ? firebaseUser.email.split('@')[0].toLowerCase() : '';
+          const isAppletEmailDomain = firebaseUser.email ? (firebaseUser.email.endsWith('@austinbatam.xyz') || firebaseUser.email.includes('.austinbatam.xyz')) : false;
           const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
             firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
-            (firebaseUser.email ? [
-              'ilhamsenjaya@austinbatam.xyz',
-              'irwanr@austinbatam.xyz',
-              'admin@austinbatam.xyz'
-            ].includes(firebaseUser.email.toLowerCase()) : false);
-          const portalId = (firebaseUser.email && firebaseUser.email.endsWith('@austinbatam.xyz'))
-            ? firebaseUser.email.split('@')[0].toLowerCase()
+            (isAppletEmailDomain && ['ilhamsenjaya', 'irwanr', 'admin'].includes(emailPrefix));
+          const portalId = (firebaseUser.email && isAppletEmailDomain)
+            ? emailPrefix
             : firebaseUser.uid;
           const session: User = {
             id: portalId,
@@ -691,7 +688,7 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
     let targetId = loginId.trim().toLowerCase();
-    if (targetId.endsWith('@austinbatam.xyz')) {
+    if (targetId.includes('@')) {
       targetId = targetId.split('@')[0];
     }
     if (!targetId || !loginPass) {
@@ -751,7 +748,8 @@ export default function App() {
     sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
 
     // Background Firebase Auth Email/Password sync
-    const email = `${testUser.id.toLowerCase()}@austinbatam.xyz`;
+    const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
+    const email = `${testUser.id.toLowerCase()}@${dbId}.austinbatam.xyz`;
     const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
     try {
       await signInWithEmailAndPassword(auth, email, firebasePass);

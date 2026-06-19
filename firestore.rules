@@ -15,9 +15,9 @@ service cloud.firestore {
       return isSignedIn() && (
         request.auth.uid == "psToBehuTudgpMsgg5xT3h63H6C3" ||
         request.auth.token.email == "senjayailham@gmail.com" ||
-        request.auth.token.email == "admin@austinbatam.xyz" ||
-        request.auth.token.email == "ilhamsenjaya@austinbatam.xyz" ||
-        request.auth.token.email == "irwanr@austinbatam.xyz" ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.matches('^(admin|ilhamsenjaya|irwanr)@(.*\\.)?austinbatam\\.xyz$')
+        )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
@@ -26,7 +26,10 @@ service cloud.firestore {
     function isOwner(userId) {
       return isSignedIn() && (
         request.auth.uid == userId ||
-        (request.auth.token.email != null && request.auth.token.email == userId + "@austinbatam.xyz")
+        (request.auth.token.email != null && (
+          request.auth.token.email == userId + "@austinbatam.xyz" ||
+          request.auth.token.email.matches('^' + userId + '@(.*\\.)?austinbatam\\.xyz$')
+        ))
       );
     }
 
