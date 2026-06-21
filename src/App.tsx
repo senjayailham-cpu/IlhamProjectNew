@@ -90,8 +90,9 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -106,8 +107,21 @@ function handleFirestoreError(error: unknown, operationType: OperationType, path
     operationType,
     path
   }
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  
+  // Only throw if the error is a permission/authorization error, as mandated by the Firebase Integration Skill guidelines
+  const isPermissionMsg = errorMessage.toLowerCase().includes('permission') || 
+                          errorMessage.toLowerCase().includes('insufficient') ||
+                          errorMessage.toLowerCase().includes('denied');
+  const isPermissionCode = error && typeof error === 'object' && ('code' in error) && 
+                          ((error as any).code === 'permission-denied' || (error as any).code === 'unauthenticated');
+
+  if (isPermissionMsg || isPermissionCode) {
+    console.error('Firestore Permission Error: ', JSON.stringify(errInfo));
+    throw new Error(JSON.stringify(errInfo));
+  } else {
+    // Log other errors (like offline or connection failure) without throwing and crashing the application
+    console.warn(`Firestore Offline/Connection status (${operationType} on ${path}):`, errorMessage);
+  }
 }
 
 export default function App() {
@@ -1750,15 +1764,24 @@ export default function App() {
     <div className="min-h-screen bg-base-bg text-base-text flex flex-col font-sans transition-colors duration-200">
       
       {/* Topbar Layout Header */}
-      <header className="sticky top-0 bg-base-surface border-b border-base-border z-40 px-6 py-3.5 shadow-card flex items-center justify-between gap-4">
+      <header className="sticky top-0 bg-base-surface/80 dark:bg-[#151921]/80 backdrop-blur-md border-b border-base-border z-40 px-6 py-3.5 shadow-card flex items-center justify-between gap-4">
         {/* Brand identity */}
-        <div className="flex items-center gap-2 select-none">
+        <div className="flex items-center gap-3 select-none">
           <div className="font-condensed font-black text-2xl tracking-widest text-base-text select-none leading-none mr-1">
-            AUSTIN <span className="text-[#9b1c2e]">BATAM</span>
+            AUSTIN <span className="text-[#9b1c2e] drop-shadow-[0_0_8px_rgba(155,28,46,0.3)]">BATAM</span>
           </div>
-          <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-accent-dim text-base-accent border border-base-accent/20 tracking-wider">
-            Workspace
-          </span>
+          <div className="flex items-center gap-1.5">
+            <span className="hidden sm:inline-block px-2.5 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-accent-dim text-base-accent border border-base-accent/20 tracking-wider">
+              Workspace
+            </span>
+            <div className="hidden md:flex items-center gap-1.5 px-2.5 py-0.5 bg-emerald-500/10 border border-emerald-500/20 rounded-full select-none">
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
+              </span>
+              <span className="text-[9px] font-condensed font-extrabold text-emerald-500 uppercase tracking-wider">Live cloud sync</span>
+            </div>
+          </div>
         </div>
 
         {/* Global Toolbar and Session info */}
@@ -1837,9 +1860,9 @@ export default function App() {
               <button
                 key={t.id}
                 onClick={() => setActiveTab(t.id)}
-                className={`py-3 px-4 font-condensed font-extrabold uppercase text-xs tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+                className={`py-3.5 px-4.5 font-condensed font-extrabold uppercase text-xs tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1.5 relative hover:bg-base-surface3/35 ${
                   activeTab === t.id
-                    ? 'border-base-accent text-base-accent'
+                    ? 'border-base-accent text-base-accent bg-base-accent-dim/20'
                     : 'border-transparent text-base-muted hover:text-base-text'
                 }`}
               >
@@ -2035,114 +2058,127 @@ export default function App() {
                     return (
                       <div 
                         key={p.id} 
-                        className={`p-4 space-y-4 rounded-xl relative overflow-hidden group transition-all duration-300 ${
+                        className={`py-1.5 px-3 rounded-lg relative overflow-hidden group transition-all duration-200 border flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 ${
                           hasActiveSearch 
-                            ? 'bg-base-surface border-2 border-base-accent animate-pulse-highlight scale-[1.011]' 
-                            : 'bg-base-surface border border-base-border shadow-card hover:border-base-border2'
+                            ? 'bg-base-surface border-2 border-base-accent animate-pulse-highlight' 
+                            : 'bg-base-surface border-base-border shadow-xs hover:border-base-border2'
                         }`}
                       >
-                        <div className="flex justify-between items-start gap-4">
-                          <div className="space-y-1 pr-6 flex-1 min-w-0">
-                            <div className="flex items-center gap-2 flex-wrap">
+                        {/* Title portion */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                          
+                          <div className="min-w-0 pr-2">
+                            <div className="flex items-center gap-1.5 flex-wrap">
                               <h3
                                 onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                                className="font-condensed font-extrabold text-lg tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors leading-tight truncate flex-1 min-w-0"
+                                className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors leading-tight truncate"
                               >
                                 {highlightText(p.name, projectSearchQuery)}
                               </h3>
                               {hasActiveSearch && (
-                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider">
-                                  <Search className="w-2 h-2 text-base-accent animate-pulse" />
+                                <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider">
                                   MATCH
                                 </span>
                               )}
                             </div>
-                            <p className="text-[11px] font-condensed font-extrabold text-base-blue uppercase mt-0.5 tracking-wider font-mono">
+                            <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono">
                               {highlightText(p.client, projectSearchQuery)}
                             </p>
                           </div>
-
-                          {/* Interactive toggle forms */}
-                          <div className="flex items-center gap-1">
-                            <button
-                              onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                              className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-lg"
-                              title="Open spotlight inspector"
-                            >
-                              <BookOpen className="h-4 w-4" />
-                            </button>
-                            {can('editProject') && (
-                              <button
-                                onClick={() => openEditProjectForm(p.id)}
-                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-lg"
-                                title="Edit parameters"
-                              >
-                                <Edit className="h-4 w-4" />
-                              </button>
-                            )}
-                            {can('editProject') && (
-                              <button
-                                onClick={() => openCopyModalLauncher(p.id)}
-                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-lg"
-                                title="Clone project"
-                              >
-                                <Copy className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
                         </div>
 
-                        {/* Timeline properties */}
-                        <div className="flex flex-wrap gap-x-4 gap-y-1.5 text-xs text-base-muted2 font-medium items-center">
-                          {p.start && <span><b>Start:</b> {p.start}</span>}
-                          {p.due && <span><b>Due:</b> {p.due}</span>}
-                          <span><b>Workshop:</b> <span className="capitalize">{p.location === 'workshop1' ? 'Workshop 1' : 'Workshop 2'}</span></span>
+                        {/* Mid Meta values */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
+                          {(p.start || p.due) && (
+                            <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
+                              📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
+                            </span>
+                          )}
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                            {p.location === 'workshop1' ? 'W1' : 'W2'}
+                          </span>
+                          
                           {(() => {
                             const usedHours = getManHoursForWorkOrder(p.client, timesheets);
                             const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
                             const isOverBudget = hasBudget && usedHours >= p.budgetHours;
                             return (
                               <span 
-                                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-condensed font-extrabold uppercase tracking-wide border transition-all ${
+                                className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border transition-all ${
                                   isOverBudget 
-                                    ? 'bg-red-500/10 text-red-500 border-red-500/40 animate-pulse font-black' 
+                                    ? 'bg-red-500/10 text-red-500 border-red-500/30' 
                                     : hasBudget
-                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30'
-                                      : 'bg-base-accent-dim/25 text-base-accent border-transparent'
+                                      ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                      : 'bg-base-accent-dim/20 text-base-accent border-transparent'
                                 }`}
                               >
-                                <Clock className="h-3 w-3" />
+                                <Clock className="h-2.5 w-2.5" />
                                 <span>
-                                  {fmtHrs(usedHours)}h used 
-                                  {hasBudget && ` / ${p.budgetHours}h budget`}
+                                  {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
                                 </span>
                               </span>
                             );
                           })()}
                         </div>
 
-                        {/* Progression bar */}
-                        <div className="space-y-1">
-                          <div className="flex justify-between items-center text-xs font-condensed font-bold text-base-muted2">
-                            <span>Complete score</span>
-                            <span>{pct}% ({tasksInfo.done}/{tasksInfo.total} tasks)</span>
+                        {/* Right/Tail section */}
+                        <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
+                          <div className="flex items-center gap-3">
+                            <div className="text-[11px] text-base-muted font-bold font-condensed uppercase tracking-wider hidden sm:block">
+                              {p.assemblies.length} subassemblies
+                            </div>
+                            
+                            <div className="space-y-0.5 w-20">
+                              <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
+                                <span>Progress</span>
+                                <span>{pct}%</span>
+                              </div>
+                              <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-20">
+                                <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
+                              </div>
+                            </div>
                           </div>
-                          <div className="h-2 bg-base-border/20 rounded-full overflow-hidden">
-                            <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
+
+                          <div className="flex items-center gap-1">
+                            {can('addAssembly') && (
+                              <button
+                                onClick={() => openAssemblyAddForm(p.id)}
+                                className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors"
+                              >
+                                + Assy
+                              </button>
+                            )}
+                            
+                            <button
+                              onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                              className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md"
+                              title="Open spotlight inspector"
+                            >
+                              <BookOpen className="h-3.5 w-3.5" />
+                            </button>
+                            
+                            {can('editProject') && (
+                              <button
+                                onClick={() => openEditProjectForm(p.id)}
+                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
+                                title="Edit parameters"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            
+                            {can('editProject') && (
+                              <button
+                                onClick={() => openCopyModalLauncher(p.id)}
+                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
+                                title="Clone project"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            )}
                           </div>
                         </div>
-
-                        {can('addAssembly') && (
-                          <div className="pt-2 flex justify-between items-center border-t border-base-border/30">
-                            <span className="text-[11px] text-base-muted font-bold font-condensed uppercase tracking-wider">{p.assemblies.length} subassembly blocks</span>
-                            <button
-                              onClick={() => openAssemblyAddForm(p.id)}
-                              className="px-2.5 py-1 text-[10px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border hover:bg-base-surface3 hover:text-base-text rounded-md text-base-muted2 cursor-pointer transition-colors"
-                            >
-                              + Add Assembly
-                            </button>
-                          </div>
-                        )}
                       </div>
                     );
                   })
@@ -2192,69 +2228,88 @@ export default function App() {
               }
 
               return (
-                <div className="grid grid-cols-1 gap-4">
+                <div className="grid grid-cols-1 gap-1.5 animate-fade-in">
                   {matchedProjects.map(p => {
                     const pct = calcPct(p);
                     return (
                       <div
                         key={p.id}
                         onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                        className="bg-base-surface border border-base-border hover:border-base-border2 rounded-xl p-4 shadow-card hover:shadow-elevated transition-colors cursor-pointer space-y-3 relative group"
+                        className="bg-base-surface border border-base-border hover:border-base-border2 rounded-lg py-1.5 px-3 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 relative group"
                       >
-                        <div className="flex justify-between items-start gap-4">
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-condensed font-extrabold text-base text-base-text leading-snug truncate pr-6">{p.name}</h3>
-                            <span className="text-[10px] font-condensed font-extrabold text-base-blue uppercase tracking-wide font-mono mt-0.5 block">{p.client}</span>
+                        {/* Title portion */}
+                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                          <div className="min-w-0">
+                            <h3 className="font-condensed font-black text-sm text-base-text leading-tight truncate">{p.name}</h3>
+                            <span className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wide font-mono mt-0.5 block">{p.client}</span>
                           </div>
-                          <span className="font-condensed font-extrabold text-sm text-base-accent shrink-0">{pct}%</span>
                         </div>
-                        <div className="text-[10px] font-condensed font-bold uppercase text-base-muted2 tracking-wider flex items-center justify-between pt-2 border-t border-base-border/30 gap-2">
-                          <span className="shrink-0">Due: {p.due || 'No date'}</span>
+
+                        {/* Mid Meta values */}
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
+                            Due: {p.due || 'No date'}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                            {p.location === 'workshop1' ? 'W1' : 'W2'}
+                          </span>
                           {(() => {
                             const usedHours = getManHoursForWorkOrder(p.client, timesheets);
                             const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
                             const isOverBudget = hasBudget && usedHours >= p.budgetHours;
                             return (
-                              <span className={`font-extrabold text-[12px] flex items-center gap-1 normal-case shrink-0 ${
+                              <span className={`font-extrabold text-[10px] uppercase font-condensed px-1.5 py-0.5 rounded border ${
                                 isOverBudget 
-                                  ? 'text-red-500 animate-pulse font-black' 
-                                  : 'text-base-accent'
+                                  ? 'bg-red-500/10 text-red-500 border-red-500/30' 
+                                  : 'bg-base-accent-dim/20 text-base-accent border-transparent'
                               }`}>
-                                Hours: {fmtHrs(usedHours)}H{hasBudget ? ` / ${p.budgetHours}H` : ''}
+                                Hours: {fmtHrs(usedHours)}h{hasBudget ? ` / ${p.budgetHours}h` : ''}
                               </span>
                             );
                           })()}
-                          <span className="capitalize shrink-0">{p.location === 'workshop1' ? 'Workshop 1' : 'Workshop 2'}</span>
                         </div>
 
-                        {/* Card actions line */}
-                        <div className="flex justify-end pt-1 gap-2 border-t border-base-border/20">
-                          {p.status === 'completed' && !p.isArchived && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                archiveProject(p.id);
-                              }}
-                              className="px-2.5 py-1 text-[10px] font-condensed font-extrabold bg-base-accent-dim hover:bg-base-accent hover:text-white border border-base-accent/20 hover:border-transparent text-base-accent rounded transition-all cursor-pointer flex items-center gap-1 uppercase tracking-wider"
-                              title="Archive completed project"
-                            >
-                              <Archive className="w-3 h-3 text-current" />
-                              <span>Archive Project</span>
-                            </button>
-                          )}
-                          {p.isArchived && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                unarchiveProject(p.id);
-                              }}
-                              className="px-2.5 py-1 text-[10px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 hover:border-transparent text-emerald-500 rounded transition-all cursor-pointer flex items-center gap-1 uppercase tracking-wider"
-                              title="Restore to Completed Log"
-                            >
-                              <RotateCcw className="w-3 h-3 text-current" />
-                              <span>Restore Project</span>
-                            </button>
-                          )}
+                        {/* Right/Tail section */}
+                        <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
+                          <div className="space-y-0.5 w-16">
+                            <div className="flex justify-between items-center text-[9px] font-condensed font-bold text-base-muted2">
+                              <span>Progress</span>
+                              <span>{pct}%</span>
+                            </div>
+                            <div className="h-1 bg-base-border/20 rounded-full overflow-hidden w-16">
+                              <div className="h-full rounded-full bg-base-accent" style={{ width: `${pct}%` }} />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1">
+                            {p.status === 'completed' && !p.isArchived && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  archiveProject(p.id);
+                                }}
+                                className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-base-accent-dim hover:bg-base-accent hover:text-white border border-base-accent/20 text-base-accent rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                                title="Archive completed project"
+                              >
+                                <Archive className="w-2.5 h-2.5" />
+                                <span>Archive</span>
+                              </button>
+                            )}
+                            {p.isArchived && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  unarchiveProject(p.id);
+                                }}
+                                className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                                title="Restore to Completed Log"
+                              >
+                                <RotateCcw className="w-2.5 h-2.5" />
+                                <span>Restore</span>
+                              </button>
+                            )}
+                          </div>
                         </div>
                       </div>
                     );
@@ -2381,7 +2436,7 @@ export default function App() {
                   type="text"
                   value={pName}
                   onChange={(e) => setPName(e.target.value)}
-                  placeholder="e.g. Panel Upgrade, Piping Framing..."
+                  placeholder=""
                   className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none"
                 />
               </div>
@@ -2392,7 +2447,7 @@ export default function App() {
                   type="text"
                   value={pWorkOrder}
                   onChange={(e) => setPWorkOrder(e.target.value)}
-                  placeholder="e.g. WO-2026-001..."
+                  placeholder=""
                   className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none uppercase font-mono font-bold tracking-wide"
                 />
               </div>
@@ -2463,7 +2518,7 @@ export default function App() {
                     type="number"
                     value={pBudgetHours}
                     onChange={(e) => setPBudgetHours(e.target.value)}
-                    placeholder="None (e.g. 100)"
+                    placeholder="None"
                     min="0"
                     step="any"
                     className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold"

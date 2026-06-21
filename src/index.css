@@ -145,3 +145,36 @@ input:focus, select:focus, textarea:focus {
   animation: pulse-highlight 2s infinite ease-in-out;
 }
 
+/* Premium micro-interactions and ambient glow utilities */
+.hover-lift {
+  transition: transform 0.22s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.22s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.22s ease;
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-elevated);
+}
+
+.glow-accent {
+  box-shadow: 0 0 12px var(--accent-dim);
+}
+.glow-green {
+  box-shadow: 0 0 12px var(--green-dim);
+}
+.glow-blue {
+  box-shadow: 0 0 12px var(--blue-dim);
+}
+.glow-red {
+  box-shadow: 0 0 12px var(--red-dim);
+}
+
+/* Glasscard subtle textures */
+.glass-panel {
+  background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0) 100%);
+  backdrop-filter: blur(8px);
+}
+.dark .glass-panel {
+  background: linear-gradient(135deg, rgba(21, 25, 33, 0.6) 0%, rgba(27, 33, 44, 0.4) 100%);
+  backdrop-filter: blur(12px);
+}
+
+

@@ -35,9 +35,24 @@ export default function UsersAccessView({
   defaultPermissions,
   sha256
 }: UsersAccessViewProps) {
+  // Local staged copy of users for drafting modifications
+  const [localUsers, setLocalUsers] = useState<User[]>(users);
   const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
+  // Synchronize when users from props update in background, but only if they have no unsaved changes
+  React.useEffect(() => {
+    const isCurrentlyDirty = JSON.stringify(localUsers) !== JSON.stringify(users);
+    if (!isCurrentlyDirty) {
+      setLocalUsers(users);
+    }
+  }, [users]);
+
+  // Compute dirty state of current staged users vs original prop state
+  const isDirty = React.useMemo(() => {
+    return JSON.stringify(localUsers) !== JSON.stringify(users);
+  }, [localUsers, users]);
+
   // New User Form States
   const [showAddForm, setShowAddForm] = useState<boolean>(false);
   const [newUserId, setNewUserId] = useState<string>('');
@@ -62,7 +77,7 @@ export default function UsersAccessView({
     onConfirm: () => {}
   });
 
-  const selectedUser = users.find(u => u.id === selectedUserId);
+  const selectedUser = localUsers.find(u => u.id === selectedUserId);
 
   const getIsTabVisibleByDefault = (tabId: string, role: string) => {
     if (tabId === 'users') return role === 'admin';
@@ -75,7 +90,7 @@ export default function UsersAccessView({
     return !!defaultPermissions[role]?.[permId];
   };
 
-  const filteredUsers = users.filter(u => 
+  const filteredUsers = localUsers.filter(u => 
     u.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     u.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
     u.role.toLowerCase().includes(searchQuery.toLowerCase())
@@ -92,7 +107,7 @@ export default function UsersAccessView({
       return;
     }
 
-    if (users.some(u => u.id === cleanId)) {
+    if (localUsers.some(u => u.id === cleanId)) {
       alert(`User ID "${cleanId}" already exists in the roster!`);
       return;
     }
@@ -105,7 +120,7 @@ export default function UsersAccessView({
       passHash: hashed
     };
 
-    onUpdateUsers([...users, createdUser]);
+    setLocalUsers([...localUsers, createdUser]);
     setSelectedUserId(createdUser.id);
     
     // Reset Form
@@ -121,16 +136,16 @@ export default function UsersAccessView({
       alert('You cannot delete your own logged-in user session!');
       return;
     }
-    const target = users.find(u => u.id === uId);
+    const target = localUsers.find(u => u.id === uId);
     if (!target) return;
 
     setDeleteConfirm({
       isOpen: true,
       title: 'Delete User Account',
-      message: `Are you sure you want to permanently delete user "${target.name}" (${target.id})? This will remove all their access permissions.`,
+      message: `Are you sure you want to stage deletion of user "${target.name}" (${target.id})? Note: Deletion won't be final until you click "Save Changes" or "Save & Update Roster".`,
       onConfirm: () => {
-        const updated = users.filter(u => u.id !== uId);
-        onUpdateUsers(updated);
+        const updated = localUsers.filter(u => u.id !== uId);
+        setLocalUsers(updated);
         if (selectedUserId === uId) {
           setSelectedUserId(updated[0]?.id || '');
         }
@@ -144,9 +159,9 @@ export default function UsersAccessView({
     setDeleteConfirm({
       isOpen: true,
       title: 'Reset User Defaults',
-      message: `Reset "${selectedUser.name}" to standard defaults for the "${selectedUser.role}" role? This will clear all custom overrides.`,
+      message: `Reset "${selectedUser.name}" to standard defaults for the "${selectedUser.role}" role? This will stage the reset of custom overrides. Remember to click Save afterwards.`,
       onConfirm: () => {
-        const updated = users.map(u => {
+        const updated = localUsers.map(u => {
           if (u.id === selectedUser.id) {
             return {
               ...u,
@@ -156,7 +171,7 @@ export default function UsersAccessView({
           }
           return u;
         });
-        onUpdateUsers(updated);
+        setLocalUsers(updated);
         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
       }
     });
@@ -166,17 +181,17 @@ export default function UsersAccessView({
     if (!selectedUser || !newPasswordValue.trim()) return;
     const hashed = await sha256(newPasswordValue.trim());
     
-    const updated = users.map(u => {
+    const updated = localUsers.map(u => {
       if (u.id === selectedUser.id) {
         return { ...u, passHash: hashed };
       }
       return u;
     });
 
-    onUpdateUsers(updated);
+    setLocalUsers(updated);
     setNewPasswordValue('');
     setShowPassReset(false);
-    alert(`Successfully reset login passcode credentials for ${selectedUser.name}.`);
+    alert(`Successfully staged passcode change for ${selectedUser.name}. Click "Save Changes" to apply permanently.`);
   };
 
   const handleToggleTabVisibility = (tabId: string) => {
@@ -195,7 +210,7 @@ export default function UsersAccessView({
       nextAllowed = [...currentAllowed, tabId];
     }
 
-    const updated = users.map(u => {
+    const updated = localUsers.map(u => {
       if (u.id === selectedUser.id) {
         return {
           ...u,
@@ -204,7 +219,7 @@ export default function UsersAccessView({
       }
       return u;
     });
-    onUpdateUsers(updated);
+    setLocalUsers(updated);
   };
 
   const handleTogglePermission = (permId: string) => {
@@ -223,7 +238,7 @@ export default function UsersAccessView({
       [permId]: !originalValue
     };
 
-    const updated = users.map(u => {
+    const updated = localUsers.map(u => {
       if (u.id === selectedUser.id) {
         return {
           ...u,
@@ -232,13 +247,13 @@ export default function UsersAccessView({
       }
       return u;
     });
-    onUpdateUsers(updated);
+    setLocalUsers(updated);
   };
 
   const handleRoleChange = (roleVal: UserRoleType) => {
     if (!selectedUser) return;
     
-    const updated = users.map(u => {
+    const updated = localUsers.map(u => {
       if (u.id === selectedUser.id) {
         return {
           ...u,
@@ -250,13 +265,13 @@ export default function UsersAccessView({
       }
       return u;
     });
-    onUpdateUsers(updated);
+    setLocalUsers(updated);
   };
 
   const handleDisplayNameChange = (nameVal: string) => {
     if (!selectedUser || !nameVal.trim()) return;
 
-    const updated = users.map(u => {
+    const updated = localUsers.map(u => {
       if (u.id === selectedUser.id) {
         return {
           ...u,
@@ -265,14 +280,52 @@ export default function UsersAccessView({
       }
       return u;
     });
-    onUpdateUsers(updated);
+    setLocalUsers(updated);
   };
 
   const isSelectedUserUsingDefaultFeatures = selectedUser && selectedUser.allowedFeatures === undefined;
   const isSelectedUserUsingDefaultPermissions = selectedUser && selectedUser.allowedPermissions === undefined;
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 p-6 min-h-[calc(100vh-140px)] animate-fade-in select-text">
+    <div className="flex flex-col gap-6 p-6 min-h-[calc(100vh-140px)] animate-fade-in select-text w-full">
+      
+      {/* ⚠️ UNSAVED CHANGES FLOATING ACTION BANNER */}
+      {isDirty && (
+        <div className="bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/35 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-elevated animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center shrink-0">
+              <RefreshCw className="h-5 w-5 animate-spin-slow text-amber-500" />
+            </div>
+            <div>
+              <h4 className="text-sm font-black uppercase font-condensed tracking-wider text-base-text">Unsaved Changes Staged</h4>
+              <p className="text-xs text-base-muted leading-tight mt-0.5">
+                You have modified user profiles, roles, or access bounds. Click <strong className="text-base-text font-bold">"Save & Update Roster"</strong> to apply changes permanently.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0">
+            <button
+              onClick={() => setLocalUsers(users)}
+              className="flex-1 md:flex-none px-4 py-2 border border-base-border text-base-muted hover:text-base-text font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface3 transition-all cursor-pointer text-xs"
+            >
+              Discard Changes
+            </button>
+            <button
+              onClick={() => {
+                onUpdateUsers(localUsers);
+                alert('All changes saved and broadcast successfully to the Live Cloud Sync!');
+              }}
+              className="flex-1 md:flex-none px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md text-xs flex items-center justify-center gap-1.5 glow-green active:scale-[0.98]"
+            >
+              <Check className="h-4 w-4" />
+              <span>Save & Update Roster</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TWO COLUMN GRID WRAPPER */}
+      <div className="flex flex-col lg:flex-row gap-6 w-full">
       
       {/* LEFT COLUMN: User Directory list */}
       <div className="w-full lg:w-80 flex flex-col gap-4 bg-base-surface border border-base-border rounded-xl p-4 shadow-card">
@@ -489,6 +542,19 @@ export default function UsersAccessView({
 
               {/* Action utilities */}
               <div className="flex items-center gap-2 shrink-0">
+                {isDirty && (
+                  <button
+                    onClick={() => {
+                      onUpdateUsers(localUsers);
+                      alert('All changes saved and broadcast successfully to the Live Cloud Sync!');
+                    }}
+                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 glow-green shadow-md active:scale-95 cursor-pointer"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Save Changes</span>
+                  </button>
+                )}
+
                 <button
                   onClick={() => setShowPassReset(!showPassReset)}
                   className="px-3 py-1.5 bg-base-surface border border-base-border hover:bg-base-surface3 hover:text-base-text text-base-muted2 font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5"
@@ -651,10 +717,10 @@ export default function UsersAccessView({
             </div>
 
             {/* Note on sync and instant effect */}
-            <div className="text-[11px] bg-base-accent-dim/10 border border-base-accent/20 p-3.5 rounded-lg flex items-start gap-2 text-base-muted italic">
-              <Shield className="w-5 h-5 text-base-accent shrink-0 mt-0.5" />
+            <div className="text-[11px] bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/25 p-3.5 rounded-lg flex items-start gap-2 text-base-muted italic">
+              <Shield className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
               <span>
-                <strong>Workspace Sync Mode:</strong> Access overrides processed above are persisted instantly. If you are modifying the permissions or tabs of the currently active session ({currentUser?.id}), the navigation tabs and feature permissions will adapt immediately.
+                <strong>Staged Editing Engine:</strong> Access overrides processed above are drafted locally. They will not take effect on the workspace until you click <strong className="text-base-text font-bold">"Save Changes"</strong> or <strong className="text-base-text font-bold">"Save & Update Roster"</strong>. Once saved, active sessions are refreshed immediately.
               </span>
             </div>
           </>
@@ -665,6 +731,7 @@ export default function UsersAccessView({
             <div className="text-xs">Create or search a user id from the left panel directory to start managing tabs and permissions.</div>
           </div>
         )}
+      </div>
       </div>
       
       {/* Custom Delete Confirmation Modal */}

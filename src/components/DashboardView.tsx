@@ -631,7 +631,7 @@ export default function DashboardView({
       {/* KPI Cards Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
         {/* KPI: Total Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-accent">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-accent border-b-4 border-b-base-accent">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <Folder className="h-4.5 w-4.5 text-base-accent" />
             Total projects
@@ -641,7 +641,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Active Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-blue">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-blue border-b-4 border-b-base-blue">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <Clock className="h-4.5 w-4.5 text-base-blue" />
             Active
@@ -651,7 +651,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Completed Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-green">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-green border-b-4 border-b-base-green">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <CheckCircle className="h-4.5 w-4.5 text-base-green" />
             Completed
@@ -661,7 +661,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Overdue Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-red">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-red border-b-4 border-b-base-red">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
             Overdue
@@ -671,7 +671,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Man-hours */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-blue">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-blue border-b-4 border-b-base-blue">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <Clock className="h-4.5 w-4.5 text-base-blue" />
             Man-hours
@@ -681,7 +681,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Present Today */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-green">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-green border-b-4 border-b-base-green">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <Users className="h-4.5 w-4.5 text-base-green" />
             Present
@@ -691,7 +691,7 @@ export default function DashboardView({
         </div>
 
         {/* KPI: Absent Today */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card transition-all hover:translate-y-[-2px] hover:shadow-elevated border-b-4 border-b-base-red">
+        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-red border-b-4 border-b-base-red">
           <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
             <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
             Absent

@@ -30,6 +30,9 @@ interface RowMeta {
   midY: number;
   barStartX?: number;
   barEndX?: number;
+  activityCode?: string;
+  difficulty?: number;
+  assignedResources?: string;
 }
 
 export default function GanttView({
@@ -195,6 +198,11 @@ export default function GanttView({
       }
     }
 
+    const pAssignedList = Array.from(new Set(
+      (p.assemblies || []).flatMap(a => (a.tasks || []).map(t => t.assigned).filter(Boolean))
+    ));
+    const pAssigned = pAssignedList.length > 0 ? pAssignedList.join(', ') : '';
+
     rowList.push({
       key: pKey,
       type: 'project',
@@ -206,7 +214,9 @@ export default function GanttView({
       height: pRowH,
       midY: pMidY,
       barStartX,
-      barEndX
+      barEndX,
+      activityCode: p.client ? p.client.toUpperCase() : `PRJ-${p.id.slice(0, 4).toUpperCase()}`,
+      assignedResources: pAssigned
     });
     currentY += pRowH;
 
@@ -242,6 +252,11 @@ export default function GanttView({
           aBarEndX = aBarLeft + aBarWidth;
         }
 
+        const aAssignedList = Array.from(new Set(
+          (a.tasks || []).map(t => t.assigned).filter(Boolean)
+        ));
+        const aAssigned = aAssignedList.length > 0 ? aAssignedList.join(', ') : '';
+
         rowList.push({
           key: aKey,
           type: 'assembly',
@@ -253,7 +268,9 @@ export default function GanttView({
           height: aRowH,
           midY: aMidY,
           barStartX: aBarStartX,
-          barEndX: aBarEndX
+          barEndX: aBarEndX,
+          activityCode: a.id ? `ASY-${a.id.slice(0, 4).toUpperCase()}` : 'ASY-100',
+          assignedResources: aAssigned
         });
         currentY += aRowH;
 
@@ -296,7 +313,10 @@ export default function GanttView({
               height: tRowH,
               midY: currentY + tRowH / 2,
               barStartX: tBarStartX,
-              barEndX: tBarEndX
+              barEndX: tBarEndX,
+              activityCode: t.id ? `ACT-${t.id.slice(0, 4).toUpperCase()}` : 'ACT-100',
+              difficulty: typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1,
+              assignedResources: t.assigned || ''
             });
             currentY += tRowH;
           });
@@ -846,81 +866,151 @@ export default function GanttView({
             {/* Absolute Bars Graphic Overlay Container */}
             <div className="absolute inset-0 pointer-events-none z-20">
               {rowList.map(row => {
-                const { key, type, color, pct, start, due, midY, barStartX, barEndX } = row;
+                const { key, type, color, pct, start, due, midY, barStartX, barEndX, activityCode, assignedResources } = row;
                 if (barStartX === undefined || barEndX === undefined) return null;
 
                 const isProject = type === 'project';
+                const isAssembly = type === 'assembly';
                 const isMilestone = start && due && start === due;
                 const barWidth = barEndX - barStartX;
 
+                // Determine MS Project task variables
+                const pId = key.split(':')[1];
+                const assocProj = projects.find(x => x.id === pId);
+                const todayStr = new Date().toISOString().slice(0, 10);
+                const isOverdue = assocProj?.due ? (assocProj.due < todayStr && assocProj.status !== 'completed') : false;
+                const isCriticalActive = isOverdue || assocProj?.status === 'pending';
+
                 if (isMilestone) {
-                  const diamondSz = 12;
+                  const diamondSz = 10;
                   return (
-                    <div
+                    <div 
                       key={key}
-                      onClick={() => openDepModal(key)}
-                      className="absolute rounded shadow-elevated border border-black/20 hover:brightness-110 cursor-pointer pointer-events-auto"
+                      className="absolute flex items-center pointer-events-none text-xs"
                       style={{
                         left: `${barStartX - diamondSz / 2}px`,
                         top: `${midY - diamondSz / 2}px`,
-                        width: `${diamondSz}px`,
-                        height: `${diamondSz}px`,
-                        backgroundColor: color,
-                        transform: 'rotate(45deg)',
-                        transition: 'left 0.4s ease'
+                        width: '400px',
+                        height: `${diamondSz}px`
                       }}
-                      title={`${row.name} (Milestone)`}
-                    />
+                    >
+                      <div
+                        onClick={() => openDepModal(key)}
+                        className="relative shrink-0 hover:brightness-110 cursor-pointer pointer-events-auto shadow-sm bg-slate-700 dark:bg-amber-400 border border-slate-900 dark:border-amber-300"
+                        style={{
+                          width: `${diamondSz}px`,
+                          height: `${diamondSz}px`,
+                          transform: 'rotate(45deg)'
+                        }}
+                        title={`${row.name} (Milestone — ${start})`}
+                      />
+                      <span className="text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded bg-white/95 dark:bg-slate-800/95 border border-slate-200/85 dark:border-slate-700/85 shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0">
+                        <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{activityCode || 'MILESTONE'}</span>
+                        <span className="text-slate-300 dark:text-slate-600">|</span>
+                        <span className="font-semibold text-slate-800 dark:text-slate-100">{row.name}</span>
+                        {start && <span className="text-slate-400 dark:text-slate-500">({new Date(start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>}
+                      </span>
+                    </div>
                   );
                 }
 
                 if (barWidth <= 0) return null;
 
-                // Standard progress indicator bars
-                const barH = type === 'project' ? 20 : (type === 'assembly' ? 12 : 7);
-                const completedW = Math.max(pct > 0 ? 5 : 0, Math.round((pct / 100) * barWidth));
-                const barOpacity = type === 'project' ? 0.95 : (type === 'assembly' ? 0.75 : 0.85);
-                const barRadius = type === 'project' ? '4px' : '2px';
+                // Standard MS Project-style Progress bars
+                const barH = (isProject || isAssembly) ? 14 : 12;
 
                 return (
-                  <div key={key} className="absolute overflow-hidden" style={{ left: `${barStartX}px`, top: `${midY - barH / 2}px`, width: `${barWidth}px`, height: `${barH}px` }}>
-                    {/* Shadow Dotted placeholder */}
-                    <div
-                      className="absolute inset-0 rounded-md border border-dashed opacity-25"
-                      style={{ borderColor: color, height: `${barH}px` }}
-                    />
-                    {/* Filling completed track */}
-                    {completedW > 0 && (
+                  <div 
+                    key={key} 
+                    className="absolute flex items-center pointer-events-none text-xs" 
+                    style={{ 
+                      left: `${barStartX}px`, 
+                      top: `${midY - barH / 2}px`, 
+                      width: `${barWidth + 400}px`, 
+                      height: `${barH}px` 
+                    }}
+                  >
+                    {isProject || isAssembly ? (
+                      /* MS Project SUMMARY TASK STYLE (Sleek dark bracket with downward pointy chevrons) */
                       <div
                         onClick={() => openDepModal(key)}
-                        className="absolute left-0 top-0 bottom-0 hover:brightness-110 transition-all cursor-pointer pointer-events-auto relative shadow-card"
+                        className="relative shrink-0 pointer-events-auto cursor-pointer"
                         style={{
-                          width: `${completedW}px`,
-                          backgroundColor: color,
-                          borderRadius: barRadius,
-                          opacity: barOpacity
+                          width: `${barWidth}px`,
+                          height: `${barH}px`,
                         }}
-                        title={`${row.name} — ${pct}% completion`}
+                        title={`${row.name} (Summary) — ${pct}%`}
                       >
-                        {/* Upper gloss highlights */}
-                        <div className="absolute inset-x-0 top-0 h-1/2 bg-white/12 rounded-t pointer-events-none" />
-                        {/* Inner text values */}
-                        {isProject && barWidth > 60 && (
-                          <div className="absolute inset-0 flex items-center px-2 select-none pointer-events-none font-condensed font-extrabold text-[10px] text-black/75">
-                            {pct}%
-                          </div>
+                        {/* Summary Horizonal Bar */}
+                        <div className="absolute top-0 left-[3px] right-[3px] h-[5px] bg-slate-800 dark:bg-slate-200" />
+                        
+                        {/* Left End Wedge */}
+                        <div 
+                          className="absolute left-0 top-0 w-[7px] h-[10px] bg-slate-800 dark:bg-slate-200" 
+                          style={{ clipPath: 'polygon(0px 0px, 7px 0px, 7px 10px, 3px 10px, 0px 4px)' }} 
+                        />
+                        
+                        {/* Right End Wedge */}
+                        <div 
+                          className="absolute right-0 top-0 w-[7px] h-[10px] bg-slate-800 dark:bg-slate-200" 
+                          style={{ clipPath: 'polygon(0px 0px, 7px 0px, 7px 4px, 4px 10px, 0px 10px)' }} 
+                        />
+
+                        {/* Summary Progress Line (inside summary bar) */}
+                        {pct > 0 && (
+                          <div 
+                            className="absolute left-[3px] top-[1px] h-[3px] bg-emerald-600 dark:bg-emerald-400 opacity-90 transition-all duration-300" 
+                            style={{ width: `${Math.round((pct / 100) * (barWidth - 6))}px` }} 
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      /* MS Project STANDARD TASK BAR (Active blue vs critical red/orange with inner dark core line) */
+                      <div
+                        onClick={() => openDepModal(key)}
+                        className={`relative shrink-0 border pointer-events-auto cursor-pointer rounded-[2px] transition-all bg-opacity-95 ${
+                          isCriticalActive 
+                            ? 'bg-red-100 border-red-400 dark:bg-red-950/80 dark:border-red-500' 
+                            : 'bg-blue-100 border-blue-400 dark:bg-blue-950/80 dark:border-blue-400'
+                        }`}
+                        style={{
+                          width: `${barWidth}px`,
+                          height: `${barH}px`,
+                        }}
+                        title={`${row.name} — ${pct}%`}
+                      >
+                        {/* Core center-level inner progress bar */}
+                        {pct > 0 && (
+                          <div
+                            className={`absolute top-[2.5px] bottom-[2.5px] left-[1px] transition-all duration-300 rounded-[1px] ${
+                              isCriticalActive 
+                                ? 'bg-red-700 dark:bg-red-400' 
+                                : 'bg-blue-600 dark:bg-sky-400'
+                            }`}
+                            style={{
+                              width: `${Math.round((pct / 100) * (barWidth - 2))}px`,
+                            }}
+                          />
                         )}
                       </div>
                     )}
-                    {/* Right side due month labels */}
-                    {type !== 'project' && pct > 0 && (
-                      <span
-                        className="absolute text-[9px] font-condensed font-bold text-base-muted2 select-none pointer-events-none"
-                        style={{ left: `${completedW + 5}px`, top: '50%', transform: 'translateY(-50%)' }}
-                      >
-                        {pct}%
-                      </span>
-                    )}
+
+                    {/* Classic MS Project resource and activity labels written directly to the right */}
+                    <span 
+                      className="text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded bg-white/95 dark:bg-slate-800/95 border border-slate-200/85 dark:border-slate-700/85 shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0"
+                    >
+                      <span className="text-sky-600 dark:text-sky-300 font-extrabold">{activityCode || 'ACT'}</span>
+                      <span className="text-slate-300 dark:text-slate-600">|</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-100 max-w-[130px] truncate">{row.name}</span>
+                      <span className="text-slate-300 dark:text-slate-600">|</span>
+                      {assignedResources ? (
+                        <>
+                          <span className="font-bold text-emerald-600 dark:text-emerald-400">{assignedResources}</span>
+                          <span className="text-slate-300 dark:text-slate-600">|</span>
+                        </>
+                      ) : null}
+                      <span className="text-orange-500 dark:text-amber-400 font-extrabold">{pct}%</span>
+                    </span>
                   </div>
                 );
               })}
