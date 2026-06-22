@@ -190,10 +190,10 @@ export default function WireConsumableView({
               <Flame className="h-6 w-6" />
             </div>
             <div>
-              <h1 className="font-condensed font-black uppercase text-2xl tracking-wider text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <h1 className="font-condensed font-black uppercase text-2xl tracking-wider text-base-text flex items-center gap-2">
                 Wire Consumables Registry
               </h1>
-              <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+              <p className="text-xs text-base-muted2 font-medium">
                 Track and monitor daily welding wire consumption logged to task-specific sub-assemblies.
               </p>
             </div>
@@ -202,12 +202,12 @@ export default function WireConsumableView({
         
         {/* Dynamic Highlights / Stat Counters */}
         <div className="flex grid grid-cols-2 gap-3 shrink-0">
-          <div className="bg-slate-50 dark:bg-slate-800/65 border border-slate-200/60 dark:border-slate-700/65 p-3.5 rounded-xl min-w-[125px]">
-            <span className="block text-[10px] font-condensed font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Total Consumed</span>
+          <div className="bg-base-surface2 border border-base-border p-3.5 rounded-xl min-w-[125px]">
+            <span className="block text-[10px] font-condensed font-bold text-base-muted uppercase tracking-widest">Total Consumed</span>
             <span className="text-xl font-mono font-black text-amber-600 dark:text-amber-400">{totalWireKg.toFixed(1)} <span className="font-sans text-xs font-semibold">kg</span></span>
           </div>
-          <div className="bg-slate-50 dark:bg-slate-800/65 border border-slate-200/60 dark:border-slate-700/65 p-3.5 rounded-xl min-w-[125px]">
-            <span className="block text-[10px] font-condensed font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Active Welders</span>
+          <div className="bg-base-surface2 border border-base-border p-3.5 rounded-xl min-w-[125px]">
+            <span className="block text-[10px] font-condensed font-bold text-base-muted uppercase tracking-widest">Active Welders</span>
             <span className="text-xl font-mono font-black text-amber-500 dark:text-amber-300">{uniqueWeldersWithWire} <span className="font-sans text-xs font-semibold">men</span></span>
           </div>
         </div>
@@ -217,43 +217,43 @@ export default function WireConsumableView({
 
         {/* Column 1: Entry Form */}
         <div className="lg:col-span-1 space-y-6">
-          <div className="bg-white dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800/80 p-5 rounded-2xl shadow-card space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div className="bg-base-surface border border-base-border p-5 rounded-2xl shadow-card space-y-4">
+            <div className="flex items-center gap-2 border-b border-base-border pb-3">
               <Plus className="h-4 w-4 text-amber-500" />
-              <span className="font-condensed font-extrabold uppercase text-xs text-slate-700 dark:text-slate-200 tracking-wider">Key In Daily Wire Taken</span>
+              <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Key In Daily Wire Taken</span>
             </div>
 
             <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium">
               
               {/* DATE */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                <label className="text-base-muted2 flex items-center gap-1.5">
+                  <Calendar className="h-3.5 w-3.5 text-base-muted" />
                   <span>Date Taken</span>
                 </label>
                 <input
                   type="date"
                   value={dateStr}
                   onChange={(e) => setDateStr(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold"
+                  className="w-full px-3.5 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold"
                   required
                 />
               </div>
 
               {/* WELDER DROPDOWN */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <UserCheck className="h-3.5 w-3.5 text-slate-400" />
+                <label className="text-base-muted2 flex items-center gap-1.5">
+                  <UserCheck className="h-3.5 w-3.5 text-base-muted" />
                   <span>Welder / Fitter</span>
                 </label>
                 <select
                   value={selectedEmployeeId}
                   onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
+                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
                 >
-                  <option value="">-- Select Welder --</option>
+                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Welder --</option>
                   {welderEmployees.map(emp => (
-                    <option key={emp.id} value={emp.id}>
+                    <option key={emp.id} value={emp.id} className="bg-base-surface2 text-base-text font-sans">
                       {emp.name} {emp.position ? `(${emp.position})` : ''}
                     </option>
                   ))}
@@ -262,8 +262,8 @@ export default function WireConsumableView({
 
               {/* PROJECT DROPDOWN */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Folder className="h-3.5 w-3.5 text-slate-400" />
+                <label className="text-base-muted2 flex items-center gap-1.5">
+                  <Folder className="h-3.5 w-3.5 text-base-muted" />
                   <span>Project</span>
                 </label>
                 <select
@@ -272,11 +272,11 @@ export default function WireConsumableView({
                     setSelectedProjectId(e.target.value);
                     setSelectedAssemblyId(''); // Reset sub-assembly
                   }}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
+                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
                 >
-                  <option value="">-- Select Project --</option>
+                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Project --</option>
                   {activeProjects.map(p => (
-                    <option key={p.id} value={p.id}>
+                    <option key={p.id} value={p.id} className="bg-base-surface2 text-base-text font-sans">
                       [{p.client}] {p.name}
                     </option>
                   ))}
@@ -285,32 +285,32 @@ export default function WireConsumableView({
 
               {/* SUB-ASSEMBLY DROPDOWN (CONNECTED TO THE PROJECT) */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <Wrench className="h-3.5 w-3.5 text-slate-400" />
+                <label className="text-base-muted2 flex items-center gap-1.5">
+                  <Wrench className="h-3.5 w-3.5 text-base-muted" />
                   <span>Sub-Assembly</span>
                 </label>
                 <select
                   value={selectedAssemblyId}
                   onChange={(e) => setSelectedAssemblyId(e.target.value)}
                   disabled={!selectedProjectId}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
+                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
                 >
-                  <option value="">-- Select Connected Sub-Assembly --</option>
+                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Connected Sub-Assembly --</option>
                   {selectedProjectObj?.assemblies.map(asm => (
-                    <option key={asm.id} value={asm.id}>
+                    <option key={asm.id} value={asm.id} className="bg-base-surface2 text-base-text font-sans">
                       {asm.name}
                     </option>
                   ))}
                 </select>
                 {!selectedProjectId && (
-                  <span className="text-[10px] text-slate-400 italic block mt-0.5">Select a project first to load connected sub-assemblies.</span>
+                  <span className="text-[10px] text-base-muted italic block mt-0.5">Select a project first to load connected sub-assemblies.</span>
                 )}
               </div>
 
               {/* AMOUNT IN KILOGRAMS */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                  <TrendingUp className="h-3.5 w-3.5 text-slate-400" />
+                <label className="text-base-muted2 flex items-center gap-1.5">
+                  <TrendingUp className="h-3.5 w-3.5 text-base-muted" />
                   <span>Amount Taken (in kg)</span>
                 </label>
                 <div className="relative">
@@ -321,22 +321,22 @@ export default function WireConsumableView({
                     placeholder="e.g. 5.5"
                     value={amountInputStr}
                     onChange={(e) => setAmountInputStr(e.target.value)}
-                    className="w-full pl-3.5 pr-10 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none font-mono font-black focus:ring-1 focus:ring-amber-500 text-sm"
+                    className="w-full pl-3.5 pr-10 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none font-mono font-black focus:ring-1 focus:ring-amber-500 text-sm"
                     required
                   />
-                  <div className="absolute right-3.5 top-2 text-xs font-bold text-slate-400 uppercase select-none">kg</div>
+                  <div className="absolute right-3.5 top-2 text-xs font-bold text-base-muted uppercase select-none">kg</div>
                 </div>
               </div>
 
               {/* REMARKS */}
               <div className="space-y-1.5">
-                <label className="text-slate-500 dark:text-slate-400">Remarks / Wire Type (Optional)</label>
+                <label className="text-base-muted2">Remarks / Wire Type (Optional)</label>
                 <textarea
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="e.g. AWS A5.18 ER70S-6 spool, joint reinforcement..."
                   rows={2}
-                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-slate-800 dark:text-slate-100 outline-none focus:ring-1 focus:ring-amber-500 transition-all text-xs"
+                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all text-xs"
                 />
               </div>
 
@@ -373,20 +373,20 @@ export default function WireConsumableView({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             
             {/* Top Welders Card */}
-            <div className="bg-slate-50 dark:bg-slate-900/20 border border-slate-200/60 dark:border-slate-800 p-4 rounded-xl space-y-3">
-              <h3 className="text-[11px] font-condensed font-extrabold uppercase text-slate-500 dark:text-slate-400 tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <div className="bg-base-surface border border-base-border p-4 rounded-xl space-y-3">
+              <h3 className="text-[11px] font-condensed font-extrabold uppercase text-base-muted tracking-wider flex items-center gap-1.5 pb-2 border-b border-base-border">
                 <UserCheck className="h-3.5 w-3.5 text-amber-500" />
                 <span>Top Welders (By Kg Taken)</span>
               </h3>
               {welderTotals.length === 0 ? (
-                <span className="text-[11px] text-slate-400 italic block py-2">No consumables recorded yet.</span>
+                <span className="text-[11px] text-base-muted italic block py-2">No consumables recorded yet.</span>
               ) : (
                 <div className="space-y-2 max-h-[140px] overflow-y-auto scrollbar-none pr-1">
                   {welderTotals.slice(0, 4).map((item, index) => (
                     <div key={item.name + index} className="flex items-center justify-between text-xs py-1">
-                      <span className="text-slate-700 dark:text-slate-300 font-semibold">{item.name}</span>
-                      <span className="font-mono font-black text-amber-600 dark:text-amber-400">
-                        {item.amount.toFixed(1)} kg <span className="text-[10px] font-sans font-medium text-slate-400">({item.count} logs)</span>
+                      <span className="text-base-text font-semibold">{item.name}</span>
+                      <span className="font-mono font-black text-base-accent">
+                        {item.amount.toFixed(1)} kg <span className="text-[10px] font-sans font-medium text-base-muted">({item.count} logs)</span>
                       </span>
                     </div>
                   ))}
@@ -395,22 +395,22 @@ export default function WireConsumableView({
             </div>
 
             {/* Sub-Assembly Cumulative Totals */}
-            <div className="bg-slate-50 dark:bg-slate-900/20 border border-slate-200/60 dark:border-slate-800 p-4 rounded-xl space-y-3">
-              <h3 className="text-[11px] font-condensed font-extrabold uppercase text-slate-500 dark:text-slate-400 tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100 dark:border-slate-800">
+            <div className="bg-base-surface border border-base-border p-4 rounded-xl space-y-3">
+              <h3 className="text-[11px] font-condensed font-extrabold uppercase text-base-muted tracking-wider flex items-center gap-1.5 pb-2 border-b border-base-border">
                 <Wrench className="h-3.5 w-3.5 text-amber-500" />
                 <span>Cumulative Wire per Sub-Assembly</span>
               </h3>
               {projectAssemblyTotals.length === 0 ? (
-                <span className="text-[11px] text-slate-400 italic block py-2">No consumables recorded yet.</span>
+                <span className="text-[11px] text-base-muted italic block py-2">No consumables recorded yet.</span>
               ) : (
                 <div className="space-y-2 max-h-[140px] overflow-y-auto scrollbar-none pr-1">
                   {projectAssemblyTotals.slice(0, 4).map((item, index) => (
                     <div key={item.asmName + index} className="text-xs space-y-0.5 py-1">
                       <div className="flex items-center justify-between">
-                        <span className="text-slate-700 dark:text-slate-300 font-bold truncate max-w-[180px]">{item.asmName}</span>
-                        <span className="font-mono font-black text-amber-500">{item.amount.toFixed(1)} kg</span>
+                        <span className="text-base-text font-bold truncate max-w-[180px]">{item.asmName}</span>
+                        <span className="font-mono font-black text-base-accent">{item.amount.toFixed(1)} kg</span>
                       </div>
-                      <span className="text-[9px] text-slate-400 block truncate max-w-[240px]">{item.projName}</span>
+                      <span className="text-[9px] text-base-muted block truncate max-w-[240px]">{item.projName}</span>
                     </div>
                   ))}
                 </div>
@@ -419,12 +419,12 @@ export default function WireConsumableView({
           </div>
 
           {/* Filter Toolbar row */}
-          <div className="bg-white dark:bg-slate-900/40 border border-slate-200/80 dark:border-slate-800/80 p-5 rounded-2xl shadow-card space-y-4">
+          <div className="bg-base-surface border border-base-border p-5 rounded-2xl shadow-card space-y-4">
             
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3.5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-base-border pb-3.5">
               <div className="flex items-center gap-2">
                 <Filter className="h-4 w-4 text-amber-500" />
-                <span className="font-condensed font-extrabold uppercase text-xs text-slate-700 dark:text-slate-200 tracking-wider">Wire Logs History</span>
+                <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Wire Logs History</span>
                 <span className="text-[10px] font-semibold bg-amber-500/15 text-amber-500 px-1.5 py-0.5 rounded-md">
                   {filteredLogs.length} Records
                 </span>
@@ -433,7 +433,7 @@ export default function WireConsumableView({
                 <button
                   onClick={handleExportCSV}
                   disabled={filteredLogs.length === 0}
-                  className="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 transition-all cursor-pointer font-condensed font-bold text-xs rounded-lg uppercase tracking-wider flex items-center gap-1.5 shadow-xs disabled:opacity-45 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 bg-base-surface2 hover:bg-base-surface3 border border-base-border text-base-text transition-all cursor-pointer font-condensed font-bold text-xs rounded-lg uppercase tracking-wider flex items-center gap-1.5 shadow-xs disabled:opacity-45 disabled:cursor-not-allowed"
                 >
                   <Download className="h-3.5 w-3.5" />
                   <span>Download Log CSV</span>
@@ -446,13 +446,13 @@ export default function WireConsumableView({
               
               {/* Search text inputs */}
               <div className="relative">
-                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-400 pointer-events-none" />
+                <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-base-muted pointer-events-none" />
                 <input
                   type="text"
                   placeholder="Search welder, project..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none focus:border-amber-400 text-slate-800 dark:text-slate-100 font-medium"
+                  className="w-full pl-9 pr-4 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none focus:border-amber-400 text-base-text font-medium"
                 />
               </div>
 
@@ -460,11 +460,11 @@ export default function WireConsumableView({
               <select
                 value={selectedProjectFilter}
                 onChange={(e) => setSelectedProjectFilter(e.target.value)}
-                className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none text-slate-700 dark:text-slate-200 cursor-pointer text-slate-800 dark:text-slate-100 font-semibold"
+                className="px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none text-base-text cursor-pointer font-semibold"
               >
-                <option value="">-- All Projects --</option>
+                <option value="" className="bg-base-surface2 text-base-text font-sans">-- All Projects --</option>
                 {projects.map(p => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
+                  <option key={p.id} value={p.id} className="bg-base-surface2 text-base-text font-sans">{p.name}</option>
                 ))}
               </select>
 
@@ -472,20 +472,20 @@ export default function WireConsumableView({
               <select
                 value={selectedWelderFilter}
                 onChange={(e) => setSelectedWelderFilter(e.target.value)}
-                className="px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-xs outline-none text-slate-700 dark:text-slate-200 cursor-pointer text-slate-800 dark:text-slate-100 font-semibold"
+                className="px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none text-base-text cursor-pointer font-semibold"
               >
-                <option value="">-- All Welders --</option>
+                <option value="" className="bg-base-surface2 text-base-text font-sans">-- All Welders --</option>
                 {employees.map(emp => (
-                  <option key={emp.id} value={emp.id}>{emp.name}</option>
+                  <option key={emp.id} value={emp.id} className="bg-base-surface2 text-base-text font-sans">{emp.name}</option>
                 ))}
               </select>
             </div>
 
             {/* List Table of Logs */}
-            <div className="overflow-x-auto rounded-xl border border-slate-200/60 dark:border-slate-800 bg-white/5 dark:bg-slate-900/10">
+            <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface">
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
-                  <tr className="bg-slate-100/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-400 font-condensed font-bold uppercase tracking-wider border-b border-slate-200 dark:border-slate-850">
+                  <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
                     <th className="px-4 py-2.5">Date</th>
                     <th className="px-4 py-2.5">Welder</th>
                     <th className="px-4 py-2.5">Connected Project / Sub-Assembly</th>
@@ -494,37 +494,37 @@ export default function WireConsumableView({
                     <th className="px-4 py-2.5 text-center">Action</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800 text-slate-800 dark:text-slate-200 text-[11px] font-semibold">
+                <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
                   {filteredLogs.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-10 text-center text-slate-400 italic">
+                      <td colSpan={6} className="px-6 py-10 text-center text-base-muted italic">
                         No consumable wire logs match current filters or search query.
                       </td>
                     </tr>
                   ) : (
                     filteredLogs.map(log => (
-                      <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
+                      <tr key={log.id} className="hover:bg-base-surface2/40 transition-colors">
                         {/* Date column */}
-                        <td className="px-4 py-3 font-mono text-slate-500 dark:text-slate-400 whitespace-nowrap">
+                        <td className="px-4 py-3 font-mono text-base-muted whitespace-nowrap">
                           {log.date}
                         </td>
                         {/* Welder Name column */}
-                        <td className="px-4 py-3 text-slate-900 dark:text-slate-100 font-extrabold whitespace-nowrap">
+                        <td className="px-4 py-3 text-base-text font-extrabold whitespace-nowrap">
                           {log.welderName}
                         </td>
                         {/* Connected Sub-Assembly column */}
                         <td className="px-4 py-3 space-y-0.5">
-                          <span className="block font-bold text-slate-800 dark:text-slate-300">{log.assemblyName}</span>
-                          <span className="block text-[10px] text-slate-400 font-medium truncate max-w-[200px]" title={log.projectName}>
+                          <span className="block font-bold text-base-text">{log.assemblyName}</span>
+                          <span className="block text-[10px] text-base-muted font-medium truncate max-w-[200px]" title={log.projectName}>
                             {log.projectName}
                           </span>
                         </td>
                         {/* Amount in kg column */}
-                        <td className="px-4 py-3 text-right font-mono font-black text-amber-600 dark:text-amber-400 whitespace-nowrap">
+                        <td className="px-4 py-3 text-right font-mono font-black text-base-accent whitespace-nowrap">
                           {log.amountKg.toFixed(2)} kg
                         </td>
                         {/* Remarks column */}
-                        <td className="px-4 py-3 max-w-[140px] truncate text-slate-500 dark:text-slate-400 font-normal italic" title={log.notes || 'No remarks'}>
+                        <td className="px-4 py-3 max-w-[140px] truncate text-base-muted font-normal italic" title={log.notes || 'No remarks'}>
                           {log.notes || '-'}
                         </td>
                         {/* Action delete column */}
