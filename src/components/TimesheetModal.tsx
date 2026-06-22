@@ -127,7 +127,7 @@ export default function TimesheetModal({
   const handleGlobalWoInput = (val: string) => {
     setGlobalWo(val);
     const q = val.toLowerCase();
-    const activeProjects = projects.filter(p => p.client);
+    const activeProjects = projects.filter(p => p.client && p.status !== 'completed');
     const matches = q ? activeProjects.filter(p => (p.client + ' ' + p.name).toLowerCase().includes(q)) : activeProjects;
     setGlobalDropdownMatches(matches);
     setGlobalFocusedIdx(-1);
@@ -147,7 +147,7 @@ export default function TimesheetModal({
     setRowInputs(updated);
 
     const q = val.toLowerCase();
-    const activeProjects = projects.filter(p => p.client);
+    const activeProjects = projects.filter(p => p.client && p.status !== 'completed');
     const matches = q ? activeProjects.filter(p => (p.client + ' ' + p.name).toLowerCase().includes(q)) : activeProjects;
 
     const empId = updated[idx].empId;

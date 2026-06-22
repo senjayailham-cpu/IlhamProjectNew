@@ -113,6 +113,24 @@
         "inspectedDate": { "type": "string" }
       },
       "required": ["id", "projectId", "title", "status"]
+    },
+    "WireLog": {
+      "title": "WireLog",
+      "description": "Daily Wire Consumable record tracking wire taken by welders.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "welderId": { "type": "string" },
+        "welderName": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "assemblyId": { "type": "string" },
+        "assemblyName": { "type": "string" },
+        "amountKg": { "type": "number" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "date", "welderId", "projectId", "assemblyId", "amountKg"]
     }
   },
   "firestore": {
@@ -139,6 +157,10 @@
     "/inspections/{inspectionId}": {
       "schema": "InspectionRequest",
       "description": "QA/QC structural inspection sign-offs."
+    },
+    "/wireLogs/{wireLogId}": {
+      "schema": "WireLog",
+      "description": "Daily wire consumable registry for welding personnel."
     }
   }
 }

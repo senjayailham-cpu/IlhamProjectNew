@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Project, Assembly, Task } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download } from 'lucide-react';
+import { downloadProjectPDF } from '../utils/pdfGenerator';
 
 interface SpotlightModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface SpotlightModalProps {
   projectId: string | null;
   projects: Project[];
   timesheets: any[];
+  wireLogs?: any[];
   onEdit: (pid: string) => void;
   onEditAssembly?: (pid: string, aid: string) => void;
   onUpdateProject?: (
@@ -42,6 +44,7 @@ export default function SpotlightModal({
   projectId,
   projects,
   timesheets,
+  wireLogs = [],
   onEdit,
   onEditAssembly,
   onUpdateProject,
@@ -349,6 +352,18 @@ export default function SpotlightModal({
                                   {fmtHrs(usedHours)}h 
                                   {hasBudget && ` / ${a.budgetHours}h budget`}
                                 </span>
+                              </span>
+                            );
+                          })()}
+
+                          {(() => {
+                            const loggedWire = (wireLogs || []).filter(wl => wl.projectId === p.id && wl.assemblyId === a.id);
+                            const totalWire = loggedWire.reduce((sum, wl) => sum + wl.amountKg, 0);
+                            if (totalWire === 0) return null;
+                            return (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-condensed font-extrabold uppercase px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-500 border-amber-500/30 transition-all" title="Total wire consumable taken by welders">
+                                <Flame className="w-2.5 h-2.5 text-current animate-pulse" />
+                                <span>{totalWire.toFixed(1)} kg Wire</span>
                               </span>
                             );
                           })()}
@@ -726,11 +741,35 @@ export default function SpotlightModal({
 
         {/* Global properties edit button */}
         <div className="px-5 py-3 border-t border-base-border flex items-center justify-between flex-shrink-0 bg-base-surface2 text-xs">
-          <div className="text-base-muted font-condensed font-bold uppercase tracking-wider text-[11px] flex items-center gap-1 leading-none">
-            <Clock className="h-4 w-4" />
-            <span>Man-hours used: {p.client ? fmtHrs(getManHoursForWorkOrder(p.client, timesheets)) : 0}h Total</span>
+          <div className="text-base-muted font-condensed font-bold uppercase tracking-wider text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4" />
+              <span>Man-hours used: {p.client ? fmtHrs(getManHoursForWorkOrder(p.client, timesheets)) : 0}h Total</span>
+            </div>
+            {(() => {
+              const totalWire = (wireLogs || [])
+                .filter(wl => wl.projectId === p.id)
+                .reduce((sum, wl) => sum + wl.amountKg, 0);
+              if (totalWire === 0) return null;
+              return (
+                <div className="flex items-center gap-1 border-l border-base-border/50 pl-3 text-amber-500">
+                  <Flame className="h-4 w-4 text-amber-500 animate-pulse" />
+                  <span>Wire consumable: {totalWire.toFixed(1)} kg Total</span>
+                </div>
+              );
+            })()}
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            {p.status === 'completed' && (
+              <button
+                onClick={() => downloadProjectPDF(p, timesheets, wireLogs || [])}
+                className="px-3.5 py-1.5 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-white rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-all"
+                title="Download completion report in PDF format"
+              >
+                <Download className="h-4 w-4" />
+                <span>Export PDF</span>
+              </button>
+            )}
             <button onClick={onClose} className="px-3.5 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Close</button>
             <button
               id="spl-edit-btn"

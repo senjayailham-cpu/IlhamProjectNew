@@ -633,3 +633,20 @@ export interface BulkExportDataset {
   columns: string[];
   rows: Array<Record<string, string | number | boolean | null | undefined>>;
 }
+
+/**
+ * Daily Wire Consumable record tracking wire taken by welders.
+ */
+export interface WireLog {
+  id: string;          // Unique logging ID
+  date: string;        // YYYY-MM-DD
+  welderId: string;    // Associated Employee ID
+  welderName: string;  // Denormalized welder's name
+  projectId: string;   // Associated Project ID
+  projectName: string; // Denormalized project name
+  assemblyId: string;  // Associated Sub-Assembly ID
+  assemblyName: string;// Denormalized sub-assembly name
+  amountKg: number;    // Amount of wire in kilograms (kg)
+  notes?: string;      // Any visual comments
+}
+

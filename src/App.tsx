@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, Task, Dependency, UserRole, Assembly, ProblemReport, InspectionRequest } from './types';
-import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS } from './mockData';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, Task, Dependency, UserRole, Assembly, ProblemReport, InspectionRequest, WireLog } from './types';
+import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { calcPct, calcTaskCounts, fmtHrs, esc, getManHoursForWorkOrder, exportProjectsCSV } from './utils/projectUtils';
+import { downloadProjectPDF } from './utils/pdfGenerator';
 
 // Firebase imports
 import { db, auth, googleProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from './firebase';
@@ -22,12 +23,13 @@ import DepModal from './components/DepModal';
 import Focus24View from './components/Focus24View';
 import InspectionView from './components/InspectionView';
 import UsersAccessView from './components/UsersAccessView';
+import WireConsumableView from './components/WireConsumableView';
 
 // Lucide Icons
 import {
   Folder, Clock, CheckCircle, AlertTriangle, Users, BookOpen, FileText,
   UserPlus, Upload, ShieldCheck, Trash2, Edit, Copy, ChevronDown, LogOut, Save, Search, Lock, Key,
-  Archive, RotateCcw, Download
+  Archive, RotateCcw, Download, Flame, Wrench, Plus
 } from 'lucide-react';
 
 const PERMISSIONS = {
@@ -135,6 +137,7 @@ export default function App() {
   const [activities, setActivities] = useState<ActivityLog[]>([]);
   const [problemReports, setProblemReports] = useState<ProblemReport[]>([]);
   const [inspections, setInspections] = useState<InspectionRequest[]>([]);
+  const [wireLogs, setWireLogs] = useState<WireLog[]>([]);
 
   // Navigation and Filter parameters
   const [activeTab, setActiveTab] = useState<string>('dash');
@@ -342,6 +345,15 @@ export default function App() {
         localStorage.setItem('w2proj_inspections_v1', JSON.stringify(DEFAULT_INSPECTION_REQUESTS));
         setInspections(DEFAULT_INSPECTION_REQUESTS);
       }
+
+      // Boot wire logs
+      const storedWl = localStorage.getItem('w2proj_wire_logs_v1');
+      if (storedWl) {
+        setWireLogs(JSON.parse(storedWl));
+      } else {
+        localStorage.setItem('w2proj_wire_logs_v1', JSON.stringify(DEFAULT_WIRE_LOGS));
+        setWireLogs(DEFAULT_WIRE_LOGS);
+      }
     };
 
     initializeDataAndUsers();
@@ -476,6 +488,7 @@ export default function App() {
             ...DEFAULT_ACTIVITIES.map(item => setDoc(doc(db, 'activities', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `activities/${item.id}`))),
             ...DEFAULT_PROBLEM_REPORTS.map(item => setDoc(doc(db, 'problemReports', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `problemReports/${item.id}`))),
             ...DEFAULT_INSPECTION_REQUESTS.map(item => setDoc(doc(db, 'inspections', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `inspections/${item.id}`))),
+            ...DEFAULT_WIRE_LOGS.map(item => setDoc(doc(db, 'wireLogs', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `wireLogs/${item.id}`))),
             ...defUsers.map(item => setDoc(doc(db, 'users', item.id), item).catch(err => handleFirestoreError(err, OperationType.WRITE, `users/${item.id}`))),
           ];
           await Promise.all(seedPromises);
@@ -541,6 +554,7 @@ export default function App() {
         listenToCollection('problemReports', setProblemReports, 'w2proj_problem_reports_v1');
         listenToCollection('inspections', setInspections, 'w2proj_inspections_v1');
         listenToCollection('users', setUsers, 'w2proj_users_v1');
+        listenToCollection('wireLogs', setWireLogs, 'w2proj_wire_logs_v1');
       } catch (err) {
         console.error("Error setting up Firestore real-time sync & seeding:", err);
       }
@@ -561,7 +575,7 @@ export default function App() {
       saveNow();
     }, 1500);
     return () => clearTimeout(timer);
-  }, [isChanged, projects, employees, timesheets, activities, users, problemReports, inspections]);
+  }, [isChanged, projects, employees, timesheets, activities, users, problemReports, inspections, wireLogs]);
 
   // Synchronize currentUser details if the user list changes (for live permission/access update)
   useEffect(() => {
@@ -612,6 +626,7 @@ export default function App() {
     localStorage.setItem('w2proj_users_v1', JSON.stringify(users));
     localStorage.setItem('w2proj_problem_reports_v1', JSON.stringify(problemReports));
     localStorage.setItem('w2proj_inspections_v1', JSON.stringify(inspections));
+    localStorage.setItem('w2proj_wire_logs_v1', JSON.stringify(wireLogs));
 
     setIsChanged(false);
     const tmStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -652,6 +667,7 @@ export default function App() {
           syncList('users', users),
           syncList('problemReports', problemReports),
           syncList('inspections', inspections),
+          syncList('wireLogs', wireLogs),
         ]);
 
         setLastSavedLabel(`Synced online at ${tmStr}`);
@@ -1456,6 +1472,49 @@ export default function App() {
     );
   };
 
+  // WIRE CONSUMABLE LOGISTICS
+  const handleAddWireLog = (log: Omit<WireLog, 'id'>) => {
+    const newLog: WireLog = {
+      ...log,
+      id: 'wl_' + uid()
+    };
+
+    setWireLogs(prev => [newLog, ...prev]);
+    verifyMarkChanged();
+
+    logActivity(
+      'assembly_progress',
+      `Logged daily wire taken: ${newLog.amountKg} kg for ${newLog.welderName}`,
+      newLog.projectId,
+      newLog.projectName,
+      newLog.assemblyName,
+      undefined,
+      undefined,
+      undefined,
+      newLog.notes || `Daily wire consumables logged.`
+    );
+  };
+
+  const handleDeleteWireLog = (id: string) => {
+    const targetLog = wireLogs.find(l => l.id === id);
+    if (!targetLog) return;
+
+    setWireLogs(prev => prev.filter(l => l.id !== id));
+    verifyMarkChanged();
+
+    logActivity(
+      'assembly_progress',
+      `Deleted wire log entry: ${targetLog.amountKg} kg taken by ${targetLog.welderName}`,
+      targetLog.projectId,
+      targetLog.projectName,
+      targetLog.assemblyName,
+      undefined,
+      undefined,
+      undefined,
+      `Logs historical revision by user: ${currentUser?.name || 'Authorized user'}`
+    );
+  };
+
   const handleUpdateInspectionStatus = (
     id: string,
     status: InspectionRequest['status'],
@@ -1754,6 +1813,7 @@ export default function App() {
     { id: 'tray', label: 'Project Tray', icon: 'Folder', access: 'all' },
     { id: 'nontray', label: 'Project Non-Tray', icon: 'Folder', access: 'all' },
     { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
+    { id: 'wire', label: 'Wire Consumable', icon: 'Flame', access: 'all' },
     { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
     { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
     { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
@@ -2120,6 +2180,22 @@ export default function App() {
                               </span>
                             );
                           })()}
+
+                          {(() => {
+                            const totalWire = (wireLogs || [])
+                              .filter(wl => wl.projectId === p.id)
+                              .reduce((sum, wl) => sum + wl.amountKg, 0);
+                            if (totalWire === 0) return null;
+                            return (
+                              <span 
+                                className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
+                                title="Total wire consumables logged"
+                              >
+                                <Flame className="h-2.5 w-2.5 animate-pulse" />
+                                <span>{totalWire.toFixed(1)} kg</span>
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         {/* Right/Tail section */}
@@ -2150,6 +2226,19 @@ export default function App() {
                               </button>
                             )}
                             
+                            {p.status === 'completed' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadProjectPDF(p, timesheets, wireLogs);
+                                }}
+                                className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md"
+                                title="Download completion PDF report"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+
                             <button
                               onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
                               className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md"
@@ -2268,6 +2357,22 @@ export default function App() {
                               </span>
                             );
                           })()}
+
+                          {(() => {
+                            const totalWire = (wireLogs || [])
+                              .filter(wl => wl.projectId === p.id)
+                              .reduce((sum, wl) => sum + wl.amountKg, 0);
+                            if (totalWire === 0) return null;
+                            return (
+                              <span 
+                                className="flex items-center gap-1 font-extrabold text-[10px] uppercase font-condensed px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
+                                title="Total wire consumables logged"
+                              >
+                                <Flame className="h-2.5 w-2.5 animate-pulse" />
+                                <span>Wire: {totalWire.toFixed(1)} kg</span>
+                              </span>
+                            );
+                          })()}
                         </div>
 
                         {/* Right/Tail section */}
@@ -2283,6 +2388,19 @@ export default function App() {
                           </div>
 
                           <div className="flex items-center gap-1">
+                            {p.status === 'completed' && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  downloadProjectPDF(p, timesheets, wireLogs);
+                                }}
+                                className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                                title="Download PDF summary report"
+                              >
+                                <Download className="w-2.5 h-2.5" />
+                                <span>Export PDF</span>
+                              </button>
+                            )}
                             {p.status === 'completed' && !p.isArchived && (
                               <button
                                 onClick={(e) => {
@@ -2378,6 +2496,17 @@ export default function App() {
             onAddInspection={handleAddInspection}
             onUpdateInspectionStatus={handleUpdateInspectionStatus}
             onDeleteInspection={handleDeleteInspection}
+          />
+        )}
+
+        {activeTab === 'wire' && (
+          <WireConsumableView
+            wireLogs={wireLogs}
+            employees={employees}
+            projects={projects}
+            currentUser={currentUser}
+            onAddWireLog={handleAddWireLog}
+            onDeleteWireLog={handleDeleteWireLog}
           />
         )}
 
@@ -2811,6 +2940,7 @@ export default function App() {
         projectId={spotlightProjectId}
         projects={projects}
         timesheets={timesheets}
+        wireLogs={wireLogs}
         onEdit={(pid) => { setSpotlightOpen(false); openEditProjectForm(pid); }}
         onEditAssembly={(pid, aid) => { setSpotlightOpen(false); openAssemblyEditForm(pid, aid); }}
         onUpdateProject={(updatedProj, logParams) => {

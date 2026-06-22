@@ -390,7 +390,7 @@ export default function Focus24View({
               className="px-3 py-2 bg-base-surface2 text-base-text border border-base-border rounded-md text-xs font-semibold outline-none focus:border-[#9b1c2e] cursor-pointer"
             >
               <option value="">— Globally Applicable (No Single Project) —</option>
-              {projects.map((p) => (
+              {projects.filter(p => p.status !== 'completed').map((p) => (
                 <option key={p.id} value={p.id}>{p.client} — {p.name}</option>
               ))}
             </select>

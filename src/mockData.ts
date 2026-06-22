@@ -1,4 +1,4 @@
-import { Project, Employee, TimesheetEntry, ActivityLog, User, ProblemReport, InspectionRequest } from './types';
+import { Project, Employee, TimesheetEntry, ActivityLog, User, ProblemReport, InspectionRequest, WireLog } from './types';
 
 // Standard seed users (passwords are 'admin123' for admin, '123456' for rizki/hasrad)
 export const DEFAULT_USERS = async (): Promise<User[]> => {
@@ -354,4 +354,44 @@ export const DEFAULT_INSPECTION_REQUESTS: InspectionRequest[] = [
     rcomments: 'Brackets completed, ready for dimension sign-off before hot-dip galvanizing process.'
   }
 ];
+
+export const DEFAULT_WIRE_LOGS: WireLog[] = [
+  {
+    id: 'wl_1',
+    date: '2026-06-18',
+    welderId: 'emp_5',
+    welderName: 'Agus Setiawan',
+    projectId: 'proj_1',
+    projectName: 'Main Deck Piping Structural Assembly',
+    assemblyId: 'asm_1_1',
+    assemblyName: 'Steel Framing and Fitting',
+    amountKg: 5.5,
+    notes: 'Taken 5.5kg of MIG weld wire AWS A5.18 ER70S-6.'
+  },
+  {
+    id: 'wl_2',
+    date: '2026-06-19',
+    welderId: 'emp_5',
+    welderName: 'Agus Setiawan',
+    projectId: 'proj_1',
+    projectName: 'Main Deck Piping Structural Assembly',
+    assemblyId: 'asm_1_1',
+    assemblyName: 'Steel Framing and Fitting',
+    amountKg: 3.5,
+    notes: 'MIG wire for bracket reinforcement.'
+  },
+  {
+    id: 'wl_3',
+    date: '2026-06-20',
+    welderId: 'emp_5',
+    welderName: 'Agus Setiawan',
+    projectId: 'proj_1',
+    projectName: 'Main Deck Piping Structural Assembly',
+    assemblyId: 'asm_1_2',
+    assemblyName: 'Electrical Conduit Pathing & Cable Tray',
+    amountKg: 2.2,
+    notes: 'Support welding for overhead tray hangers.'
+  }
+];
+
 
