@@ -64,63 +64,71 @@ export function downloadProjectPDF(
   currentY += 18;
 
   // --- Project Metadata Grid ---
-  checkPageBreak(45);
+  checkPageBreak(55);
   
-  // Grey background for metadata box
+  // Grey background for metadata box (taller box: 45mm height to fit 5 rows)
   doc.saveGraphicsState();
   doc.setFillColor(245, 247, 250);
   doc.setDrawColor(218, 224, 233);
-  doc.rect(margin, currentY, printableWidth, 38, 'FD');
+  doc.rect(margin, currentY, printableWidth, 45, 'FD');
   
   // Grid labels and values
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(9);
   doc.setTextColor(80, 90, 110);
   
-  // Line 1
+  // Line 1: PROJECT NAME (occupies entire width, preventing any overlap)
   doc.text("PROJECT NAME:", margin + 5, currentY + 7);
-  doc.text("WORK ORDER:", margin + 95, currentY + 7);
   
-  // Line 2
-  doc.text("START DATE:", margin + 5, currentY + 14);
-  doc.text("COMPLETED DATE:", margin + 95, currentY + 14);
+  // Line 2: WORK ORDER (left) & PROJECT STATUS (right)
+  doc.text("WORK ORDER:", margin + 5, currentY + 14);
+  doc.text("PROJECT STATUS:", margin + 95, currentY + 14);
+  
+  // Line 3: START DATE (left) & COMPLETED DATE (right)
+  doc.text("START DATE:", margin + 5, currentY + 21);
+  doc.text("COMPLETED DATE:", margin + 95, currentY + 21);
 
-  // Line 3
-  doc.text("LOCATION:", margin + 5, currentY + 21);
-  doc.text("CATEGORY:", margin + 95, currentY + 21);
+  // Line 4: LOCATION (left) & CATEGORY (right)
+  doc.text("LOCATION:", margin + 5, currentY + 28);
+  doc.text("CATEGORY:", margin + 95, currentY + 28);
 
-  // Line 4
-  doc.text("BUDGET HOURS:", margin + 5, currentY + 28);
-  doc.text("PROJECT STATUS:", margin + 95, currentY + 28);
+  // Line 5: BUDGET HOURS (left)
+  doc.text("BUDGET HOURS:", margin + 5, currentY + 35);
 
   // Values
   doc.setFont('Helvetica', 'normal');
   doc.setTextColor(20, 25, 35);
   doc.setFontSize(9.5);
   
-  doc.text(project.name || 'N/A', margin + 35, currentY + 7);
+  // Line 1 Value: Project Name (with maximum printable width of 140 to prevent any border spillover)
+  doc.text(project.name || 'N/A', margin + 35, currentY + 7, { maxWidth: 140 });
+  
+  // Line 2 Values: Work Order (bold) & Completed Status Badge (right)
   doc.setFont('Helvetica', 'bold');
-  doc.text(project.client || 'N/A', margin + 130, currentY + 7);
+  doc.text(project.client || 'N/A', margin + 35, currentY + 14);
   doc.setFont('Helvetica', 'normal');
-  
-  doc.text(project.start || 'N/A', margin + 35, currentY + 14);
-  doc.text(project.completedDate || 'N/A', margin + 130, currentY + 14);
-  
-  doc.text(project.location === 'workshop1' ? 'Workshop 1 (W1)' : 'Workshop 2 (W2)', margin + 35, currentY + 21);
-  doc.text(project.category === 'tray' ? 'Tray' : 'Non-Tray', margin + 130, currentY + 21);
-  
-  doc.text(`${project.budgetHours || 'Not Assigned'} Hours`, margin + 35, currentY + 28);
   
   // Completed status badge
   doc.saveGraphicsState();
   doc.setFillColor(16, 185, 129); // Emerald-500
-  doc.rect(margin + 130, currentY + 24.5, 24, 5, 'F');
+  doc.rect(margin + 130, currentY + 10.5, 24, 5, 'F');
   doc.setTextColor(255, 255, 255);
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(7.5);
-  doc.text("COMPLETED", margin + 134, currentY + 28);
+  doc.text("COMPLETED", margin + 134, currentY + 14);
   doc.restoreGraphicsState();
-
+  
+  // Line 3 Values: Start Date & Completed Date
+  doc.text(project.start || 'N/A', margin + 35, currentY + 21);
+  doc.text(project.completedDate || 'N/A', margin + 130, currentY + 21);
+  
+  // Line 4 Values: Location & Category
+  doc.text(project.location === 'workshop1' ? 'Workshop 1 (W1)' : 'Workshop 2 (W2)', margin + 35, currentY + 28);
+  doc.text(project.category === 'tray' ? 'Tray' : 'Non-Tray', margin + 130, currentY + 28);
+  
+  // Line 5 Value: Budget Hours
+  doc.text(`${project.budgetHours || 'Not Assigned'} Hours`, margin + 35, currentY + 35);
+  
   // Project description / notes
   if (project.notes) {
     const splitNotes = doc.splitTextToSize(`Notes: ${project.notes}`, printableWidth - 10);
@@ -131,14 +139,21 @@ export function downloadProjectPDF(
     doc.setFontSize(8);
     doc.setTextColor(100, 110, 125);
     
-    let tempY = currentY + 34;
+    let tempY = currentY + 41;
     splitNotes.forEach((line: string) => {
       doc.text(line, margin + 5, tempY);
       tempY += 4;
     });
   }
 
-  currentY += 45;
+  // Adjust Y offset dynamically based on notes presence to avoid overlapping with any notes
+  let gridOffset = 52;
+  if (project.notes) {
+    const splitNotes = doc.splitTextToSize(`Notes: ${project.notes}`, printableWidth - 10);
+    const notesHeight = splitNotes.length * 4;
+    gridOffset = Math.max(52, 41 + notesHeight + 5);
+  }
+  currentY += gridOffset;
 
   // --- Aggregate totals & calculations ---
   const projectTimesheets = timesheets.filter(

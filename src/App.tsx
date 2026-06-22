@@ -752,11 +752,32 @@ export default function App() {
     // Dynamic online Firestore pre-validation to allow logins on different machines for newly created users
     try {
       const docRef = doc(db, 'users', targetId);
-      let docSnap = await getDoc(docRef);
+      
+      // If we don't have a local copy of this user, try signing in with Firebase Auth FIRST so we have read permissions securely!
+      const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
+      const email = `${targetId}@${dbId}.austinbatam.xyz`;
+      const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
+
+      if (!testUser) {
+        try {
+          await signInWithEmailAndPassword(auth, email, firebasePass);
+          console.log("Successfully authenticated with Firebase Auth prior to user doc load.");
+        } catch (authErr: any) {
+          console.warn("Pre-auth login sync check failed (might not be registered yet):", authErr.message);
+        }
+      }
+
+      let docSnap;
+      try {
+        docSnap = await getDoc(docRef);
+      } catch (getErr) {
+        console.warn("Could not get user document directly (likely unauthenticated seed):", getErr);
+      }
+
       const defUsers = await DEFAULT_USERS();
       foundDef = defUsers.find(u => u.id === targetId);
 
-      if (!docSnap.exists() && foundDef) {
+      if ((!docSnap || !docSnap.exists()) && foundDef) {
         console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
         try {
           await setDoc(docRef, foundDef);
@@ -765,7 +786,7 @@ export default function App() {
           console.warn("Could not write missing default user during login (probably unauthenticated):", writeErr);
         }
       }
-      if (docSnap.exists()) {
+      if (docSnap && docSnap.exists()) {
         testUser = docSnap.data() as User;
       }
     } catch (err) {
@@ -1148,7 +1169,21 @@ export default function App() {
       onConfirm: () => {
         setProjects(prev => prev.map(proj => {
           if (proj.id === pid) {
-            return { ...proj, assemblies: proj.assemblies.filter(x => x.id !== aid) };
+            const updated = { ...proj, assemblies: proj.assemblies.filter(x => x.id !== aid) };
+            if (updated.status !== 'completed' && calcPct(updated) === 100) {
+              return {
+                ...updated,
+                status: 'completed' as any,
+                completedDate: new Date().toISOString().slice(0, 10)
+              };
+            } else if (updated.status === 'completed' && calcPct(updated) < 100) {
+              return {
+                ...updated,
+                status: 'active' as any,
+                completedDate: null
+              };
+            }
+            return updated;
           }
           return proj;
         }));
@@ -1173,7 +1208,7 @@ export default function App() {
 
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
-        return {
+        const updated = {
           ...proj,
           assemblies: proj.assemblies.map(asm => {
             if (asm.id === aid) {
@@ -1192,9 +1227,23 @@ export default function App() {
               };
             }
             return asm;
-          }
-          )
+          })
         };
+
+        if (updated.status !== 'completed' && calcPct(updated) === 100) {
+          return {
+            ...updated,
+            status: 'completed' as any,
+            completedDate: new Date().toISOString().slice(0, 10)
+          };
+        } else if (updated.status === 'completed' && calcPct(updated) < 100) {
+          return {
+            ...updated,
+            status: 'active' as any,
+            completedDate: null
+          };
+        }
+        return updated;
       }
       return proj;
     }));
@@ -1214,7 +1263,7 @@ export default function App() {
 
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
-        return {
+        const updated = {
           ...proj,
           assemblies: proj.assemblies.map(asm => {
             if (asm.id === aid) {
@@ -1223,6 +1272,15 @@ export default function App() {
             return asm;
           })
         };
+        // Adding a new 0% task can pull progress below 100%
+        if (updated.status === 'completed' && calcPct(updated) < 100) {
+          return {
+            ...updated,
+            status: 'active' as any,
+            completedDate: null
+          };
+        }
+        return updated;
       }
       return proj;
     }));
@@ -1238,7 +1296,7 @@ export default function App() {
 
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
-        return {
+        const updated = {
           ...proj,
           assemblies: proj.assemblies.map(asm => {
             if (asm.id === aid) {
@@ -1247,6 +1305,20 @@ export default function App() {
             return asm;
           })
         };
+        if (updated.status !== 'completed' && calcPct(updated) === 100) {
+          return {
+            ...updated,
+            status: 'completed' as any,
+            completedDate: new Date().toISOString().slice(0, 10)
+          };
+        } else if (updated.status === 'completed' && calcPct(updated) < 100) {
+          return {
+            ...updated,
+            status: 'active' as any,
+            completedDate: null
+          };
+        }
+        return updated;
       }
       return proj;
     }));
@@ -2944,14 +3016,28 @@ export default function App() {
         onEdit={(pid) => { setSpotlightOpen(false); openEditProjectForm(pid); }}
         onEditAssembly={(pid, aid) => { setSpotlightOpen(false); openAssemblyEditForm(pid, aid); }}
         onUpdateProject={(updatedProj, logParams) => {
-          setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+          let nextProj = updatedProj;
+          if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
+            nextProj = {
+              ...updatedProj,
+              status: 'completed' as any,
+              completedDate: new Date().toISOString().slice(0, 10)
+            };
+          } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
+            nextProj = {
+              ...updatedProj,
+              status: 'active' as any,
+              completedDate: null
+            };
+          }
+          setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
           verifyMarkChanged();
           if (logParams) {
             logActivity(
               logParams.type,
               logParams.action,
-              updatedProj.id,
-              updatedProj.name,
+              nextProj.id,
+              nextProj.name,
               logParams.asmName,
               logParams.task,
               logParams.oldP,

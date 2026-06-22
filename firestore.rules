@@ -6,9 +6,21 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
-    // Helper functions
+    // Reuseable global security helpers
     function isSignedIn() {
       return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isUnchanged(field) {
+      return incoming().get(field, null) == existing().get(field, null);
     }
 
     function isAdmin() {
@@ -23,42 +35,81 @@ service cloud.firestore {
       );
     }
 
-    function isOwner(userId) {
-      return isSignedIn() && (
-        request.auth.uid == userId ||
-        (request.auth.token.email != null && (
-          request.auth.token.email == userId + "@austinbatam.xyz" ||
-          request.auth.token.email.matches('^' + userId + '@(.*\\.)?austinbatam\\.xyz$')
-        ))
-      );
+    function getUserRole() {
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : 'viewer';
     }
 
-    // Restrict all collections strictly to signed-in users, ensuring admin always has complete access
+    function hasRole(allowedRoles) {
+      return isSignedIn() && (getUserRole() in allowedRoles);
+    }
+
+    // Role-based collection matches
     match /projects/{projectId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create: if isAdmin() || hasRole(['manager']);
+      allow update: if isAdmin() || hasRole(['manager']) || (
+        (hasRole(['coordinator', 'facility maintanance', 'quality control', 'safety', 'project control'])) && 
+        (incoming().diff(existing()).affectedKeys().hasOnly(['assemblies', 'notes', 'status', 'completedDate']) || incoming() == existing())
+      );
+      allow delete: if isAdmin();
     }
+
     match /employees/{employeeId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create: if isAdmin() || hasRole(['manager', 'coordinator', 'project control']);
+      allow update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager']);
     }
+
     match /timesheets/{timesheetId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager', 'coordinator', 'project control']);
     }
+
     match /activities/{activityId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create: if isAdmin() || isSignedIn();
+      allow update, delete: if isAdmin() || (isSignedIn() && incoming() == existing());
     }
+
     match /users/{userId} {
-      // Allow unauthenticated get requests to enable login profile check before background Auth sign-in
-      allow get: if true;
-      allow list, write: if isAdmin() || isSignedIn();
+      // Secure user profiles: only signed-in users can fetch individual docs, preventing unauthenticated hash leakage.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          (incoming() == existing()) ||
+          (request.auth.uid == userId && 
+           isUnchanged('role') && 
+           isUnchanged('allowedFeatures') && 
+           isUnchanged('allowedPermissions') && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash']))
+        )
+      );
+      allow delete: if isAdmin();
     }
+
     match /problemReports/{reportId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || isSignedIn();
+      allow delete: if isAdmin() || hasRole(['manager']);
     }
+
     match /inspections/{inspectionId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create: if isAdmin() || hasRole(['manager', 'coordinator', 'project control']);
+      allow update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control', 'quality control']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin();
     }
+
     match /wireLogs/{wireLogId} {
-      allow read, write: if isAdmin() || isSignedIn();
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control', 'facility maintanance', 'quality control', 'safety']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager', 'coordinator']);
     }
 
     match /system_config/{configId} {

@@ -42,7 +42,7 @@ export default function GanttView({
   openDepModal
 }: GanttViewProps) {
   const [ganttCat, setGanttCat] = useState<'all' | 'tray' | 'nontray'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'completed'>('active');
   const [showDeps, setShowDeps] = useState<boolean>(true);
   const [ganttLabelW, setGanttLabelW] = useState<number>(240);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -51,6 +51,7 @@ export default function GanttView({
   // Scoped project and month list configurations
   const [ganttMonthFilter, setGanttMonthFilter] = useState<string>('');
   const [ganttProjFilter, setGanttProjFilter] = useState<string>('');
+  const [ganttDuration, setGanttDuration] = useState<1 | 4>(1);
 
   const [isResizing, setIsResizing] = useState<boolean>(false);
   const resizeStartW = useRef<number>(240);
@@ -74,8 +75,47 @@ export default function GanttView({
   // Date constants based on current selectedMonth
   const [yr, mo] = selectedMonth.split('-').map(Number);
   const mStart = new Date(yr, mo - 1, 1);
-  const mEnd = new Date(yr, mo, 0);
-  const totalDays = mEnd.getDate();
+  const mEnd = ganttDuration === 1
+    ? new Date(yr, mo, 0)
+    : new Date(yr, mo - 1 + 4, 0);
+
+  // Generate days array dynamically
+  interface GanttDay {
+    index: number;
+    date: Date;
+    isWeekend: boolean;
+    isToday: boolean;
+    dayOfMonth: number;
+    monthLabel: string;
+    formattedDate: string;
+  }
+
+  const ganttDays: GanttDay[] = [];
+  const tempDate = new Date(mStart);
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let indexIdx = 1;
+
+  while (tempDate <= mEnd) {
+    const currentDate = new Date(tempDate);
+    const formattedDate = currentDate.toISOString().slice(0, 10);
+    const isWeekend = currentDate.getDay() % 6 === 0;
+    const isToday = formattedDate === todayStr;
+
+    ganttDays.push({
+      index: indexIdx,
+      date: currentDate,
+      isWeekend,
+      isToday,
+      dayOfMonth: currentDate.getDate(),
+      monthLabel: currentDate.toLocaleDateString('en-US', { month: 'short' }),
+      formattedDate
+    });
+
+    tempDate.setDate(tempDate.getDate() + 1);
+    indexIdx++;
+  }
+
+  const totalDays = ganttDays.length;
 
   const isCurrentMonth = () => {
     const today = new Date();
@@ -131,6 +171,7 @@ export default function GanttView({
     if (ganttCat !== 'all' && p.category !== ganttCat) return false;
     if (statusFilter === 'active' && p.status !== 'active') return false;
     if (statusFilter === 'pending' && p.status !== 'pending') return false;
+    if (statusFilter === 'completed' && p.status !== 'completed') return false;
     if (ganttProjFilter && p.id !== ganttProjFilter) return false;
 
     if (ganttMonthFilter && p.due) {
@@ -149,11 +190,45 @@ export default function GanttView({
 
   // Calculate geometric columns based on window boundary sizes
   const cellW = Math.max(24, Math.floor((Math.max(900, window.innerWidth - 64) - ganttLabelW) / totalDays));
-  const dayNums = Array.from({ length: totalDays }, (_, i) => i + 1);
 
   const getDayX = (d: number) => ganttLabelW + (d - 1) * cellW;
   const getDayXRight = (d: number) => ganttLabelW + d * cellW;
   const getDayXMid = (d: number) => ganttLabelW + (d - 0.5) * cellW;
+
+  const getDayIndexForDate = (date: Date): number => {
+    const dStr = date.toISOString().slice(0, 10);
+    const fIdx = ganttDays.findIndex(gd => gd.formattedDate === dStr);
+    if (fIdx !== -1) return fIdx + 1;
+    if (date < mStart) return 1;
+    if (date > mEnd) return totalDays;
+    return 1;
+  };
+
+  const getBarOffsets = (start: Date, end: Date, isMilestone: boolean) => {
+    if (start > mEnd || end < mStart) {
+      return { barLeft: undefined, barStartX: undefined, barEndX: undefined };
+    }
+
+    if (isMilestone) {
+      const idx = getDayIndexForDate(start);
+      const bM = getDayXMid(idx);
+      return { barLeft: bM, barStartX: bM, barEndX: bM };
+    }
+
+    const visS = start < mStart ? mStart : start;
+    const visE = end > mEnd ? mEnd : end;
+
+    const idxS = getDayIndexForDate(visS);
+    const idxE = getDayIndexForDate(visE);
+
+    const bL = getDayX(idxS);
+    const bW = getDayXRight(idxE) - bL;
+    return {
+      barLeft: bL,
+      barStartX: bL,
+      barEndX: bL + bW
+    };
+  };
 
   // Flatten row structures and assign geometrical offsets during rendering calculation
   const rowList: RowMeta[] = [];
@@ -171,32 +246,7 @@ export default function GanttView({
     const pEnd = p.due ? new Date(p.due + 'T00:00:00') : mEnd;
     const isMilestone = p.start && p.due && p.start === p.due;
 
-    let barLeft: number | undefined;
-    let barWidth = 0;
-    let barStartX: number | undefined;
-    let barEndX: number | undefined;
-
-    if (isMilestone) {
-      if (pStart >= mStart && pStart <= mEnd) {
-        barLeft = getDayXMid(pStart.getDate());
-        barStartX = barLeft;
-        barEndX = barLeft;
-      }
-    } else {
-      const visS = pStart < mStart ? mStart : (pStart > mEnd ? null : pStart);
-      const visE = pEnd > mEnd ? mEnd : (pEnd < mStart ? null : pEnd);
-      if (visS && visE) {
-        barLeft = getDayX(visS.getDate());
-        barWidth = getDayXRight(visE.getDate()) - barLeft;
-        barStartX = barLeft;
-        barEndX = barLeft + barWidth;
-      } else if (pStart <= mEnd && pEnd >= mStart) {
-        barLeft = getDayX(1);
-        barWidth = getDayXRight(totalDays) - barLeft;
-        barStartX = barLeft;
-        barEndX = barLeft + barWidth;
-      }
-    }
+    const { barStartX, barEndX } = getBarOffsets(pStart, pEnd, !!isMilestone);
 
     const pAssignedList = Array.from(new Set(
       (p.assemblies || []).flatMap(a => (a.tasks || []).map(t => t.assigned).filter(Boolean))
@@ -232,25 +282,7 @@ export default function GanttView({
         const aMidY = currentY + aRowH / 2;
         const aKey = `a:${p.id}:${a.id}`;
 
-        let aBarLeft: number | undefined;
-        let aBarWidth = 0;
-        let aBarStartX: number | undefined;
-        let aBarEndX: number | undefined;
-
-        const visAS = aStart < mStart ? mStart : (aStart > mEnd ? null : aStart);
-        const visAE = aEnd > mEnd ? mEnd : (aEnd < mStart ? null : aEnd);
-
-        if (visAS && visAE) {
-          aBarLeft = getDayX(visAS.getDate());
-          aBarWidth = getDayXRight(visAE.getDate()) - aBarLeft;
-          aBarStartX = aBarLeft;
-          aBarEndX = aBarLeft + aBarWidth;
-        } else if (aStart <= mEnd && aEnd >= mStart) {
-          aBarLeft = getDayX(1);
-          aBarWidth = getDayXRight(totalDays) - aBarLeft;
-          aBarStartX = aBarLeft;
-          aBarEndX = aBarLeft + aBarWidth;
-        }
+        const { barStartX: aBarStartX, barEndX: aBarEndX } = getBarOffsets(aStart, aEnd, false);
 
         const aAssignedList = Array.from(new Set(
           (a.tasks || []).map(t => t.assigned).filter(Boolean)
@@ -282,25 +314,7 @@ export default function GanttView({
             const tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
             const tEnd = t.finishDate ? new Date(t.finishDate + 'T00:00:00') : aEnd;
 
-            let tBarLeft: number | undefined;
-            let tBarWidth = 0;
-            let tBarStartX: number | undefined;
-            let tBarEndX: number | undefined;
-
-            const visTS = tStart < mStart ? mStart : (tStart > mEnd ? null : tStart);
-            const visTE = tEnd > mEnd ? mEnd : (tEnd < mStart ? null : tEnd);
-
-            if (visTS && visTE) {
-              tBarLeft = getDayX(visTS.getDate());
-              tBarWidth = getDayXRight(visTE.getDate()) - tBarLeft;
-              tBarStartX = tBarLeft;
-              tBarEndX = tBarLeft + tBarWidth;
-            } else if (tStart <= mEnd && tEnd >= mStart) {
-              tBarLeft = getDayX(1);
-              tBarWidth = getDayXRight(totalDays) - tBarLeft;
-              tBarStartX = tBarLeft;
-              tBarEndX = tBarLeft + tBarWidth;
-            }
+            const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, false);
 
             rowList.push({
               key: tKey,
@@ -583,6 +597,28 @@ export default function GanttView({
             </button>
           </div>
 
+          <div className="w-[1px] h-3 bg-base-border" />
+
+          {/* Timescale Views */}
+          <div className="flex items-center gap-1 bg-base-surface2 border border-base-border rounded-lg p-1.5" title="Gantt chart timeline timescale">
+            <button
+              onClick={() => setGanttDuration(1)}
+              className={`px-2 py-1 text-[10px] uppercase font-condensed font-bold tracking-wider rounded transition-colors cursor-pointer ${
+                ganttDuration === 1 ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text'
+              }`}
+            >
+              1 Month
+            </button>
+            <button
+              onClick={() => setGanttDuration(4)}
+              className={`px-2 py-1 text-[10px] uppercase font-condensed font-bold tracking-wider rounded transition-colors cursor-pointer ${
+                ganttDuration === 4 ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text'
+              }`}
+            >
+              4 Months
+            </button>
+          </div>
+
           {/* Category tags */}
           <div className="flex items-center gap-1 bg-base-surface2 border border-base-border rounded-lg p-1.5">
             <button
@@ -623,6 +659,18 @@ export default function GanttView({
             ))}
           </select>
 
+          {/* Project dropdown selection */}
+          <select
+            value={ganttProjFilter}
+            onChange={(e) => setGanttProjFilter(e.target.value)}
+            className="px-2.5 py-1 text-xs rounded bg-base-surface border border-base-border text-base-muted2 font-condensed font-semibold cursor-pointer outline-none"
+          >
+            <option value="">All projects</option>
+            {sortedProjectsFilterList.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+
           {/* Status filter selection */}
           <select
             value={statusFilter}
@@ -632,6 +680,7 @@ export default function GanttView({
             <option value="all">All status</option>
             <option value="active">Active only</option>
             <option value="pending">Pending only</option>
+            <option value="completed">Completed only</option>
           </select>
 
           {/* Connection drawing checkbox */}
@@ -672,8 +721,8 @@ export default function GanttView({
             <table className="w-full border-collapse select-none" style={{ tableLayout: 'fixed' }}>
               <colgroup>
                 <col style={{ width: `${ganttLabelW}px` }} />
-                {dayNums.map(d => (
-                  <col key={d} style={{ width: `${cellW}px` }} />
+                {ganttDays.map(gd => (
+                  <col key={gd.index} style={{ width: `${cellW}px` }} />
                 ))}
               </colgroup>
 
@@ -689,16 +738,20 @@ export default function GanttView({
                       }`}
                     />
                   </th>
-                  {dayNums.map(d => {
-                    const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                  {ganttDays.map(gd => {
+                    const isWE = gd.isWeekend;
+                    const showMonthLabel = gd.dayOfMonth === 1 || gd.index === 1;
                     return (
                       <th
-                        key={d}
-                        className={`font-condensed font-extrabold text-[10px] text-center border-r border-base-border/30 ${
-                          d === todayNum ? 'bg-base-accent/15 text-base-accent' : isWE ? 'bg-base-surface3/40 text-base-muted/40 font-normal' : 'text-base-muted'
+                        key={gd.index}
+                        className={`font-condensed font-extrabold text-[9px] text-center border-r border-base-border/30 px-0.5 whitespace-nowrap overflow-hidden ${
+                          gd.isToday ? 'bg-base-accent/15 text-base-accent' : isWE ? 'bg-base-surface3/40 text-base-muted/40 font-normal' : 'text-base-muted'
                         }`}
                       >
-                        {d}
+                        {showMonthLabel ? (
+                          <span className="text-base-accent block font-extrabold pb-0.5">{gd.monthLabel}</span>
+                        ) : null}
+                        <span>{gd.dayOfMonth}</span>
                       </th>
                     );
                   })}
@@ -742,16 +795,15 @@ export default function GanttView({
                             {renderDepsBadges(pKey)}
                           </div>
                         </td>
-                        {dayNums.map(d => {
-                          const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                        {ganttDays.map(gd => {
                           return (
                             <td
-                              key={d}
+                              key={gd.index}
                               className={`border-r border-base-border/30 border-b border-base-border/40 relative ${
-                                d === todayNum ? 'bg-base-accent/5' : isWE ? 'bg-base-surface3/15' : ''
+                                gd.isToday ? 'bg-base-accent/5' : gd.isWeekend ? 'bg-base-surface3/15' : ''
                               }`}
                             >
-                              {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
+                              {gd.isToday && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
                             </td>
                           );
                         })}
@@ -798,16 +850,15 @@ export default function GanttView({
                                     {renderDepsBadges(aKey)}
                                   </div>
                                 </td>
-                                {dayNums.map(d => {
-                                  const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                                {ganttDays.map(gd => {
                                   return (
                                     <td
-                                      key={d}
+                                      key={gd.index}
                                       className={`border-r border-base-border/20 border-b border-base-border/20 relative ${
-                                        d === todayNum ? 'bg-base-accent/5' : isWE ? 'bg-base-surface3/15' : ''
+                                        gd.isToday ? 'bg-base-accent/5' : gd.isWeekend ? 'bg-base-surface3/15' : ''
                                       }`}
                                     >
-                                      {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
+                                      {gd.isToday && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
                                     </td>
                                   );
                                 })}
@@ -838,16 +889,15 @@ export default function GanttView({
                                           </div>
                                         </div>
                                       </td>
-                                      {dayNums.map(d => {
-                                        const isWE = new Date(yr, mo - 1, d).getDay() % 6 === 0;
+                                      {ganttDays.map(gd => {
                                         return (
                                           <td
-                                            key={d}
+                                            key={gd.index}
                                             className={`border-r border-base-border/15 border-b border-base-border/15 relative ${
-                                              d === todayNum ? 'bg-base-accent/3' : isWE ? 'bg-base-surface3/10' : ''
+                                              gd.isToday ? 'bg-base-accent/3' : gd.isWeekend ? 'bg-base-surface3/10' : ''
                                             }`}
                                           >
-                                            {d === todayNum && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
+                                            {gd.isToday && <div className="absolute top-0 bottom-0 left-1/2 w-0.5 bg-base-accent/60 z-10 pointer-events-none" />}
                                           </td>
                                         );
                                       })}
