@@ -8,7 +8,6 @@ interface WireLogPageProps {
   employees: Employee[];
   currentUser: User | null;
   onAddWireLog: (log: Omit<WireLog, 'id'>) => void;
-  onEditWireLog: (id: string, updates: Partial<Omit<WireLog, 'id'>>) => void;
   onDeleteWireLog: (id: string) => void;
 }
 
@@ -18,7 +17,6 @@ export function WireLogPage({
   employees,
   currentUser,
   onAddWireLog,
-  onEditWireLog,
   onDeleteWireLog
 }: WireLogPageProps) {
   return (
@@ -28,7 +26,6 @@ export function WireLogPage({
       employees={employees}
       currentUser={currentUser ? currentUser : undefined}
       onAddWireLog={onAddWireLog}
-      onEditWireLog={onEditWireLog}
       onDeleteWireLog={onDeleteWireLog}
     />
   );

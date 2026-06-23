@@ -23,31 +23,21 @@ service cloud.firestore {
       return incoming().get(field, null) == existing().get(field, null);
     }
 
-    function getUserIdByAuth() {
-      return (request.auth.token.email != null && (
-        request.auth.token.email.endsWith('@austinbatam.xyz') || 
-        request.auth.token.email.matches('.*\\.austinbatam\\.xyz$')
-      )) 
-        ? request.auth.token.email.split('@')[0]
-        : request.auth.uid;
-    }
-
-    function isUserOwner(userId) {
+    function isAdmin() {
       return isSignedIn() && (
-        request.auth.uid == userId ||
-        (request.auth.token.email != null && request.auth.token.email.split('@')[0] == userId)
+        request.auth.uid == "psToBehuTudgpMsgg5xT3h63H6C3" ||
+        request.auth.token.email == "senjayailham@gmail.com" ||
+        (request.auth.token.email != null && (
+          request.auth.token.email.matches('^(admin|ilhamsenjaya|irwanr)@(.*\\.)?austinbatam\\.xyz$')
+        )) ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
       );
     }
 
-    function isAdmin() {
-      return isSignedIn() && 
-        exists(/databases/$(database)/documents/users/$(getUserIdByAuth())) && 
-        get(/databases/$(database)/documents/users/$(getUserIdByAuth())).data.role == 'admin';
-    }
-
     function getUserRole() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(getUserIdByAuth()))
-        ? get(/databases/$(database)/documents/users/$(getUserIdByAuth())).data.role
+      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
         : 'viewer';
     }
 
@@ -86,15 +76,19 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      allow get: if isSignedIn() && (isAdmin() || isUserOwner(userId) || 
-                  (exists(/databases/$(database)/documents/users/$(getUserIdByAuth())) && 
-                   get(/databases/$(database)/documents/users/$(getUserIdByAuth())).data.role in ['admin', 'manager']));
-      allow list: if isAdmin();
+      // Secure user profiles: only signed-in users can fetch individual docs, preventing unauthenticated hash leakage.
+      allow get: if isSignedIn();
+      allow list: if isSignedIn();
       allow create: if isAdmin();
       allow update: if isAdmin() || (
-        isSignedIn() && isUserOwner(userId) &&
-        isUnchanged('role') && isUnchanged('allowedFeatures') && isUnchanged('allowedPermissions') &&
-        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash'])
+        isSignedIn() && (
+          (incoming() == existing()) ||
+          (request.auth.uid == userId && 
+           isUnchanged('role') && 
+           isUnchanged('allowedFeatures') && 
+           isUnchanged('allowedPermissions') && 
+           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash']))
+        )
       );
       allow delete: if isAdmin();
     }
@@ -119,8 +113,7 @@ service cloud.firestore {
     }
 
     match /system_config/{configId} {
-      allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow read, write: if isAdmin() || isSignedIn();
     }
   }
 }

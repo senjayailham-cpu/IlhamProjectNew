@@ -1,14 +1,13 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { WireLog, Employee, Project, Assembly, User } from '../types';
-import { Flame, Trash2, Search, Plus, Calendar, UserCheck, Folder, AlertCircle, TrendingUp, Sparkles, Filter, Download, Wrench, ChevronDown, Check, X, Edit } from 'lucide-react';
+import { Flame, Trash2, Search, Plus, Calendar, UserCheck, Folder, AlertCircle, TrendingUp, Sparkles, Filter, Download, Wrench, ChevronDown, Check, X } from 'lucide-react';
 
 interface WireConsumableViewProps {
   wireLogs: WireLog[];
   employees: Employee[];
   projects: Project[];
-  currentUser?: User;
+  currentUser: User;
   onAddWireLog: (newLog: Omit<WireLog, 'id'>) => void;
-  onEditWireLog: (id: string, updates: Partial<Omit<WireLog, 'id'>>) => void;
   onDeleteWireLog: (id: string) => void;
 }
 
@@ -18,7 +17,6 @@ export default function WireConsumableView({
   projects = [],
   currentUser,
   onAddWireLog,
-  onEditWireLog,
   onDeleteWireLog
 }: WireConsumableViewProps) {
   // Local active states
@@ -35,72 +33,6 @@ export default function WireConsumableView({
   const [remarks, setRemarks] = useState('');
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
-
-  // Edit form states
-  const [editingLog, setEditingLog] = useState<WireLog | null>(null);
-  const [editDateStr, setEditDateStr] = useState('');
-  const [editEmployeeId, setEditEmployeeId] = useState('');
-  const [editProjectId, setEditProjectId] = useState('');
-  const [editAssemblyId, setEditAssemblyId] = useState('');
-  const [editAmountStr, setEditAmountStr] = useState('');
-  const [editRemarks, setEditRemarks] = useState('');
-  const [editFormError, setEditFormError] = useState('');
-
-  const handleOpenEdit = (log: WireLog) => {
-    setEditingLog(log);
-    setEditDateStr(log.date);
-    setEditEmployeeId(log.welderId);
-    setEditProjectId(log.projectId);
-    setEditAssemblyId(log.assemblyId);
-    setEditAmountStr(log.amountKg.toString());
-    setEditRemarks(log.notes || '');
-    setEditFormError('');
-  };
-
-  const handleSaveEdit = () => {
-    setEditFormError('');
-    if (!editEmployeeId) {
-      setEditFormError('Please select a welder personnel.');
-      return;
-    }
-    if (!editProjectId) {
-      setEditFormError('Please select a project.');
-      return;
-    }
-    if (!editAssemblyId) {
-      setEditFormError('Please select a target sub-assembly.');
-      return;
-    }
-    const amountVal = parseFloat(editAmountStr);
-    if (isNaN(amountVal) || amountVal <= 0) {
-      setEditFormError('Please key in a valid amount of wire in kilograms (e.g. 5.5).');
-      return;
-    }
-
-    const welder = employees.find(emp => emp.id === editEmployeeId);
-    const proj = projects.find(p => p.id === editProjectId);
-    const asm = proj?.assemblies.find(a => a.id === editAssemblyId);
-
-    if (!welder || !proj || !asm) {
-      setEditFormError('Associated entities not found or mismatch.');
-      return;
-    }
-
-    if (editingLog) {
-      onEditWireLog(editingLog.id, {
-        date: editDateStr,
-        welderId: welder.id,
-        welderName: welder.name,
-        projectId: proj.id,
-        projectName: proj.name,
-        assemblyId: asm.id,
-        assemblyName: asm.name,
-        amountKg: amountVal,
-        notes: editRemarks.trim() || undefined
-      });
-      setEditingLog(null);
-    }
-  };
 
   // Dynamic lists for the dropdowns
   const activeProjects = useMemo(() => {
@@ -603,22 +535,13 @@ export default function WireConsumableView({
                         </td>
                         {/* Action delete column */}
                         <td className="px-4 py-3 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => handleOpenEdit(log)}
-                              className="p-1 px-1.5 rounded bg-amber-500/10 hover:bg-amber-500 text-amber-500 hover:text-slate-950 transition-all cursor-pointer inline-flex items-center"
-                              title="Edit wire consumable entry"
-                            >
-                              <Edit className="h-3.5 w-3.5" />
-                            </button>
-                            <button
-                              onClick={() => onDeleteWireLog(log.id)}
-                              className="p-1 px-1.5 rounded bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all cursor-pointer inline-flex items-center"
-                              title="Delete wire consumable entry"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
+                          <button
+                            onClick={() => onDeleteWireLog(log.id)}
+                            className="p-1 px-1.5 rounded bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all cursor-pointer inline-flex items-center"
+                            title="Delete wire consumable entry"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))
@@ -629,137 +552,6 @@ export default function WireConsumableView({
           </div>
         </div>
       </div>
-
-      {editingLog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <Edit className="h-4 w-4 text-amber-400" />
-                <span>Edit Wire Consumable</span>
-              </h3>
-              <button
-                onClick={() => setEditingLog(null)}
-                className="text-slate-400 hover:text-slate-200 transition cursor-pointer"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            {editFormError && (
-              <div className="p-3 bg-red-500/15 border border-red-500/20 rounded-xl flex items-start gap-2 text-red-400 text-xs">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>{editFormError}</span>
-              </div>
-            )}
-
-            <div className="space-y-4 text-xs font-semibold text-slate-200">
-              {/* Date Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Date Taken</label>
-                <input
-                  type="date"
-                  value={editDateStr}
-                  onChange={(e) => setEditDateStr(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* Welder Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Welder / Fitter</label>
-                <select
-                  value={editEmployeeId}
-                  onChange={(e) => setEditEmployeeId(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  <option value="">-- Select Welder / Fitter --</option>
-                  {employees.map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Project Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Project</label>
-                <select
-                  value={editProjectId}
-                  onChange={(e) => {
-                    setEditProjectId(e.target.value);
-                    const selectedProj = projects.find(p => p.id === e.target.value);
-                    if (selectedProj && selectedProj.assemblies.length > 0) {
-                      setEditAssemblyId(selectedProj.assemblies[0].id);
-                    } else {
-                      setEditAssemblyId('');
-                    }
-                  }}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  <option value="">-- Select Project --</option>
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sub-assembly Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Sub-Assembly</label>
-                <select
-                  value={editAssemblyId}
-                  onChange={(e) => setEditAssemblyId(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500 cursor-pointer"
-                >
-                  <option value="">-- Select Connected Sub-Assembly --</option>
-                  {projects.find(p => p.id === editProjectId)?.assemblies.map(asm => (
-                    <option key={asm.id} value={asm.id}>{asm.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Amount kg Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Amount (kg)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={editAmountStr}
-                  onChange={(e) => setEditAmountStr(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500"
-                />
-              </div>
-
-              {/* Notes Field */}
-              <div className="space-y-1">
-                <label className="text-slate-400">Remarks</label>
-                <textarea
-                  value={editRemarks}
-                  onChange={(e) => setEditRemarks(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-800 border border-slate-700 rounded-lg text-white font-semibold outline-none focus:border-amber-500 h-20 resize-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={() => setEditingLog(null)}
-                className="px-4 py-2 border border-slate-700 hover:bg-slate-800 text-slate-300 rounded-lg font-bold uppercase tracking-wider transition text-[10px] cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleSaveEdit}
-                className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-lg font-bold uppercase tracking-wider transition text-[10px] cursor-pointer"
-              >
-                Save Changes
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

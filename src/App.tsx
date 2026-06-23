@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, ActivityLogTypeVal, ProblemReport, InspectionRequest, WireLog } from './types';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
@@ -7,10 +7,9 @@ import { uid } from './utils/helpers';
 
 // Firebase imports
 import { db } from './services/firebase';
-import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction, writeBatch, query, orderBy, limit } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 
 // Custom Hooks & Subcomponents
-import { HashRouter, useNavigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore } from './hooks';
 import ThemeToggle from './components/ThemeToggle';
 import GanttView from './components/GanttView';
@@ -25,7 +24,7 @@ import {
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, AlertCircle
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck
 } from 'lucide-react';
 
 const activeTabsList = [
@@ -80,17 +79,13 @@ const sectionGroups = [
 
 export function App() {
   return (
-    <HashRouter>
-      <AuthProvider>
-        <AppContent />
-      </AuthProvider>
-    </HashRouter>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
 
 function AppContent() {
-  const navigate = useNavigate();
-  const location = useLocation();
   const authHook = useAuth();
   const { currentUser, fbUser, users, setUsers, isAuthLoading } = authHook;
 
@@ -125,34 +120,11 @@ function AppContent() {
   const setInspections = setRealInspections;
   const setWireLogs = setRealWireLogs;
 
-  const [customAlertMsg, setCustomAlertMsg] = useState<string | null>(null);
-
-  useEffect(() => {
-    window.alert = (msg: string) => {
-      setCustomAlertMsg(msg);
-    };
-  }, []);
-
   // Local states for custom search filters
   const [projectSearchQuery, setProjectSearchQuery] = useState<string>('');
   const [currentTabMonthFilter, setCurrentTabMonthFilter] = useState<string>('');
 
   const [activeTab, setActiveTab] = useState<string>('dash');
-
-  // Sync activeTab with URL routing
-  useEffect(() => {
-    const currentPath = location.pathname.replace(/^\/+|\/+$/g, '');
-    if (currentPath && activeTabsList.some(t => t.id === currentPath)) {
-      setActiveTab(currentPath);
-    } else if (currentPath === '' || currentPath === 'dashboard') {
-      setActiveTab('dash');
-    }
-  }, [location.pathname]);
-
-  const handleTabChange = (tabId: string) => {
-    setActiveTab(tabId);
-    navigate('/' + tabId);
-  };
   const [selectedMonth, setSelectedMonth] = useState<string>(() => new Date().toISOString().slice(0, 7));
   const [reportDate, setReportDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
 
@@ -195,7 +167,7 @@ function AppContent() {
   const { saveItem, removeItem } = useFirestore();
 
   // Activity Logger
-  const logActivity = (type: ActivityLogTypeVal, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => {
+  const logActivity = (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => {
     if (!currentUser) return;
     const now = new Date();
     const newAct: ActivityLog = {
@@ -223,20 +195,6 @@ function AppContent() {
     });
     saveItem('activities', newAct);
     verifyMarkChanged();
-  };
-
-  const handleClearActivityLogs = async () => {
-    try {
-      const batch = writeBatch(db);
-      activities.forEach(act => {
-        batch.delete(doc(db, 'activities', act.id));
-      });
-      await batch.commit();
-      setRealActivities([]);
-      verifyMarkChanged();
-    } catch (err) {
-      console.error("Failed to clear activity logs from Firestore:", err);
-    }
   };
 
   const can = (perm: keyof typeof PERMISSIONS.admin): boolean => {
@@ -288,7 +246,7 @@ function AppContent() {
           await setDoc(initDocRef, { seeded: true });
         }
 
-        const listenToCollection = (colName: string, stateSetter: (data: any[]) => void) => {
+        const listenToCollection = (colName: string, stateSetter: (data: any) => void) => {
           const colRef = collection(db, colName);
           const unsub = onSnapshot(colRef, (snapshot) => {
             const list: any[] = [];
@@ -302,33 +260,10 @@ function AppContent() {
           unsubscribers.push(unsub);
         };
 
-        const listenToCollectionLimited = (
-          colName: string, 
-          stateSetter: (data: any[]) => void,
-          orderField = 'ts',
-          limitCount = 500
-        ) => {
-          const q = query(
-            collection(db, colName),
-            orderBy(orderField, 'desc'),
-            limit(limitCount)
-          );
-          const unsub = onSnapshot(q, (snapshot) => {
-            const list: any[] = [];
-            snapshot.forEach((d) => {
-              list.push(d.data());
-            });
-            stateSetter(list);
-          }, (error) => {
-            console.error(`Firestore listener error on ${colName}:`, error);
-          });
-          unsubscribers.push(unsub);
-        };
-
         listenToCollection('projects', setProjects);
         listenToCollection('employees', setEmployees);
-        listenToCollectionLimited('timesheets', setTimesheets, 'date', 1000);
-        listenToCollectionLimited('activities', setActivities, 'ts', 300);
+        listenToCollection('timesheets', setTimesheets);
+        listenToCollection('activities', setActivities);
         listenToCollection('problemReports', setProblemReports);
         listenToCollection('inspections', setInspections);
         listenToCollection('users', setUsers);
@@ -375,7 +310,6 @@ function AppContent() {
   };
 
   const handleUpdateProblemStatus = async (id: string, status: 'Open' | 'Resolved', resolutionNote?: string) => {
-    const originalState = problemReports;
     let updatedReport: ProblemReport | undefined;
     setProblemReports(prev => prev.map(r => {
       if (r.id === id) {
@@ -400,17 +334,11 @@ function AppContent() {
     });
 
     if (updatedReport) {
-      try {
-        await saveItem('problemReports', updatedReport);
-      } catch (err) {
-        console.error("Failed to update problem status in Firestore, rolling back state:", err);
-        setProblemReports(originalState);
-      }
+      await saveItem('problemReports', updatedReport);
     }
   };
 
   const handleDeleteProblemReport = async (id: string) => {
-    const originalState = problemReports;
     const target = problemReports.find(x => x.id === id);
     setProblemReports(prev => prev.filter(r => r.id !== id));
     verifyMarkChanged();
@@ -418,12 +346,7 @@ function AppContent() {
       logActivity('task_delete', `Deleted problem report: ${target.category}`, target.projectId, target.projectName, undefined, undefined, undefined, undefined, target.description);
     }
 
-    try {
-      await removeItem('problemReports', id);
-    } catch (err) {
-      console.error("Failed to delete problem report in Firestore, rolling back state:", err);
-      setProblemReports(originalState);
-    }
+    await removeItem('problemReports', id);
   };
 
   const handleAddInspection = async (ins: Omit<InspectionRequest, 'id' | 'rfiNo'>) => {
@@ -470,7 +393,6 @@ function AppContent() {
   };
 
   const handleUpdateInspectionStatus = async (id: string, status: InspectionRequest['status'], comments?: string, assignedInspector?: string, punchList?: string) => {
-    const originalState = inspections;
     let updatedIns: InspectionRequest | undefined;
     setInspections(prev => prev.map(ins => {
       if (ins.id === id) {
@@ -487,17 +409,11 @@ function AppContent() {
     verifyMarkChanged();
 
     if (updatedIns) {
-      try {
-        await saveItem('inspections', updatedIns);
-      } catch (err) {
-        console.error("Failed to update inspection status dynamically, rolling back state:", err);
-        setInspections(originalState);
-      }
+      await saveItem('inspections', updatedIns);
     }
   };
 
   const handleDeleteInspection = async (id: string) => {
-    const originalState = inspections;
     const target = inspections.find(ins => ins.id === id);
     setInspections(prev => prev.filter(ins => ins.id !== id));
     verifyMarkChanged();
@@ -505,12 +421,7 @@ function AppContent() {
       logActivity('assembly_delete', `Deleted inspection request record ${target.rfiNo}`, target.projectId, target.projectName, target.assemblyName, undefined, undefined, undefined);
     }
 
-    try {
-      await removeItem('inspections', id);
-    } catch (err) {
-      console.error("Failed to delete inspection in Firestore, rolling back state:", err);
-      setInspections(originalState);
-    }
+    await removeItem('inspections', id);
   };
 
   const handleAddWireLog = async (log: Omit<WireLog, 'id'>) => {
@@ -522,30 +433,14 @@ function AppContent() {
     await saveItem('wireLogs', newLog);
   };
 
-  const handleEditWireLog = async (id: string, updates: Partial<Omit<WireLog, 'id'>>) => {
-    const target = wireLogs.find(l => l.id === id);
-    if (!target) return;
-    const updated = { ...target, ...updates };
-    setWireLogs(prev => prev.map(l => l.id === id ? updated : l));
-    verifyMarkChanged();
-    logActivity('assembly_edit', `Edited wire log for ${updated.welderName}: updated ${updated.amountKg} kg taken.`, updated.projectId, updated.projectName, updated.assemblyName, undefined, undefined, undefined, `Edited notes: ${updated.notes || ''}`);
-    await saveItem('wireLogs', updated);
-  };
-
   const handleDeleteWireLog = async (id: string) => {
-    const originalState = wireLogs;
     const target = wireLogs.find(l => l.id === id);
     if (!target) return;
     setWireLogs(prev => prev.filter(l => l.id !== id));
     verifyMarkChanged();
     logActivity('assembly_progress', `Deleted wire log entry: ${target.amountKg} kg taken by ${target.welderName}`, target.projectId, target.projectName, target.assemblyName, undefined, undefined, undefined, `Logs historical revision by user: ${currentUser?.name || 'Authorized user'}`);
 
-    try {
-      await removeItem('wireLogs', id);
-    } catch (err) {
-      console.error("Failed to delete wire log in Firestore, rolling back state:", err);
-      setWireLogs(originalState);
-    }
+    await removeItem('wireLogs', id);
   };
 
   if (isAuthLoading) {
@@ -577,24 +472,6 @@ function AppContent() {
 
   const activeTabItem = activeTabsList.find(t => t.id === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : 'Project Workspace';
-
-  const getBadgeInfo = (tabId: string) => {
-    let count = 0;
-    let bg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
-    if (tabId === 'completed') {
-      count = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
-      bg = 'bg-base-green/10 text-base-green border border-base-green/20';
-    } else if (tabId === 'archive') {
-      count = projects.filter(p => p.isArchived).length;
-    } else if (tabId === 'focus24') {
-      count = problemReports.filter(r => r.status === 'Open').length;
-      bg = 'bg-red-500 text-white animate-pulse';
-    } else if (tabId === 'inspections') {
-      count = inspections.filter(ins => ins.status === 'Requested').length;
-      bg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
-    }
-    return { count, bg };
-  };
 
   return (
     <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans select-none antialiased">
@@ -652,12 +529,34 @@ function AppContent() {
                   const IconComponent = IconMap[t.icon] || Folder;
                   const isTabActive = activeTab === t.id;
 
-                  const { count: badgeCount, bg: badgeBg } = getBadgeInfo(t.id);
+                  const hasCountsComp = t.id === 'completed';
+                  const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
+                  const hasCountsArc = t.id === 'archive';
+                  const arcCount = projects.filter(p => p.isArchived).length;
+                  const hascountsProb = t.id === 'focus24';
+                  const openProbCount = problemReports.filter(r => r.status === 'Open').length;
+                  const hasCountsInsp = t.id === 'inspections';
+                  const pendingInspCount = inspections.filter(ins => ins.status === 'Requested').length;
+
+                  let badgeCount = 0;
+                  let badgeBg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
+                  if (hasCountsComp) {
+                    badgeCount = compCount;
+                    badgeBg = 'bg-base-green/10 text-base-green border border-base-green/20';
+                  } else if (hasCountsArc) {
+                    badgeCount = arcCount;
+                  } else if (hascountsProb) {
+                    badgeCount = openProbCount;
+                    badgeBg = 'bg-red-500 text-white animate-pulse';
+                  } else if (hasCountsInsp) {
+                    badgeCount = pendingInspCount;
+                    badgeBg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
+                  }
 
                   return (
                     <button
                       key={t.id}
-                      onClick={() => handleTabChange(t.id)}
+                      onClick={() => setActiveTab(t.id)}
                       className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 group relative cursor-pointer transform ${
                         isTabActive
                           ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5 shadow-[inset_1px_0_0_rgba(155,28,46,0.1)]'
@@ -824,13 +723,35 @@ function AppContent() {
                       const IconComponent = IconMap[t.icon] || Folder;
                       const isTabActive = activeTab === t.id;
 
-                      const { count: badgeCount, bg: badgeBg } = getBadgeInfo(t.id);
+                      const hasCountsComp = t.id === 'completed';
+                      const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
+                      const hasCountsArc = t.id === 'archive';
+                      const arcCount = projects.filter(p => p.isArchived).length;
+                      const hascountsProb = t.id === 'focus24';
+                      const openProbCount = problemReports.filter(r => r.status === 'Open').length;
+                      const hasCountsInsp = t.id === 'inspections';
+                      const pendingInspCount = inspections.filter(ins => ins.status === 'Requested').length;
+
+                      let badgeCount = 0;
+                      let badgeBg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
+                      if (hasCountsComp) {
+                        badgeCount = compCount;
+                        badgeBg = 'bg-base-green/10 text-base-green border border-base-green/20';
+                      } else if (hasCountsArc) {
+                        badgeCount = arcCount;
+                      } else if (hascountsProb) {
+                        badgeCount = openProbCount;
+                        badgeBg = 'bg-red-500 text-white animate-pulse';
+                      } else if (hasCountsInsp) {
+                        badgeCount = pendingInspCount;
+                        badgeBg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
+                      }
 
                       return (
                         <button
                           key={t.id}
                           onClick={() => {
-                            handleTabChange(t.id);
+                            setActiveTab(t.id);
                             setMobileMenuOpen(false);
                           }}
                           className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 group relative cursor-pointer transform ${
@@ -962,7 +883,7 @@ function AppContent() {
           )}
 
           {activeTab === 'wire' && (
-            <WireLogPage wireLogs={wireLogs} projects={projects} employees={employees} currentUser={currentUser} onAddWireLog={handleAddWireLog} onEditWireLog={handleEditWireLog} onDeleteWireLog={handleDeleteWireLog} />
+            <WireLogPage wireLogs={wireLogs} projects={projects} employees={employees} currentUser={currentUser} onAddWireLog={handleAddWireLog} onDeleteWireLog={handleDeleteWireLog} />
           )}
 
           {activeTab === 'dailyreport' && (
@@ -971,7 +892,7 @@ function AppContent() {
               activityLogs={activities}
               reportDate={reportDate}
               setReportDate={setReportDate}
-              clearActivityLogs={handleClearActivityLogs}
+              clearActivityLogs={() => { setRealActivities([]); verifyMarkChanged(); }}
               openPrintView={() => window.print()}
             />
           )}
@@ -1047,33 +968,6 @@ function AppContent() {
         verifyMarkChanged={verifyMarkChanged}
         logActivity={logActivity}
       />
-
-      {customAlertMsg !== null && (
-        <div className="fixed inset-0 z-100 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xs animate-fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-center">
-            <div className="flex justify-center">
-              <div className="p-3 bg-amber-500/10 rounded-full border border-amber-500/20 text-amber-500 animate-pulse">
-                <AlertCircle className="h-6 w-6" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-condensed">System Notice</h3>
-              <p className="text-xs text-slate-300 leading-relaxed font-semibold">
-                {customAlertMsg}
-              </p>
-            </div>
-            <div className="pt-2">
-              <button
-                type="button"
-                onClick={() => setCustomAlertMsg(null)}
-                className="w-full py-2 bg-amber-500 hover:bg-amber-400 text-slate-900 rounded-lg font-condensed font-bold uppercase tracking-wider transition cursor-pointer text-xs font-semibold"
-              >
-                Acknowledge
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
