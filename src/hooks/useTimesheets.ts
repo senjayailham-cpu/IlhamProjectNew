@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { TimesheetEntry } from '../types';
 import { uid } from '../utils';
+import { useFirestore } from './useFirestore';
 
 export function useTimesheets(
   verifyMarkChanged: () => void,
@@ -13,6 +14,8 @@ export function useTimesheets(
   const [timesheetModalOpen, setTimesheetModalOpen] = useState<boolean>(false);
   const [editingTsId, setEditingTsId] = useState<string | null>(null);
 
+  const { saveItem, removeItem, saveBatch } = useFirestore();
+
   const openTimesheetBulkAdd = () => {
     setEditingTsId(null);
     setTimesheetModalOpen(true);
@@ -24,27 +27,40 @@ export function useTimesheets(
   };
 
   const saveTimesheetsBulkImport = (rawLogs: any[]) => {
+    const writtenItems: TimesheetEntry[] = [];
     setTimesheets(prev => {
       const copy = [...prev];
       rawLogs.forEach(rl => {
         if (editingTsId) {
           const idx = copy.findIndex(x => x.id === editingTsId && x.empId === rl.empId);
           if (idx > -1) {
-            copy[idx] = { ...copy[idx], ...rl };
+            const updated = { ...copy[idx], ...rl };
+            copy[idx] = updated;
+            writtenItems.push(updated);
           } else {
-            copy.push({ id: uid(), date: timesheetDate, ...rl });
+            const newItem = { id: uid(), date: timesheetDate, ...rl };
+            copy.push(newItem);
+            writtenItems.push(newItem);
           }
         } else {
           const idx = copy.findIndex(x => x.date === timesheetDate && x.empId === rl.empId);
           if (idx > -1) {
-            copy[idx] = { ...copy[idx], ...rl };
+            const updated = { ...copy[idx], ...rl };
+            copy[idx] = updated;
+            writtenItems.push(updated);
           } else {
-            copy.push({ id: uid(), date: timesheetDate, ...rl });
+            const newItem = { id: uid(), date: timesheetDate, ...rl };
+            copy.push(newItem);
+            writtenItems.push(newItem);
           }
         }
       });
       return copy;
     });
+
+    if (writtenItems.length > 0) {
+      saveBatch('timesheets', writtenItems);
+    }
 
     setTimesheetModalOpen(false);
     verifyMarkChanged();
@@ -60,6 +76,7 @@ export function useTimesheets(
       message: `Are you sure you want to permanently delete the logs entry for "${entry.employee}" working on project "${entry.projectName || ''}"?`,
       onConfirm: () => {
         setTimesheets(prev => prev.filter(x => x.id !== id));
+        removeItem('timesheets', id);
         verifyMarkChanged();
         setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
       }

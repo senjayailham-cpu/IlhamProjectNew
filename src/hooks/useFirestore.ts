@@ -1,5 +1,5 @@
 import { db } from '../services/firebase';
-import { collection, doc, setDoc, getDoc, getDocs, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 export function useFirestore() {
   const cleanFirestoreData = (obj: any): any => {
@@ -19,31 +19,36 @@ export function useFirestore() {
     return cleaned;
   };
 
-  const syncList = async (colName: string, items: any[]) => {
-    const writePromises = items.map((item) => {
-      const cleaned = cleanFirestoreData(item);
-      return setDoc(doc(db, colName, item.id), cleaned);
-    });
-    await Promise.all(writePromises);
+  const saveItem = async (colName: string, item: any) => {
+    const cleaned = cleanFirestoreData(item);
+    await setDoc(doc(db, colName, item.id), cleaned, { merge: true });
+  };
 
-    const qSnap = await getDocs(collection(db, colName));
-    const currentIds = new Set(items.map((i) => i.id));
-    const deletePromises: Promise<void>[] = [];
+  const removeItem = async (colName: string, id: string) => {
+    await deleteDoc(doc(db, colName, id));
+  };
 
-    qSnap.forEach((docSnapshot) => {
-      if (!currentIds.has(docSnapshot.id)) {
-        deletePromises.push(deleteDoc(docSnapshot.ref));
+  const saveBatch = async (colName: string, items: any[]) => {
+    const chunks: any[][] = [];
+    for (let i = 0; i < items.length; i += 500) {
+      chunks.push(items.slice(i, i + 500));
+    }
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      for (const item of chunk) {
+        const cleaned = cleanFirestoreData(item);
+        batch.set(doc(db, colName, item.id), cleaned, { merge: true });
       }
-    });
-
-    if (deletePromises.length > 0) {
-      await Promise.all(deletePromises);
+      await batch.commit();
     }
   };
 
   return {
     cleanFirestoreData,
-    syncList,
+    saveItem,
+    removeItem,
+    saveBatch,
   };
 }
+
 export default useFirestore;

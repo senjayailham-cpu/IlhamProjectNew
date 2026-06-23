@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Employee } from '../types';
 import { uid } from '../utils';
+import { useFirestore } from './useFirestore';
 
 export function useEmployees(
   verifyMarkChanged: () => void,
@@ -14,6 +15,8 @@ export function useEmployees(
   const [empPosition, setEmpPosition] = useState<string>('');
   const [empLocation, setEmpLocation] = useState<string>('');
   const [empCoordinator, setEmpCoordinator] = useState<string>('');
+
+  const { saveItem, removeItem, saveBatch } = useFirestore();
 
   const openAddEmp = () => {
     setEditingEmpId(null);
@@ -38,14 +41,30 @@ export function useEmployees(
   const saveEmployeeForm = () => {
     if (!empName.trim()) return alert('Name required.');
     if (editingEmpId) {
+      const updatedEmp = {
+        id: editingEmpId,
+        name: empName.trim(),
+        position: empPosition.trim(),
+        location: empLocation.trim(),
+        coordinator: empCoordinator.trim(),
+      };
       setEmployees(prev => prev.map(e => {
         if (e.id === editingEmpId) {
-          return { ...e, name: empName.trim(), position: empPosition.trim(), location: empLocation.trim(), coordinator: empCoordinator.trim() };
+          return { ...e, ...updatedEmp };
         }
         return e;
       }));
+      saveItem('employees', updatedEmp);
     } else {
-      setEmployees(prev => [...prev, { id: uid(), name: empName.trim(), position: empPosition.trim(), location: empLocation.trim(), coordinator: empCoordinator.trim() }]);
+      const newEmp = {
+        id: uid(),
+        name: empName.trim(),
+        position: empPosition.trim(),
+        location: empLocation.trim(),
+        coordinator: empCoordinator.trim(),
+      };
+      setEmployees(prev => [...prev, newEmp]);
+      saveItem('employees', newEmp);
     }
     setEmpModalOpen(false);
     verifyMarkChanged();
@@ -61,6 +80,7 @@ export function useEmployees(
       message: `Are you sure you want to permanently delete the personnel record for "${emp.name}"? This will remove them from the workforce roster.`,
       onConfirm: () => {
         setEmployees(prev => prev.filter(x => x.id !== id));
+        removeItem('employees', id);
         verifyMarkChanged();
         setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
       }
@@ -68,15 +88,21 @@ export function useEmployees(
   };
 
   const importEmployeesExcel = (rows: Omit<Employee, 'id'>[]) => {
+    const newItems: Employee[] = [];
     setEmployees(prev => {
       const copy = [...prev];
       rows.forEach(r => {
         if (!copy.some(x => x.name.toLowerCase() === r.name.toLowerCase())) {
-          copy.push({ id: uid(), ...r });
+          const newItem = { id: uid(), ...r };
+          copy.push(newItem);
+          newItems.push(newItem);
         }
       });
       return copy;
     });
+    if (newItems.length > 0) {
+      saveBatch('employees', newItems);
+    }
     verifyMarkChanged();
   };
 

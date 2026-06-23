@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Project, Assembly, Task } from '../types';
 import { uid, calcPct } from '../utils';
+import { useFirestore } from './useFirestore';
 
 export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
@@ -52,6 +53,8 @@ export function useProjects(
   const [copyTasks, setCopyTasks] = useState<boolean>(true);
   const [copyKeepClient, setCopyKeepClient] = useState<boolean>(true);
 
+  const { saveItem, removeItem } = useFirestore();
+
   const openAddProject = () => {
     setEditingProjectId(null);
     setPName('');
@@ -88,26 +91,26 @@ export function useProjects(
     const parsedBudget = pBudgetHours.trim() ? parseFloat(pBudgetHours) : undefined;
 
     if (editingProjectId) {
-      setProjects(prev => prev.map(p => {
-        if (p.id === editingProjectId) {
-          const wasCompleted = p.status === 'completed';
-          const completedDate = pStatus === 'completed' && !wasCompleted ? new Date().toISOString().slice(0, 10) : p.completedDate;
-          return {
-            ...p,
-            name: pName.trim(),
-            client: wo,
-            status: pStatus,
-            start: pStart,
-            due: pDue,
-            category: pCat,
-            location: pLoc,
-            notes: pNotes.trim(),
-            budgetHours: parsedBudget,
-            completedDate: pStatus === 'completed' ? completedDate : null
-          };
-        }
-        return p;
-      }));
+      const p = projects.find(x => x.id === editingProjectId);
+      if (p) {
+        const wasCompleted = p.status === 'completed';
+        const completedDate = pStatus === 'completed' && !wasCompleted ? new Date().toISOString().slice(0, 10) : p.completedDate;
+        const updatedProj = {
+          ...p,
+          name: pName.trim(),
+          client: wo,
+          status: pStatus,
+          start: pStart,
+          due: pDue,
+          category: pCat,
+          location: pLoc,
+          notes: pNotes.trim(),
+          budgetHours: parsedBudget,
+          completedDate: pStatus === 'completed' ? completedDate : null
+        };
+        setProjects(prev => prev.map(item => item.id === editingProjectId ? updatedProj : item));
+        saveItem('projects', updatedProj);
+      }
       logActivity('project_edit', 'Edited project details', editingProjectId, pName.trim(), undefined, undefined, undefined, undefined, `Budget Hours: ${parsedBudget ?? 'N/A'}`);
     } else {
       const addedProj: Project = {
@@ -127,6 +130,7 @@ export function useProjects(
       };
 
       setProjects(prev => [...prev, addedProj]);
+      saveItem('projects', addedProj);
       logActivity('project_add', 'Added new project', addedProj.id, addedProj.name, undefined, undefined, undefined, undefined, `Loc: ${addedProj.location}, Budget: ${parsedBudget ?? 'N/A'}`);
     }
 
@@ -143,6 +147,7 @@ export function useProjects(
       message: `Are you sure you want to permanently delete project "${p.name}"? This will delete all sub-assemblies and tasks inside.`,
       onConfirm: () => {
         setProjects(prev => prev.filter(x => x.id !== pid));
+        removeItem('projects', pid);
         logActivity('project_delete', 'Deleted project', pid, p.name);
         setProjectFormOpen(false);
         verifyMarkChanged();
@@ -154,7 +159,9 @@ export function useProjects(
   const archiveProject = (pid: string) => {
     const p = projects.find(x => x.id === pid);
     if (!p) return;
-    setProjects(prev => prev.map(x => x.id === pid ? { ...x, isArchived: true } : x));
+    const updated = { ...p, isArchived: true };
+    setProjects(prev => prev.map(x => x.id === pid ? updated : x));
+    saveItem('projects', updated);
     logActivity('project_edit', 'Archived project', pid, p.name, undefined, undefined, undefined, undefined, 'Project moved to historical archive');
     verifyMarkChanged();
   };
@@ -162,7 +169,9 @@ export function useProjects(
   const unarchiveProject = (pid: string) => {
     const p = projects.find(x => x.id === pid);
     if (!p) return;
-    setProjects(prev => prev.map(x => x.id === pid ? { ...x, isArchived: false } : x));
+    const updated = { ...p, isArchived: false };
+    setProjects(prev => prev.map(x => x.id === pid ? updated : x));
+    saveItem('projects', updated);
     logActivity('project_edit', 'Restored project from archive', pid, p.name, undefined, undefined, undefined, undefined, 'Project moved back to active boards');
     verifyMarkChanged();
   };
@@ -218,9 +227,10 @@ export function useProjects(
     const parsedAsmBudget = aBudgetHours.trim() ? parseFloat(aBudgetHours) : undefined;
 
     if (editingAssemblyId) {
+      let updatedProj: Project | undefined;
       setProjects(prev => prev.map(proj => {
         if (proj.id === targetAsmProjectId) {
-          return {
+          updatedProj = {
             ...proj,
             assemblies: proj.assemblies.map(a => {
               if (a.id === editingAssemblyId) {
@@ -229,9 +239,13 @@ export function useProjects(
               return a;
             })
           };
+          return updatedProj;
         }
         return proj;
       }));
+      if (updatedProj) {
+        saveItem('projects', updatedProj);
+      }
       logActivity('assembly_edit', 'Edited sub-assembly characteristics', p.id, p.name, aName.trim());
     } else {
       const createdAsm: Assembly = {
@@ -246,12 +260,17 @@ export function useProjects(
           .map(t => ({ id: uid(), name: t.name.trim(), difficulty: typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1, pct: 0, done: false, date: t.date?.trim() || undefined, finishDate: t.finishDate?.trim() || undefined }))
       };
 
+      let updatedProj: Project | undefined;
       setProjects(prev => prev.map(proj => {
         if (proj.id === targetAsmProjectId) {
-          return { ...proj, assemblies: [...proj.assemblies, createdAsm] };
+          updatedProj = { ...proj, assemblies: [...proj.assemblies, createdAsm] };
+          return updatedProj;
         }
         return proj;
       }));
+      if (updatedProj) {
+        saveItem('projects', updatedProj);
+      }
       logActivity('assembly_add', 'Added new sub-assembly', p.id, p.name, aName.trim(), undefined, undefined, undefined, `${createdAsm.tasks.length} initial tasks appended`);
     }
 
@@ -269,26 +288,33 @@ export function useProjects(
       title: 'Delete Sub-Assembly',
       message: `Are you sure you want to permanently delete the sub-assembly "${a.name}" from "${p?.name || ''}"?`,
       onConfirm: () => {
+        let updatedProj: Project | undefined;
         setProjects(prev => prev.map(proj => {
           if (proj.id === pid) {
             const updated = { ...proj, assemblies: proj.assemblies.filter(x => x.id !== aid) };
             if (updated.status !== 'completed' && calcPct(updated) === 100) {
-              return {
+              updatedProj = {
                 ...updated,
                 status: 'completed' as any,
                 completedDate: new Date().toISOString().slice(0, 10)
               };
             } else if (updated.status === 'completed' && calcPct(updated) < 100) {
-              return {
+              updatedProj = {
                 ...updated,
                 status: 'active' as any,
                 completedDate: null
               };
+            } else {
+              updatedProj = updated;
             }
-            return updated;
+            return updatedProj;
           }
           return proj;
         }));
+
+        if (updatedProj) {
+          saveItem('projects', updatedProj);
+        }
 
         logActivity('assembly_delete', 'Deleted sub-assembly', pid, p?.name, a.name);
         verifyMarkChanged();
@@ -305,6 +331,7 @@ export function useProjects(
 
     const oldPct = t.pct;
 
+    let updatedProj: Project | undefined;
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
         const updated = {
@@ -330,22 +357,28 @@ export function useProjects(
         };
 
         if (updated.status !== 'completed' && calcPct(updated) === 100) {
-          return {
+          updatedProj = {
             ...updated,
             status: 'completed' as any,
             completedDate: new Date().toISOString().slice(0, 10)
           };
         } else if (updated.status === 'completed' && calcPct(updated) < 100) {
-          return {
+          updatedProj = {
             ...updated,
             status: 'active' as any,
             completedDate: null
           };
+        } else {
+          updatedProj = updated;
         }
-        return updated;
+        return updatedProj;
       }
       return proj;
     }));
+
+    if (updatedProj) {
+      saveItem('projects', updatedProj);
+    }
 
     if (field === 'pct') {
       logActivity('task_progress', action, pid, p?.name, a?.name, t.name, oldPct, value);
@@ -360,6 +393,7 @@ export function useProjects(
 
     const added: Task = { id: uid(), name: name.trim(), difficulty: 1, pct: 0, done: false };
 
+    let updatedProj: Project | undefined;
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
         const updated = {
@@ -372,16 +406,22 @@ export function useProjects(
           })
         };
         if (updated.status === 'completed' && calcPct(updated) < 100) {
-          return {
+          updatedProj = {
             ...updated,
             status: 'active' as any,
             completedDate: null
           };
+        } else {
+          updatedProj = updated;
         }
-        return updated;
+        return updatedProj;
       }
       return proj;
     }));
+
+    if (updatedProj) {
+      saveItem('projects', updatedProj);
+    }
 
     logActivity('task_add', 'Added new task', pid, p?.name, a.name, added.name);
     verifyMarkChanged();
@@ -392,6 +432,7 @@ export function useProjects(
     const a = p && p.assemblies.find(x => x.id === aid);
     const t = a && a.tasks.find(x => x.id === tid);
 
+    let updatedProj: Project | undefined;
     setProjects(prev => prev.map(proj => {
       if (proj.id === pid) {
         const updated = {
@@ -404,22 +445,28 @@ export function useProjects(
           })
         };
         if (updated.status !== 'completed' && calcPct(updated) === 100) {
-          return {
+          updatedProj = {
             ...updated,
             status: 'completed' as any,
             completedDate: new Date().toISOString().slice(0, 10)
           };
         } else if (updated.status === 'completed' && calcPct(updated) < 100) {
-          return {
+          updatedProj = {
             ...updated,
             status: 'active' as any,
             completedDate: null
           };
+        } else {
+          updatedProj = updated;
         }
-        return updated;
+        return updatedProj;
       }
       return proj;
     }));
+
+    if (updatedProj) {
+      saveItem('projects', updatedProj);
+    }
 
     logActivity('task_delete', 'Deleted task record', pid, p?.name, a?.name, t?.name);
     verifyMarkChanged();
@@ -460,36 +507,48 @@ export function useProjects(
     };
 
     setProjects(prev => [...prev, copiedProj]);
+    saveItem('projects', copiedProj);
     setCopyModalOpen(false);
     verifyMarkChanged();
     alert('Project cloned!');
   };
 
   const saveDependenciesHandler = (targetKey: string, preds: any[], succs: any[]) => {
+    let updatedProj: Project | undefined;
     setProjects(prev => prev.map(p => {
+      let nextP: Project;
       if (targetKey === `p:${p.id}`) {
-        return { ...p, predecessors: preds, successors: succs };
-      }
-      if (targetKey.startsWith('a:') && targetKey.split(':')[1] === p.id) {
+        nextP = { ...p, predecessors: preds, successors: succs };
+      } else if (targetKey.startsWith('a:') && targetKey.split(':')[1] === p.id) {
         const aid = targetKey.split(':')[2];
-        return {
+        nextP = {
           ...p,
           assemblies: (p.assemblies || []).map(a => a.id === aid ? { ...a, predecessors: preds, successors: succs } : a)
         };
-      }
-      if (targetKey.startsWith('t:') && targetKey.split(':')[1] === p.id) {
+      } else if (targetKey.startsWith('t:') && targetKey.split(':')[1] === p.id) {
         const aid = targetKey.split(':')[2];
         const tid = targetKey.split(':')[3];
-        return {
+        nextP = {
           ...p,
           assemblies: (p.assemblies || []).map(a => a.id === aid ? {
             ...a,
             tasks: (a.tasks || []).map(t => t.id === tid ? { ...t, predecessors: preds, successors: succs } : t)
           } : a)
         };
+      } else {
+        nextP = p;
       }
-      return p;
+
+      if (nextP !== p) {
+        updatedProj = nextP;
+      }
+      return nextP;
     }));
+
+    if (updatedProj) {
+      saveItem('projects', updatedProj);
+    }
+
     verifyMarkChanged();
     setDepModalOpen(false);
   };
