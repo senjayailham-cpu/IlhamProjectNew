@@ -583,22 +583,31 @@ function SearchableAutocomplete({
   const [search, setSearch] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const selectedOption = useMemo(() => options.find(o => o.id === value), [options, value]);
+  const selectedOption = useMemo(() => {
+    return (options || []).find(o => o.id === value);
+  }, [options, value]);
+
+  const selectedOptionRef = useRef(selectedOption);
 
   useEffect(() => {
-    if (selectedOption) {
-      setSearch(selectedOption.label);
-    } else {
-      setSearch('');
-    }
-  }, [value, selectedOption]);
+    selectedOptionRef.current = selectedOption;
+  }, [selectedOption]);
 
+  const selectedLabel = selectedOption?.label || '';
+
+  // Synchronize input search text with selected value safely using primitive dependency
+  useEffect(() => {
+    setSearch(selectedLabel);
+  }, [value, selectedLabel]);
+
+  // Click outside handler using ref to always get latest option value without rebinding event listener
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
-        if (selectedOption) {
-          setSearch(selectedOption.label);
+        const latestSel = selectedOptionRef.current;
+        if (latestSel) {
+          setSearch(latestSel.label);
         } else {
           setSearch('');
         }
@@ -608,16 +617,18 @@ function SearchableAutocomplete({
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [selectedOption]);
+  }, []);
 
   const filteredOptions = useMemo(() => {
     const currentName = selectedOption?.label || '';
-    if (!search.trim() || search === currentName) return options;
+    if (!search.trim() || search === currentName) return options || [];
     const q = search.toLowerCase();
-    return options.filter(o => 
-      o.label.toLowerCase().includes(q) || 
-      (o.subLabel && o.subLabel.toLowerCase().includes(q))
-    );
+    return (options || []).filter(o => {
+      if (!o) return false;
+      const labelMatch = o.label && o.label.toLowerCase().includes(q);
+      const subLabelMatch = o.subLabel && o.subLabel.toLowerCase().includes(q);
+      return labelMatch || subLabelMatch;
+    });
   }, [options, search, selectedOption]);
 
   const handleClear = (e: React.MouseEvent) => {

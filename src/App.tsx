@@ -287,13 +287,20 @@ function AppContent() {
       const match = users.find(u => u.id === currentUser.id);
       if (match) {
         // Only set storage or session if something actually changed
-        const sessStored = sessionStorage.getItem('w2proj_session_v1');
+        let sessStored: string | null = null;
+        try {
+          sessStored = sessionStorage.getItem('w2proj_session_v1');
+        } catch (_) {}
         if (sessStored) {
-          const parsed = JSON.parse(sessStored) as User;
-          if (parsed.role !== match.role || JSON.stringify(parsed.allowedPermissions) !== JSON.stringify(match.allowedPermissions)) {
-            const updated = { ...parsed, role: match.role, allowedPermissions: match.allowedPermissions };
-            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updated));
-          }
+          try {
+            const parsed = JSON.parse(sessStored) as User;
+            if (parsed.role !== match.role || JSON.stringify(parsed.allowedPermissions) !== JSON.stringify(match.allowedPermissions)) {
+              const updated = { ...parsed, role: match.role, allowedPermissions: match.allowedPermissions };
+              try {
+                sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updated));
+              } catch (_) {}
+            }
+          } catch (_) {}
         }
       }
     }

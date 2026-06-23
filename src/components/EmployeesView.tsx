@@ -88,6 +88,7 @@ export default function EmployeesView({
     }
 
     const s = document.createElement('script');
+    s.crossOrigin = 'anonymous';
     s.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
     s.onload = loaderFn;
     s.onerror = () => alert('Could not load Excel reader. Please check your internet connection.');

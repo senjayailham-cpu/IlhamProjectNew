@@ -73,7 +73,21 @@ export default function GanttView({
   };
 
   // Date constants based on current selectedMonth
-  const [yr, mo] = selectedMonth.split('-').map(Number);
+  let yr: number, mo: number;
+  try {
+    const parts = (selectedMonth || '').split('-');
+    yr = Number(parts[0]);
+    mo = Number(parts[1]);
+    if (isNaN(yr) || isNaN(mo)) {
+      const today = new Date();
+      yr = today.getFullYear();
+      mo = today.getMonth() + 1;
+    }
+  } catch (_) {
+    const today = new Date();
+    yr = today.getFullYear();
+    mo = today.getMonth() + 1;
+  }
   const mStart = new Date(yr, mo - 1, 1);
   const mEnd = ganttDuration === 1
     ? new Date(yr, mo, 0)
