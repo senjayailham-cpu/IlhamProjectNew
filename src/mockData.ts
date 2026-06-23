@@ -3,7 +3,6 @@ import { sha256 } from './utils/helpers';
 
 // Standard seed users (passwords are 'admin123' for admin, '123456' for rizki/hasrad)
 export const DEFAULT_USERS = async (): Promise<User[]> => {
-
   return [
     {
       id: 'admin',

@@ -7,46 +7,6 @@ import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { sha256 } from '../utils/helpers';
 import firebaseConfig from '../../firebase-applet-config.json';
 
-const safeLocalStorage = {
-  getItem: (key: string): string | null => {
-    try {
-      return localStorage.getItem(key);
-    } catch (_) {
-      return null;
-    }
-  },
-  setItem: (key: string, value: string): void => {
-    try {
-      localStorage.setItem(key, value);
-    } catch (_) {}
-  },
-  removeItem: (key: string): void => {
-    try {
-      localStorage.removeItem(key);
-    } catch (_) {}
-  }
-};
-
-const safeSessionStorage = {
-  getItem: (key: string): string | null => {
-    try {
-      return sessionStorage.getItem(key);
-    } catch (_) {
-      return null;
-    }
-  },
-  setItem: (key: string, value: string): void => {
-    try {
-      sessionStorage.setItem(key, value);
-    } catch (_) {}
-  },
-  removeItem: (key: string): void => {
-    try {
-      sessionStorage.removeItem(key);
-    } catch (_) {}
-  }
-};
-
 interface AuthContextType {
   currentUser: User | null;
   setCurrentUser: React.Dispatch<React.SetStateAction<User | null>>;
@@ -103,34 +63,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Parse session on mount
   useEffect(() => {
     const initializeSessionAndUsers = async () => {
-      const sess = safeSessionStorage.getItem('w2proj_session_v1');
+      const sess = sessionStorage.getItem('w2proj_session_v1');
       if (sess) {
-        try {
-          const parsed = JSON.parse(sess);
-          if (parsed && parsed.id && !(parsed.id.startsWith('google-') || parsed.id.length > 20)) {
-            setCurrentUser(parsed);
-          }
-        } catch (_) {}
+        const parsed = JSON.parse(sess);
+        if (!(parsed.id.startsWith('google-') || parsed.id.length > 20)) {
+          setCurrentUser(parsed);
+        }
       }
 
-      let loadedUsers = safeLocalStorage.getItem('w2proj_users_v1');
+      let loadedUsers = localStorage.getItem('w2proj_users_v1');
       const defaults = await DEFAULT_USERS();
-      let parsedUsers: any[] = [];
-      let success = false;
-      if (loadedUsers) {
-        try {
-          const parsed = JSON.parse(loadedUsers);
-          if (Array.isArray(parsed)) {
-            parsedUsers = parsed;
-            success = true;
-          }
-        } catch (_) {}
-      }
-
-      if (!success) {
-        safeLocalStorage.setItem('w2proj_users_v1', JSON.stringify(defaults));
+      if (!loadedUsers) {
+        localStorage.setItem('w2proj_users_v1', JSON.stringify(defaults));
         setUsers(defaults);
       } else {
+        const parsedUsers = JSON.parse(loadedUsers);
         let updated = false;
         for (const defU of defaults) {
           if (!parsedUsers.some((u: any) => u.id === defU.id)) {
@@ -139,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
         if (updated) {
-          safeLocalStorage.setItem('w2proj_users_v1', JSON.stringify(parsedUsers));
+          localStorage.setItem('w2proj_users_v1', JSON.stringify(parsedUsers));
         }
         setUsers(parsedUsers);
       }
@@ -154,13 +101,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setFbUser(firebaseUser || null);
 
       if (firebaseUser?.isAnonymous) {
-        const sess = safeSessionStorage.getItem('w2proj_session_v1');
+        const sess = sessionStorage.getItem('w2proj_session_v1');
         if (sess) {
-          try {
-            setCurrentUser(JSON.parse(sess));
-          } catch (_) {
-            setCurrentUser(null);
-          }
+          setCurrentUser(JSON.parse(sess));
         } else {
           setCurrentUser(null);
         }
@@ -171,9 +114,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           const emailPrefix = firebaseUser.email ? firebaseUser.email.split('@')[0].toLowerCase() : '';
           const isAppletEmailDomain = firebaseUser.email ? (firebaseUser.email.endsWith('@austinbatam.xyz') || firebaseUser.email.includes('.austinbatam.xyz')) : false;
-          const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
-            firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
-            (isAppletEmailDomain && ['ilhamsenjaya', 'irwanr', 'admin'].includes(emailPrefix));
           const portalId = (firebaseUser.email && isAppletEmailDomain)
             ? emailPrefix
             : firebaseUser.uid;
@@ -186,16 +126,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const session: User = {
               id: portalId,
               name: data.name || firebaseUser.displayName || portalId || 'Team User',
-              role: isDev ? 'admin' : (data.role || 'coordinator'),
+              role: data.role || 'coordinator',
               allowedFeatures: data.allowedFeatures || [],
               allowedPermissions: data.allowedPermissions || {}
             };
             setCurrentUser(session);
-            safeSessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
             setLoginError('');
           } else {
-            const defaultRole = isDev ? 'admin' : 'coordinator';
-            const defaultName = firebaseUser.displayName || (isDev ? 'Senjaya Ilham' : portalId || 'Team Member');
+            const defaultRole = 'coordinator';
+            const defaultName = firebaseUser.displayName || portalId || 'Team Member';
             
             const session: User = {
               id: portalId,
@@ -207,36 +147,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             await setDoc(docRef, session);
             setCurrentUser(session);
-            safeSessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
             setLoginError('');
           }
         } catch (err) {
           console.error("Firestore loading user profile error:", err);
           const emailPrefix = firebaseUser.email ? firebaseUser.email.split('@')[0].toLowerCase() : '';
           const isAppletEmailDomain = firebaseUser.email ? (firebaseUser.email.endsWith('@austinbatam.xyz') || firebaseUser.email.includes('.austinbatam.xyz')) : false;
-          const isDev = firebaseUser.email === 'senjayailham@gmail.com' ||
-            firebaseUser.uid === 'psToBehuTudgpMsgg5xT3h63H6C3' ||
-            (isAppletEmailDomain && ['ilhamsenjaya', 'irwanr', 'admin'].includes(emailPrefix));
           const portalId = (firebaseUser.email && isAppletEmailDomain)
             ? emailPrefix
             : firebaseUser.uid;
           const session: User = {
             id: portalId,
             name: firebaseUser.displayName || portalId || 'Team Member',
-            role: isDev ? 'admin' : 'coordinator',
+            role: 'coordinator',
             allowedFeatures: [],
             allowedPermissions: {}
           };
           setCurrentUser(session);
         }
       } else {
-        const sess = safeSessionStorage.getItem('w2proj_session_v1');
+        const sess = sessionStorage.getItem('w2proj_session_v1');
         if (sess) {
-          try {
-            setCurrentUser(JSON.parse(sess));
-          } catch (_) {
-            setCurrentUser(null);
-          }
+          setCurrentUser(JSON.parse(sess));
         } else {
           setCurrentUser(null);
         }
@@ -325,7 +258,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       allowedPermissions: testUser.allowedPermissions || {}
     };
     setCurrentUser(session);
-    safeSessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+    sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
 
     const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
     const email = `${testUser.id.toLowerCase()}@${dbId}.austinbatam.xyz`;
@@ -339,20 +272,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await createUserWithEmailAndPassword(auth, email, firebasePass);
         } catch (regErr) {
           console.warn("Could not register on-the-fly Firebase user:", regErr);
-          try {
-            const { signInAnonymously } = await import('firebase/auth');
-            await signInAnonymously(auth);
-          } catch (anonErr) {
-            console.warn("Could not complete backup anonymous login:", anonErr);
-          }
+          setLoginError('Koneksi ke server gagal. Periksa koneksi internet Anda dan coba lagi.');
+          return;
         }
       } else {
-        try {
-          const { signInAnonymously } = await import('firebase/auth');
-          await signInAnonymously(auth);
-        } catch (anonErr) {
-          console.warn("Could not complete backup anonymous login:", anonErr);
-        }
+        setLoginError('Koneksi ke server gagal. Periksa koneksi internet Anda dan coba lagi.');
+        return;
       }
     }
 
@@ -374,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.error("Error signing out:", err);
     }
     setCurrentUser(null);
-    safeSessionStorage.removeItem('w2proj_session_v1');
+    sessionStorage.removeItem('w2proj_session_v1');
     setLoginId('');
     setLoginPass('');
   };
@@ -403,8 +328,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    if (newPass.length < 4) {
-      setChangePasswordError('New password must be at least 4 characters long.');
+    if (newPass.length < 8) {
+      setChangePasswordError('Password baru harus minimal 8 karakter.');
       return;
     }
 

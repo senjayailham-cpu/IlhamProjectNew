@@ -145,6 +145,47 @@ export default function Focus24View({
   // Extract unique projects with issues for dropdown filter
   const projectsInIssues = Array.from(new Set(problemReports.map(r => r.projectId).filter(Boolean))) as string[];
 
+  const compressAndConvertToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(event.target?.result as string);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(compressedBase64);
+        };
+        img.onerror = (err) => {
+          reject(err);
+        };
+      };
+      reader.onerror = (err) => {
+        reject(err);
+      };
+    });
+  };
+
   // Form validation & processing
   const handleCreateReport = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,10 +213,15 @@ export default function Focus24View({
         const snapshot = await uploadBytes(imageRef, formPhotoFile);
         uploadedPhotoUrl = await getDownloadURL(snapshot.ref);
       } catch (err) {
-        console.error("Firebase Storage Upload Error:", err);
-        alert("Photo upload to Firebase Storage failed. Please check your Firebase rules and internet connection.");
-        setIsUploading(false);
-        return;
+        console.warn("Firebase Storage Upload Error, falling back to local compressed Base64:", err);
+        try {
+          uploadedPhotoUrl = await compressAndConvertToBase64(formPhotoFile);
+        } catch (fallbackErr) {
+          console.error("Local Base64 fallback compression failed too:", fallbackErr);
+          alert("Photo compression and processing failed. Please try a different smaller image.");
+          setIsUploading(false);
+          return;
+        }
       }
     }
 

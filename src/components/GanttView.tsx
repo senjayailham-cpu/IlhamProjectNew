@@ -61,8 +61,19 @@ export default function GanttView({
     setGanttCollapsed(prev => ({ ...prev, [pid]: !prev[pid] }));
   };
 
+  const parseSelectedMonth = (val: string): { yr: number; mo: number } => {
+    const parts = (val || '').split('-');
+    const yr = Number(parts[0]);
+    const mo = Number(parts[1]);
+    if (isNaN(yr) || isNaN(mo) || yr < 2000 || mo < 1 || mo > 12) {
+      const today = new Date();
+      return { yr: today.getFullYear(), mo: today.getMonth() + 1 };
+    }
+    return { yr, mo };
+  };
+
   const shiftGanttMonth = (delta: number) => {
-    const [y, m] = selectedMonth.split('-').map(Number);
+    const { yr: y, mo: m } = parseSelectedMonth(selectedMonth);
     const d = new Date(y, m - 1 + delta, 1);
     setSelectedMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
@@ -73,21 +84,7 @@ export default function GanttView({
   };
 
   // Date constants based on current selectedMonth
-  let yr: number, mo: number;
-  try {
-    const parts = (selectedMonth || '').split('-');
-    yr = Number(parts[0]);
-    mo = Number(parts[1]);
-    if (isNaN(yr) || isNaN(mo)) {
-      const today = new Date();
-      yr = today.getFullYear();
-      mo = today.getMonth() + 1;
-    }
-  } catch (_) {
-    const today = new Date();
-    yr = today.getFullYear();
-    mo = today.getMonth() + 1;
-  }
+  const { yr, mo } = parseSelectedMonth(selectedMonth);
   const mStart = new Date(yr, mo - 1, 1);
   const mEnd = ganttDuration === 1
     ? new Date(yr, mo, 0)

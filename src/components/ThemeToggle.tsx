@@ -3,27 +3,23 @@ import { Sun, Moon } from 'lucide-react';
 
 export default function ThemeToggle() {
   const [isDark, setIsDark] = useState<boolean>(() => {
-    try {
-      // Check initial preference from localStorage or fallback to dark mode since it matches "Austin Batam" aesthetic perfectly
-      const stored = localStorage.getItem('theme');
-      if (stored) {
-        return stored === 'dark';
-      }
-    } catch (_) {}
+    // Check initial preference from localStorage or fallback to dark mode since it matches "Austin Batam" aesthetic perfectly
+    const stored = localStorage.getItem('theme');
+    if (stored) {
+      return stored === 'dark';
+    }
     return true; // Default to eye-safe dark theme
   });
 
   useEffect(() => {
     const root = document.documentElement;
-    try {
-      if (isDark) {
-        root.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
-      } else {
-        root.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
-      }
-    } catch (_) {}
+    if (isDark) {
+      root.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else {
+      root.classList.remove('dark');
+      localStorage.setItem('theme', 'light');
+    }
   }, [isDark]);
 
   return (

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Project, TimesheetEntry, Employee } from '../types';
-import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
+import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -10,7 +10,9 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend
+  Legend,
+  BarChart,
+  Bar
 } from 'recharts';
 
 interface DashboardViewProps {
@@ -39,6 +41,50 @@ export default function DashboardView({
   openSpotlight
 }: DashboardViewProps) {
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
+
+  const CustomHourlyTooltip = ({ active, payload, label }: any) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="bg-base-surface border border-base-border p-3.5 rounded-xl shadow-modal text-xs space-y-1.5 font-condensed font-bold border-l-4 border-l-base-accent">
+          <p className="text-base-text uppercase tracking-wider border-b border-base-border/50 pb-1 mb-1">{label}</p>
+          {payload.map((entry: any, index: number) => (
+            <div key={index} className="flex items-center gap-4 justify-between">
+              <span className="flex items-center gap-1.5 font-semibold" style={{ color: entry.fill || entry.color }}>
+                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: entry.fill || entry.color }} />
+                {entry.name}:
+              </span>
+              <span className="text-base-text font-mono">{entry.value}h</span>
+            </div>
+          ))}
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const hourlyChartData = React.useMemo(() => {
+    const list = projects.filter(p => {
+      if (p.isArchived) return false;
+      if (dashLoc !== 'all' && p.location !== dashLoc) return false;
+      if (!selectedMonth) return true;
+      if (p.targetMonth) {
+        return p.targetMonth === selectedMonth;
+      }
+      const startM = (p.start || '').slice(0, 7);
+      const dueM = (p.due || '').slice(0, 7);
+      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`);
+    });
+
+    return list.map(p => {
+      const budget = p.budgetHours || 0;
+      const actual = getManHoursForWorkOrder(p.client, timesheets);
+      return {
+        name: p.name,
+        'Budget Hours': budget,
+        'Actual Hours': actual
+      };
+    });
+  }, [projects, timesheets, dashLoc, selectedMonth]);
 
   // Custom component for styling Recharts Tooltips with Tailwind theme variables.
   const CustomChartTooltip = ({ active, payload, label }: any) => {
@@ -778,6 +824,60 @@ export default function DashboardView({
               />
             </AreaChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Budget vs Actual Hours per Project Bar Chart Card */}
+      <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-6 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
+              <Clock className="h-5 w-5 text-amber-500" />
+              Budget vs Actual Man-Hours per Project
+            </h3>
+            <p className="text-xs text-base-muted2">
+              Comparison of estimated budget hours against total logged timesheet man-hours across active projects.
+            </p>
+          </div>
+          <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 self-start sm:self-auto select-none">
+            <div className="flex items-center gap-1.5">
+              <span className="w-3 h-3 bg-amber-500 rounded-xs" />
+              <span className="text-base-text">Budget Hours</span>
+            </div>
+            <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
+              <span className="w-3 h-3 bg-[#4a90d9] rounded-xs" />
+              <span className="text-base-muted2">Logged Actuals</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="h-[260px] w-full pt-1">
+          {hourlyChartData.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-xs text-base-muted italic">
+              No active projects with budget hour metrics to display in this target scope.
+            </div>
+          ) : (
+            <ResponsiveContainer width="99%" height={255}>
+              <BarChart data={hourlyChartData} margin={{ top: 10, right: 10, left: -22, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fill: 'var(--muted2)', fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                />
+                <YAxis 
+                  tick={{ fill: 'var(--muted2)', fontSize: 10 }}
+                  tickLine={false}
+                  axisLine={false}
+                  tickFormatter={(val) => `${val}h`}
+                />
+                <Tooltip content={<CustomHourlyTooltip />} />
+                <Bar name="Budget Hours" dataKey="Budget Hours" fill="#e8a020" radius={[4, 4, 0, 0]} />
+                <Bar name="Actual Hours" dataKey="Actual Hours" fill="#4a90d9" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 

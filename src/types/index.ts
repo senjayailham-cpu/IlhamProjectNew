@@ -22,7 +22,7 @@ export enum UserRole {
   ProjectControl = 'project control'
 }
 
-export type UserRoleType = UserRole | 'admin' | 'manager' | 'coordinator' | 'viewer' | 'facility maintanance' | 'quality control' | 'safety' | 'project control';
+export type UserRoleType = `${UserRole}` | UserRole;
 
 export enum ProjectStatus {
   Active = 'active',
@@ -31,21 +31,21 @@ export enum ProjectStatus {
   OnHold = 'on-hold'
 }
 
-export type ProjectStatusType = ProjectStatus | 'active' | 'pending' | 'completed' | 'on-hold';
+export type ProjectStatusType = `${ProjectStatus}` | ProjectStatus;
 
 export enum ProjectCategory {
   Tray = 'tray',
   NonTray = 'nontray'
 }
 
-export type ProjectCategoryType = ProjectCategory | 'tray' | 'nontray';
+export type ProjectCategoryType = `${ProjectCategory}` | ProjectCategory;
 
 export enum ProjectLocation {
   Workshop1 = 'workshop1',
   Workshop2 = 'workshop2'
 }
 
-export type ProjectLocationType = ProjectLocation | 'workshop1' | 'workshop2';
+export type ProjectLocationType = `${ProjectLocation}` | ProjectLocation;
 
 export enum TimesheetStatus {
   Present = 'present',
@@ -54,7 +54,7 @@ export enum TimesheetStatus {
   Leave = 'leave'
 }
 
-export type TimesheetStatusType = TimesheetStatus | 'present' | 'late' | 'absent' | 'leave';
+export type TimesheetStatusType = `${TimesheetStatus}` | TimesheetStatus;
 
 export enum ActivityLogType {
   TaskProgress = 'task_progress',
@@ -66,21 +66,11 @@ export enum ActivityLogType {
   ProjectDelete = 'project_delete',
   AssemblyAdd = 'assembly_add',
   AssemblyEdit = 'assembly_edit',
-  AssemblyDelete = 'assembly_delete'
+  AssemblyDelete = 'assembly_delete',
+  AssemblyProgress = 'assembly_progress'
 }
 
-export type ActivityLogTypeVal =
-  | ActivityLogType
-  | 'task_progress'
-  | 'task_toggle'
-  | 'task_add'
-  | 'task_delete'
-  | 'project_add'
-  | 'project_edit'
-  | 'project_delete'
-  | 'assembly_add'
-  | 'assembly_edit'
-  | 'assembly_delete';
+export type ActivityLogTypeVal = `${ActivityLogType}` | ActivityLogType;
 
 // ============================================================================
 // 2. DATA MODELS & STRUCTURES
