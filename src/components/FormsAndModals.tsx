@@ -117,16 +117,6 @@ export function FormsAndModals({
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Target Month (Dashboard Reference)</label>
-                <input
-                  type="month"
-                  value={projectsHook.pTargetMonth}
-                  onChange={(e) => projectsHook.setPTargetMonth(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold text-base-accent"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Location Workshop</label>

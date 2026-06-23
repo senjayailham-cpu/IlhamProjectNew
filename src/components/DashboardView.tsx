@@ -104,9 +104,6 @@ export default function DashboardView({
     const targetProjs = projects.filter(p => {
       if (dashLoc !== 'all' && p.location !== dashLoc) return false;
       if (!selectedMonth) return true;
-      if (p.targetMonth) {
-        return p.targetMonth === selectedMonth;
-      }
       const startM = (p.start || '').slice(0, 7);
       const dueM = (p.due || '').slice(0, 7);
       return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`);
@@ -426,9 +423,6 @@ export default function DashboardView({
 
   // Filter projects by month and workshop
   const filteredProjects = projects.filter(p => {
-    if (p.targetMonth) {
-      return p.targetMonth === selectedMonth;
-    }
     if (p.status === 'completed' && p.completedDate) {
       // Completed projects belong to their completed month
       return p.completedDate.slice(0, 7) === selectedMonth;

@@ -1,11 +1,11 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { DEFAULT_USERS } from '../mockData';
-import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from '../services/firebase';
+import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from '../services/firebase';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
 import { doc, getDoc, setDoc } from 'firebase/firestore';
 import { sha256 } from '../utils/helpers';
-import firebaseConfig from '@/firebase-applet-config.json';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -279,7 +279,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (regErr) {
           console.warn("Could not register on-the-fly Firebase user:", regErr);
           try {
-            const { signInAnonymously } = await import('firebase/auth');
             await signInAnonymously(auth);
           } catch (anonErr) {
             console.warn("Could not complete backup anonymous login:", anonErr);
@@ -287,7 +286,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       } else {
         try {
-          const { signInAnonymously } = await import('firebase/auth');
           await signInAnonymously(auth);
         } catch (anonErr) {
           console.warn("Could not complete backup anonymous login:", anonErr);

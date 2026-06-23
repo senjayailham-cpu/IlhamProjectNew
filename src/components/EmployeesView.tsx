@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Employee } from '../types';
 import { esc } from '../utils/projectUtils';
 import { Search, UserPlus, Upload, ShieldCheck, Heart, User, Trash2, Edit, ChevronsDownUp, ChevronsUpDown } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 interface EmployeesViewProps {
   employees: Employee[];
@@ -77,21 +78,8 @@ export default function EmployeesView({
 
   // Lazy-load SheetJS on-demand for spreadsheet uploading
   const triggerExcelUpload = () => {
-    const loaderFn = () => {
-      const inputEl = document.getElementById('emp-excel-input-file') as HTMLInputElement | null;
-      if (inputEl) inputEl.click();
-    };
-
-    if ((window as any).XLSX) {
-      loaderFn();
-      return;
-    }
-
-    const s = document.createElement('script');
-    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js';
-    s.onload = loaderFn;
-    s.onerror = () => alert('Could not load Excel reader. Please check your internet connection.');
-    document.head.appendChild(s);
+    const inputEl = document.getElementById('emp-excel-input-file') as HTMLInputElement | null;
+    if (inputEl) inputEl.click();
   };
 
   const handleFileChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
@@ -102,7 +90,6 @@ export default function EmployeesView({
     r.onload = (e) => {
       try {
         const dataArr = new Uint8Array(e.target?.result as ArrayBuffer);
-        const XLSX = (window as any).XLSX;
         const wb = XLSX.read(dataArr, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });

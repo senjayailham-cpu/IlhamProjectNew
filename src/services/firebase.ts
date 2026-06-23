@@ -1,18 +1,37 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from 'firebase/auth';
 import { initializeFirestore, persistentLocalCache, getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
-import firebaseConfig from '@/firebase-applet-config.json';
+import firebaseConfig from '../../firebase-applet-config.json';
 
 const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 
 let firestoreDb;
-try {
-  firestoreDb = initializeFirestore(app, {
-    localCache: persistentLocalCache(),
-    experimentalForceLongPolling: true,
-  }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
-} catch (e) {
+
+const isStoragePermitted = () => {
+  try {
+    if (typeof window === 'undefined') return false;
+    localStorage.setItem('__storage_test__', 'test');
+    localStorage.removeItem('__storage_test__');
+    if (!window.indexedDB) return false;
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
+if (isStoragePermitted()) {
+  try {
+    firestoreDb = initializeFirestore(app, {
+      localCache: persistentLocalCache(),
+      experimentalForceLongPolling: true,
+    }, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
+  } catch (e) {
+    console.warn('initializeFirestore with cache failed, falling back:', e);
+    firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+} else {
+  console.warn('Storage or IndexedDB access is restricted inside sandbox. Falling back to memory-only Firestore client.');
   firestoreDb = getFirestore(app, firebaseConfig.firestoreDatabaseId);
 }
 
@@ -21,4 +40,4 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-export { signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword };
+export { signInWithPopup, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously };

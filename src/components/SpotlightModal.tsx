@@ -247,25 +247,6 @@ export default function SpotlightModal({
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {/* Metadata parameters */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-            {p.targetMonth && (
-              <div className="bg-base-surface border border-base-accent/20 rounded-lg p-3 flex items-center gap-3 bg-base-accent-dim/10">
-                <div className="h-7 w-7 rounded bg-base-accent-dim flex items-center justify-center flex-shrink-0 text-base-accent">
-                  <Calendar className="h-4 w-4" />
-                </div>
-                <div>
-                  <div className="text-[9px] font-condensed font-bold text-base-accent uppercase tracking-wider">Target Month</div>
-                  <div className="text-xs font-black text-base-text mt-0.5 font-condensed uppercase tracking-wide">
-                    {(() => {
-                      const parts = p.targetMonth.split('-');
-                      if (parts.length < 2) return p.targetMonth;
-                      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-                      const idx = parseInt(parts[1], 10) - 1;
-                      return idx >= 0 && idx < 12 ? `${months[idx]} ${parts[0]}` : p.targetMonth;
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
             {p.client && (
               <div className="bg-base-surface border border-base-border rounded-lg p-3 flex items-center gap-3">
                 <div className="h-7 w-7 rounded bg-base-blue-dim flex items-center justify-center flex-shrink-0 text-base-blue">

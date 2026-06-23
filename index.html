@@ -4,6 +4,48 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Austin Batam - Project Tracking Console</title>
+    <script>
+      // Early cross-origin and sandbox error filter
+      (function() {
+        var trap = function(msg) {
+          if (!msg) return true;
+          var msgStr = "";
+          if (typeof msg === "object") {
+            msgStr = String(msg.message || msg.reason || msg.description || JSON.stringify(msg) || "");
+          } else {
+            msgStr = String(msg);
+          }
+          var s = msgStr.toLowerCase();
+          return s.includes("script error") || 
+                 s.includes("websocket") || 
+                 s.includes("failed to connect") || 
+                 s.includes("connection") || 
+                 s.includes("hmr") || 
+                 s.includes("vite");
+        };
+        var origOnError = window.onerror;
+        window.onerror = function(message, source, lineno, colno, error) {
+          if (trap(message) || trap(error) || !source) {
+            console.warn("Trapped sandbox/external script error:", message, "from:", source);
+            return true;
+          }
+          if (origOnError) return origOnError.apply(this, arguments);
+          return false;
+        };
+        window.addEventListener("error", function(e) {
+          if (trap(e.message) || trap(e.error) || !e.filename) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+        window.addEventListener("unhandledrejection", function(e) {
+          if (trap(e.reason)) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        }, true);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

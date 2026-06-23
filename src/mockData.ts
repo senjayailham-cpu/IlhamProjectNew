@@ -1,12 +1,8 @@
 import { Project, Employee, TimesheetEntry, ActivityLog, User, ProblemReport, InspectionRequest, WireLog } from './types';
+import { sha256 } from './utils/helpers';
 
 // Standard seed users (passwords are 'admin123' for admin, '123456' for rizki/hasrad)
 export const DEFAULT_USERS = async (): Promise<User[]> => {
-  const sha256 = async (str: string) => {
-    const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-    return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
-  };
-
   return [
     {
       id: 'admin',
