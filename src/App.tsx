@@ -557,14 +557,14 @@ function AppContent() {
                     <button
                       key={t.id}
                       onClick={() => setActiveTab(t.id)}
-                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all group relative cursor-pointer ${
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 group relative cursor-pointer transform ${
                         isTabActive
-                          ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5'
-                          : 'text-base-muted hover:text-base-text hover:bg-base-surface2'
+                          ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5 shadow-[inset_1px_0_0_rgba(155,28,46,0.1)]'
+                          : 'text-base-muted hover:text-base-text hover:bg-base-surface2 hover:translate-x-1'
                       }`}
                     >
                       <div className="relative flex items-center">
-                        <IconComponent className="h-4 w-4 shrink-0" />
+                        <IconComponent className="h-4 w-4 shrink-0 transition-all duration-200 group-hover:scale-115 group-hover:text-base-accent" />
                         {sidebarCollapsed && badgeCount > 0 && (
                           <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 border border-base-surface animate-pulse" />
                         )}
@@ -692,11 +692,11 @@ function AppContent() {
           {/* Backdrop */}
           <div 
             onClick={() => setMobileMenuOpen(false)} 
-            className="fixed inset-0 bg-black/60 z-50 md:hidden transition-opacity duration-300" 
+            className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 md:hidden transition-opacity duration-300" 
           />
           
           {/* Drawer content frame */}
-          <aside className="fixed inset-y-0 left-0 w-64 bg-base-surface border-r border-base-border flex flex-col z-[100] select-none md:hidden transition-transform duration-300 shadow-2xl">
+          <aside className="fixed inset-y-0 left-0 w-64 bg-base-surface/95 backdrop-blur-md border-r border-base-border flex flex-col z-[100] select-none md:hidden transition-transform duration-300 shadow-2xl">
             <div className="h-14 border-b border-base-border flex items-center justify-between px-4 shrink-0">
               <div className="font-condensed font-black text-lg tracking-widest text-[#9b1c2e]">
                 AUSTIN <span className="text-base-text">BATAM</span>
@@ -754,13 +754,13 @@ function AppContent() {
                             setActiveTab(t.id);
                             setMobileMenuOpen(false);
                           }}
-                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 group relative cursor-pointer transform ${
                             isTabActive
-                              ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5'
-                              : 'text-base-muted hover:text-base-text hover:bg-base-surface2'
+                              ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5 shadow-[inset_1px_0_0_rgba(155,28,46,0.1)]'
+                              : 'text-base-muted hover:text-base-text hover:bg-base-surface2 hover:translate-x-1'
                           }`}
                         >
-                          <IconComponent className="h-4.5 w-4.5 shrink-0" />
+                          <IconComponent className="h-4.5 w-4.5 shrink-0 transition-all duration-200 group-hover:scale-110 group-hover:text-base-accent" />
                           <span className="flex-1 text-left truncate">{t.label}</span>
                           {badgeCount > 0 && (
                             <span className={`px-1.5 py-0.5 rounded font-condensed font-extrabold text-[9px] ${badgeBg}`}>

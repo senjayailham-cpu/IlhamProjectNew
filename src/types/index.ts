@@ -144,6 +144,7 @@ export interface Project {
   successors?: Dependency[];
   budgetHours?: number;
   isArchived?: boolean;
+  targetMonth?: string;
 }
 
 export interface Employee {

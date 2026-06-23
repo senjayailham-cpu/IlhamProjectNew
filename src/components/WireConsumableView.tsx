@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { WireLog, Employee, Project, Assembly, User } from '../types';
-import { Flame, Trash2, Search, Plus, Calendar, UserCheck, Folder, AlertCircle, TrendingUp, Sparkles, Filter, Download, Wrench } from 'lucide-react';
+import { Flame, Trash2, Search, Plus, Calendar, UserCheck, Folder, AlertCircle, TrendingUp, Sparkles, Filter, Download, Wrench, ChevronDown, Check, X } from 'lucide-react';
 
 interface WireConsumableViewProps {
   wireLogs: WireLog[];
@@ -51,6 +51,22 @@ export default function WireConsumableView({
     );
     return welderList.length > 0 ? welderList : employees;
   }, [employees]);
+
+  const welderOptions = useMemo(() => {
+    return welderEmployees.map(emp => ({
+      id: emp.id,
+      label: emp.name,
+      subLabel: emp.position || undefined,
+    }));
+  }, [welderEmployees]);
+
+  const projectOptions = useMemo(() => {
+    return activeProjects.map(p => ({
+      id: p.id,
+      label: p.name,
+      subLabel: p.client ? `Client: ${p.client}` : undefined,
+    }));
+  }, [activeProjects]);
 
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
@@ -246,18 +262,13 @@ export default function WireConsumableView({
                   <UserCheck className="h-3.5 w-3.5 text-base-muted" />
                   <span>Welder / Fitter</span>
                 </label>
-                <select
+                <SearchableAutocomplete
+                  options={welderOptions}
                   value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
-                >
-                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Welder --</option>
-                  {welderEmployees.map(emp => (
-                    <option key={emp.id} value={emp.id} className="bg-base-surface2 text-base-text font-sans">
-                      {emp.name} {emp.position ? `(${emp.position})` : ''}
-                    </option>
-                  ))}
-                </select>
+                  onChange={setSelectedEmployeeId}
+                  placeholder="Type to search welder/fitter name..."
+                  icon={<UserCheck className="h-4 w-4" />}
+                />
               </div>
 
               {/* PROJECT DROPDOWN */}
@@ -266,21 +277,16 @@ export default function WireConsumableView({
                   <Folder className="h-3.5 w-3.5 text-base-muted" />
                   <span>Project</span>
                 </label>
-                <select
+                <SearchableAutocomplete
+                  options={projectOptions}
                   value={selectedProjectId}
-                  onChange={(e) => {
-                    setSelectedProjectId(e.target.value);
+                  onChange={(val) => {
+                    setSelectedProjectId(val);
                     setSelectedAssemblyId(''); // Reset sub-assembly
                   }}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
-                >
-                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Project --</option>
-                  {activeProjects.map(p => (
-                    <option key={p.id} value={p.id} className="bg-base-surface2 text-base-text font-sans">
-                      [{p.client}] {p.name}
-                    </option>
-                  ))}
-                </select>
+                  placeholder="Type to search project name or client..."
+                  icon={<Folder className="h-4 w-4" />}
+                />
               </div>
 
               {/* SUB-ASSEMBLY DROPDOWN (CONNECTED TO THE PROJECT) */}
@@ -546,6 +552,157 @@ export default function WireConsumableView({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+interface SearchableSelectOption {
+  id: string;
+  label: string;
+  subLabel?: string;
+}
+
+interface SearchableAutocompleteProps {
+  options: SearchableSelectOption[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder: string;
+  icon?: React.ReactNode;
+  disabled?: boolean;
+}
+
+function SearchableAutocomplete({
+  options,
+  value,
+  onChange,
+  placeholder,
+  icon,
+  disabled = false
+}: SearchableAutocompleteProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const selectedOption = useMemo(() => options.find(o => o.id === value), [options, value]);
+
+  useEffect(() => {
+    if (selectedOption) {
+      setSearch(selectedOption.label);
+    } else {
+      setSearch('');
+    }
+  }, [value, selectedOption]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+        if (selectedOption) {
+          setSearch(selectedOption.label);
+        } else {
+          setSearch('');
+        }
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [selectedOption]);
+
+  const filteredOptions = useMemo(() => {
+    const currentName = selectedOption?.label || '';
+    if (!search.trim() || search === currentName) return options;
+    const q = search.toLowerCase();
+    return options.filter(o => 
+      o.label.toLowerCase().includes(q) || 
+      (o.subLabel && o.subLabel.toLowerCase().includes(q))
+    );
+  }, [options, search, selectedOption]);
+
+  const handleClear = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange('');
+    setSearch('');
+    setIsOpen(true);
+  };
+
+  return (
+    <div ref={containerRef} className="relative w-full text-xs font-semibold">
+      <div className="relative flex items-center">
+        {icon && <span className="absolute left-3 text-base-muted shrink-0 pointer-events-none z-10">{icon}</span>}
+        <input
+          type="text"
+          disabled={disabled}
+          placeholder={placeholder}
+          value={search}
+          onFocus={() => setIsOpen(true)}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setIsOpen(true);
+            if (!e.target.value) {
+              onChange('');
+            }
+          }}
+          className={`w-full flex items-center justify-between gap-2 py-2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-bold disabled:opacity-40 disabled:cursor-not-allowed h-[38px] ${
+            icon ? 'pl-9 pr-9' : 'pl-3.5 pr-9'
+          } bg-base-surface2 focus:bg-base-surface`}
+        />
+        {search ? (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="absolute right-3 text-base-muted hover:text-base-text cursor-pointer z-10"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        ) : (
+          <ChevronDown 
+            className="absolute right-3 h-4 w-4 text-base-muted shrink-0 transition-transform duration-200 pointer-events-none" 
+            style={{ transform: isOpen ? 'rotate(180deg)' : undefined }} 
+          />
+        )}
+      </div>
+
+      {isOpen && (
+        <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-base-surface border border-base-border rounded-lg shadow-xl overflow-hidden animate-fade-in max-h-56 flex flex-col">
+          <div className="overflow-y-auto max-h-56 py-1 scrollbar-thin">
+            {filteredOptions.length === 0 ? (
+              <div className="px-3.5 py-3 text-center text-base-muted italic text-[11px]">
+                No matching results found.
+              </div>
+            ) : (
+              filteredOptions.map(option => {
+                const isSelected = option.id === value;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => {
+                      onChange(option.id);
+                      setSearch(option.label);
+                      setIsOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between gap-3 px-3.5 py-2 text-left text-xs transition-colors cursor-pointer ${
+                      isSelected 
+                        ? 'bg-amber-500/10 text-amber-500 font-bold' 
+                        : 'text-base-text hover:bg-base-surface3'
+                    }`}
+                  >
+                    <div className="truncate">
+                      <span className="block font-bold truncate">{option.label}</span>
+                      {option.subLabel && (
+                        <span className="block text-[10px] text-base-muted mt-0.5 truncate">{option.subLabel}</span>
+                      )}
+                    </div>
+                    {isSelected && <Check className="h-4 w-4 text-amber-500 shrink-0" />}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

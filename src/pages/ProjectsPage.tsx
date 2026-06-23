@@ -70,6 +70,16 @@ export function ProjectsPage({
 
     const monthOptionsMap: Record<string, string> = {};
     activePendingProjects.forEach(p => {
+      if (p.targetMonth) {
+        const parts = p.targetMonth.split('-');
+        if (parts.length >= 2) {
+          const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
+          if (!isNaN(d.getTime())) {
+            const k = p.targetMonth;
+            monthOptionsMap[k] = d.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+          }
+        }
+      }
       if (p.due) {
         const d = new Date(p.due + 'T00:00:00');
         if (!isNaN(d.getTime())) {
@@ -90,6 +100,9 @@ export function ProjectsPage({
     const filteredProjects = activePendingProjects
       .filter(p => {
         if (currentTabMonthFilter) {
+          if (p.targetMonth) {
+            return p.targetMonth === currentTabMonthFilter;
+          }
           const startStr = p.start || '';
           const dueStr = p.due || '';
           const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
@@ -237,6 +250,17 @@ export function ProjectsPage({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
+                    {p.targetMonth && (
+                      <span className="px-1.5 py-0.5 rounded bg-base-accent-dim/15 text-base-accent border border-base-accent/25 font-condensed font-bold uppercase tracking-wide">
+                        🎯 Target: {(() => {
+                          const parts = p.targetMonth.split('-');
+                          if (parts.length < 2) return p.targetMonth;
+                          const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                          const idx = parseInt(parts[1], 10) - 1;
+                          return idx >= 0 && idx < 12 ? `${months[idx]} ${parts[0]}` : p.targetMonth;
+                        })()}
+                      </span>
+                    )}
                     {(p.start || p.due) && (
                       <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
                         📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
@@ -407,6 +431,17 @@ export function ProjectsPage({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
+                  {p.targetMonth && (
+                    <span className="px-1.5 py-0.5 rounded bg-base-accent-dim/15 text-base-accent border border-base-accent/25 font-condensed font-bold uppercase tracking-wide">
+                      🎯 Target: {(() => {
+                        const parts = p.targetMonth.split('-');
+                        if (parts.length < 2) return p.targetMonth;
+                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                        const idx = parseInt(parts[1], 10) - 1;
+                        return idx >= 0 && idx < 12 ? `${months[idx]} ${parts[0]}` : p.targetMonth;
+                      })()}
+                    </span>
+                  )}
                   <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
                     Due: {p.due || 'No date'}
                   </span>
