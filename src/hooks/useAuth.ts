@@ -3,7 +3,7 @@ import { User } from '../types';
 import { DEFAULT_USERS } from '../mockData';
 import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from '../services/firebase';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { sha256, cleanFirestoreData } from '../utils/helpers';
 import firebaseConfig from '../../firebase-applet-config.json';
 
@@ -376,10 +376,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Persist the currentSessionId directly into the user master document in Firestore
     try {
       const userDocRef = doc(db, 'users', testUser.id);
-      await setDoc(userDocRef, cleanFirestoreData({
-        ...testUser,
-        currentSessionId: nextSessionId
-      }));
+      await updateDoc(userDocRef, {
+        currentSessionId: nextSessionId,
+        uid: auth.currentUser?.uid || null
+      });
     } catch (saveErr) {
       console.warn("Could not save currentSessionId on master profile:", saveErr);
     }
@@ -453,10 +453,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       const userDocRef = doc(db, 'users', currentUser.id);
-      await setDoc(userDocRef, cleanFirestoreData({
-        ...testUser,
+      await updateDoc(userDocRef, {
         passHash: hashedNew
-      }));
+      });
     } catch (dbErr) {
       console.warn("Could not write password change to Firestore:", dbErr);
     }

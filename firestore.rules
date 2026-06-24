@@ -115,16 +115,24 @@ service cloud.firestore {
       allow get: if isSignedIn();
       allow list: if isSignedIn();
       allow create: if isAdmin() || (
-        isSignedIn() && 
-        request.auth.uid == userId && 
-        request.auth.token.email != null &&
-        request.auth.token.email.startsWith(incoming().id + '@') &&
-        (
-          incoming().role == 'coordinator' || 
-          incoming().role == 'viewer' ||
+        isSignedIn() && (
           (
-            exists(/databases/$(database)/documents/users/$(incoming().id)) &&
-            incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role
+            request.auth.uid == userId && 
+            request.auth.token.email != null &&
+            request.auth.token.email.startsWith(incoming().id + '@') &&
+            (
+              incoming().role == 'coordinator' || 
+              incoming().role == 'viewer' ||
+              (
+                exists(/databases/$(database)/documents/users/$(incoming().id)) &&
+                incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role
+              )
+            )
+          ) ||
+          (
+            request.auth.token.email != null &&
+            request.auth.token.email.startsWith(userId + '@') &&
+            incoming().id == userId
           )
         )
       );
