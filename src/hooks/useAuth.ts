@@ -136,6 +136,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setCurrentUser(session);
             sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
             setLoginError('');
+
+            // Safe dynamic creation of UID user doc copy for seamless Firestore rules matching
+            if (firebaseUser.uid !== portalId) {
+              const uidDocRef = doc(db, 'users', firebaseUser.uid);
+              try {
+                const uidDocSnap = await getDoc(uidDocRef);
+                if (!uidDocSnap.exists() || uidDocSnap.data()?.role !== session.role) {
+                  await setDoc(uidDocRef, {
+                    ...session,
+                    id: portalId,
+                    uid: firebaseUser.uid
+                  });
+                }
+              } catch (writeErr) {
+                console.warn("Could not save UID mapping document:", writeErr);
+              }
+            }
           } else {
             const defaultRole = isDev ? 'admin' : 'coordinator';
             const defaultName = firebaseUser.displayName || (isDev ? 'Senjaya Ilham' : portalId || 'Team Member');
@@ -152,6 +169,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setCurrentUser(session);
             sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
             setLoginError('');
+
+            // Safe dynamic creation of UID user doc copy for seamless Firestore rules matching
+            if (firebaseUser.uid !== portalId) {
+              const uidDocRef = doc(db, 'users', firebaseUser.uid);
+              try {
+                await setDoc(uidDocRef, {
+                  ...session,
+                  id: portalId,
+                  uid: firebaseUser.uid
+                });
+              } catch (writeErr) {
+                console.warn("Could not save UID mapping document:", writeErr);
+              }
+            }
           }
         } catch (err) {
           console.error("Firestore loading user profile error:", err);

@@ -36,9 +36,17 @@ service cloud.firestore {
     }
 
     function getUserRole() {
-      return isSignedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid))
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : 'viewer';
+      return !isSignedIn() ? 'viewer' :
+        exists(/databases/$(database)/documents/users/$(request.auth.uid))
+          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(admin|ilhamsenjaya|irwanr)@(.*\\.)?austinbatam\\.xyz$')) ? 'admin' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(rizki|hasrad)@(.*\\.)?austinbatam\\.xyz$')) ? 'manager' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(andreas)@(.*\\.)?austinbatam\\.xyz$')) ? 'coordinator' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(facility)@(.*\\.)?austinbatam\\.xyz$')) ? 'facility maintanance' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(qc)@(.*\\.)?austinbatam\\.xyz$')) ? 'quality control' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(safety_user)@(.*\\.)?austinbatam\\.xyz$')) ? 'safety' :
+        (request.auth.token.email != null && request.auth.token.email.matches('^(pc)@(.*\\.)?austinbatam\\.xyz$')) ? 'project control' :
+        'viewer';
     }
 
     function hasRole(allowedRoles) {
@@ -79,7 +87,20 @@ service cloud.firestore {
       // Secure user profiles: only signed-in users can fetch individual docs, preventing unauthenticated hash leakage.
       allow get: if isSignedIn();
       allow list: if isSignedIn();
-      allow create: if isAdmin();
+      allow create: if isAdmin() || (
+        isSignedIn() && 
+        request.auth.uid == userId && 
+        request.auth.token.email != null &&
+        request.auth.token.email.matches('^' + incoming().id + '@') &&
+        (
+          incoming().role == 'coordinator' || 
+          incoming().role == 'viewer' ||
+          (
+            exists(/databases/$(database)/documents/users/$(incoming().id)) &&
+            incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role
+          )
+        )
+      );
       allow update: if isAdmin() || (
         isSignedIn() && (
           (incoming() == existing()) ||
@@ -87,7 +108,7 @@ service cloud.firestore {
            isUnchanged('role') && 
            isUnchanged('allowedFeatures') && 
            isUnchanged('allowedPermissions') && 
-           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash']))
+           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'uid']))
         )
       );
       allow delete: if isAdmin();
