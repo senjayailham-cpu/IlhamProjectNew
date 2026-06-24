@@ -5,6 +5,7 @@ import SpotlightModal from './SpotlightModal';
 import DepModal from './DepModal';
 import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
+import { useFirestore } from '../hooks';
 
 interface FormsAndModalsProps {
   authHook: ReturnType<typeof import('../hooks/useAuth').useAuth>;
@@ -35,6 +36,7 @@ export function FormsAndModals({
 }: FormsAndModalsProps) {
   const { currentUser } = authHook;
   const can = (perm: any) => canUtil(currentUser, perm);
+  const { saveItem } = useFirestore();
 
   return (
     <>
@@ -446,6 +448,7 @@ export function FormsAndModals({
             };
           }
           setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
+          saveItem('projects', nextProj);
           verifyMarkChanged();
           if (logParams) {
             logActivity(
