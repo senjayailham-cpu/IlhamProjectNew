@@ -133,9 +133,12 @@ service cloud.firestore {
           (incoming() == existing()) ||
           (
             (
-              request.auth.uid == userId && 
               (
-                // Case 1: Editing own master profile (portalId == request.auth.uid)
+                request.auth.uid == userId ||
+                (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@'))
+              ) && 
+              (
+                // Case 1: Editing own master profile (portalId == request.auth.uid or email verified)
                 (
                   incoming().id == userId &&
                   isUnchanged('role') && 
