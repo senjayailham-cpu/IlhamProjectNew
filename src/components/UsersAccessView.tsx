@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User, UserRoleType } from '../types';
-import { Users, Shield, ShieldAlert, Plus, Trash2, Key, HelpCircle, Check, RefreshCw, Search } from 'lucide-react';
+import { Users, Shield, ShieldAlert, Plus, Trash2, Key, HelpCircle, Check, RefreshCw, Search, Power, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 interface UsersAccessViewProps {
   users: User[];
@@ -39,6 +39,19 @@ export default function UsersAccessView({
   const [localUsers, setLocalUsers] = useState<User[]>(users);
   const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  
+  // Custom Toast Notification State
+  const [notification, setNotification] = useState<{
+    type: 'success' | 'error' | 'info';
+    message: string;
+  } | null>(null);
+
+  const showToast = (type: 'success' | 'error' | 'info', message: string) => {
+    setNotification({ type, message });
+    setTimeout(() => {
+      setNotification(prev => prev?.message === message ? null : prev);
+    }, 4500);
+  };
   
   // Synchronize when users from props update in background, but only if they have no unsaved changes
   React.useEffect(() => {
@@ -103,12 +116,12 @@ export default function UsersAccessView({
     const cleanPass = newUserPass.trim();
 
     if (!cleanId || !cleanName || !cleanPass) {
-      alert('Please fill out all user creation parameters.');
+      showToast('error', 'Please fill out all user creation parameters.');
       return;
     }
 
     if (localUsers.some(u => u.id === cleanId)) {
-      alert(`User ID "${cleanId}" already exists in the roster!`);
+      showToast('error', `User ID "${cleanId}" already exists in the roster!`);
       return;
     }
 
@@ -129,11 +142,12 @@ export default function UsersAccessView({
     setNewUserRole('coordinator');
     setNewUserPass('');
     setShowAddForm(false);
+    showToast('success', `User account staged for "${cleanName}". Please click "Save Changes" or "Save & Update Roster" to broadcast.`);
   };
 
   const handleDeleteUser = (uId: string) => {
     if (currentUser && currentUser.id === uId) {
-      alert('You cannot delete your own logged-in user session!');
+      showToast('error', 'You cannot delete your own logged-in user session!');
       return;
     }
     const target = localUsers.find(u => u.id === uId);
@@ -150,6 +164,34 @@ export default function UsersAccessView({
           setSelectedUserId(updated[0]?.id || '');
         }
         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        showToast('info', `Staged deletion of "${target.name}".`);
+      }
+    });
+  };
+
+  const handleForceTerminateSession = (uId: string) => {
+    const target = localUsers.find(u => u.id === uId);
+    if (!target) return;
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Force Terminate Session',
+      message: `Are you sure you want to terminate the active live session for user "${target.name}"? This will invalidate their token and trigger an immediate real-time logout on their device.`,
+      onConfirm: () => {
+        const updated = localUsers.map(u => {
+          if (u.id === uId) {
+            return {
+              ...u,
+              currentSessionId: undefined
+            };
+          }
+          return u;
+        });
+        setLocalUsers(updated);
+        // Persist immediately in the cloud
+        onUpdateUsers(updated);
+        setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        showToast('success', `Live session terminated for ${target.name}.`);
       }
     });
   };
@@ -191,7 +233,7 @@ export default function UsersAccessView({
     setLocalUsers(updated);
     setNewPasswordValue('');
     setShowPassReset(false);
-    alert(`Successfully staged passcode change for ${selectedUser.name}. Click "Save Changes" to apply permanently.`);
+    showToast('success', `Successfully staged passcode change for ${selectedUser.name}. Click "Save Changes" to apply permanently.`);
   };
 
   const handleToggleTabVisibility = (tabId: string) => {
@@ -287,7 +329,35 @@ export default function UsersAccessView({
   const isSelectedUserUsingDefaultPermissions = selectedUser && selectedUser.allowedPermissions === undefined;
 
   return (
-    <div className="flex flex-col gap-6 p-6 min-h-[calc(100vh-140px)] animate-fade-in select-text w-full">
+    <div className="flex flex-col gap-6 p-6 min-h-[calc(100vh-140px)] animate-fade-in select-text w-full relative">
+      
+      {/* 🔔 CUSTOM TOAST NOTIFICATION BANNER */}
+      {notification && (
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4.5 py-3.5 rounded-xl shadow-elevated border animate-in slide-in-from-top-3 duration-300 ${
+          notification.type === 'success'
+            ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/35 text-emerald-500'
+            : notification.type === 'error'
+              ? 'bg-red-500/10 dark:bg-red-500/15 border-red-500/35 text-red-500'
+              : 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500/35 text-blue-400'
+        }`}>
+          {notification.type === 'success' ? (
+            <CheckCircle2 className="w-5 h-5 shrink-0" />
+          ) : notification.type === 'error' ? (
+            <AlertCircle className="w-5 h-5 shrink-0" />
+          ) : (
+            <HelpCircle className="w-5 h-5 shrink-0" />
+          )}
+          <div className="text-xs font-bold leading-snug max-w-sm">
+            {notification.message}
+          </div>
+          <button
+            onClick={() => setNotification(null)}
+            className="ml-2 hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded transition-colors text-xxs font-extrabold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
       
       {/* ⚠️ UNSAVED CHANGES FLOATING ACTION BANNER */}
       {isDirty && (
@@ -313,7 +383,7 @@ export default function UsersAccessView({
             <button
               onClick={() => {
                 onUpdateUsers(localUsers);
-                alert('All changes saved and broadcast successfully to the Live Cloud Sync!');
+                showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
               }}
               className="flex-1 md:flex-none px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md text-xs flex items-center justify-center gap-1.5 glow-green active:scale-[0.98]"
             >
@@ -451,8 +521,11 @@ export default function UsersAccessView({
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className="font-extrabold text-xs flex items-center gap-1 truncate text-base-text">
-                      <span>{u.name}</span>
+                    <div className="font-extrabold text-xs flex items-center gap-1.5 truncate text-base-text">
+                      {u.currentSessionId && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block shrink-0" title="User is currently live & online" />
+                      )}
+                      <span className="truncate">{u.name}</span>
                       {u.id === currentUser?.id && (
                         <span className="shrink-0 scale-90 px-1 py-0.2 rounded-full text-[8px] uppercase bg-base-green/20 text-base-green font-bold tracking-tight">Active</span>
                       )}
@@ -546,7 +619,7 @@ export default function UsersAccessView({
                   <button
                     onClick={() => {
                       onUpdateUsers(localUsers);
-                      alert('All changes saved and broadcast successfully to the Live Cloud Sync!');
+                      showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
                     }}
                     className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 glow-green shadow-md active:scale-95 cursor-pointer"
                   >
@@ -602,6 +675,45 @@ export default function UsersAccessView({
                 </div>
               </div>
             )}
+
+            {/* Live Session Status Panel */}
+            <div className="bg-base-surface2 border border-base-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase font-condensed font-extrabold tracking-wider text-base-muted">Live Integration Status</span>
+                  {selectedUser.currentSessionId ? (
+                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] uppercase font-black tracking-wide animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                      <span>Active Session</span>
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-500/15 text-zinc-500 text-[10px] uppercase font-black tracking-wide">
+                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
+                      <span>Offline</span>
+                    </span>
+                  )}
+                </div>
+                
+                <p className="text-xs text-base-muted max-w-xl leading-relaxed">
+                  {selectedUser.currentSessionId ? (
+                    <span>This user is currently logged in with active session token <code className="bg-base-bg px-1.5 py-0.5 rounded text-[10px] font-mono border border-base-border text-base-text font-bold">{selectedUser.currentSessionId.substring(0, 8)}...</code>. Any attempt to sign in from another browser or device will automatically invalidate this session and force a real-time logout on this device.</span>
+                  ) : (
+                    <span>No active live session is recorded in the cloud database for this user. The user will be initialized and authenticated upon their next secure portal sign-in.</span>
+                  )}
+                </p>
+              </div>
+
+              {selectedUser.currentSessionId && currentUser?.role === 'admin' && (
+                <button
+                  onClick={() => handleForceTerminateSession(selectedUser.id)}
+                  className="px-3.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/20 hover:border-red-500/40 font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 self-start sm:self-center cursor-pointer hover:shadow-sm"
+                  title="Force a real-time logout of this active session across all open browsers."
+                >
+                  <Power className="w-3.5 h-3.5" />
+                  <span>Force Terminate</span>
+                </button>
+              )}
+            </div>
 
             {/* Split Permissions Grid: Features (Left half) vs Controls (Right half) */}
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">

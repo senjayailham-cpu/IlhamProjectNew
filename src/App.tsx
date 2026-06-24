@@ -271,7 +271,13 @@ function AppContent() {
           const unsub = onSnapshot(colRef, (snapshot) => {
             const list: any[] = [];
             snapshot.forEach((d) => {
-              list.push(d.data());
+              const data = d.data();
+              // Filter out the UID mapping documents from the users collection.
+              // A UID mapping document's Firestore ID is the Firebase UID, which is different from the user's portal ID (data.id).
+              if (colName === 'users' && d.id !== data.id) {
+                return;
+              }
+              list.push(data);
             });
             stateSetter(list);
           }, (error) => {
@@ -978,7 +984,12 @@ function AppContent() {
               const updatedSet = new Set(updated.map(u => u.id));
               prev.forEach(u => {
                 if (!updatedSet.has(u.id)) {
+                  // Delete the master profile
                   removeItem('users', u.id);
+                  // If there is an associated Firebase UID, delete that UID mapping document as well
+                  if (u.uid) {
+                    removeItem('users', u.uid);
+                  }
                 }
               });
             }} />
