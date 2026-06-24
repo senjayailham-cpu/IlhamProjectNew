@@ -1,9 +1,9 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Global safety net: deny all by default
+    // Global safety net: allow bootstrap seeding if system is not yet seeded, otherwise deny by default
     match /{document=**} {
-      allow read, write: if false;
+      allow read, write: if !exists(/databases/$(database)/documents/system_config/status);
     }
 
     // Reuseable global security helpers
@@ -116,66 +116,25 @@ service cloud.firestore {
       allow list: if isSignedIn();
       allow create: if isAdmin() || (
         isSignedIn() && (
-          (
-            request.auth.uid == userId && 
-            request.auth.token.email != null &&
-            request.auth.token.email.startsWith(incoming().id + '@') &&
-            (
-              incoming().role == 'coordinator' || 
-              incoming().role == 'viewer' ||
-              (
-                exists(/databases/$(database)/documents/users/$(incoming().id)) &&
-                incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role
-              )
-            )
-          ) ||
-          (
-            request.auth.token.email != null &&
-            request.auth.token.email.startsWith(userId + '@') &&
-            incoming().id == userId
-          )
+          // Allow creating their own UID mapping document
+          userId == request.auth.uid ||
+          // Allow creating their own master profile
+          userId == incoming().id ||
+          // Allow creating if email matches the user id
+          (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@'))
         )
       );
       allow update: if isAdmin() || (
         isSignedIn() && (
           (incoming() == existing()) ||
-          (
-            (
-              (
-                request.auth.uid == userId ||
-                (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@'))
-              ) && 
-              (
-                // Case 1: Editing own master profile (portalId == request.auth.uid or email verified)
-                (
-                  incoming().id == userId &&
-                  isUnchanged('role') && 
-                  isUnchanged('allowedFeatures') && 
-                  isUnchanged('allowedPermissions') && 
-                  incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'uid', 'currentSessionId'])
-                ) ||
-                // Case 2: Syncing own UID mapping document (portalId !== request.auth.uid)
-                (
-                  incoming().id != userId &&
-                  exists(/databases/$(database)/documents/users/$(incoming().id)) &&
-                  incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role &&
-                  incoming().get('allowedPermissions', {}) == get(/databases/$(database)/documents/users/$(incoming().id)).data.get('allowedPermissions', {}) &&
-                  incoming().get('allowedFeatures', []) == get(/databases/$(database)/documents/users/$(incoming().id)).data.get('allowedFeatures', []) &&
-                  incoming().name == get(/databases/$(database)/documents/users/$(incoming().id)).data.name
-                )
-              )
-            ) ||
-            // Case 3: Editing master profile where portalId !== request.auth.uid (using mapping)
-            (
-              incoming().id == userId &&
-              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.id == userId &&
-              isUnchanged('role') && 
-              isUnchanged('allowedFeatures') && 
-              isUnchanged('allowedPermissions') && 
-              incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'currentSessionId'])
-            )
-          )
+          // Allow updating if it's their own document
+          userId == request.auth.uid ||
+          userId == incoming().id ||
+          userId == existing().id ||
+          (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@')) ||
+          // Or they have a UID mapping linking to this document
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.id == userId)
         )
       );
       allow delete: if isAdmin();

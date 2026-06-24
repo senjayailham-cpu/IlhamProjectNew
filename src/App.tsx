@@ -6,7 +6,7 @@ import { can as canUtil, PERMISSIONS } from './utils/permissions';
 import { uid, cleanFirestoreData } from './utils/helpers';
 
 // Firebase imports
-import { db } from './services/firebase';
+import { db, auth } from './services/firebase';
 import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 
 // Custom Hooks & Subcomponents
@@ -223,29 +223,37 @@ function AppContent() {
     const unsubscribers: (() => void)[] = [];
 
     const setupSync = async () => {
-      if (!fbUser) return;
+      // Ensure we are fully authenticated and have user profile data before continuing
+      if (!fbUser || !currentUser || !auth.currentUser) return;
+
+      const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
 
       try {
-        const initDocRef = doc(db, 'system_config', 'status');
-        let initDocSnap = await getDoc(initDocRef);
-        const isSeeded = initDocSnap.exists() && initDocSnap.data()?.seeded;
+        let isSeeded = true;
+        
+        // Only run check and write seeding if we are online and database is directly reachable
+        if (isOnline) {
+          const initDocRef = doc(db, 'system_config', 'status');
+          let initDocSnap = await getDoc(initDocRef);
+          isSeeded = initDocSnap.exists() && initDocSnap.data()?.seeded;
 
-        if (!active) return;
+          if (!active) return;
 
-        if (!isSeeded) {
-          const defUsers = await DEFAULT_USERS();
-          const seedPromises = [
-            ...DEFAULT_PROJECTS.map(item => setDoc(doc(db, 'projects', item.id), item)),
-            ...DEFAULT_EMPLOYEES.map(item => setDoc(doc(db, 'employees', item.id), item)),
-            ...DEFAULT_TIMESHEETS.map(item => setDoc(doc(db, 'timesheets', item.id), item)),
-            ...DEFAULT_ACTIVITIES.map(item => setDoc(doc(db, 'activities', item.id), item)),
-            ...DEFAULT_PROBLEM_REPORTS.map(item => setDoc(doc(db, 'problemReports', item.id), item)),
-            ...DEFAULT_INSPECTION_REQUESTS.map(item => setDoc(doc(db, 'inspections', item.id), item)),
-            ...DEFAULT_WIRE_LOGS.map(item => setDoc(doc(db, 'wireLogs', item.id), item)),
-            ...defUsers.map(item => setDoc(doc(db, 'users', item.id), item)),
-          ];
-          await Promise.all(seedPromises);
-          await setDoc(initDocRef, { seeded: true });
+          if (!isSeeded) {
+            const defUsers = await DEFAULT_USERS();
+            const seedPromises = [
+              ...DEFAULT_PROJECTS.map(item => setDoc(doc(db, 'projects', item.id), item)),
+              ...DEFAULT_EMPLOYEES.map(item => setDoc(doc(db, 'employees', item.id), item)),
+              ...DEFAULT_TIMESHEETS.map(item => setDoc(doc(db, 'timesheets', item.id), item)),
+              ...DEFAULT_ACTIVITIES.map(item => setDoc(doc(db, 'activities', item.id), item)),
+              ...DEFAULT_PROBLEM_REPORTS.map(item => setDoc(doc(db, 'problemReports', item.id), item)),
+              ...DEFAULT_INSPECTION_REQUESTS.map(item => setDoc(doc(db, 'inspections', item.id), item)),
+              ...DEFAULT_WIRE_LOGS.map(item => setDoc(doc(db, 'wireLogs', item.id), item)),
+              ...defUsers.map(item => setDoc(doc(db, 'users', item.id), item)),
+            ];
+            await Promise.all(seedPromises);
+            await setDoc(initDocRef, { seeded: true });
+          }
         }
 
         const listenToCollection = (colName: string, stateSetter: (data: any) => void) => {
@@ -304,8 +312,9 @@ function AppContent() {
           setCurrentUser(updated);
           sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updated));
 
-          // Also update the /users/{firebaseUser.uid} mapping in Firestore in real time!
-          if (fbUser && fbUser.uid !== currentUser.id) {
+          // Also update the /users/{firebaseUser.uid} mapping in Firestore in real time if online and authenticated
+          const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
+          if (fbUser && auth.currentUser && isOnline && fbUser.uid !== currentUser.id) {
             const uidDocRef = doc(db, 'users', fbUser.uid);
             setDoc(uidDocRef, cleanFirestoreData({
               ...updated,

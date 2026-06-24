@@ -338,21 +338,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Now that we are signed in, we can fetch/write the master user profile from Firestore without permission issues!
     const docRef = doc(db, 'users', targetId);
     let docSnap;
-    try {
-      docSnap = await getDoc(docRef);
-    } catch (getErr) {
-      console.warn("Could not get user document from Firestore:", getErr);
-    }
+    const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
 
-    // If document doesn't exist in Firestore, seed it from default
-    if ((!docSnap || !docSnap.exists()) && foundDef) {
-      console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+    if (authenticated && auth.currentUser && isOnline) {
       try {
-        await setDoc(docRef, cleanFirestoreData(foundDef));
         docSnap = await getDoc(docRef);
-      } catch (writeErr) {
-        console.warn("Could not write missing default user during login:", writeErr);
+      } catch (getErr) {
+        console.warn("Could not get user document from Firestore:", getErr);
       }
+
+      // If document doesn't exist in Firestore, seed it from default
+      if ((!docSnap || !docSnap.exists()) && foundDef) {
+        console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+        try {
+          await setDoc(docRef, cleanFirestoreData(foundDef));
+          docSnap = await getDoc(docRef);
+        } catch (writeErr) {
+          console.warn("Could not write missing default user during login:", writeErr);
+        }
+      }
+    } else {
+      console.warn("Firestore fetch/write skipped: User is not fully authenticated or device is offline.");
     }
 
     if (docSnap && docSnap.exists()) {
@@ -374,14 +380,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
 
     // Persist the currentSessionId directly into the user master document in Firestore
-    try {
-      const userDocRef = doc(db, 'users', testUser.id);
-      await updateDoc(userDocRef, {
-        currentSessionId: nextSessionId,
-        uid: auth.currentUser?.uid || null
-      });
-    } catch (saveErr) {
-      console.warn("Could not save currentSessionId on master profile:", saveErr);
+    if (authenticated && auth.currentUser && isOnline) {
+      try {
+        const userDocRef = doc(db, 'users', testUser.id);
+        await updateDoc(userDocRef, {
+          currentSessionId: nextSessionId,
+          uid: auth.currentUser?.uid || null
+        });
+      } catch (saveErr) {
+        console.warn("Could not save currentSessionId on master profile:", saveErr);
+      }
+    } else {
+      console.warn("Firestore session saving skipped: User is not fully authenticated or device is offline.");
     }
 
     setLoginId('');
