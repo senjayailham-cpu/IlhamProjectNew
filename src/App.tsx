@@ -3,7 +3,7 @@ import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, In
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
-import { uid, cleanFirestoreData } from './utils/helpers';
+import { uid, cleanFirestoreData, handleFirestoreError, OperationType } from './utils/helpers';
 
 // Firebase imports
 import { db, auth } from './services/firebase';
@@ -234,8 +234,14 @@ function AppContent() {
         // Only run check and write seeding if we are online and database is directly reachable
         if (isOnline) {
           const initDocRef = doc(db, 'system_config', 'status');
-          let initDocSnap = await getDoc(initDocRef);
-          isSeeded = initDocSnap.exists() && initDocSnap.data()?.seeded;
+          let initDocSnap;
+          try {
+            initDocSnap = await getDoc(initDocRef);
+          } catch (error) {
+            handleFirestoreError(error, OperationType.GET, 'system_config/status');
+          }
+
+          isSeeded = initDocSnap && initDocSnap.exists() && initDocSnap.data()?.seeded;
 
           if (!active) return;
 
@@ -251,8 +257,12 @@ function AppContent() {
               ...DEFAULT_WIRE_LOGS.map(item => setDoc(doc(db, 'wireLogs', item.id), item)),
               ...defUsers.map(item => setDoc(doc(db, 'users', item.id), item)),
             ];
-            await Promise.all(seedPromises);
-            await setDoc(initDocRef, { seeded: true });
+            try {
+              await Promise.all(seedPromises);
+              await setDoc(initDocRef, { seeded: true });
+            } catch (error) {
+              handleFirestoreError(error, OperationType.WRITE, 'bootstrap_seeding');
+            }
           }
         }
 
@@ -266,6 +276,7 @@ function AppContent() {
             stateSetter(list);
           }, (error) => {
             console.error(`Firestore real-time error on ${colName}:`, error);
+            handleFirestoreError(error, OperationType.LIST, colName);
           });
           unsubscribers.push(unsub);
         };

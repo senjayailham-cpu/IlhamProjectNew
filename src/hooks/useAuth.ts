@@ -4,7 +4,7 @@ import { DEFAULT_USERS } from '../mockData';
 import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from '../services/firebase';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
-import { sha256, cleanFirestoreData } from '../utils/helpers';
+import { sha256, cleanFirestoreData, handleFirestoreError, OperationType } from '../utils/helpers';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthContextType {
@@ -256,7 +256,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Subscription for single active session control (concurrent login prevention)
   useEffect(() => {
-    if (!currentUser || !currentUser.id) return;
+    if (!currentUser || !currentUser.id || !fbUser) return;
 
     const userDocRef = doc(db, 'users', currentUser.id);
     const unsubscribe = onSnapshot(userDocRef, (snap) => {
@@ -274,10 +274,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }, (err) => {
       console.warn("Failed to listen to session status changes:", err);
+      handleFirestoreError(err, OperationType.GET, `users/${currentUser.id}`);
     });
 
     return () => unsubscribe();
-  }, [currentUser?.id]);
+  }, [currentUser?.id, fbUser]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
