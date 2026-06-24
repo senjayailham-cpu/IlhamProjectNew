@@ -276,48 +276,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let testUser = users.find(u => u.id === targetId);
-    let foundDef: User | undefined;
-
-    try {
-      const docRef = doc(db, 'users', targetId);
-      const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
-      const email = `${targetId}@${dbId}.austinbatam.xyz`;
-      const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
-
-      if (!testUser) {
-        try {
-          await signInWithEmailAndPassword(auth, email, firebasePass);
-          console.log("Successfully authenticated with Firebase Auth prior to user doc load.");
-        } catch (authErr: any) {
-          console.warn("Pre-auth login sync check failed (might not be registered yet):", authErr.message);
-        }
-      }
-
-      let docSnap;
-      try {
-        docSnap = await getDoc(docRef);
-      } catch (getErr) {
-        console.warn("Could not get user document directly (likely unauthenticated seed):", getErr);
-      }
-
-      const defUsers = await DEFAULT_USERS();
-      foundDef = defUsers.find(u => u.id === targetId);
-
-      if ((!docSnap || !docSnap.exists()) && foundDef) {
-        console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
-        try {
-          await setDoc(docRef, cleanFirestoreData(foundDef));
-          docSnap = await getDoc(docRef);
-        } catch (writeErr) {
-          console.warn("Could not write missing default user during login (probably unauthenticated):", writeErr);
-        }
-      }
-      if (docSnap && docSnap.exists()) {
-        testUser = docSnap.data() as User;
-      }
-    } catch (err) {
-      console.warn("Could not fetch user directly from Firestore, falling back to local list:", err);
-    }
+    const defUsers = await DEFAULT_USERS();
+    const foundDef = defUsers.find(u => u.id === targetId);
 
     if (!testUser && foundDef) {
       testUser = foundDef;
@@ -328,10 +288,75 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const hash = await sha256(loginPass);
-    if (hash !== testUser.passHash) {
-      setLoginError('Incorrect password value entered.');
-      return;
+    // Determine credentials for Firebase Auth
+    const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
+    const email = `${targetId.toLowerCase()}@${dbId}.austinbatam.xyz`;
+    const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
+
+    // Attempt Firebase Auth sign-in first to establish authenticated session
+    let authenticated = false;
+    try {
+      await signInWithEmailAndPassword(auth, email, firebasePass);
+      authenticated = true;
+      console.log("Successfully authenticated with Firebase Auth.");
+    } catch (authErr: any) {
+      console.warn("Firebase Auth sign-in failed, checking auto-healing:", authErr.code);
+      
+      // If the user doesn't exist in Firebase Auth yet, but is a valid default user, register them on the fly
+      const hash = await sha256(loginPass);
+      if (foundDef && hash === foundDef.passHash) {
+        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+          try {
+            await createUserWithEmailAndPassword(auth, email, firebasePass);
+            authenticated = true;
+            console.log("Successfully auto-healed and registered new Firebase Auth user.");
+          } catch (regErr) {
+            console.warn("Could not register on-the-fly Firebase user:", regErr);
+          }
+        }
+      }
+    }
+
+    // If still not authenticated, we try standard credential check as a fallback
+    if (!authenticated) {
+      const hash = await sha256(loginPass);
+      if (hash !== testUser.passHash) {
+        setLoginError('Incorrect password value entered.');
+        return;
+      }
+      
+      // If password is correct but Firebase Auth failed, login anonymously as backup
+      try {
+        await signInAnonymously(auth);
+        authenticated = true;
+        console.log("Authenticated anonymously as backup.");
+      } catch (anonErr) {
+        console.warn("Could not complete backup anonymous login:", anonErr);
+      }
+    }
+
+    // Now that we are signed in, we can fetch/write the master user profile from Firestore without permission issues!
+    const docRef = doc(db, 'users', targetId);
+    let docSnap;
+    try {
+      docSnap = await getDoc(docRef);
+    } catch (getErr) {
+      console.warn("Could not get user document from Firestore:", getErr);
+    }
+
+    // If document doesn't exist in Firestore, seed it from default
+    if ((!docSnap || !docSnap.exists()) && foundDef) {
+      console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+      try {
+        await setDoc(docRef, cleanFirestoreData(foundDef));
+        docSnap = await getDoc(docRef);
+      } catch (writeErr) {
+        console.warn("Could not write missing default user during login:", writeErr);
+      }
+    }
+
+    if (docSnap && docSnap.exists()) {
+      testUser = docSnap.data() as User;
     }
 
     const nextSessionId = Math.random().toString(36).substring(2) + Date.now();
@@ -357,33 +382,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }));
     } catch (saveErr) {
       console.warn("Could not save currentSessionId on master profile:", saveErr);
-    }
-
-    const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
-    const email = `${testUser.id.toLowerCase()}@${dbId}.austinbatam.xyz`;
-    const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
-    try {
-      await signInWithEmailAndPassword(auth, email, firebasePass);
-    } catch (authErr: any) {
-      console.warn("Background Firebase Auth login error (auto-healing):", authErr);
-      if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-        try {
-          await createUserWithEmailAndPassword(auth, email, firebasePass);
-        } catch (regErr) {
-          console.warn("Could not register on-the-fly Firebase user:", regErr);
-          try {
-            await signInAnonymously(auth);
-          } catch (anonErr) {
-            console.warn("Could not complete backup anonymous login:", anonErr);
-          }
-        }
-      } else {
-        try {
-          await signInAnonymously(auth);
-        } catch (anonErr) {
-          console.warn("Could not complete backup anonymous login:", anonErr);
-        }
-      }
     }
 
     setLoginId('');

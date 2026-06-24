@@ -118,7 +118,7 @@ service cloud.firestore {
         isSignedIn() && 
         request.auth.uid == userId && 
         request.auth.token.email != null &&
-        request.auth.token.email.matches('^' + incoming().id + '@') &&
+        request.auth.token.email.startsWith(incoming().id + '@') &&
         (
           incoming().role == 'coordinator' || 
           incoming().role == 'viewer' ||
