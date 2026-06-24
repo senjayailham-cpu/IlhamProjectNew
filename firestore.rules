@@ -53,15 +53,42 @@ service cloud.firestore {
       return isSignedIn() && (getUserRole() in allowedRoles);
     }
 
+    function hasPermission(perm) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
+            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('allowedPermissions', {}).get(perm, null) != null
+              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allowedPermissions[perm] == true
+              : (
+                (perm == 'addProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+                (perm == 'editProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+                (perm == 'deleteProject' && (getUserRole() == 'admin')) ||
+                (perm == 'addAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+                (perm == 'deleteAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+                (perm == 'addTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+                (perm == 'deleteTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator')) ||
+                (perm == 'updateTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'facility maintanance' || getUserRole() == 'quality control' || getUserRole() == 'safety' || getUserRole() == 'project control')) ||
+                (perm == 'addDifficulty' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+                (perm == 'addTaskInline' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+                (perm == 'manageUsers' && (getUserRole() == 'admin')) ||
+                (perm == 'exportData' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+                (perm == 'importData' && (getUserRole() == 'admin'))
+              )
+          )
+        )
+      );
+    }
+
     // Role-based collection matches
     match /projects/{projectId} {
       allow read: if isAdmin() || isSignedIn();
-      allow create: if isAdmin() || hasRole(['manager']);
-      allow update: if isAdmin() || hasRole(['manager']) || (
-        (hasRole(['coordinator', 'facility maintanance', 'quality control', 'safety', 'project control'])) && 
+      allow create: if isAdmin() || hasPermission('addProject');
+      allow update: if isAdmin() || hasPermission('editProject') || (
+        (hasPermission('updateTask')) && 
         (incoming().diff(existing()).affectedKeys().hasOnly(['assemblies', 'notes', 'status', 'completedDate']) || incoming() == existing())
       );
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() || hasPermission('deleteProject');
     }
 
     match /employees/{employeeId} {
@@ -104,11 +131,40 @@ service cloud.firestore {
       allow update: if isAdmin() || (
         isSignedIn() && (
           (incoming() == existing()) ||
-          (request.auth.uid == userId && 
-           isUnchanged('role') && 
-           isUnchanged('allowedFeatures') && 
-           isUnchanged('allowedPermissions') && 
-           incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'uid']))
+          (
+            (
+              request.auth.uid == userId && 
+              (
+                // Case 1: Editing own master profile (portalId == request.auth.uid)
+                (
+                  incoming().id == userId &&
+                  isUnchanged('role') && 
+                  isUnchanged('allowedFeatures') && 
+                  isUnchanged('allowedPermissions') && 
+                  incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'uid', 'currentSessionId'])
+                ) ||
+                // Case 2: Syncing own UID mapping document (portalId !== request.auth.uid)
+                (
+                  incoming().id != userId &&
+                  exists(/databases/$(database)/documents/users/$(incoming().id)) &&
+                  incoming().role == get(/databases/$(database)/documents/users/$(incoming().id)).data.role &&
+                  incoming().get('allowedPermissions', {}) == get(/databases/$(database)/documents/users/$(incoming().id)).data.get('allowedPermissions', {}) &&
+                  incoming().get('allowedFeatures', []) == get(/databases/$(database)/documents/users/$(incoming().id)).data.get('allowedFeatures', []) &&
+                  incoming().name == get(/databases/$(database)/documents/users/$(incoming().id)).data.name
+                )
+              )
+            ) ||
+            // Case 3: Editing master profile where portalId !== request.auth.uid (using mapping)
+            (
+              incoming().id == userId &&
+              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.id == userId &&
+              isUnchanged('role') && 
+              isUnchanged('allowedFeatures') && 
+              isUnchanged('allowedPermissions') && 
+              incoming().diff(existing()).affectedKeys().hasOnly(['name', 'password', 'passHash', 'currentSessionId'])
+            )
+          )
         )
       );
       allow delete: if isAdmin();

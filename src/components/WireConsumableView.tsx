@@ -24,6 +24,12 @@ export default function WireConsumableView({
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
   const [selectedWelderFilter, setSelectedWelderFilter] = useState('');
 
+  // Typing-to-search filter states for wire logs history
+  const [projectFilterSearch, setProjectFilterSearch] = useState('');
+  const [isProjectFilterFocused, setIsProjectFilterFocused] = useState(false);
+  const [welderFilterSearch, setWelderFilterSearch] = useState('');
+  const [isWelderFilterFocused, setIsWelderFilterFocused] = useState(false);
+
   // Form states
   const [dateStr, setDateStr] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedEmployeeId, setSelectedEmployeeId] = useState('');
@@ -33,6 +39,12 @@ export default function WireConsumableView({
   const [remarks, setRemarks] = useState('');
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
+
+  // Search states for typing selection
+  const [welderSearch, setWelderSearch] = useState('');
+  const [isWelderFocused, setIsWelderFocused] = useState(false);
+  const [projectSearch, setProjectSearch] = useState('');
+  const [isProjectFocused, setIsProjectFocused] = useState(false);
 
   // Dynamic lists for the dropdowns
   const activeProjects = useMemo(() => {
@@ -51,6 +63,54 @@ export default function WireConsumableView({
     );
     return welderList.length > 0 ? welderList : employees;
   }, [employees]);
+
+  const selectedWelderObj = useMemo(() => {
+    return employees.find(e => e.id === selectedEmployeeId);
+  }, [employees, selectedEmployeeId]);
+
+  const filteredWelders = useMemo(() => {
+    const q = welderSearch.toLowerCase().trim();
+    if (!q) return welderEmployees;
+    return welderEmployees.filter(emp => 
+      emp.name.toLowerCase().includes(q) || 
+      (emp.position && emp.position.toLowerCase().includes(q))
+    );
+  }, [welderEmployees, welderSearch]);
+
+  const filteredProjectsForSelect = useMemo(() => {
+    const q = projectSearch.toLowerCase().trim();
+    if (!q) return activeProjects;
+    return activeProjects.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      (p.client && p.client.toLowerCase().includes(q))
+    );
+  }, [activeProjects, projectSearch]);
+
+  const selectedProjectFilterObj = useMemo(() => {
+    return projects.find(p => p.id === selectedProjectFilter);
+  }, [projects, selectedProjectFilter]);
+
+  const selectedWelderFilterObj = useMemo(() => {
+    return employees.find(e => e.id === selectedWelderFilter);
+  }, [employees, selectedWelderFilter]);
+
+  const filteredProjectsForFilter = useMemo(() => {
+    const q = projectFilterSearch.toLowerCase().trim();
+    if (!q) return projects;
+    return projects.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      (p.client && p.client.toLowerCase().includes(q))
+    );
+  }, [projects, projectFilterSearch]);
+
+  const filteredWeldersForFilter = useMemo(() => {
+    const q = welderFilterSearch.toLowerCase().trim();
+    if (!q) return employees;
+    return employees.filter(emp => 
+      emp.name.toLowerCase().includes(q) || 
+      (emp.position && emp.position.toLowerCase().includes(q))
+    );
+  }, [employees, welderFilterSearch]);
 
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
@@ -100,6 +160,11 @@ export default function WireConsumableView({
     // Reset states
     setAmountInputStr('');
     setRemarks('');
+    setSelectedEmployeeId('');
+    setSelectedProjectId('');
+    setSelectedAssemblyId('');
+    setWelderSearch('');
+    setProjectSearch('');
     setFormSuccess(`Consumable wire (${amountVal} kg) logged successfully for ${welder.name}!`);
     setTimeout(() => setFormSuccess(''), 4000);
   };
@@ -241,46 +306,142 @@ export default function WireConsumableView({
               </div>
 
               {/* WELDER DROPDOWN */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative">
                 <label className="text-base-muted2 flex items-center gap-1.5">
                   <UserCheck className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Welder / Fitter</span>
+                  <span>Welder / Fitter (Type to search)</span>
                 </label>
-                <select
-                  value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
-                >
-                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Welder --</option>
-                  {welderEmployees.map(emp => (
-                    <option key={emp.id} value={emp.id} className="bg-base-surface2 text-base-text font-sans">
-                      {emp.name} {emp.position ? `(${emp.position})` : ''}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type name or position to search..."
+                    value={isWelderFocused ? welderSearch : (selectedWelderObj ? `${selectedWelderObj.name} ${selectedWelderObj.position ? `(${selectedWelderObj.position})` : ''}` : '')}
+                    onChange={(e) => {
+                      setWelderSearch(e.target.value);
+                      if (!e.target.value.trim()) {
+                        setSelectedEmployeeId('');
+                      }
+                    }}
+                    onFocus={() => {
+                      setIsWelderFocused(true);
+                      setWelderSearch('');
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setIsWelderFocused(false);
+                      }, 250);
+                    }}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
+                    required
+                  />
+                  {selectedEmployeeId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmployeeId('');
+                        setWelderSearch('');
+                      }}
+                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {isWelderFocused && (
+                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                    {filteredWelders.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching personnel found</div>
+                    ) : (
+                      filteredWelders.map(emp => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setSelectedEmployeeId(emp.id);
+                            setWelderSearch(emp.name);
+                            setIsWelderFocused(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                        >
+                          <span className="font-bold">{emp.name}</span>
+                          {emp.position && <span className="text-[10px] opacity-85">{emp.position} {emp.location ? `• ${emp.location}` : ''}</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* PROJECT DROPDOWN */}
-              <div className="space-y-1.5">
+              <div className="space-y-1.5 relative">
                 <label className="text-base-muted2 flex items-center gap-1.5">
                   <Folder className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Project</span>
+                  <span>Project (Type to search)</span>
                 </label>
-                <select
-                  value={selectedProjectId}
-                  onChange={(e) => {
-                    setSelectedProjectId(e.target.value);
-                    setSelectedAssemblyId(''); // Reset sub-assembly
-                  }}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all cursor-pointer font-semibold"
-                >
-                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Project --</option>
-                  {activeProjects.map(p => (
-                    <option key={p.id} value={p.id} className="bg-base-surface2 text-base-text font-sans">
-                      [{p.client}] {p.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Type client or project name..."
+                    value={isProjectFocused ? projectSearch : (selectedProjectObj ? `[${selectedProjectObj.client}] ${selectedProjectObj.name}` : '')}
+                    onChange={(e) => {
+                      setProjectSearch(e.target.value);
+                      if (!e.target.value.trim()) {
+                        setSelectedProjectId('');
+                        setSelectedAssemblyId('');
+                      }
+                    }}
+                    onFocus={() => {
+                      setIsProjectFocused(true);
+                      setProjectSearch('');
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setIsProjectFocused(false);
+                      }, 250);
+                    }}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
+                    required
+                  />
+                  {selectedProjectId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectId('');
+                        setSelectedAssemblyId('');
+                        setProjectSearch('');
+                      }}
+                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {isProjectFocused && (
+                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                    {filteredProjectsForSelect.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching projects found</div>
+                    ) : (
+                      filteredProjectsForSelect.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setSelectedProjectId(p.id);
+                            setSelectedAssemblyId(''); // Reset sub-assembly
+                            setProjectSearch(`[${p.client}] ${p.name}`);
+                            setIsProjectFocused(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                        >
+                          <span className="font-bold">{p.name}</span>
+                          <span className="text-[10px] opacity-85">Client: {p.client}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* SUB-ASSEMBLY DROPDOWN (CONNECTED TO THE PROJECT) */}
@@ -457,28 +618,152 @@ export default function WireConsumableView({
               </div>
 
               {/* Project select filter */}
-              <select
-                value={selectedProjectFilter}
-                onChange={(e) => setSelectedProjectFilter(e.target.value)}
-                className="px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none text-base-text cursor-pointer font-semibold"
-              >
-                <option value="" className="bg-base-surface2 text-base-text font-sans">-- All Projects --</option>
-                {projects.map(p => (
-                  <option key={p.id} value={p.id} className="bg-base-surface2 text-base-text font-sans">{p.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Filter by Project (Type)..."
+                    value={isProjectFilterFocused ? projectFilterSearch : (selectedProjectFilterObj ? `[${selectedProjectFilterObj.client}] ${selectedProjectFilterObj.name}` : '')}
+                    onChange={(e) => {
+                      setProjectFilterSearch(e.target.value);
+                      if (!e.target.value.trim()) {
+                        setSelectedProjectFilter('');
+                      }
+                    }}
+                    onFocus={() => {
+                      setIsProjectFilterFocused(true);
+                      setProjectFilterSearch('');
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setIsProjectFilterFocused(false);
+                      }, 250);
+                    }}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none focus:border-amber-400 text-base-text font-semibold placeholder:font-normal"
+                  />
+                  {selectedProjectFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProjectFilter('');
+                        setProjectFilterSearch('');
+                      }}
+                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                    >
+                      All
+                    </button>
+                  )}
+                </div>
+
+                {isProjectFilterFocused && (
+                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                    <button
+                      type="button"
+                      onMouseDown={() => {
+                        setSelectedProjectFilter('');
+                        setProjectFilterSearch('');
+                        setIsProjectFilterFocused(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors font-bold text-base-muted"
+                    >
+                      -- All Projects --
+                    </button>
+                    {filteredProjectsForFilter.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching projects found</div>
+                    ) : (
+                      filteredProjectsForFilter.map(p => (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setSelectedProjectFilter(p.id);
+                            setProjectFilterSearch(`[${p.client}] ${p.name}`);
+                            setIsProjectFilterFocused(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                        >
+                          <span className="font-bold">{p.name}</span>
+                          <span className="text-[10px] opacity-85">Client: {p.client}</span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Welder employee filter */}
-              <select
-                value={selectedWelderFilter}
-                onChange={(e) => setSelectedWelderFilter(e.target.value)}
-                className="px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none text-base-text cursor-pointer font-semibold"
-              >
-                <option value="" className="bg-base-surface2 text-base-text font-sans">-- All Welders --</option>
-                {employees.map(emp => (
-                  <option key={emp.id} value={emp.id} className="bg-base-surface2 text-base-text font-sans">{emp.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Filter by Welder (Type)..."
+                    value={isWelderFilterFocused ? welderFilterSearch : (selectedWelderFilterObj ? `${selectedWelderFilterObj.name} ${selectedWelderFilterObj.position ? `(${selectedWelderFilterObj.position})` : ''}` : '')}
+                    onChange={(e) => {
+                      setWelderFilterSearch(e.target.value);
+                      if (!e.target.value.trim()) {
+                        setSelectedWelderFilter('');
+                      }
+                    }}
+                    onFocus={() => {
+                      setIsWelderFilterFocused(true);
+                      setWelderFilterSearch('');
+                    }}
+                    onBlur={() => {
+                      setTimeout(() => {
+                        setIsWelderFilterFocused(false);
+                      }, 250);
+                    }}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none focus:border-amber-400 text-base-text font-semibold placeholder:font-normal"
+                  />
+                  {selectedWelderFilter && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedWelderFilter('');
+                        setWelderFilterSearch('');
+                      }}
+                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                    >
+                      All
+                    </button>
+                  )}
+                </div>
+
+                {isWelderFilterFocused && (
+                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                    <button
+                      type="button"
+                      onMouseDown={() => {
+                        setSelectedWelderFilter('');
+                        setWelderFilterSearch('');
+                        setIsWelderFilterFocused(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors font-bold text-base-muted"
+                    >
+                      -- All Welders --
+                    </button>
+                    {filteredWeldersForFilter.length === 0 ? (
+                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching personnel found</div>
+                    ) : (
+                      filteredWeldersForFilter.map(emp => (
+                        <button
+                          key={emp.id}
+                          type="button"
+                          onMouseDown={() => {
+                            setSelectedWelderFilter(emp.id);
+                            setWelderFilterSearch(emp.name);
+                            setIsWelderFilterFocused(false);
+                          }}
+                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                        >
+                          <span className="font-bold">{emp.name}</span>
+                          {emp.position && <span className="text-[10px] opacity-85">{emp.position} {emp.location ? `• ${emp.location}` : ''}</span>}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* List Table of Logs */}

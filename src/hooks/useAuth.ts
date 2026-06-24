@@ -3,8 +3,8 @@ import { User } from '../types';
 import { DEFAULT_USERS } from '../mockData';
 import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from '../services/firebase';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { sha256 } from '../utils/helpers';
+import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
+import { sha256, cleanFirestoreData } from '../utils/helpers';
 import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthContextType {
@@ -111,6 +111,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (firebaseUser) {
+        // Every time they close the app/web, sessionStorage is cleared.
+        // If there is no session in sessionStorage, log out of Firebase Auth automatically!
+        const sess = sessionStorage.getItem('w2proj_session_v1');
+        if (!sess) {
+          try {
+            await signOut(auth);
+          } catch (e) {
+            console.warn("Auto signout on stale session failed:", e);
+          }
+          setCurrentUser(null);
+          setFbUser(null);
+          return;
+        }
+
         try {
           const emailPrefix = firebaseUser.email ? firebaseUser.email.split('@')[0].toLowerCase() : '';
           const isAppletEmailDomain = firebaseUser.email ? (firebaseUser.email.endsWith('@austinbatam.xyz') || firebaseUser.email.includes('.austinbatam.xyz')) : false;
@@ -131,7 +145,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               name: data.name || firebaseUser.displayName || portalId || 'Team User',
               role: isDev ? 'admin' : (data.role || 'coordinator'),
               allowedFeatures: data.allowedFeatures || [],
-              allowedPermissions: data.allowedPermissions || {}
+              allowedPermissions: data.allowedPermissions || {},
+              currentSessionId: data.currentSessionId || undefined
             };
             setCurrentUser(session);
             sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
@@ -142,12 +157,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const uidDocRef = doc(db, 'users', firebaseUser.uid);
               try {
                 const uidDocSnap = await getDoc(uidDocRef);
-                if (!uidDocSnap.exists() || uidDocSnap.data()?.role !== session.role) {
-                  await setDoc(uidDocRef, {
+                const uidData = uidDocSnap.exists() ? uidDocSnap.data() : null;
+                const needsUpdate = !uidDocSnap.exists() ||
+                  uidData.role !== session.role ||
+                  uidData.name !== session.name ||
+                  JSON.stringify(uidData.allowedPermissions || {}) !== JSON.stringify(session.allowedPermissions || {}) ||
+                  JSON.stringify(uidData.allowedFeatures || []) !== JSON.stringify(session.allowedFeatures || []);
+                if (needsUpdate) {
+                  await setDoc(uidDocRef, cleanFirestoreData({
                     ...session,
                     id: portalId,
-                    uid: firebaseUser.uid
-                  });
+                    uid: firebaseUser.uid,
+                    currentSessionId: uidData?.currentSessionId || null
+                  }));
                 }
               } catch (writeErr) {
                 console.warn("Could not save UID mapping document:", writeErr);
@@ -165,7 +187,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               allowedPermissions: {}
             };
             
-            await setDoc(docRef, session);
+            await setDoc(docRef, cleanFirestoreData(session));
             setCurrentUser(session);
             sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
             setLoginError('');
@@ -174,11 +196,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (firebaseUser.uid !== portalId) {
               const uidDocRef = doc(db, 'users', firebaseUser.uid);
               try {
-                await setDoc(uidDocRef, {
+                await setDoc(uidDocRef, cleanFirestoreData({
                   ...session,
                   id: portalId,
                   uid: firebaseUser.uid
-                });
+                }));
               } catch (writeErr) {
                 console.warn("Could not save UID mapping document:", writeErr);
               }
@@ -215,6 +237,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => unsubscribe();
   }, []);
+
+  // Subscription for single active session control (concurrent login prevention)
+  useEffect(() => {
+    if (!currentUser || !currentUser.id) return;
+
+    const userDocRef = doc(db, 'users', currentUser.id);
+    const unsubscribe = onSnapshot(userDocRef, (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        const serverSessionId = data.currentSessionId;
+        const localSessionId = sessionStorage.getItem('w2proj_active_session_id');
+
+        // Only invalidate if both exist and are different
+        if (serverSessionId && localSessionId && serverSessionId !== localSessionId) {
+          console.warn(`Concurrent session detected for ${currentUser.id}. Logging out...`);
+          executeLogout();
+          alert("Session invalidated: This account has been logged in from another device or window.");
+        }
+      }
+    }, (err) => {
+      console.warn("Failed to listen to session status changes:", err);
+    });
+
+    return () => unsubscribe();
+  }, [currentUser?.id]);
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -259,7 +306,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if ((!docSnap || !docSnap.exists()) && foundDef) {
         console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
         try {
-          await setDoc(docRef, foundDef);
+          await setDoc(docRef, cleanFirestoreData(foundDef));
           docSnap = await getDoc(docRef);
         } catch (writeErr) {
           console.warn("Could not write missing default user during login (probably unauthenticated):", writeErr);
@@ -287,15 +334,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    const nextSessionId = Math.random().toString(36).substring(2) + Date.now();
+    sessionStorage.setItem('w2proj_active_session_id', nextSessionId);
+
     const session: User = { 
       id: testUser.id, 
       name: testUser.name, 
       role: testUser.role,
       allowedFeatures: testUser.allowedFeatures || [],
-      allowedPermissions: testUser.allowedPermissions || {}
+      allowedPermissions: testUser.allowedPermissions || {},
+      currentSessionId: nextSessionId
     };
     setCurrentUser(session);
     sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+
+    // Persist the currentSessionId directly into the user master document in Firestore
+    try {
+      const userDocRef = doc(db, 'users', testUser.id);
+      await setDoc(userDocRef, cleanFirestoreData({
+        ...testUser,
+        currentSessionId: nextSessionId
+      }));
+    } catch (saveErr) {
+      console.warn("Could not save currentSessionId on master profile:", saveErr);
+    }
 
     const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
     const email = `${testUser.id.toLowerCase()}@${dbId}.austinbatam.xyz`;
@@ -343,6 +405,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setCurrentUser(null);
     sessionStorage.removeItem('w2proj_session_v1');
+    sessionStorage.removeItem('w2proj_active_session_id');
     setLoginId('');
     setLoginPass('');
   };
@@ -389,6 +452,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     const hashedNew = await sha256(newPass);
+
+    try {
+      const userDocRef = doc(db, 'users', currentUser.id);
+      await setDoc(userDocRef, cleanFirestoreData({
+        ...testUser,
+        passHash: hashedNew
+      }));
+    } catch (dbErr) {
+      console.warn("Could not write password change to Firestore:", dbErr);
+    }
 
     setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, passHash: hashedNew } : u));
 

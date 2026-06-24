@@ -60,6 +60,23 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
   }
 }
 
+export const cleanFirestoreData = (obj: any): any => {
+  if (obj === null || typeof obj !== 'object') {
+    return obj === undefined ? null : obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(cleanFirestoreData);
+  }
+  const cleaned: any = {};
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
+    if (value !== undefined) {
+      cleaned[key] = cleanFirestoreData(value);
+    }
+  }
+  return cleaned;
+};
+
 export const uid = (): string => {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
 };

@@ -3,7 +3,7 @@ import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, In
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
-import { uid } from './utils/helpers';
+import { uid, cleanFirestoreData } from './utils/helpers';
 
 // Firebase imports
 import { db } from './services/firebase';
@@ -89,7 +89,7 @@ export function App() {
 
 function AppContent() {
   const authHook = useAuth();
-  const { currentUser, fbUser, users, setUsers, isAuthLoading } = authHook;
+  const { currentUser, fbUser, users, setUsers, isAuthLoading, setCurrentUser } = authHook;
 
   // Local sync and list states
   const [activities, setRealActivities] = useState<ActivityLog[]>([]);
@@ -288,18 +288,35 @@ function AppContent() {
     if (currentUser && users.length > 0) {
       const match = users.find(u => u.id === currentUser.id);
       if (match) {
-        // Only set storage or session if something actually changed
-        const sessStored = sessionStorage.getItem('w2proj_session_v1');
-        if (sessStored) {
-          const parsed = JSON.parse(sessStored) as User;
-          if (parsed.role !== match.role || JSON.stringify(parsed.allowedPermissions) !== JSON.stringify(match.allowedPermissions)) {
-            const updated = { ...parsed, role: match.role, allowedPermissions: match.allowedPermissions };
-            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updated));
+        const hasRoleChanged = currentUser.role !== match.role;
+        const hasPermissionsChanged = JSON.stringify(currentUser.allowedPermissions || {}) !== JSON.stringify(match.allowedPermissions || {});
+        const hasFeaturesChanged = JSON.stringify(currentUser.allowedFeatures || []) !== JSON.stringify(match.allowedFeatures || []);
+        const hasNameChanged = currentUser.name !== match.name;
+
+        if (hasRoleChanged || hasPermissionsChanged || hasFeaturesChanged || hasNameChanged) {
+          const updated = {
+            ...currentUser,
+            name: match.name,
+            role: match.role,
+            allowedPermissions: match.allowedPermissions || {},
+            allowedFeatures: match.allowedFeatures || []
+          };
+          setCurrentUser(updated);
+          sessionStorage.setItem('w2proj_session_v1', JSON.stringify(updated));
+
+          // Also update the /users/{firebaseUser.uid} mapping in Firestore in real time!
+          if (fbUser && fbUser.uid !== currentUser.id) {
+            const uidDocRef = doc(db, 'users', fbUser.uid);
+            setDoc(uidDocRef, cleanFirestoreData({
+              ...updated,
+              id: currentUser.id,
+              uid: fbUser.uid
+            })).catch(e => console.warn("Failed to sync real-time UID document:", e));
           }
         }
       }
     }
-  }, [users, currentUser]);
+  }, [users, currentUser, fbUser, setCurrentUser]);
 
   // Handlers for Focus24, Inspections, and WireLogs
   const handleAddProblemReport = async (report: Omit<ProblemReport, 'id' | 'date'>) => {

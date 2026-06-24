@@ -94,6 +94,7 @@ export interface User {
   passHash?: string;
   allowedFeatures?: string[];
   allowedPermissions?: Record<string, boolean>;
+  currentSessionId?: string;
 }
 
 export interface Task {
