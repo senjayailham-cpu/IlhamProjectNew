@@ -314,7 +314,7 @@ function AppContent() {
 
           // Also update the /users/{firebaseUser.uid} mapping in Firestore in real time if online and authenticated
           const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
-          if (fbUser && auth.currentUser && isOnline && fbUser.uid !== currentUser.id) {
+          if (fbUser && auth.currentUser && auth.currentUser.uid === fbUser.uid && isOnline && fbUser.uid !== currentUser.id) {
             const uidDocRef = doc(db, 'users', fbUser.uid);
             setDoc(uidDocRef, cleanFirestoreData({
               ...updated,

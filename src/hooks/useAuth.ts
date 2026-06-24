@@ -114,7 +114,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Every time they close the app/web, sessionStorage is cleared.
         // If there is no session in sessionStorage, log out of Firebase Auth automatically!
         const sess = sessionStorage.getItem('w2proj_session_v1');
-        if (!sess) {
+        const loggingIn = sessionStorage.getItem('w2proj_logging_in');
+        if (!sess && !loggingIn) {
           try {
             await signOut(auth);
           } catch (e) {
@@ -164,12 +165,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   JSON.stringify(uidData.allowedPermissions || {}) !== JSON.stringify(session.allowedPermissions || {}) ||
                   JSON.stringify(uidData.allowedFeatures || []) !== JSON.stringify(session.allowedFeatures || []);
                 if (needsUpdate) {
-                  await setDoc(uidDocRef, cleanFirestoreData({
-                    ...session,
-                    id: portalId,
-                    uid: firebaseUser.uid,
-                    currentSessionId: uidData?.currentSessionId || null
-                  }));
+                  const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
+                  const isFullyAuth = auth.currentUser && auth.currentUser.uid === firebaseUser.uid;
+                  if (isOnline && isFullyAuth && !firebaseUser.isAnonymous) {
+                    await setDoc(uidDocRef, cleanFirestoreData({
+                      ...session,
+                      id: portalId,
+                      uid: firebaseUser.uid,
+                      currentSessionId: uidData?.currentSessionId || null
+                    }));
+                  } else {
+                    console.warn("Skipping UID mapping write: Client is offline or authentication state is unresolved.");
+                  }
                 }
               } catch (writeErr) {
                 console.warn("Could not save UID mapping document:", writeErr);
@@ -187,23 +194,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               allowedPermissions: {}
             };
             
-            await setDoc(docRef, cleanFirestoreData(session));
-            setCurrentUser(session);
-            sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
-            setLoginError('');
+            const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
+            const isFullyAuth = auth.currentUser && auth.currentUser.uid === firebaseUser.uid;
+            if (isOnline && isFullyAuth && !firebaseUser.isAnonymous) {
+              await setDoc(docRef, cleanFirestoreData(session));
+              setCurrentUser(session);
+              sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+              setLoginError('');
 
-            // Safe dynamic creation of UID user doc copy for seamless Firestore rules matching
-            if (firebaseUser.uid !== portalId) {
-              const uidDocRef = doc(db, 'users', firebaseUser.uid);
-              try {
-                await setDoc(uidDocRef, cleanFirestoreData({
-                  ...session,
-                  id: portalId,
-                  uid: firebaseUser.uid
-                }));
-              } catch (writeErr) {
-                console.warn("Could not save UID mapping document:", writeErr);
+              // Safe dynamic creation of UID user doc copy for seamless Firestore rules matching
+              if (firebaseUser.uid !== portalId) {
+                const uidDocRef = doc(db, 'users', firebaseUser.uid);
+                try {
+                  await setDoc(uidDocRef, cleanFirestoreData({
+                    ...session,
+                    id: portalId,
+                    uid: firebaseUser.uid
+                  }));
+                } catch (writeErr) {
+                  console.warn("Could not save UID mapping document:", writeErr);
+                }
               }
+            } else {
+              console.warn("Skipping initial user registration and UID mapping write: Client is offline or authentication state is unresolved.");
+              setCurrentUser(session);
+              sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+              setLoginError('');
             }
           }
         } catch (err) {
@@ -288,114 +304,125 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    // Determine credentials for Firebase Auth
-    const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
-    const email = `${targetId.toLowerCase()}@${dbId}.austinbatam.xyz`;
-    const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
+    // Set transition flag to prevent Premature Signout inside onAuthStateChanged listener
+    sessionStorage.setItem('w2proj_logging_in', 'true');
 
-    // Attempt Firebase Auth sign-in first to establish authenticated session
-    let authenticated = false;
     try {
-      await signInWithEmailAndPassword(auth, email, firebasePass);
-      authenticated = true;
-      console.log("Successfully authenticated with Firebase Auth.");
-    } catch (authErr: any) {
-      console.warn("Firebase Auth sign-in failed, checking auto-healing:", authErr.code);
-      
-      // If the user doesn't exist in Firebase Auth yet, but is a valid default user, register them on the fly
-      const hash = await sha256(loginPass);
-      if (foundDef && hash === foundDef.passHash) {
-        if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
-          try {
-            await createUserWithEmailAndPassword(auth, email, firebasePass);
-            authenticated = true;
-            console.log("Successfully auto-healed and registered new Firebase Auth user.");
-          } catch (regErr) {
-            console.warn("Could not register on-the-fly Firebase user:", regErr);
+      // Determine credentials for Firebase Auth
+      const dbId = (firebaseConfig && firebaseConfig.firestoreDatabaseId) ? firebaseConfig.firestoreDatabaseId.toLowerCase() : 'default';
+      const email = `${targetId.toLowerCase()}@${dbId}.austinbatam.xyz`;
+      const firebasePass = loginPass.length >= 6 ? loginPass : `${loginPass}_austin`;
+
+      // Attempt Firebase Auth sign-in first to establish authenticated session
+      let authenticated = false;
+      try {
+        await signInWithEmailAndPassword(auth, email, firebasePass);
+        authenticated = true;
+        console.log("Successfully authenticated with Firebase Auth.");
+      } catch (authErr: any) {
+        console.warn("Firebase Auth sign-in failed, checking auto-healing:", authErr.code);
+        
+        // If the user doesn't exist in Firebase Auth yet, but is a valid default user, register them on the fly
+        const hash = await sha256(loginPass);
+        if (foundDef && hash === foundDef.passHash) {
+          if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
+            try {
+              await createUserWithEmailAndPassword(auth, email, firebasePass);
+              authenticated = true;
+              console.log("Successfully auto-healed and registered new Firebase Auth user.");
+            } catch (regErr) {
+              console.warn("Could not register on-the-fly Firebase user:", regErr);
+            }
           }
         }
       }
-    }
 
-    // If still not authenticated, we try standard credential check as a fallback
-    if (!authenticated) {
-      const hash = await sha256(loginPass);
-      if (hash !== testUser.passHash) {
-        setLoginError('Incorrect password value entered.');
-        return;
-      }
-      
-      // If password is correct but Firebase Auth failed, login anonymously as backup
-      try {
-        await signInAnonymously(auth);
-        authenticated = true;
-        console.log("Authenticated anonymously as backup.");
-      } catch (anonErr) {
-        console.warn("Could not complete backup anonymous login:", anonErr);
-      }
-    }
-
-    // Now that we are signed in, we can fetch/write the master user profile from Firestore without permission issues!
-    const docRef = doc(db, 'users', targetId);
-    let docSnap;
-    const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
-
-    if (authenticated && auth.currentUser && isOnline) {
-      try {
-        docSnap = await getDoc(docRef);
-      } catch (getErr) {
-        console.warn("Could not get user document from Firestore:", getErr);
-      }
-
-      // If document doesn't exist in Firestore, seed it from default
-      if ((!docSnap || !docSnap.exists()) && foundDef) {
-        console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+      // If still not authenticated, we try standard credential check as a fallback
+      if (!authenticated) {
+        const hash = await sha256(loginPass);
+        if (hash !== testUser.passHash) {
+          setLoginError('Incorrect password value entered.');
+          return;
+        }
+        
+        // If password is correct but Firebase Auth failed, login anonymously as backup
         try {
-          await setDoc(docRef, cleanFirestoreData(foundDef));
-          docSnap = await getDoc(docRef);
-        } catch (writeErr) {
-          console.warn("Could not write missing default user during login:", writeErr);
+          await signInAnonymously(auth);
+          authenticated = true;
+          console.log("Authenticated anonymously as backup.");
+        } catch (anonErr) {
+          console.warn("Could not complete backup anonymous login:", anonErr);
         }
       }
-    } else {
-      console.warn("Firestore fetch/write skipped: User is not fully authenticated or device is offline.");
-    }
 
-    if (docSnap && docSnap.exists()) {
-      testUser = docSnap.data() as User;
-    }
+      // Now that we are signed in, we can fetch/write the master user profile from Firestore without permission issues!
+      const docRef = doc(db, 'users', targetId);
+      let docSnap;
+      const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
 
-    const nextSessionId = Math.random().toString(36).substring(2) + Date.now();
-    sessionStorage.setItem('w2proj_active_session_id', nextSessionId);
+      // Ensure we are fully authenticated and online before querying or seeding
+      const isFullyAuth = authenticated && auth.currentUser;
 
-    const session: User = { 
-      id: testUser.id, 
-      name: testUser.name, 
-      role: testUser.role,
-      allowedFeatures: testUser.allowedFeatures || [],
-      allowedPermissions: testUser.allowedPermissions || {},
-      currentSessionId: nextSessionId
-    };
-    setCurrentUser(session);
-    sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+      if (isFullyAuth && isOnline) {
+        try {
+          docSnap = await getDoc(docRef);
+        } catch (getErr) {
+          console.warn("Could not get user document from Firestore:", getErr);
+        }
 
-    // Persist the currentSessionId directly into the user master document in Firestore
-    if (authenticated && auth.currentUser && isOnline) {
-      try {
-        const userDocRef = doc(db, 'users', testUser.id);
-        await updateDoc(userDocRef, {
-          currentSessionId: nextSessionId,
-          uid: auth.currentUser?.uid || null
-        });
-      } catch (saveErr) {
-        console.warn("Could not save currentSessionId on master profile:", saveErr);
+        // If document doesn't exist in Firestore, seed it from default
+        if ((!docSnap || !docSnap.exists()) && foundDef) {
+          console.log(`Self-healing login check: Seeding default user doc "${targetId}" directly to Firestore.`);
+          try {
+            await setDoc(docRef, cleanFirestoreData(foundDef));
+            docSnap = await getDoc(docRef);
+          } catch (writeErr) {
+            console.warn("Could not write missing default user during login:", writeErr);
+          }
+        }
+      } else {
+        console.warn("Firestore fetch/write skipped: User is not fully authenticated or device is offline.");
       }
-    } else {
-      console.warn("Firestore session saving skipped: User is not fully authenticated or device is offline.");
-    }
 
-    setLoginId('');
-    setLoginPass('');
+      if (docSnap && docSnap.exists()) {
+        testUser = docSnap.data() as User;
+      }
+
+      const nextSessionId = Math.random().toString(36).substring(2) + Date.now();
+      sessionStorage.setItem('w2proj_active_session_id', nextSessionId);
+
+      const session: User = { 
+        id: testUser.id, 
+        name: testUser.name, 
+        role: testUser.role,
+        allowedFeatures: testUser.allowedFeatures || [],
+        allowedPermissions: testUser.allowedPermissions || {},
+        currentSessionId: nextSessionId
+      };
+      setCurrentUser(session);
+      sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
+
+      // Persist the currentSessionId directly into the user master document in Firestore
+      if (isFullyAuth && isOnline) {
+        try {
+          const userDocRef = doc(db, 'users', testUser.id);
+          await updateDoc(userDocRef, {
+            currentSessionId: nextSessionId,
+            uid: auth.currentUser?.uid || null
+          });
+        } catch (saveErr) {
+          console.warn("Could not save currentSessionId on master profile:", saveErr);
+        }
+      } else {
+        console.warn("Firestore session saving skipped: User is not fully authenticated or device is offline.");
+      }
+
+      setLoginId('');
+      setLoginPass('');
+    } finally {
+      // Ensure the transition flag is cleared under all circumstances
+      sessionStorage.removeItem('w2proj_logging_in');
+    }
   };
 
   const handleLogout = () => {
