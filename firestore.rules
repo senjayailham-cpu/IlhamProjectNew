@@ -71,7 +71,6 @@ service cloud.firestore {
                 (perm == 'updateTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'facility maintanance' || getUserRole() == 'quality control' || getUserRole() == 'safety' || getUserRole() == 'project control')) ||
                 (perm == 'addDifficulty' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
                 (perm == 'addTaskInline' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
-                (perm == 'editProjectParameters' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
                 (perm == 'manageUsers' && (getUserRole() == 'admin')) ||
                 (perm == 'exportData' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
                 (perm == 'importData' && (getUserRole() == 'admin'))
@@ -85,7 +84,7 @@ service cloud.firestore {
     match /projects/{projectId} {
       allow read: if isAdmin() || isSignedIn();
       allow create: if isAdmin() || hasPermission('addProject');
-      allow update: if isAdmin() || hasPermission('editProject') || hasPermission('editProjectParameters') || (
+      allow update: if isAdmin() || hasPermission('editProject') || (
         (hasPermission('updateTask')) && 
         (incoming().diff(existing()).affectedKeys().hasOnly(['assemblies', 'notes', 'status', 'completedDate']) || incoming() == existing())
       );

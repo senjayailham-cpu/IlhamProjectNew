@@ -14,6 +14,7 @@ interface UsersAccessViewProps {
 const permissionMeta = [
   { id: 'addProject', label: 'Create Projects', desc: 'Allows drafting and creating brand new projects' },
   { id: 'editProject', label: 'Edit Project Settings', desc: 'Allows modification of project details, dates and categories' },
+  { id: 'editProjectParams', label: 'Edit Parameters in Project pop-up', desc: 'Allows editing parameters inside the project overview modal/pop-up' },
   { id: 'deleteProject', label: 'Delete Projects', desc: 'Allows permanent deletion of projects and all inner records' },
   { id: 'addAssembly', label: 'Create Sub-Assemblies', desc: 'Allows creating new sub-assembly items on a project' },
   { id: 'deleteAssembly', label: 'Delete Sub-Assemblies', desc: 'Allows deleting assembly blocks' },
@@ -22,7 +23,6 @@ const permissionMeta = [
   { id: 'updateTask', label: 'Update Task Progress', desc: 'Allows modifying percent progress and due dates on tasks' },
   { id: 'addDifficulty', label: 'Add / Edit Task Difficulty', desc: 'Allows setting and editing task difficulty parameters weight (1-20)' },
   { id: 'addTaskInline', label: 'Add Task Inside Project Pop-up', desc: 'Allows adding new tasks to sub-assembly lists directly inside the project overview modal' },
-  { id: 'editProjectParameters', label: 'Edit Parameters in Project pop-up', desc: 'Allows editing project-specific parameters directly in the project overview details window' },
   { id: 'manageUsers', label: 'Manage Users & Access', desc: 'Allows editing user profiles, visible tabs and admin rules' },
   { id: 'exportData', label: 'Export Reports', desc: 'Allows exporting excel spreadsheets and CSV log files' },
   { id: 'importData', label: 'Import Excel Records', desc: 'Allows seeding data via excel file uploads' }

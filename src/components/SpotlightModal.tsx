@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { useAuth } from '../hooks/useAuth';
-import { Project, Assembly, Task } from '../types';
+import { User, Project, Assembly, Task } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock } from 'lucide-react';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 
 interface SpotlightModalProps {
@@ -29,7 +28,8 @@ interface SpotlightModalProps {
   canAddTaskInline?: boolean;
   canAddDifficulty?: boolean;
   canDeleteTask?: boolean;
-  canEditParameters?: boolean;
+  currentUser?: User | null;
+  canEditProjectParams?: boolean;
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -54,11 +54,10 @@ export default function SpotlightModal({
   canAddTaskInline = true,
   canAddDifficulty = true,
   canDeleteTask = true,
-  canEditParameters = true
+  currentUser = null,
+  canEditProjectParams = true
 }: SpotlightModalProps) {
-  const { currentUser } = useAuth();
-  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
-
+  const isAdmin = currentUser?.role === 'admin';
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
   const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
@@ -432,15 +431,9 @@ export default function SpotlightModal({
                             </div>
                           ) : (
                             tasks.map(t => {
-                              const isTaskCompleted = t.pct >= 100 || t.done;
-                              const isChangeRestricted = isTaskCompleted && !isAdminOrManager;
-
-                              const finalCanUpdateTask = canUpdateTask && !isChangeRestricted;
-                              const finalCanAddDifficulty = canAddDifficulty && !isChangeRestricted;
-                              const finalCanDeleteTask = canDeleteTask && !isChangeRestricted;
-
+                              const isLocked = t.pct === 100 && !isAdmin;
                               const handlePctChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-                                if (isChangeRestricted) return;
+                                if (isLocked) return;
                                 const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
                                 if (onUpdateProject) {
                                   const updatedAssemblies = asms.map(asm => {
@@ -465,7 +458,7 @@ export default function SpotlightModal({
                               };
 
                               const handleToggleDone = (checked: boolean) => {
-                                if (isChangeRestricted) return;
+                                if (isLocked) return;
                                 const val = checked ? 100 : 0;
                                 if (onUpdateProject) {
                                   const updatedAssemblies = asms.map(asm => {
@@ -492,12 +485,13 @@ export default function SpotlightModal({
                               return (
                                 <div key={t.id} className="py-2.5 first:pt-0 last:pb-0 flex items-center justify-between gap-4 text-xs font-semibold hover:bg-base-surface2/30 px-1 rounded-sm transition-colors duration-150">
                                   <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                                    {finalCanUpdateTask ? (
+                                    {canUpdateTask ? (
                                       <input
                                         type="checkbox"
                                         checked={t.done}
+                                        disabled={isLocked}
                                         onChange={(e) => handleToggleDone(e.target.checked)}
-                                        className="h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent accent-base-accent cursor-pointer"
+                                        className={`h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent accent-base-accent ${isLocked ? 'cursor-not-allowed opacity-50' : 'cursor-pointer'}`}
                                       />
                                     ) : (
                                       <div className={`h-4 w-4 rounded border flex items-center justify-center ${t.done ? 'bg-base-green-dim text-base-green border-base-green/20' : 'border-base-border'}`}>
@@ -508,9 +502,12 @@ export default function SpotlightModal({
                                       <span className={`text-base-text truncate ${t.done ? 'line-through text-base-muted font-normal' : ''}`} title={t.name}>
                                         {t.name}
                                       </span>
+                                      {isLocked && (
+                                        <Lock className="h-3 w-3 text-amber-500 shrink-0" title="Locked (100% complete - can only be edited by Admin)" />
+                                      )}
                                       
                                       {/* Task date display / edit badge */}
-                                      {finalCanUpdateTask ? (
+                                      {canUpdateTask ? (
                                         <div className="flex items-center gap-2 shrink-0">
                                           {/* Start Date */}
                                           <div className="flex items-center gap-0.5" title="Set Task Start/Due Date">
@@ -519,8 +516,9 @@ export default function SpotlightModal({
                                             <input
                                               type="date"
                                               value={t.date || ''}
+                                              disabled={isLocked}
                                               onChange={(e) => {
-                                                if (isChangeRestricted) return;
+                                                if (isLocked) return;
                                                 const updatedAssemblies = asms.map(asm => {
                                                   if (asm.id !== a.id) return asm;
                                                   return {
@@ -533,7 +531,7 @@ export default function SpotlightModal({
                                                 });
                                                 onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
                                               }}
-                                              className="text-[10px] bg-transparent text-base-muted hover:text-base-text border-0 p-0 cursor-pointer outline-none w-22 leading-none focus:text-base-accent"
+                                              className={`text-[10px] bg-transparent text-base-muted hover:text-base-text border-0 p-0 outline-none w-22 leading-none focus:text-base-accent ${isLocked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}
                                             />
                                           </div>
                                           {/* Finish Date */}
@@ -543,8 +541,9 @@ export default function SpotlightModal({
                                             <input
                                               type="date"
                                               value={t.finishDate || ''}
+                                              disabled={isLocked}
                                               onChange={(e) => {
-                                                if (isChangeRestricted) return;
+                                                if (isLocked) return;
                                                 const updatedAssemblies = asms.map(asm => {
                                                   if (asm.id !== a.id) return asm;
                                                   return {
@@ -557,7 +556,7 @@ export default function SpotlightModal({
                                                 });
                                                 onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
                                               }}
-                                              className="text-[10px] bg-transparent text-emerald-600 hover:text-emerald-500 border-0 p-0 cursor-pointer outline-none w-22 leading-none focus:text-base-accent"
+                                              className={`text-[10px] bg-transparent text-emerald-600 hover:text-emerald-500 border-0 p-0 outline-none w-22 leading-none focus:text-base-accent ${isLocked ? 'cursor-not-allowed opacity-55' : 'cursor-pointer'}`}
                                             />
                                           </div>
                                         </div>
@@ -583,7 +582,7 @@ export default function SpotlightModal({
                                   </div>
                                   
                                   <div className="flex items-center gap-3 shrink-0">
-                                    {finalCanAddDifficulty ? (
+                                    {canAddDifficulty ? (
                                       <div className="flex items-center gap-1.5 bg-base-surface3/30 px-2 py-1 rounded border border-base-border/50">
                                         <span className="text-[9px] text-base-muted font-bold select-none uppercase tracking-wider font-condensed">Diff:</span>
                                         <input
@@ -591,8 +590,9 @@ export default function SpotlightModal({
                                           min="1"
                                           max="20"
                                           value={typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}
+                                          disabled={isLocked}
                                           onChange={(e) => {
-                                            if (isChangeRestricted) return;
+                                            if (isLocked) return;
                                             const val = Math.max(1, parseInt(e.target.value) || 1);
                                             const updatedAssemblies = asms.map(asm => {
                                               if (asm.id !== a.id) return asm;
@@ -606,7 +606,7 @@ export default function SpotlightModal({
                                             });
                                             onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
                                           }}
-                                          className="w-10 text-center bg-base-bg border border-base-border rounded text-[10px] text-base-text font-bold outline-none focus:border-base-accent"
+                                          className={`w-10 text-center bg-base-bg border border-base-border rounded text-[10px] text-base-text font-bold outline-none focus:border-base-accent ${isLocked ? 'cursor-not-allowed opacity-50' : ''}`}
                                         />
                                       </div>
                                     ) : (
@@ -615,15 +615,16 @@ export default function SpotlightModal({
                                       </span>
                                     )}
                                     
-                                    {finalCanUpdateTask ? (
+                                    {canUpdateTask ? (
                                       <div className="flex items-center gap-1">
                                         <input
                                           type="number"
                                           min="0"
                                           max="100"
                                           value={t.pct}
+                                          disabled={isLocked}
                                           onChange={handlePctChange}
-                                          className={`w-12 px-1.5 py-0.5 bg-base-bg text-center font-mono text-xs font-extrabold border rounded focus:border-base-accent outline-none ${t.pct >= 100 ? 'text-base-green border-base-green/25' : t.pct > 50 ? 'text-base-accent border-base-accent/25' : 'text-base-blue border-base-border'}`}
+                                          className={`w-12 px-1.5 py-0.5 bg-base-bg text-center font-mono text-xs font-extrabold border rounded focus:border-base-accent outline-none ${isLocked ? 'cursor-not-allowed opacity-50' : ''} ${t.pct >= 100 ? 'text-base-green border-base-green/25' : t.pct > 50 ? 'text-base-accent border-base-accent/25' : 'text-base-blue border-base-border'}`}
                                         />
                                         <span className="text-[10px] text-base-muted font-bold">%</span>
                                       </div>
@@ -634,10 +635,10 @@ export default function SpotlightModal({
                                     )}
 
                                     {/* Milestone Toggle / Indicator */}
-                                    {finalCanUpdateTask ? (
+                                    {canUpdateTask ? (
                                       <button
                                         onClick={() => {
-                                          if (isChangeRestricted) return;
+                                          if (isLocked) return;
                                           const updatedAssemblies = asms.map(asm => {
                                             if (asm.id !== a.id) return asm;
                                             return {
@@ -655,7 +656,8 @@ export default function SpotlightModal({
                                           });
                                           onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
                                         }}
-                                        className={`p-1 rounded transition-colors ${t.isMilestone ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' : 'text-base-muted hover:text-amber-500 hover:bg-base-surface3/40'}`}
+                                        disabled={isLocked}
+                                        className={`p-1 rounded transition-colors ${isLocked ? 'cursor-not-allowed opacity-50' : ''} ${t.isMilestone ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' : 'text-base-muted hover:text-amber-500 hover:bg-base-surface3/40'}`}
                                         title={t.isMilestone ? "Marked as Milestone" : "Mark as Milestone"}
                                       >
                                         <Target className="w-3.5 h-3.5" />
@@ -669,10 +671,9 @@ export default function SpotlightModal({
                                     )}
 
                                     {/* Inline Delete Button */}
-                                    {finalCanDeleteTask && (
+                                    {canDeleteTask && !isLocked && (
                                       <button
                                         onClick={() => {
-                                          if (isChangeRestricted) return;
                                           setDeleteConfirm({
                                             isOpen: true,
                                             title: 'Delete Task Record',
@@ -836,7 +837,7 @@ export default function SpotlightModal({
               </button>
             )}
             <button onClick={onClose} className="px-3.5 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Close</button>
-            {canEditParameters && (
+            {canEditProjectParams && (
               <button
                 id="spl-edit-btn"
                 onClick={() => onEdit(p.id)}

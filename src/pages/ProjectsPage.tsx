@@ -308,32 +308,30 @@ export function ProjectsPage({
     });
     const sortedMonthFilterKeys = Object.keys(monthOptionsMap).sort();
 
-    const filteredProjects = !currentTabMonthFilter
-      ? []
-      : activePendingProjects
-          .filter(p => {
-            if (currentTabMonthFilter && currentTabMonthFilter !== 'all') {
-              const startStr = p.start || '';
-              const dueStr = p.due || '';
-              const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
-              const matchesDue = dueStr.slice(0, 7) === currentTabMonthFilter;
+    const filteredProjects = activePendingProjects
+      .filter(p => {
+        if (currentTabMonthFilter) {
+          const startStr = p.start || '';
+          const dueStr = p.due || '';
+          const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
+          const matchesDue = dueStr.slice(0, 7) === currentTabMonthFilter;
 
-              const filterStart = `${currentTabMonthFilter}-01`;
-              const filterEnd = `${currentTabMonthFilter}-31`;
-              const spansFilter = (startStr && dueStr && startStr <= filterEnd && dueStr >= filterStart);
+          const filterStart = `${currentTabMonthFilter}-01`;
+          const filterEnd = `${currentTabMonthFilter}-31`;
+          const spansFilter = (startStr && dueStr && startStr <= filterEnd && dueStr >= filterStart);
 
-              if (!matchesStart && !matchesDue && !spansFilter) return false;
-            }
-            return true;
-          })
-          .filter(p => {
-            if (!projectSearchQuery.trim()) return true;
-            const q = projectSearchQuery.toLowerCase();
-            return (
-              p.name.toLowerCase().includes(q) ||
-              p.client.toLowerCase().includes(q)
-            );
-          });
+          if (!matchesStart && !matchesDue && !spansFilter) return false;
+        }
+        return true;
+      })
+      .filter(p => {
+        if (!projectSearchQuery.trim()) return true;
+        const q = projectSearchQuery.toLowerCase();
+        return (
+          p.name.toLowerCase().includes(q) ||
+          p.client.toLowerCase().includes(q)
+        );
+      });
 
     return (
       <div className="space-y-4">
@@ -377,8 +375,7 @@ export function ProjectsPage({
                 className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
                 title="Filter projects by month"
               >
-                <option value="">Select Month or All Projects...</option>
-                <option value="all">All Projects</option>
+                <option value="">All Months</option>
                 {sortedMonthFilterKeys.map(k => (
                   <option key={k} value={k} className="font-sans normal-case">
                     {monthOptionsMap[k]}
@@ -417,14 +414,7 @@ export function ProjectsPage({
 
         {/* List current active cards */}
         <div className="grid grid-cols-1 gap-4">
-          {!currentTabMonthFilter ? (
-            <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
-              <div className="text-base-muted font-bold text-sm">No projects selected.</div>
-              <div className="text-base-muted2 text-xs max-w-sm mx-auto">
-                Please select a specific month or choose "All Projects" from the dropdown above to display active schedules.
-              </div>
-            </div>
-          ) : filteredProjects.length === 0 ? (
+          {filteredProjects.length === 0 ? (
             <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
               <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
               <div className="flex gap-2 justify-center">

@@ -493,7 +493,8 @@ export function FormsAndModals({
         canAddTaskInline={can('addTaskInline')}
         canAddDifficulty={can('addDifficulty')}
         canDeleteTask={can('deleteTask')}
-        canEditParameters={can('editProjectParameters')}
+        currentUser={currentUser}
+        canEditProjectParams={can('editProjectParams')}
       />
 
       {/* Dependency Link Editor Modal */}
