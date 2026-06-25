@@ -1,7 +1,17 @@
 import React, { useState } from 'react';
-import { ActivityLog, Project } from '../types';
+import { ActivityLog, Project, TimesheetEntry } from '../types';
 import { calcPct, esc } from '../utils/projectUtils';
-import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity } from 'lucide-react';
+import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2 } from 'lucide-react';
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend
+} from 'recharts';
 
 interface DailyReportViewProps {
   projects: Project[];
@@ -10,6 +20,7 @@ interface DailyReportViewProps {
   setReportDate: (date: string) => void;
   clearActivityLogs: () => void;
   openPrintView: () => void;
+  timesheets: TimesheetEntry[];
 }
 
 const ACT_ICONS: Record<string, { label: string; color: string; bg: string }> = {
@@ -31,9 +42,12 @@ export default function DailyReportView({
   reportDate,
   setReportDate,
   clearActivityLogs,
-  openPrintView
+  openPrintView,
+  timesheets
 }: DailyReportViewProps) {
   const [userCollapsed, setUserCollapsed] = useState<Record<string, boolean>>({});
+  const [trendPeriod, setTrendPeriod] = useState<'weekly' | 'monthly'>('weekly');
+  const [attendanceMetric, setAttendanceMetric] = useState<'hours' | 'headcount'>('hours');
 
   const shiftDate = (d: number) => {
     const dt = new Date(reportDate + 'T12:00:00');
@@ -120,6 +134,134 @@ export default function DailyReportView({
     .filter(log => log.date === reportDate)
     .sort((a, b) => a.ts.localeCompare(b.ts));
 
+  // Helper to calculate project before pct based on day's logs
+  const getProjectBeforePct = (p: Project, logs: ActivityLog[]): number => {
+    let totalWeight = 0;
+    let accumulatedWeightedPct = 0;
+    (p.assemblies || []).forEach(a => {
+      (a.tasks || []).forEach(t => {
+        const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+        totalWeight += difficulty;
+
+        // Find progress/toggle logs for this specific task
+        const taskLogs = logs.filter(l => 
+          l.projectId === p.id && 
+          l.assemblyName === a.name && 
+          l.taskName === t.name &&
+          (l.type === 'task_progress' || l.type === 'task_toggle')
+        );
+
+        let beforePct = t.pct || 0;
+        if (taskLogs.length > 0) {
+          // Sort by timestamp to find the earliest
+          const sortedLogs = [...taskLogs].sort((x, y) => x.ts.localeCompare(y.ts));
+          if (sortedLogs[0].oldPct !== undefined) {
+            beforePct = sortedLogs[0].oldPct;
+          }
+        }
+        accumulatedWeightedPct += beforePct * difficulty;
+      });
+    });
+
+    if (totalWeight === 0) return 0;
+    return Math.round(accumulatedWeightedPct / totalWeight);
+  };
+
+  // Helper to calculate user's specific impact
+  const getUserImpact = (uid: string, entries: ActivityLog[]) => {
+    const projectImpacts: Record<string, { 
+      projectName: string; 
+      beforePct: number; 
+      afterPct: number; 
+      delta: number 
+    }> = {};
+
+    const userProjectLogs: Record<string, ActivityLog[]> = {};
+    entries.forEach(l => {
+      if (!l.projectId) return;
+      if (!userProjectLogs[l.projectId]) {
+        userProjectLogs[l.projectId] = [];
+      }
+      userProjectLogs[l.projectId].push(l);
+    });
+
+    let totalPortfolioImpact = 0;
+
+    Object.entries(userProjectLogs).forEach(([pid, logs]) => {
+      const proj = projects.find(p => p.id === pid);
+      if (!proj) return;
+
+      let totalProjectWeight = 0;
+      (proj.assemblies || []).forEach(a => {
+        (a.tasks || []).forEach(t => {
+          const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+          totalProjectWeight += difficulty;
+        });
+      });
+
+      if (totalProjectWeight === 0) return;
+
+      const taskLogsGrouped: Record<string, ActivityLog[]> = {};
+      logs.forEach(l => {
+        if (!l.taskName || !l.assemblyName) return;
+        const key = `${l.assemblyName} ||| ${l.taskName}`;
+        if (!taskLogsGrouped[key]) {
+          taskLogsGrouped[key] = [];
+        }
+        taskLogsGrouped[key].push(l);
+      });
+
+      let userWeightedDeltaSum = 0;
+
+      Object.entries(taskLogsGrouped).forEach(([key, taskLogs]) => {
+        const [assemblyName, taskName] = key.split(' ||| ');
+        let difficulty = 1;
+        (proj.assemblies || []).forEach(a => {
+          if (a.name === assemblyName) {
+            const t = (a.tasks || []).find(t => t.name === taskName);
+            if (t) {
+              difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+            }
+          }
+        });
+
+        const sorted = [...taskLogs].sort((x, y) => x.ts.localeCompare(y.ts));
+        const firstLog = sorted[0];
+        const lastLog = sorted[sorted.length - 1];
+
+        const oldP = firstLog.oldPct !== undefined ? firstLog.oldPct : 0;
+        const newP = lastLog.newPct !== undefined ? lastLog.newPct : 0;
+        const taskDelta = newP - oldP;
+
+        userWeightedDeltaSum += taskDelta * difficulty;
+      });
+
+      const projectDelta = userWeightedDeltaSum / totalProjectWeight;
+      const projectDeltaRounded = Math.round(projectDelta * 10) / 10;
+
+      const afterPct = calcPct(proj);
+      const beforePct = Math.max(0, Math.min(100, Math.round(afterPct - projectDelta)));
+
+      if (projectDeltaRounded !== 0) {
+        projectImpacts[pid] = {
+          projectName: proj.name,
+          beforePct,
+          afterPct,
+          delta: projectDeltaRounded
+        };
+        
+        if (projects.length > 0) {
+          totalPortfolioImpact += projectDelta / projects.length;
+        }
+      }
+    });
+
+    return {
+      projectImpacts,
+      portfolioImpact: Math.round(totalPortfolioImpact * 10) / 10
+    };
+  };
+
   // Snapshot calculations
   const projectsSnapshot: Record<string, { id: string; name: string; changes: number; totalDelta: number }> = {};
   dayLogs.forEach(l => {
@@ -135,28 +277,96 @@ export default function DailyReportView({
   const uniqueActiveUsers = [...new Set(dayLogs.map(l => l.userId))].length;
   const progressUpdatesCount = dayLogs.filter(l => l.type === 'task_progress' || l.type === 'task_toggle').length;
 
-  // Process overall portfolio progress impact
+  // Process overall portfolio progress impact using the exact weighted progress difference
   const totalProjects = projects.length;
   let overallImpactScore = 0;
   if (totalProjects > 0) {
     const overallNow = Math.round(projects.reduce((s, p) => s + calcPct(p), 0) / totalProjects);
     let overallBefore = 0;
     projects.forEach(p => {
-      let tasksSum = 0;
-      let tasksCount = 0;
-      (p.assemblies || []).forEach(a => {
-        (a.tasks || []).forEach(t => {
-          tasksCount++;
-          tasksSum += t.pct || 0;
-        });
-      });
-      tasksCount = tasksCount || 1;
-      const snap = projectsSnapshot[p.id];
-      const beforeSum = snap ? tasksSum - snap.totalDelta : tasksSum;
-      overallBefore += Math.round(beforeSum / tasksCount);
+      overallBefore += getProjectBeforePct(p, dayLogs);
     });
     overallBefore = Math.round(overallBefore / totalProjects);
     overallImpactScore = overallNow - overallBefore;
+  }
+
+  // Dynamic Trend & Correlation Calculations
+  const daysToCompute = trendPeriod === 'weekly' ? 7 : 30;
+  
+  const generateDatesRange = (endDateStr: string, count: number): string[] => {
+    const dates: string[] = [];
+    const end = new Date(endDateStr + 'T12:00:00');
+    for (let i = count - 1; i >= 0; i--) {
+      const d = new Date(end);
+      d.setDate(d.getDate() - i);
+      dates.push(d.toISOString().slice(0, 10));
+    }
+    return dates;
+  };
+
+  const datesRange = generateDatesRange(reportDate, daysToCompute);
+
+  const trendData = datesRange.map(d => {
+    const dayTimesheets = timesheets.filter(ts => ts.date === d);
+    const totalHours = dayTimesheets.reduce((sum, ts) => sum + (ts.totalHours || 0), 0);
+    const headcount = new Set(dayTimesheets.map(ts => ts.empId)).size;
+
+    const dayLogsList = activityLogs.filter(l => l.date === d);
+    const progressAdded = dayLogsList.reduce((sum, l) => {
+      if (l.type === 'task_progress' || l.type === 'task_toggle') {
+        const delta = (l.newPct || 0) - (l.oldPct || 0);
+        return sum + (delta > 0 ? delta : 0);
+      }
+      return sum;
+    }, 0);
+
+    const parsedDate = new Date(d + 'T12:00:00');
+    const dayName = parsedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+
+    return {
+      dateStr: d,
+      day: dayName,
+      hours: Math.round(totalHours * 10) / 10,
+      headcount,
+      progress: Math.round(progressAdded * 10) / 10
+    };
+  });
+
+  const calcCorrelation = (data: { x: number; y: number }[]) => {
+    const n = data.length;
+    if (n < 2) return 0;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+    data.forEach(p => {
+      sumX += p.x;
+      sumY += p.y;
+      sumXY += p.x * p.y;
+      sumX2 += p.x * p.x;
+      sumY2 += p.y * p.y;
+    });
+    const num = n * sumXY - sumX * sumY;
+    const den = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+    if (den === 0) return 0;
+    return num / den;
+  };
+
+  const correlationPairs = trendData.map(d => ({
+    x: attendanceMetric === 'hours' ? d.hours : d.headcount,
+    y: d.progress
+  }));
+  const rCoeff = calcCorrelation(correlationPairs);
+  const rCoeffRounded = Math.round(rCoeff * 100) / 100;
+
+  let correlationLabel = "Minimal or baseline correlation detected";
+  let correlationColor = "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+  if (rCoeffRounded > 0.5) {
+    correlationLabel = `Strong positive correlation (r = +${rCoeffRounded})`;
+    correlationColor = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+  } else if (rCoeffRounded > 0.2) {
+    correlationLabel = `Moderate positive correlation (r = +${rCoeffRounded})`;
+    correlationColor = "bg-teal-500/10 text-teal-500 border-teal-500/20";
+  } else if (rCoeffRounded < -0.2) {
+    correlationLabel = `Inverse correlation detected (r = ${rCoeffRounded})`;
+    correlationColor = "bg-amber-500/10 text-amber-500 border-amber-500/20";
   }
 
   // Group logs by User
@@ -324,6 +534,177 @@ export default function DailyReportView({
             </div>
           </div>
 
+          {/* 📊 WORKFORCE ATTENDANCE & PRODUCTIVITY CORRELATION CHART */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5 space-y-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-base-border/50 pb-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-base-accent" />
+                  <h3 className="font-condensed font-extrabold uppercase text-sm tracking-wider text-base-text">
+                    Attendance & Productivity Correlation
+                  </h3>
+                </div>
+                <p className="text-[11px] text-base-muted mt-1 leading-relaxed">
+                  Visualizing the relationship between labor resources allocated (timesheet metrics) and daily progress gains.
+                </p>
+              </div>
+
+              {/* Dynamic Correlation Badge */}
+              <div className={`px-3 py-1.5 rounded-lg border text-xxs font-bold uppercase tracking-wider ${correlationColor}`}>
+                {correlationLabel}
+              </div>
+
+              {/* Chart Filters */}
+              <div className="flex items-center gap-3 self-end md:self-auto">
+                {/* Metric Selector */}
+                <div className="flex bg-base-surface2 border border-base-border rounded-lg p-0.5 text-xxs font-bold">
+                  <button
+                    onClick={() => setAttendanceMetric('hours')}
+                    className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+                      attendanceMetric === 'hours'
+                        ? 'bg-base-surface text-base-accent shadow-sm font-black'
+                        : 'text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    Hours Logged
+                  </button>
+                  <button
+                    onClick={() => setAttendanceMetric('headcount')}
+                    className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+                      attendanceMetric === 'headcount'
+                        ? 'bg-base-surface text-base-accent shadow-sm font-black'
+                        : 'text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    Headcount
+                  </button>
+                </div>
+
+                {/* Period Selector */}
+                <div className="flex bg-base-surface2 border border-base-border rounded-lg p-0.5 text-xxs font-bold">
+                  <button
+                    onClick={() => setTrendPeriod('weekly')}
+                    className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+                      trendPeriod === 'weekly'
+                        ? 'bg-base-surface text-base-accent shadow-sm font-black'
+                        : 'text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    Weekly
+                  </button>
+                  <button
+                    onClick={() => setTrendPeriod('monthly')}
+                    className={`px-2.5 py-1 rounded transition-all cursor-pointer ${
+                      trendPeriod === 'monthly'
+                        ? 'bg-base-surface text-base-accent shadow-sm font-black'
+                        : 'text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    Monthly
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Line Graph Area */}
+            <div className="h-[250px] w-full pt-2">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData} margin={{ top: 10, right: 15, left: -20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  {/* Left Y-axis for workforce metric */}
+                  <YAxis
+                    yAxisId="left"
+                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => attendanceMetric === 'hours' ? `${val}h` : `${val}p`}
+                  />
+                  {/* Right Y-axis for progress added */}
+                  <YAxis
+                    yAxisId="right"
+                    orientation="right"
+                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `+${val}%`}
+                  />
+                  
+                  {/* Tooltip */}
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        return (
+                          <div className="bg-base-surface border border-base-border p-3 rounded-xl shadow-modal text-xs space-y-2 font-bold border-l-4 border-l-base-accent">
+                            <p className="text-base-text border-b border-base-border/50 pb-1 font-condensed tracking-wider uppercase">{label}</p>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="flex items-center gap-1.5 text-base-blue">
+                                <span className="w-1.5 h-1.5 rounded-full bg-base-blue" />
+                                {attendanceMetric === 'hours' ? 'Total Hours:' : 'Staff Count:'}
+                              </span>
+                              <span className="text-base-text font-mono">
+                                {payload[0]?.value}{attendanceMetric === 'hours' ? ' hours' : ' present'}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between gap-4">
+                              <span className="flex items-center gap-1.5 text-emerald-500">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Progress Added:
+                              </span>
+                              <span className="text-base-text font-mono">+{payload[1]?.value}%</span>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+
+                  {/* Lines */}
+                  <Line
+                    yAxisId="left"
+                    type="monotone"
+                    dataKey={attendanceMetric === 'hours' ? 'hours' : 'headcount'}
+                    name={attendanceMetric === 'hours' ? 'Workforce Effort (Hours)' : 'Workforce Present (Count)'}
+                    stroke="var(--blue)"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, strokeWidth: 0, fill: 'var(--blue)' }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Line
+                    yAxisId="right"
+                    type="monotone"
+                    dataKey="progress"
+                    name="Productivity (Progress Added %)"
+                    stroke="#10b981"
+                    strokeWidth={2.5}
+                    dot={{ r: 3, strokeWidth: 0, fill: '#10b981' }}
+                    activeDot={{ r: 5 }}
+                  />
+                  <Legend 
+                    verticalAlign="bottom" 
+                    height={36} 
+                    content={({ payload }) => (
+                      <div className="flex justify-center gap-6 mt-2 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">
+                        {payload?.map((entry: any, index: number) => (
+                          <div key={index} className="flex items-center gap-1.5">
+                            <span className="w-3 h-0.75 rounded" style={{ backgroundColor: entry.color }} />
+                            <span>{entry.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
           {/* Touched Project Progress Section */}
           {Object.keys(projectsSnapshot).length > 0 && (
             <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
@@ -335,17 +716,40 @@ export default function DailyReportView({
                 {Object.entries(projectsSnapshot).map(([pid, info], i) => {
                   const proj = projects.find(x => x.id === pid);
                   const curPct = proj ? calcPct(proj) : 0;
+                  const beforePct = proj ? getProjectBeforePct(proj, dayLogs) : 0;
+                  const projectDelta = curPct - beforePct;
                   return (
-                    <div key={pid} className="flex px-4 py-3 items-center justify-between gap-4 text-xs">
-                      <div className="font-bold text-base-text flex-1 truncate min-width-0" title={info.name}>{info.name}</div>
-                      <div className="flex-1 max-w-[200px] h-1.5 bg-base-border/20 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${curPct}%` }} />
+                    <div key={pid} className="flex px-4 py-3.5 items-center justify-between gap-4 text-xs">
+                      <div className="font-bold text-base-text flex-1 truncate min-w-0" title={info.name}>
+                        {info.name}
                       </div>
-                      <div className="font-condensed font-bold text-sm text-base-muted2 min-width-[34px] text-right">{curPct}%</div>
-                      <span className={`font-condensed font-extrabold text-sm ml-4 min-width-[40px] text-right ${
-                        info.totalDelta > 0 ? 'text-base-green' : info.totalDelta < 0 ? 'text-base-red' : 'text-base-muted'
+
+                      {/* Before and After progression */}
+                      <div className="flex items-center gap-2 text-xxs font-mono text-base-muted2 shrink-0">
+                        <span>{beforePct}%</span>
+                        <span className="text-base-muted/40">➔</span>
+                        <span className="font-extrabold text-base-text">{curPct}%</span>
+                      </div>
+
+                      {/* Progressive Track */}
+                      <div className="flex-1 max-w-[200px] h-2 bg-base-border/20 rounded-full overflow-hidden relative hidden sm:block shrink-0">
+                        {/* Before base progress */}
+                        <div className="absolute top-0 left-0 h-full bg-base-accent/40 rounded-full" style={{ width: `${beforePct}%` }} />
+                        {/* Current actual progress bar */}
+                        <div className="absolute top-0 left-0 h-full bg-base-accent rounded-full transition-all duration-500 ease-out" style={{ width: `${curPct}%` }} />
+                        {/* Added progress highlight segment */}
+                        {projectDelta > 0 && (
+                          <div 
+                            className="absolute top-0 h-full bg-emerald-500 animate-pulse" 
+                            style={{ left: `${beforePct}%`, width: `${projectDelta}%` }} 
+                          />
+                        )}
+                      </div>
+
+                      <span className={`font-condensed font-extrabold text-sm ml-4 min-w-[50px] text-right shrink-0 ${
+                        projectDelta > 0 ? 'text-base-green' : projectDelta < 0 ? 'text-base-red' : 'text-base-muted'
                       }`}>
-                        {info.totalDelta > 0 ? `+${info.totalDelta}` : info.totalDelta}%
+                        {projectDelta > 0 ? `+${projectDelta}` : projectDelta}%
                       </span>
                     </div>
                   );
@@ -371,6 +775,7 @@ export default function DailyReportView({
             {Object.entries(userGroups).map(([uid, ug]) => {
               const init = ug.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
               const isColl = !!userCollapsed[uid];
+              const impact = getUserImpact(uid, ug.entries);
 
               return (
                 <div key={uid} className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
@@ -395,12 +800,54 @@ export default function DailyReportView({
                       <span className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text">{ug.name}</span>
                       <span className="text-[10px] text-base-muted uppercase font-bold">{ug.role}</span>
                     </div>
-                    <span className="text-xs text-base-muted">{ug.entries.length} log{ug.entries.length !== 1 ? 's' : ''} submitted</span>
+                    
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-base-muted mr-1">{ug.entries.length} log{ug.entries.length !== 1 ? 's' : ''}</span>
+                      {impact.portfolioImpact > 0 ? (
+                        <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 text-[10px] uppercase font-black tracking-wide">
+                          Portfolio Impact: +{impact.portfolioImpact}%
+                        </span>
+                      ) : impact.portfolioImpact < 0 ? (
+                        <span className="px-2 py-0.5 rounded bg-red-500/10 text-red-500 text-[10px] uppercase font-black tracking-wide">
+                          Portfolio Impact: {impact.portfolioImpact}%
+                        </span>
+                      ) : null}
+                    </div>
                   </div>
 
                   {/* List expanded rows */}
                   {!isColl && (
                     <div className="divide-y divide-base-border/30">
+                      {/* Detailed user impact panel if they generated progress */}
+                      {Object.keys(impact.projectImpacts).length > 0 && (
+                        <div className="bg-base-surface2/40 border-b border-base-border/45 p-4 space-y-2.5">
+                          <div className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted flex items-center gap-1.5">
+                            <Activity className="w-3.5 h-3.5 text-base-accent" />
+                            <span>Progress Impact Generated Today</span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {Object.entries(impact.projectImpacts).map(([pid, pInfo]) => (
+                              <div key={pid} className="bg-base-surface border border-base-border/50 rounded-lg p-2.5 flex items-center justify-between gap-3 text-xs shadow-sm">
+                                <div className="space-y-0.5 min-w-0 flex-1">
+                                  <div className="font-bold text-base-text truncate" title={pInfo.projectName}>
+                                    {pInfo.projectName}
+                                  </div>
+                                  <div className="text-[10px] text-base-muted2 font-mono flex items-center gap-1">
+                                    <span>{pInfo.beforePct}%</span>
+                                    <span>➔</span>
+                                    <span className="text-base-text font-bold">{pInfo.afterPct}%</span>
+                                  </div>
+                                </div>
+                                <div className={`font-condensed font-extrabold text-sm px-2 py-1 rounded shrink-0 ${
+                                  pInfo.delta > 0 ? 'bg-base-green-dim text-base-green' : 'bg-base-red-dim text-base-red'
+                                }`}>
+                                  {pInfo.delta > 0 ? `+${pInfo.delta}` : pInfo.delta}%
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                       {ug.entries.map(e => {
                         const meta = ACT_ICONS[e.type] || { label: 'Audit Log', color: 'var(--muted)', bg: 'rgba(0,0,0,.05)' };
                         const delta = (e.newPct || 0) - (e.oldPct || 0);

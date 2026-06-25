@@ -2,9 +2,11 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Project, Assembly, Dependency } from '../types';
 import { calcPct, esc } from '../utils/projectUtils';
 import { Maximize2, Minimize2, Link2, Calendar, LayoutGrid, CheckCircle } from 'lucide-react';
+import { useFirestore } from '../hooks/useFirestore';
 
 interface GanttViewProps {
   projects: Project[];
+  setProjects?: React.Dispatch<React.SetStateAction<Project[]>>;
   selectedMonth: string;
   setSelectedMonth: (val: string) => void;
   openDepModal: (rowKey: string) => void;
@@ -33,10 +35,12 @@ interface RowMeta {
   activityCode?: string;
   difficulty?: number;
   assignedResources?: string;
+  isMilestone?: boolean;
 }
 
 export default function GanttView({
   projects,
+  setProjects,
   selectedMonth,
   setSelectedMonth,
   openDepModal
@@ -45,8 +49,24 @@ export default function GanttView({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'completed'>('active');
   const [showDeps, setShowDeps] = useState<boolean>(true);
   const [ganttLabelW, setGanttLabelW] = useState<number>(240);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => {
+    return typeof window !== 'undefined' && window.location.search.includes('fullscreen=gantt');
+  });
   const [ganttCollapsed, setGanttCollapsed] = useState<Record<string, boolean>>({});
+
+  const { saveItem } = useFirestore();
+
+  interface DragState {
+    rowKey: string;
+    type: 'drag' | 'resize-left' | 'resize-right';
+    startX: number;
+    originalStart: string;
+    originalDue: string;
+    tempStart?: string;
+    tempDue?: string;
+  }
+
+  const [dragState, setDragState] = useState<DragState | null>(null);
 
   // Scoped project and month list configurations
   const [ganttMonthFilter, setGanttMonthFilter] = useState<string>('');
@@ -183,13 +203,165 @@ export default function GanttView({
     } else if (ganttMonthFilter && !p.due) return false;
 
     // Boundary check
+    let matchesTargetMonthOrPrev = false;
+    if (p.targetMonth) {
+      if (p.targetMonth === selectedMonth) {
+        matchesTargetMonthOrPrev = true;
+      } else {
+        const [ty, tm] = p.targetMonth.split('-').map(Number);
+        const prevMonthDate = new Date(ty, tm - 2, 1);
+        const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+        if (prevMonthStr === selectedMonth) {
+          matchesTargetMonthOrPrev = true;
+        }
+      }
+    }
+
     const pS = p.start ? new Date(p.start + 'T00:00:00') : mStart;
     const pE = p.due ? new Date(p.due + 'T00:00:00') : mEnd;
-    return pS <= mEnd && pE >= mStart;
+    return (pS <= mEnd && pE >= mStart) || matchesTargetMonthOrPrev;
   });
 
   // Calculate geometric columns based on window boundary sizes
   const cellW = Math.max(24, Math.floor((Math.max(900, window.innerWidth - 64) - ganttLabelW) / totalDays));
+
+  const shiftDateStr = (dateStr: string, days: number): string => {
+    if (!dateStr) return dateStr;
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    dateObj.setDate(dateObj.getDate() + days);
+    return dateObj.getFullYear() + '-' + String(dateObj.getMonth() + 1).padStart(2, '0') + '-' + String(dateObj.getDate()).padStart(2, '0');
+  };
+
+  const updateRowDates = (rowKey: string, newStart: string, newDue: string) => {
+    const parts = rowKey.split(':');
+    const typeLetter = parts[0]; // 'p', 'a', or 't'
+    const pId = parts[1];
+    
+    const updatedProjects = projects.map(p => {
+      if (p.id !== pId) return p;
+      
+      if (typeLetter === 'p') {
+        return {
+          ...p,
+          start: newStart,
+          due: newDue
+        };
+      } else if (typeLetter === 'a') {
+        const aId = parts[2];
+        const updatedAssemblies = (p.assemblies || []).map(asm => {
+          if (asm.id !== aId) return asm;
+          return {
+            ...asm,
+            start: newStart,
+            finish: newDue
+          };
+        });
+        return {
+          ...p,
+          assemblies: updatedAssemblies
+        };
+      } else if (typeLetter === 't') {
+        const aId = parts[2];
+        const tId = parts[3];
+        const updatedAssemblies = (p.assemblies || []).map(asm => {
+          if (asm.id !== aId) return asm;
+          const updatedTasks = (asm.tasks || []).map(tsk => {
+            if (tsk.id !== tId) return tsk;
+            return {
+              ...tsk,
+              date: newStart,
+              finishDate: newDue
+            };
+          });
+          return {
+            ...asm,
+            tasks: updatedTasks
+          };
+        });
+        return {
+          ...p,
+          assemblies: updatedAssemblies
+        };
+      }
+      return p;
+    });
+
+    if (setProjects) {
+      setProjects(updatedProjects);
+    }
+    const changedP = updatedProjects.find(p => p.id === pId);
+    if (changedP) {
+      saveItem('projects', changedP);
+    }
+  };
+
+  const handleBarMouseDown = (e: React.MouseEvent, rowKey: string, type: 'drag' | 'resize-left' | 'resize-right', origStart: string, origDue: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    
+    const startStr = origStart || selectedMonth + '-01';
+    const dueStr = origDue || startStr;
+    
+    setDragState({
+      rowKey,
+      type,
+      startX: e.clientX,
+      originalStart: startStr,
+      originalDue: dueStr,
+      tempStart: startStr,
+      tempDue: dueStr
+    });
+  };
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragState.startX;
+      const deltaDays = Math.round(deltaX / cellW);
+      
+      let tempStart = dragState.originalStart;
+      let tempDue = dragState.originalDue;
+      
+      if (dragState.type === 'drag') {
+        tempStart = shiftDateStr(dragState.originalStart, deltaDays);
+        tempDue = shiftDateStr(dragState.originalDue, deltaDays);
+      } else if (dragState.type === 'resize-left') {
+        tempStart = shiftDateStr(dragState.originalStart, deltaDays);
+        if (tempStart > tempDue) tempStart = tempDue;
+      } else if (dragState.type === 'resize-right') {
+        tempDue = shiftDateStr(dragState.originalDue, deltaDays);
+        if (tempDue < tempStart) tempDue = tempStart;
+      }
+      
+      setDragState(prev => prev ? {
+        ...prev,
+        tempStart,
+        tempDue
+      } : null);
+    };
+
+    const handleMouseUp = (e: MouseEvent) => {
+      const deltaX = e.clientX - dragState.startX;
+      const hasMoved = Math.abs(deltaX) > 3;
+      
+      if (hasMoved && dragState.tempStart && dragState.tempDue) {
+        updateRowDates(dragState.rowKey, dragState.tempStart, dragState.tempDue);
+      } else {
+        openDepModal(dragState.rowKey);
+      }
+      
+      setDragState(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [dragState, cellW, projects, setProjects]);
 
   const getDayX = (d: number) => ganttLabelW + (d - 1) * cellW;
   const getDayXRight = (d: number) => ganttLabelW + d * cellW;
@@ -314,7 +486,7 @@ export default function GanttView({
             const tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
             const tEnd = t.finishDate ? new Date(t.finishDate + 'T00:00:00') : aEnd;
 
-            const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, false);
+            const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, !!t.isMilestone);
 
             rowList.push({
               key: tKey,
@@ -330,7 +502,8 @@ export default function GanttView({
               barEndX: tBarEndX,
               activityCode: t.id ? `ACT-${t.id.slice(0, 4).toUpperCase()}` : 'ACT-100',
               difficulty: typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1,
-              assignedResources: t.assigned || ''
+              assignedResources: t.assigned || '',
+              isMilestone: !!t.isMilestone
             });
             currentY += tRowH;
           });
@@ -916,12 +1089,23 @@ export default function GanttView({
             {/* Absolute Bars Graphic Overlay Container */}
             <div className="absolute inset-0 pointer-events-none z-20">
               {rowList.map(row => {
-                const { key, type, color, pct, start, due, midY, barStartX, barEndX, activityCode, assignedResources } = row;
-                if (barStartX === undefined || barEndX === undefined) return null;
+                const { key, type, color, pct, start, due, midY, barStartX: origStartX, barEndX: origEndX, activityCode, assignedResources } = row;
+                if (origStartX === undefined || origEndX === undefined) return null;
+
+                const isCurrentDrag = dragState && dragState.rowKey === key;
+                const currentStartStr = isCurrentDrag ? (dragState.tempStart || start) : start;
+                const currentDueStr = isCurrentDrag ? (dragState.tempDue || due) : due;
 
                 const isProject = type === 'project';
                 const isAssembly = type === 'assembly';
-                const isMilestone = start && due && start === due;
+                const isMilestone = row.isMilestone || (currentStartStr && currentDueStr && currentStartStr === currentDueStr);
+
+                const currentStart = currentStartStr ? new Date(currentStartStr + 'T00:00:00') : mStart;
+                const currentDue = currentDueStr ? new Date(currentDueStr + 'T00:00:00') : mEnd;
+
+                const { barStartX, barEndX } = getBarOffsets(currentStart, currentDue, isMilestone);
+                if (barStartX === undefined || barEndX === undefined) return null;
+
                 const barWidth = barEndX - barStartX;
 
                 // Determine MS Project task variables
@@ -932,33 +1116,48 @@ export default function GanttView({
                 const isCriticalActive = isOverdue || assocProj?.status === 'pending';
 
                 if (isMilestone) {
-                  const diamondSz = 10;
+                  const diamondSz = 12;
                   return (
                     <div 
                       key={key}
-                      className="absolute flex items-center pointer-events-none text-xs"
+                      className={`absolute flex items-center pointer-events-none text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`}
                       style={{
                         left: `${barStartX - diamondSz / 2}px`,
                         top: `${midY - diamondSz / 2}px`,
-                        width: '400px',
+                        width: '500px',
                         height: `${diamondSz}px`
                       }}
                     >
                       <div
-                        onClick={() => openDepModal(key)}
-                        className="relative shrink-0 hover:brightness-110 cursor-pointer pointer-events-auto shadow-sm bg-slate-700 dark:bg-amber-400 border border-slate-900 dark:border-amber-300"
+                        onMouseDown={(e) => handleBarMouseDown(e, key, 'drag', start || '', due || '')}
+                        className={`relative shrink-0 hover:scale-125 transition-transform cursor-grab active:cursor-grabbing pointer-events-auto shadow-md rounded-[1px] ${
+                          isCurrentDrag 
+                            ? 'bg-amber-400 border-2 border-amber-300 ring-2 ring-amber-500/50 scale-125' 
+                            : 'bg-amber-500 dark:bg-amber-400 border border-slate-900 dark:border-amber-300'
+                        }`}
                         style={{
                           width: `${diamondSz}px`,
                           height: `${diamondSz}px`,
                           transform: 'rotate(45deg)'
                         }}
-                        title={`${row.name} (Milestone — ${start})`}
+                        title={`${row.name} (Milestone — Drag to reschedule date)`}
                       />
-                      <span className="text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded bg-white/95 dark:bg-slate-800/95 border border-slate-200/85 dark:border-slate-700/85 shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0">
+                      <span className={`text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded border shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0 ${
+                        isCurrentDrag 
+                          ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold'
+                          : 'bg-white/95 dark:bg-slate-800/95 border-slate-200/85 dark:border-slate-700/85 text-slate-800 dark:text-slate-100'
+                      }`}>
                         <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{activityCode || 'MILESTONE'}</span>
                         <span className="text-slate-300 dark:text-slate-600">|</span>
-                        <span className="font-semibold text-slate-800 dark:text-slate-100">{row.name}</span>
-                        {start && <span className="text-slate-400 dark:text-slate-500">({new Date(start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})</span>}
+                        <span className="font-semibold">{row.name}</span>
+                        {currentStartStr && (
+                          <span className="text-slate-400 dark:text-slate-500 font-medium">
+                            ({new Date(currentStartStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})
+                          </span>
+                        )}
+                        {isCurrentDrag && (
+                          <span className="ml-1 text-[8px] bg-amber-500 text-white font-extrabold px-1 rounded-sm">DRAGGING</span>
+                        )}
                       </span>
                     </div>
                   );
@@ -972,7 +1171,7 @@ export default function GanttView({
                 return (
                   <div 
                     key={key} 
-                    className="absolute flex items-center pointer-events-none text-xs" 
+                    className={`absolute flex items-center pointer-events-none text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`} 
                     style={{ 
                       left: `${barStartX}px`, 
                       top: `${midY - barH / 2}px`, 
@@ -983,8 +1182,9 @@ export default function GanttView({
                     {isProject || isAssembly ? (
                       /* MS Project SUMMARY TASK STYLE (Sleek dark bracket with downward pointy chevrons) */
                       <div
-                        onClick={() => openDepModal(key)}
-                        className="relative shrink-0 pointer-events-auto cursor-pointer"
+                        className={`relative shrink-0 pointer-events-auto rounded-[2px] transition-shadow ${
+                          isCurrentDrag ? 'ring-2 ring-amber-500 shadow-lg' : ''
+                        }`}
                         style={{
                           width: `${barWidth}px`,
                           height: `${barH}px`,
@@ -1013,15 +1213,36 @@ export default function GanttView({
                             style={{ width: `${Math.round((pct / 100) * (barWidth - 6))}px` }} 
                           />
                         )}
+
+                        {/* LEFT RESIZE HANDLE */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'resize-left', start || '', due || '')}
+                          className="absolute left-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-amber-500/40 z-30 rounded-l pointer-events-auto"
+                          title="Drag to change start date"
+                        />
+
+                        {/* RIGHT RESIZE HANDLE */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'resize-right', start || '', due || '')}
+                          className="absolute right-0 top-0 bottom-0 w-2.5 cursor-ew-resize hover:bg-amber-500/40 z-30 rounded-r pointer-events-auto"
+                          title="Drag to change finish date"
+                        />
+
+                        {/* DRAG MOVE AREA */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'drag', start || '', due || '')}
+                          className="absolute left-2.5 right-2.5 top-0 bottom-0 cursor-grab active:cursor-grabbing z-20 pointer-events-auto"
+                        />
                       </div>
                     ) : (
                       /* MS Project STANDARD TASK BAR (Active blue vs critical red/orange with inner dark core line) */
                       <div
-                        onClick={() => openDepModal(key)}
-                        className={`relative shrink-0 border pointer-events-auto cursor-pointer rounded-[2px] transition-all bg-opacity-95 ${
-                          isCriticalActive 
-                            ? 'bg-red-100 border-red-400 dark:bg-red-950/80 dark:border-red-500' 
-                            : 'bg-blue-100 border-blue-400 dark:bg-blue-950/80 dark:border-blue-400'
+                        className={`relative shrink-0 border pointer-events-auto rounded-[3px] transition-all bg-opacity-95 flex items-center ${
+                          isCurrentDrag 
+                            ? 'bg-amber-50 border-amber-500 shadow-md ring-2 ring-amber-500/35 dark:bg-amber-950/40 dark:border-amber-400'
+                            : isCriticalActive 
+                              ? 'bg-red-100 border-red-400 dark:bg-red-950/80 dark:border-red-500' 
+                              : 'bg-blue-100 border-blue-400 dark:bg-blue-950/80 dark:border-blue-400'
                         }`}
                         style={{
                           width: `${barWidth}px`,
@@ -1032,26 +1253,50 @@ export default function GanttView({
                         {/* Core center-level inner progress bar */}
                         {pct > 0 && (
                           <div
-                            className={`absolute top-[2.5px] bottom-[2.5px] left-[1px] transition-all duration-300 rounded-[1px] ${
-                              isCriticalActive 
-                                ? 'bg-red-700 dark:bg-red-400' 
-                                : 'bg-blue-600 dark:bg-sky-400'
+                            className={`absolute top-[2px] bottom-[2px] left-[1px] transition-all duration-300 rounded-[1px] ${
+                              isCurrentDrag 
+                                ? 'bg-amber-500'
+                                : isCriticalActive 
+                                  ? 'bg-red-700 dark:bg-red-400' 
+                                  : 'bg-blue-600 dark:bg-sky-400'
                             }`}
-                            style={{
-                              width: `${Math.round((pct / 100) * (barWidth - 2))}px`,
-                            }}
+                            style={{ width: `${Math.round((pct / 100) * (barWidth - 2))}px` }}
                           />
                         )}
+
+                        {/* LEFT RESIZE HANDLE */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'resize-left', start || '', due || '')}
+                          className="absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-amber-500/40 z-30 rounded-l pointer-events-auto"
+                          title="Drag to change start date"
+                        />
+
+                        {/* RIGHT RESIZE HANDLE */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'resize-right', start || '', due || '')}
+                          className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-amber-500/40 z-30 rounded-r pointer-events-auto"
+                          title="Drag to change finish date"
+                        />
+
+                        {/* DRAG MOVE AREA */}
+                        <div
+                          onMouseDown={(e) => handleBarMouseDown(e, key, 'drag', start || '', due || '')}
+                          className="absolute left-2 right-2 top-0 bottom-0 cursor-grab active:cursor-grabbing z-20 pointer-events-auto"
+                        />
                       </div>
                     )}
 
                     {/* Classic MS Project resource and activity labels written directly to the right */}
                     <span 
-                      className="text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded bg-white/95 dark:bg-slate-800/95 border border-slate-200/85 dark:border-slate-700/85 shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0"
+                      className={`text-[10px] font-sans ml-3.5 px-2 py-0.5 rounded border shadow-xs pointer-events-none select-none whitespace-nowrap flex items-center gap-1.5 leading-none backdrop-blur-xs shrink-0 ${
+                        isCurrentDrag 
+                          ? 'bg-amber-500/10 border-amber-500/20 text-amber-600 dark:text-amber-400 font-bold' 
+                          : 'bg-white/95 dark:bg-slate-800/95 border-slate-200/85 dark:border-slate-700/85 text-slate-800 dark:text-slate-100'
+                      }`}
                     >
                       <span className="text-sky-600 dark:text-sky-300 font-extrabold">{activityCode || 'ACT'}</span>
                       <span className="text-slate-300 dark:text-slate-600">|</span>
-                      <span className="font-semibold text-slate-800 dark:text-slate-100 max-w-[130px] truncate">{row.name}</span>
+                      <span className="font-semibold max-w-[130px] truncate">{row.name}</span>
                       <span className="text-slate-300 dark:text-slate-600">|</span>
                       {assignedResources ? (
                         <>
@@ -1060,6 +1305,9 @@ export default function GanttView({
                         </>
                       ) : null}
                       <span className="text-orange-500 dark:text-amber-400 font-extrabold">{pct}%</span>
+                      {isCurrentDrag && (
+                        <span className="ml-1 text-[8px] bg-amber-500 text-white font-extrabold px-1 rounded-xs">SCHEDULING</span>
+                      )}
                     </span>
                   </div>
                 );
@@ -1097,6 +1345,19 @@ export default function GanttView({
           Hover standard table rows and click <b className="text-base-accent">Link</b> to configure predecessors and lag constraints
         </span>
       </div>
+
+      {dragState && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-slate-900/95 dark:bg-slate-800/95 border border-amber-500/50 rounded-xl px-5 py-3 shadow-2xl z-50 flex items-center gap-3 font-sans animate-bounce pointer-events-auto">
+          <div className="h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+          <span className="text-xs text-amber-500 font-extrabold uppercase tracking-wider">RE-SCHEDULING:</span>
+          <span className="text-xs font-bold text-white font-mono">
+            {dragState.tempStart} ➔ {dragState.tempDue}
+          </span>
+          <span className="text-[10px] text-amber-300 font-bold bg-amber-500/20 px-1.5 py-0.5 rounded uppercase font-condensed">
+            {dragState.type === 'drag' ? 'Moving Duration' : dragState.type === 'resize-left' ? 'Adjusting Start' : 'Adjusting Finish'}
+          </span>
+        </div>
+      )}
     </div>
   );
 }

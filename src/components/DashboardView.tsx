@@ -106,7 +106,22 @@ export default function DashboardView({
       if (!selectedMonth) return true;
       const startM = (p.start || '').slice(0, 7);
       const dueM = (p.due || '').slice(0, 7);
-      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`);
+      
+      let matchesTargetMonthOrPrev = false;
+      if (p.targetMonth) {
+        if (p.targetMonth === selectedMonth) {
+          matchesTargetMonthOrPrev = true;
+        } else {
+          const [ty, tm] = p.targetMonth.split('-').map(Number);
+          const prevMonthDate = new Date(ty, tm - 2, 1);
+          const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+          if (prevMonthStr === selectedMonth) {
+            matchesTargetMonthOrPrev = true;
+          }
+        }
+      }
+
+      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`) || matchesTargetMonthOrPrev;
     });
 
     if (targetProjs.length === 0) {
@@ -429,7 +444,22 @@ export default function DashboardView({
     }
     const createdYM = (p.start || p.created || '').slice(0, 7);
     const dueYM = (p.due || '').slice(0, 7);
-    return (createdYM === selectedMonth || dueYM === selectedMonth || (createdYM === '' && isCurrentMonth()));
+
+    let matchesTargetMonthOrPrev = false;
+    if (p.targetMonth) {
+      if (p.targetMonth === selectedMonth) {
+        matchesTargetMonthOrPrev = true;
+      } else {
+        const [ty, tm] = p.targetMonth.split('-').map(Number);
+        const prevMonthDate = new Date(ty, tm - 2, 1);
+        const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
+        if (prevMonthStr === selectedMonth) {
+          matchesTargetMonthOrPrev = true;
+        }
+      }
+    }
+
+    return (createdYM === selectedMonth || dueYM === selectedMonth || matchesTargetMonthOrPrev || (createdYM === '' && isCurrentMonth()));
   }).filter(p => {
     if (dashLoc === 'all') return true;
     return p.location === dashLoc;

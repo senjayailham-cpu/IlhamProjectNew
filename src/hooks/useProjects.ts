@@ -37,6 +37,7 @@ export function useProjects(
   const [pLoc, setPLoc] = useState<'workshop1' | 'workshop2'>('workshop1');
   const [pNotes, setPNotes] = useState<string>('');
   const [pBudgetHours, setPBudgetHours] = useState<string>('');
+  const [pTargetMonth, setPTargetMonth] = useState<string>('');
 
   const [aName, setAName] = useState<string>('');
   const [aStart, setAStart] = useState<string>('');
@@ -66,6 +67,7 @@ export function useProjects(
     setPLoc('workshop1');
     setPNotes('');
     setPBudgetHours('');
+    setPTargetMonth('');
     setProjectFormOpen(true);
   };
 
@@ -82,6 +84,7 @@ export function useProjects(
     setPLoc(p.location || 'workshop1');
     setPNotes(p.notes || '');
     setPBudgetHours(p.budgetHours !== undefined ? String(p.budgetHours) : '');
+    setPTargetMonth(p.targetMonth || '');
     setProjectFormOpen(true);
   };
 
@@ -106,7 +109,8 @@ export function useProjects(
           location: pLoc,
           notes: pNotes.trim(),
           budgetHours: parsedBudget,
-          completedDate: pStatus === 'completed' ? completedDate : null
+          completedDate: pStatus === 'completed' ? completedDate : null,
+          targetMonth: pTargetMonth || ''
         };
         setProjects(prev => prev.map(item => item.id === editingProjectId ? updatedProj : item));
         saveItem('projects', updatedProj);
@@ -126,7 +130,8 @@ export function useProjects(
         assemblies: [],
         notes: pNotes.trim(),
         budgetHours: parsedBudget,
-        completedDate: pStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null
+        completedDate: pStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
+        targetMonth: pTargetMonth || ''
       };
 
       setProjects(prev => [...prev, addedProj]);
@@ -553,6 +558,8 @@ export function useProjects(
     setPNotes,
     pBudgetHours,
     setPBudgetHours,
+    pTargetMonth,
+    setPTargetMonth,
     aName,
     setAName,
     aStart,

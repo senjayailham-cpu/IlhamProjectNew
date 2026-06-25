@@ -108,6 +108,7 @@ export interface Task {
   finishDate?: string;
   predecessors?: Dependency[];
   successors?: Dependency[];
+  isMilestone?: boolean;
 }
 
 export interface Dependency {
@@ -145,6 +146,7 @@ export interface Project {
   successors?: Dependency[];
   budgetHours?: number;
   isArchived?: boolean;
+  targetMonth?: string;
 }
 
 export interface Employee {

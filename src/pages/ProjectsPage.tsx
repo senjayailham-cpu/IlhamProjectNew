@@ -242,6 +242,11 @@ export function ProjectsPage({
                         📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
                       </span>
                     )}
+                    {p.targetMonth && (
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
+                        🎯 Target: {p.targetMonth}
+                      </span>
+                    )}
                     <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
                       {p.location === 'workshop1' ? 'W1' : 'W2'}
                     </span>
@@ -410,6 +415,11 @@ export function ProjectsPage({
                   <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
                     Due: {p.due || 'No date'}
                   </span>
+                  {p.targetMonth && (
+                    <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
+                      🎯 Target: {p.targetMonth}
+                    </span>
+                  )}
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
                     {p.location === 'workshop1' ? 'W1' : 'W2'}
                   </span>

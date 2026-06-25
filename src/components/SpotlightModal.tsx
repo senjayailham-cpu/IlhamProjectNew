@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Project, Assembly, Task } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target } from 'lucide-react';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 
 interface SpotlightModalProps {
@@ -275,6 +275,17 @@ export default function SpotlightModal({
                 <div>
                   <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider">Start date</div>
                   <div className="text-xs font-bold text-base-text mt-0.5 font-mono">{p.start}</div>
+                </div>
+              </div>
+            )}
+            {p.targetMonth && (
+              <div className="bg-base-surface border border-base-border rounded-lg p-3 flex items-center gap-3">
+                <div className="h-7 w-7 rounded bg-amber-400/10 flex items-center justify-center flex-shrink-0 text-amber-600 dark:text-amber-400">
+                  <Target className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider">Target Month</div>
+                  <div className="text-xs font-bold text-base-text mt-0.5 font-mono">{p.targetMonth}</div>
                 </div>
               </div>
             )}
@@ -602,6 +613,40 @@ export default function SpotlightModal({
                                       <span className={`font-condensed font-bold text-xs ${t.pct >= 100 ? 'text-base-green' : t.pct > 50 ? 'text-base-accent' : 'text-base-blue'}`}>
                                         {t.pct}%
                                       </span>
+                                    )}
+
+                                    {/* Milestone Toggle / Indicator */}
+                                    {canUpdateTask ? (
+                                      <button
+                                        onClick={() => {
+                                          const updatedAssemblies = asms.map(asm => {
+                                            if (asm.id !== a.id) return asm;
+                                            return {
+                                              ...asm,
+                                              tasks: asm.tasks.map(tsk => {
+                                                if (tsk.id !== t.id) return tsk;
+                                                const nextIsMilestone = !tsk.isMilestone;
+                                                return {
+                                                  ...tsk,
+                                                  isMilestone: nextIsMilestone,
+                                                  finishDate: nextIsMilestone ? (tsk.date || new Date().toISOString().slice(0, 10)) : tsk.finishDate
+                                                };
+                                              })
+                                            };
+                                          });
+                                          onUpdateProject && onUpdateProject({ ...p, assemblies: updatedAssemblies });
+                                        }}
+                                        className={`p-1 rounded transition-colors ${t.isMilestone ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20' : 'text-base-muted hover:text-amber-500 hover:bg-base-surface3/40'}`}
+                                        title={t.isMilestone ? "Marked as Milestone" : "Mark as Milestone"}
+                                      >
+                                        <Target className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : (
+                                      t.isMilestone && (
+                                        <span className="p-1 rounded text-amber-500 bg-amber-500/10 cursor-default" title="Milestone">
+                                          <Target className="w-3.5 h-3.5" />
+                                        </span>
+                                      )
                                     )}
 
                                     {/* Inline Delete Button */}

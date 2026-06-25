@@ -146,6 +146,32 @@ export function FormsAndModals({
               </div>
 
               <div className="space-y-1">
+                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Target Month</label>
+                <input
+                  type="month"
+                  value={projectsHook.pTargetMonth}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    projectsHook.setPTargetMonth(val);
+                    // Proactively auto-suggest project start date to be the month before the target month if start date is currently empty
+                    if (val && !projectsHook.pStart) {
+                      const [year, month] = val.split('-').map(Number);
+                      const targetDateObj = new Date(year, month - 1, 1);
+                      // Subtract one month
+                      targetDateObj.setMonth(targetDateObj.getMonth() - 1);
+                      const suggestedYStr = targetDateObj.getFullYear();
+                      const suggestedMStr = String(targetDateObj.getMonth() + 1).padStart(2, '0');
+                      projectsHook.setPStart(`${suggestedYStr}-${suggestedMStr}-01`);
+                    }
+                  }}
+                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold text-base-text"
+                />
+                <p className="text-[9px] text-base-muted font-normal leading-tight">
+                  Reference month for Gantt & Dashboard. Start date defaults to the month prior if blank.
+                </p>
+              </div>
+
+              <div className="space-y-1">
                 <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Scope Notes</label>
                 <textarea
                   value={projectsHook.pNotes}

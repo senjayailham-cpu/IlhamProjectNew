@@ -1,6 +1,6 @@
 import React from 'react';
 import DailyReportView from '../components/DailyReportView';
-import { Project, ActivityLog } from '../types';
+import { Project, ActivityLog, TimesheetEntry } from '../types';
 
 interface ReportPageProps {
   projects: Project[];
@@ -9,6 +9,7 @@ interface ReportPageProps {
   setReportDate: (date: string) => void;
   clearActivityLogs: () => void;
   openPrintView: () => void;
+  timesheets: TimesheetEntry[];
 }
 
 export function ReportPage({
@@ -17,7 +18,8 @@ export function ReportPage({
   reportDate,
   setReportDate,
   clearActivityLogs,
-  openPrintView
+  openPrintView,
+  timesheets
 }: ReportPageProps) {
   return (
     <DailyReportView
@@ -27,6 +29,7 @@ export function ReportPage({
       setReportDate={setReportDate}
       clearActivityLogs={clearActivityLogs}
       openPrintView={openPrintView}
+      timesheets={timesheets}
     />
   );
 }
