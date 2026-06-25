@@ -995,6 +995,7 @@ function AppContent() {
               setSpotlightOpen={projectsHook.setSpotlightOpen}
               archiveProject={projectsHook.archiveProject}
               unarchiveProject={projectsHook.unarchiveProject}
+              importProjectsExcel={projectsHook.importProjectsExcel}
             />
           )}
 

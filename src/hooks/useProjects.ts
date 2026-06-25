@@ -54,7 +54,7 @@ export function useProjects(
   const [copyTasks, setCopyTasks] = useState<boolean>(true);
   const [copyKeepClient, setCopyKeepClient] = useState<boolean>(true);
 
-  const { saveItem, removeItem } = useFirestore();
+  const { saveItem, removeItem, saveBatch } = useFirestore();
 
   const openAddProject = () => {
     setEditingProjectId(null);
@@ -514,6 +514,28 @@ export function useProjects(
     setDepModalOpen(false);
   };
 
+  const importProjectsExcel = (imported: Project[]) => {
+    setProjects(prev => {
+      const copy = [...prev];
+      imported.forEach(p => {
+        const existingIdx = copy.findIndex(x => x.id === p.id || (x.client && p.client && x.client.toLowerCase() === p.client.toLowerCase()));
+        if (existingIdx > -1) {
+          copy[existingIdx] = {
+            ...p,
+            id: copy[existingIdx].id // Keep existing database ID
+          };
+        } else {
+          copy.push(p);
+        }
+      });
+      return copy;
+    });
+
+    saveBatch('projects', imported);
+    logActivity('project_add', 'Imported projects from Excel', undefined, undefined, undefined, undefined, undefined, undefined, `Imported ${imported.length} project records successfully`);
+    verifyMarkChanged();
+  };
+
   return {
     saveDependenciesHandler,
     projects,
@@ -603,7 +625,8 @@ export function useProjects(
     addNewTaskNode,
     removeTaskNode,
     openCopyModalLauncher,
-    confirmCopyMultiplier
+    confirmCopyMultiplier,
+    importProjectsExcel
   };
 }
 export default useProjects;

@@ -1,10 +1,12 @@
 import React from 'react';
-import { Project, TimesheetEntry, WireLog } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw } from 'lucide-react';
+import { Project, TimesheetEntry, WireLog, Assembly, Task } from '../types';
+import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload } from 'lucide-react';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
 import { can as canUtil } from '../utils/permissions';
+import * as XLSX from 'xlsx';
+import { uid } from '../utils';
 
 interface ProjectsPageProps {
   activeTab: 'current' | 'completed' | 'tray' | 'nontray' | 'archive';
@@ -23,6 +25,7 @@ interface ProjectsPageProps {
   setSpotlightOpen: (open: boolean) => void;
   archiveProject: (pid: string) => void;
   unarchiveProject: (pid: string) => void;
+  importProjectsExcel?: (projects: Project[]) => void;
 }
 
 export function ProjectsPage({
@@ -42,9 +45,227 @@ export function ProjectsPage({
   setSpotlightOpen,
   archiveProject,
   unarchiveProject,
+  importProjectsExcel,
 }: ProjectsPageProps) {
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
+
+  const triggerExcelUpload = () => {
+    const inputEl = document.getElementById('project-excel-input-file') as HTMLInputElement | null;
+    if (inputEl) inputEl.click();
+  };
+
+  const parseExcelDate = (val: any): string | undefined => {
+    if (!val) return undefined;
+    if (val instanceof Date) {
+      return val.toISOString().slice(0, 10);
+    }
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        return date.toISOString().slice(0, 10);
+      }
+    }
+    const str = String(val).trim();
+    if (!str) return undefined;
+    
+    const dateParsed = new Date(str);
+    if (!isNaN(dateParsed.getTime())) {
+      return dateParsed.toISOString().slice(0, 10);
+    }
+    return str;
+  };
+
+  const handleFileChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+
+    const r = new FileReader();
+    r.onload = (e) => {
+      try {
+        const dataArr = new Uint8Array(e.target?.result as ArrayBuffer);
+        const wb = XLSX.read(dataArr, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as any[][];
+
+        if (!rows.length) {
+          alert('No data found inside spreadsheet.');
+          return;
+        }
+
+        let startIndex = 0;
+        const firstRow = rows[0];
+        if (firstRow && firstRow.length > 0) {
+          const firstCell = String(firstRow[0]).trim().toLowerCase();
+          if (firstCell === 'project name' || firstCell === 'project_name' || firstCell.includes('project') || firstCell.includes('name')) {
+            startIndex = 1; // Skip header row
+          }
+        }
+
+        const importMap: Record<string, {
+          name: string;
+          workOrder: string;
+          start?: string;
+          due?: string;
+          category: 'tray' | 'nontray';
+          location: 'workshop1' | 'workshop2';
+          budgetHours?: number;
+          targetMonth?: string;
+          assembliesMap: Record<string, {
+            name: string;
+            budgetHours?: number;
+            tasks: {
+              name: string;
+              isMilestone?: boolean;
+              start?: string;
+              finish?: string;
+              difficulty: number;
+            }[];
+          }>;
+        }> = {};
+
+        for (let i = startIndex; i < rows.length; i++) {
+          const row = rows[i];
+          if (!row || row.length === 0) continue;
+
+          const cellVal = (idx: number) => {
+            if (idx >= row.length || row[idx] === undefined || row[idx] === null) return '';
+            return String(row[idx]).trim();
+          };
+
+          const pName = cellVal(0);
+          if (!pName) continue; // Skip empty project name rows
+
+          const pWorkOrder = cellVal(1) || ('WO-' + uid().toUpperCase());
+          const pStart = parseExcelDate(row[2]);
+          const pDue = parseExcelDate(row[3]);
+
+          const catRaw = cellVal(4).toLowerCase();
+          const category: 'tray' | 'nontray' = (catRaw.includes('nontray') || catRaw.includes('non-tray')) ? 'nontray' : 'tray';
+
+          const locRaw = cellVal(5).toLowerCase();
+          const location: 'workshop1' | 'workshop2' = (locRaw.includes('workshop2') || locRaw.includes('w2')) ? 'workshop2' : 'workshop1';
+
+          const budgetHoursRaw = parseFloat(cellVal(6));
+          const budgetHours = isNaN(budgetHoursRaw) ? undefined : budgetHoursRaw;
+
+          const targetMonth = cellVal(7);
+
+          const assemblyName = cellVal(8);
+          const assemblyBudgetHoursRaw = parseFloat(cellVal(9));
+          const assemblyBudgetHours = isNaN(assemblyBudgetHoursRaw) ? undefined : assemblyBudgetHoursRaw;
+
+          const taskName = cellVal(10);
+          const isMilestoneRaw = cellVal(11).toLowerCase();
+          const isMilestone = (isMilestoneRaw === 'yes' || isMilestoneRaw === 'true' || isMilestoneRaw === '1' || isMilestoneRaw === 'y');
+
+          const taskStart = parseExcelDate(row[12]);
+          const taskFinish = parseExcelDate(row[13]);
+
+          const difficultyRaw = parseInt(cellVal(14), 10);
+          const difficulty = isNaN(difficultyRaw) || difficultyRaw <= 0 ? 1 : difficultyRaw;
+
+          const pKey = pName.toLowerCase() + '||' + pWorkOrder.toLowerCase();
+
+          if (!importMap[pKey]) {
+            importMap[pKey] = {
+              name: pName,
+              workOrder: pWorkOrder,
+              start: pStart,
+              due: pDue,
+              category,
+              location,
+              budgetHours,
+              targetMonth,
+              assembliesMap: {}
+            };
+          }
+
+          const pGroup = importMap[pKey];
+          if (pStart && !pGroup.start) pGroup.start = pStart;
+          if (pDue && !pGroup.due) pGroup.due = pDue;
+          if (budgetHours && !pGroup.budgetHours) pGroup.budgetHours = budgetHours;
+          if (targetMonth && !pGroup.targetMonth) pGroup.targetMonth = targetMonth;
+
+          if (assemblyName) {
+            const aKey = assemblyName.toLowerCase();
+            if (!pGroup.assembliesMap[aKey]) {
+              pGroup.assembliesMap[aKey] = {
+                name: assemblyName,
+                budgetHours: assemblyBudgetHours,
+                tasks: []
+              };
+            }
+            const aGroup = pGroup.assembliesMap[aKey];
+            if (assemblyBudgetHours && !aGroup.budgetHours) aGroup.budgetHours = assemblyBudgetHours;
+
+            if (taskName) {
+              aGroup.tasks.push({
+                name: taskName,
+                isMilestone,
+                start: taskStart,
+                finish: taskFinish,
+                difficulty
+              });
+            }
+          }
+        }
+
+        const finalProjects: Project[] = Object.values(importMap).map(p => {
+          const assemblies: Assembly[] = Object.values(p.assembliesMap).map(a => {
+            const tasks: Task[] = a.tasks.map(t => ({
+              id: uid(),
+              name: t.name,
+              pct: 0,
+              done: false,
+              difficulty: t.difficulty,
+              isMilestone: t.isMilestone,
+              date: t.start,
+              finishDate: t.finish
+            }));
+
+            return {
+              id: uid(),
+              name: a.name,
+              budgetHours: a.budgetHours,
+              tasks
+            };
+          });
+
+          return {
+            id: uid(),
+            name: p.name,
+            client: p.workOrder,
+            start: p.start,
+            due: p.due,
+            status: 'active',
+            category: p.category,
+            location: p.location,
+            created: new Date().toISOString().slice(0, 10),
+            assemblies,
+            budgetHours: p.budgetHours,
+            targetMonth: p.targetMonth,
+            notes: ''
+          };
+        });
+
+        if (finalProjects.length > 0) {
+          if (importProjectsExcel) {
+            importProjectsExcel(finalProjects);
+            alert(`Success! Imported ${finalProjects.length} projects containing ${finalProjects.reduce((acc, curr) => acc + curr.assemblies.length, 0)} assemblies successfully.`);
+          } else {
+            alert('Import handler not configured.');
+          }
+        } else {
+          alert('No valid projects found to import.');
+        }
+      } catch (err: any) {
+        alert('Parsing spreadsheet documents crashed: ' + err.message);
+      }
+      ev.target.value = '';
+    };
+    r.readAsArrayBuffer(file);
+  };
 
   const highlightText = (text: string, search: string) => {
     if (!search.trim()) return <span>{text}</span>;
@@ -87,30 +308,32 @@ export function ProjectsPage({
     });
     const sortedMonthFilterKeys = Object.keys(monthOptionsMap).sort();
 
-    const filteredProjects = activePendingProjects
-      .filter(p => {
-        if (currentTabMonthFilter) {
-          const startStr = p.start || '';
-          const dueStr = p.due || '';
-          const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
-          const matchesDue = dueStr.slice(0, 7) === currentTabMonthFilter;
+    const filteredProjects = !currentTabMonthFilter
+      ? []
+      : activePendingProjects
+          .filter(p => {
+            if (currentTabMonthFilter && currentTabMonthFilter !== 'all') {
+              const startStr = p.start || '';
+              const dueStr = p.due || '';
+              const matchesStart = startStr.slice(0, 7) === currentTabMonthFilter;
+              const matchesDue = dueStr.slice(0, 7) === currentTabMonthFilter;
 
-          const filterStart = `${currentTabMonthFilter}-01`;
-          const filterEnd = `${currentTabMonthFilter}-31`;
-          const spansFilter = (startStr && dueStr && startStr <= filterEnd && dueStr >= filterStart);
+              const filterStart = `${currentTabMonthFilter}-01`;
+              const filterEnd = `${currentTabMonthFilter}-31`;
+              const spansFilter = (startStr && dueStr && startStr <= filterEnd && dueStr >= filterStart);
 
-          if (!matchesStart && !matchesDue && !spansFilter) return false;
-        }
-        return true;
-      })
-      .filter(p => {
-        if (!projectSearchQuery.trim()) return true;
-        const q = projectSearchQuery.toLowerCase();
-        return (
-          p.name.toLowerCase().includes(q) ||
-          p.client.toLowerCase().includes(q)
-        );
-      });
+              if (!matchesStart && !matchesDue && !spansFilter) return false;
+            }
+            return true;
+          })
+          .filter(p => {
+            if (!projectSearchQuery.trim()) return true;
+            const q = projectSearchQuery.toLowerCase();
+            return (
+              p.name.toLowerCase().includes(q) ||
+              p.client.toLowerCase().includes(q)
+            );
+          });
 
     return (
       <div className="space-y-4">
@@ -154,7 +377,8 @@ export function ProjectsPage({
                 className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
                 title="Filter projects by month"
               >
-                <option value="">All Months</option>
+                <option value="">Select Month or All Projects...</option>
+                <option value="all">All Projects</option>
                 {sortedMonthFilterKeys.map(k => (
                   <option key={k} value={k} className="font-sans normal-case">
                     {monthOptionsMap[k]}
@@ -165,18 +389,42 @@ export function ProjectsPage({
           </div>
 
           {can('addProject') && (
-            <button
-              onClick={openAddProject}
-              className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
-            >
-              <span>Add project</span>
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={triggerExcelUpload}
+                className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
+                title="Import projects with custom Excel sheet"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                <span>Import Excel</span>
+              </button>
+              <input
+                type="file"
+                id="project-excel-input-file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <button
+                onClick={openAddProject}
+                className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
+              >
+                <span>Add project</span>
+              </button>
+            </div>
           )}
         </div>
 
         {/* List current active cards */}
         <div className="grid grid-cols-1 gap-4">
-          {filteredProjects.length === 0 ? (
+          {!currentTabMonthFilter ? (
+            <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
+              <div className="text-base-muted font-bold text-sm">No projects selected.</div>
+              <div className="text-base-muted2 text-xs max-w-sm mx-auto">
+                Please select a specific month or choose "All Projects" from the dropdown above to display active schedules.
+              </div>
+            </div>
+          ) : filteredProjects.length === 0 ? (
             <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
               <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
               <div className="flex gap-2 justify-center">
