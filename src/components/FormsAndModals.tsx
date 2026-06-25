@@ -507,6 +507,7 @@ export function FormsAndModals({
         rowKey={projectsHook.depModalRowKey}
         projects={projectsHook.projects}
         onSave={projectsHook.saveDependenciesHandler}
+        selectedMonth={selectedMonth}
       />
 
       {/* Custom Logout Confirmation Modal */}

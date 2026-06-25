@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Project, Dependency } from '../types';
-import { esc } from '../utils/projectUtils';
+import { esc, getSequenceNumber } from '../utils/projectUtils';
 import { Link2, Trash2 } from 'lucide-react';
 
 interface DepModalProps {
@@ -9,6 +9,7 @@ interface DepModalProps {
   rowKey: string | null; // 'p:pid' or 'a:pid:aid'
   projects: Project[];
   onSave: (rowKey: string, preds: Dependency[], succs: Dependency[]) => void;
+  selectedMonth?: string;
 }
 
 export default function DepModal({
@@ -16,27 +17,37 @@ export default function DepModal({
   onClose,
   rowKey,
   projects,
-  onSave
+  onSave,
+  selectedMonth
 }: DepModalProps) {
   const [preds, setPreds] = useState<Dependency[]>([]);
   const [succs, setSuccs] = useState<Dependency[]>([]);
 
-  const [addPredTarget, setAddPredTarget] = useState<string>('');
+  // Text inputs for entering sequence numbers instead of select dropdowns
+  const [predInput, setPredInput] = useState<string>('');
   const [addPredType, setAddPredType] = useState<'FS' | 'SS' | 'FF' | 'SF'>('FS');
   const [addPredLag, setAddPredLag] = useState<string>('');
 
-  const [addSuccTarget, setAddSuccTarget] = useState<string>('');
+  const [succInput, setSuccInput] = useState<string>('');
   const [addSuccType, setAddSuccType] = useState<'FS' | 'SS' | 'FF' | 'SF'>('FS');
   const [addSuccLag, setAddSuccLag] = useState<string>('');
 
-  // Assemble full row mappings
-  const allRows: { key: string; label: string; type: 'project' | 'assembly' | 'task' }[] = [];
+  // Assemble full row mappings with sequence numbers
+  const allRows: { key: string; label: string; seq: string; type: 'project' | 'assembly' | 'task' }[] = [];
   projects.forEach(p => {
-    allRows.push({ key: `p:${p.id}`, label: `[P] ${p.name}`, type: 'project' });
+    const pKey = `p:${p.id}`;
+    const pSeq = getSequenceNumber(pKey, projects, selectedMonth);
+    allRows.push({ key: pKey, label: `[P] ${p.name}`, seq: pSeq, type: 'project' });
+
     (p.assemblies || []).forEach(a => {
-      allRows.push({ key: `a:${p.id}:${a.id}`, label: `[A] ${a.name} (${p.name})`, type: 'assembly' });
+      const aKey = `a:${p.id}:${a.id}`;
+      const aSeq = getSequenceNumber(aKey, projects, selectedMonth);
+      allRows.push({ key: aKey, label: `[A] ${a.name} (${p.name})`, seq: aSeq, type: 'assembly' });
+
       (a.tasks || []).forEach(t => {
-        allRows.push({ key: `t:${p.id}:${a.id}:${t.id}`, label: `[T] ${t.name} (${a.name})`, type: 'task' });
+        const tKey = `t:${p.id}:${a.id}:${t.id}`;
+        const tSeq = getSequenceNumber(tKey, projects, selectedMonth);
+        allRows.push({ key: tKey, label: `[T] ${t.name} (${a.name})`, seq: tSeq, type: 'task' });
       });
     });
   });
@@ -63,10 +74,10 @@ export default function DepModal({
       setPreds(JSON.parse(JSON.stringify(obj.predecessors || [])));
       setSuccs(JSON.parse(JSON.stringify(obj.successors || [])));
     }
-    setAddPredTarget('');
+    setPredInput('');
     setAddPredType('FS');
     setAddPredLag('');
-    setAddSuccTarget('');
+    setSuccInput('');
     setAddSuccType('FS');
     setAddSuccLag('');
   }, [isOpen, rowKey]);
@@ -76,14 +87,37 @@ export default function DepModal({
   const currentInfo = allRows.find(r => r.key === rowKey);
   if (!currentInfo) return null;
 
+  // Find a row key by matching the entered sequence string (e.g. "1.1.1")
+  const findRowBySeq = (seqStr: string) => {
+    const cleaned = seqStr.trim();
+    if (!cleaned) return null;
+    // exact match or match without trailing dot
+    return allRows.find(r => r.seq === cleaned || r.seq.replace(/\.$/, '') === cleaned);
+  };
+
+  const matchedPredRow = findRowBySeq(predInput);
+  const matchedSuccRow = findRowBySeq(succInput);
+
   const addLink = (dir: 'pred' | 'succ') => {
     const isPred = dir === 'pred';
-    const target = isPred ? addPredTarget : addSuccTarget;
+    const inputVal = isPred ? predInput : succInput;
     const type = isPred ? addPredType : addSuccType;
     const lagStr = isPred ? addPredLag : addSuccLag;
 
-    if (!target) {
-      alert('Please select a task constraint option.');
+    if (!inputVal) {
+      alert('Please write a sequence number.');
+      return;
+    }
+
+    const matched = findRowBySeq(inputVal);
+    if (!matched) {
+      alert(`No matching row found for sequence "${inputVal}". Please verify the project, sub-assembly, or task numbering.`);
+      return;
+    }
+
+    const target = matched.key;
+    if (target === rowKey) {
+      alert('Cannot connect a task constraint to itself.');
       return;
     }
 
@@ -91,18 +125,18 @@ export default function DepModal({
     const targetArr = isPred ? preds : succs;
 
     if (targetArr.some(x => x.key === target)) {
-      alert('A dependency layout connection already exists or is duplicated.');
+      alert('A dependency connection to this sequence number already exists.');
       return;
     }
 
     const newItem: Dependency = { key: target, type, lag };
     if (isPred) {
       setPreds([...preds, newItem]);
-      setAddPredTarget('');
+      setPredInput('');
       setAddPredLag('');
     } else {
       setSuccs([...succs, newItem]);
-      setAddSuccTarget('');
+      setSuccInput('');
       setAddSuccLag('');
     }
   };
@@ -141,11 +175,14 @@ export default function DepModal({
 
   const getRowLabel = (key: string) => {
     const r = allRows.find(x => x.key === key);
-    return r ? r.label : key;
+    if (r) {
+      return `${r.seq ? r.seq + ' ' : ''}${r.label}`;
+    }
+    return key;
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
+    <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none animate-fade-in">
       <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 ease-out duration-150">
         
         {/* Header */}
@@ -155,14 +192,14 @@ export default function DepModal({
             <div>
               <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Task Dependencies Map</h3>
               <p className="text-[11px] text-base-muted mt-0.5 max-w-[240px] sm:max-w-[380px] truncate" title={currentInfo.label}>
-                Editing: {currentInfo.label}
+                Editing: {getRowLabel(rowKey)}
               </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer font-bold text-sm">✕</button>
         </div>
 
-        {/* Body content (Predecessors on top, Successors bottom) */}
+        {/* Body content */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden p-5 space-y-5 text-xs">
           
           {/* Predecessors list management */}
@@ -209,41 +246,49 @@ export default function DepModal({
               )}
             </div>
 
-            {/* Add Predecessor selector */}
-            <div className="flex gap-2 items-center pt-1">
-              <select
-                value={addPredTarget}
-                onChange={(e) => setAddPredTarget(e.target.value)}
-                className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer truncate"
-              >
-                <option value="">— Select Predecessor —</option>
-                {allRows.filter(r => r.key !== rowKey).map(r => (
-                  <option key={r.key} value={r.key}>{r.label}</option>
-                ))}
-              </select>
-              <select
-                value={addPredType}
-                onChange={(e) => setAddPredType(e.target.value as any)}
-                className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
-              >
-                <option value="FS">FS</option>
-                <option value="SS">SS</option>
-                <option value="FF">FF</option>
-                <option value="SF">SF</option>
-              </select>
-              <input
-                type="number"
-                value={addPredLag}
-                onChange={(e) => setAddPredLag(e.target.value)}
-                placeholder="Lag"
-                className="w-14 px-2 py-1.5 bg-base-bg text-base-text border border-base-border rounded text-center text-xs outline-none"
-              />
-              <button
-                onClick={() => addLink('pred')}
-                className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer"
-              >
-                + Add
-              </button>
+            {/* Sequence Input for Predecessor */}
+            <div className="space-y-1 pt-1">
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={predInput}
+                  onChange={(e) => setPredInput(e.target.value)}
+                  placeholder="Enter predecessor sequence (e.g., 1.1.1)"
+                  className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
+                />
+                <select
+                  value={addPredType}
+                  onChange={(e) => setAddPredType(e.target.value as any)}
+                  className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
+                >
+                  <option value="FS">FS</option>
+                  <option value="SS">SS</option>
+                  <option value="FF">FF</option>
+                  <option value="SF">SF</option>
+                </select>
+                <input
+                  type="number"
+                  value={addPredLag}
+                  onChange={(e) => setAddPredLag(e.target.value)}
+                  placeholder="Lag"
+                  className="w-14 px-2 py-1.5 bg-base-bg text-base-text border border-base-border rounded text-center text-xs outline-none font-semibold"
+                />
+                <button
+                  onClick={() => addLink('pred')}
+                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors"
+                >
+                  + Add
+                </button>
+              </div>
+              {predInput && (
+                <div className="text-[10px] pl-1">
+                  {matchedPredRow ? (
+                    <span className="text-emerald-500 font-bold">✓ Connected element: {matchedPredRow.label}</span>
+                  ) : (
+                    <span className="text-rose-500 font-medium">✗ No matching item found for sequence "{predInput}"</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -291,41 +336,49 @@ export default function DepModal({
               )}
             </div>
 
-            {/* Add Successor selector */}
-            <div className="flex gap-2 items-center pt-1">
-              <select
-                value={addSuccTarget}
-                onChange={(e) => setAddSuccTarget(e.target.value)}
-                className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-bold cursor-pointer truncate"
-              >
-                <option value="">— Select Successor —</option>
-                {allRows.filter(r => r.key !== rowKey).map(r => (
-                  <option key={r.key} value={r.key}>{r.label}</option>
-                ))}
-              </select>
-              <select
-                value={addSuccType}
-                onChange={(e) => setAddSuccType(e.target.value as any)}
-                className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
-              >
-                <option value="FS">FS</option>
-                <option value="SS">SS</option>
-                <option value="FF">FF</option>
-                <option value="SF">SF</option>
-              </select>
-              <input
-                type="number"
-                value={addSuccLag}
-                onChange={(e) => setAddSuccLag(e.target.value)}
-                placeholder="Lag"
-                className="w-14 px-2 py-1.5 bg-base-bg text-base-text border border-base-border rounded text-center text-xs outline-none"
-              />
-              <button
-                onClick={() => addLink('succ')}
-                className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer"
-              >
-                + Add
-              </button>
+            {/* Sequence Input for Successor */}
+            <div className="space-y-1 pt-1">
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  value={succInput}
+                  onChange={(e) => setSuccInput(e.target.value)}
+                  placeholder="Enter successor sequence (e.g., 1.1.2)"
+                  className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
+                />
+                <select
+                  value={addSuccType}
+                  onChange={(e) => setAddSuccType(e.target.value as any)}
+                  className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
+                >
+                  <option value="FS">FS</option>
+                  <option value="SS">SS</option>
+                  <option value="FF">FF</option>
+                  <option value="SF">SF</option>
+                </select>
+                <input
+                  type="number"
+                  value={addSuccLag}
+                  onChange={(e) => setAddSuccLag(e.target.value)}
+                  placeholder="Lag"
+                  className="w-14 px-2 py-1.5 bg-base-bg text-base-text border border-base-border rounded text-center text-xs outline-none font-semibold"
+                />
+                <button
+                  onClick={() => addLink('succ')}
+                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors"
+                >
+                  + Add
+                </button>
+              </div>
+              {succInput && (
+                <div className="text-[10px] pl-1">
+                  {matchedSuccRow ? (
+                    <span className="text-emerald-500 font-bold">✓ Connected element: {matchedSuccRow.label}</span>
+                  ) : (
+                    <span className="text-rose-500 font-medium">✗ No matching item found for sequence "{succInput}"</span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 

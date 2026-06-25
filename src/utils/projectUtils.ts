@@ -89,6 +89,84 @@ export function esc(s?: string): string {
   return (s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+export function getSequenceNumber(rowKey: string, projects: Project[], selectedMonth?: string): string {
+  if (!rowKey) return '';
+  const parts = rowKey.split(':');
+  const typeLetter = parts[0];
+  const pId = parts[1];
+
+  let filtered = projects.filter(p => !p.isArchived);
+  if (selectedMonth) {
+    filtered = filtered.filter(p => {
+      if (p.targetMonth) {
+        return p.targetMonth === selectedMonth;
+      }
+      if (p.due) {
+        const d = new Date(p.due + 'T00:00:00');
+        if (!isNaN(d.getTime())) {
+          const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+          return k === selectedMonth;
+        }
+      }
+      const [yr, mo] = selectedMonth.split('-').map(Number);
+      const mStart = new Date(yr, mo - 1, 1);
+      const mEnd = new Date(yr, mo, 0);
+      const pS = p.start ? new Date(p.start + 'T00:00:00') : mStart;
+      const pE = p.due ? new Date(p.due + 'T00:00:00') : mEnd;
+      return (pS <= mEnd && pE >= mStart);
+    });
+  }
+
+  const activeProjects = filtered.length > 0 ? filtered : projects.filter(p => !p.isArchived);
+
+  const pi = activeProjects.findIndex(x => x.id === pId);
+  if (pi === -1) {
+    const fallbackPi = projects.filter(p => !p.isArchived).findIndex(x => x.id === pId);
+    if (fallbackPi === -1) return '';
+    const pSeq = `${fallbackPi + 1}`;
+    if (typeLetter === 'p') return pSeq;
+    const pObj = projects.find(x => x.id === pId);
+    if (!pObj) return pSeq;
+    if (typeLetter === 'a') {
+      const aId = parts[2];
+      const ai = (pObj.assemblies || []).findIndex(x => x.id === aId);
+      return ai !== -1 ? `${pSeq}.${ai + 1}` : pSeq;
+    }
+    if (typeLetter === 't') {
+      const aId = parts[2];
+      const tId = parts[3];
+      const aObj = (pObj.assemblies || []).find(x => x.id === aId);
+      if (!aObj) return pSeq;
+      const ai = (pObj.assemblies || []).findIndex(x => x.id === aId);
+      const ti = (aObj.tasks || []).findIndex(x => x.id === tId);
+      return ai !== -1 && ti !== -1 ? `${pSeq}.${ai + 1}.${ti + 1}` : pSeq;
+    }
+    return pSeq;
+  }
+
+  const pSeq = `${pi + 1}`;
+  if (typeLetter === 'p') return pSeq;
+
+  const pObj = activeProjects[pi];
+  if (typeLetter === 'a') {
+    const aId = parts[2];
+    const ai = (pObj.assemblies || []).findIndex(x => x.id === aId);
+    return ai !== -1 ? `${pSeq}.${ai + 1}` : pSeq;
+  }
+
+  if (typeLetter === 't') {
+    const aId = parts[2];
+    const tId = parts[3];
+    const aObj = (pObj.assemblies || []).find(x => x.id === aId);
+    if (!aObj) return pSeq;
+    const ai = (pObj.assemblies || []).findIndex(x => x.id === aId);
+    const ti = (aObj.tasks || []).findIndex(x => x.id === tId);
+    return ai !== -1 && ti !== -1 ? `${pSeq}.${ai + 1}.${ti + 1}` : pSeq;
+  }
+
+  return pSeq;
+}
+
 function csvEsc(val: any): string {
   if (val === null || val === undefined) return '';
   const str = String(val);

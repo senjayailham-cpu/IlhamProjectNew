@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Project, Assembly, Dependency } from '../types';
-import { calcPct, esc } from '../utils/projectUtils';
+import { calcPct, esc, getSequenceNumber } from '../utils/projectUtils';
 import { Maximize2, Minimize2, Link2, Calendar, LayoutGrid, CheckCircle } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 
@@ -416,10 +416,13 @@ export default function GanttView({
     ));
     const pAssigned = pAssignedList.length > 0 ? pAssignedList.join(', ') : '';
 
+    const pSeq = `${pi + 1}`;
+    const pNameWithSeq = `${pSeq}. ${p.name}`;
+
     rowList.push({
       key: pKey,
       type: 'project',
-      name: p.name,
+      name: pNameWithSeq,
       pct,
       start: p.start,
       due: p.due,
@@ -434,9 +437,28 @@ export default function GanttView({
     currentY += pRowH;
 
     if (!ganttCollapsed[p.id]) {
-      (p.assemblies || []).forEach(a => {
-        const aStart = a.start ? new Date(a.start + 'T00:00:00') : pStart;
-        const aEnd = a.finish ? new Date(a.finish + 'T00:00:00') : pEnd;
+      (p.assemblies || []).forEach((a, ai) => {
+        let aStart = a.start ? new Date(a.start + 'T00:00:00') : null;
+        let aEnd = a.finish ? new Date(a.finish + 'T00:00:00') : null;
+
+        // Auto-calculate from tasks if not explicitly set on the assembly
+        if (!aStart || !aEnd) {
+          const taskDates = (a.tasks || []).map(t => ({
+            start: t.date ? new Date(t.date + 'T00:00:00') : null,
+            end: t.finishDate ? new Date(t.finishDate + 'T00:00:00') : null
+          })).filter(d => d.start || d.end);
+
+          if (taskDates.length > 0) {
+            const minStart = new Date(Math.min(...taskDates.map(d => d.start?.getTime() || Infinity).filter(t => t !== Infinity)));
+            const maxEnd = new Date(Math.max(...taskDates.map(d => d.end?.getTime() || -Infinity).filter(t => t !== -Infinity)));
+            if (!aStart && minStart.getTime() !== Infinity) aStart = minStart;
+            if (!aEnd && maxEnd.getTime() !== -Infinity) aEnd = maxEnd;
+          }
+        }
+
+        if (!aStart) aStart = pStart;
+        if (!aEnd) aEnd = pEnd;
+
         const aTotalWeight = (a.tasks || []).reduce((sum, t) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
         const aWeightedScale = (a.tasks || []).reduce((sum, t) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
         const aPct = aTotalWeight > 0 ? Math.round(aWeightedScale / aTotalWeight) : 0;
@@ -452,13 +474,16 @@ export default function GanttView({
         ));
         const aAssigned = aAssignedList.length > 0 ? aAssignedList.join(', ') : '';
 
+        const aSeq = `${pSeq}.${ai + 1}`;
+        const aNameWithSeq = `${aSeq} ${a.name}`;
+
         rowList.push({
           key: aKey,
           type: 'assembly',
-          name: a.name,
+          name: aNameWithSeq,
           pct: aPct,
-          start: a.start,
-          due: a.finish,
+          start: a.start || (aStart ? aStart.toISOString().slice(0, 10) : undefined),
+          due: a.finish || (aEnd ? aEnd.toISOString().slice(0, 10) : undefined),
           color: pColor,
           height: aRowH,
           midY: aMidY,
@@ -471,7 +496,7 @@ export default function GanttView({
 
         // If the sub-assembly is NOT collapsed, push its tasks into the Gantt chart row list
         if (!ganttCollapsed[aKey]) {
-          (a.tasks || []).forEach(t => {
+          (a.tasks || []).forEach((t, ti) => {
             const tRowH = 28;
             const tKey = `t:${p.id}:${a.id}:${t.id}`;
             const tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
@@ -479,10 +504,13 @@ export default function GanttView({
 
             const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, !!t.isMilestone);
 
+            const tSeq = `${aSeq}.${ti + 1}`;
+            const tNameWithSeq = `${tSeq} ${t.name}`;
+
             rowList.push({
               key: tKey,
               type: 'task',
-              name: t.name,
+              name: tNameWithSeq,
               pct: t.pct || 0,
               start: t.date,
               due: t.finishDate,
@@ -929,6 +957,7 @@ export default function GanttView({
                   const pKey = `p:${p.id}`;
                   const isColl = !!ganttCollapsed[p.id];
                   const pct = calcPct(p);
+                  const pSeq = `${pi + 1}`;
 
                   return (
                     <React.Fragment key={p.id}>
@@ -951,8 +980,8 @@ export default function GanttView({
                                   <polyline points="9 18 15 12 9 6" />
                                 </svg>
                               </button>
-                              <span className="font-condensed font-extrabold text-sm text-base-text overflow-hidden text-ellipsis whitespace-nowrap block" title={p.name}>
-                                {p.name}
+                              <span className="font-condensed font-extrabold text-sm text-base-text overflow-hidden text-ellipsis whitespace-nowrap block" title={`${pSeq}. ${p.name}`}>
+                                {pSeq}. {p.name}
                               </span>
                             </div>
                             <span className="font-condensed font-extrabold text-xs text-base-muted pr-2">{pct}%</span>
@@ -975,12 +1004,13 @@ export default function GanttView({
 
                       {/* Assemblies list rows */}
                       {!isColl &&
-                        (p.assemblies || []).map(a => {
+                        (p.assemblies || []).map((a, ai) => {
                           const aKey = `a:${p.id}:${a.id}`;
                           const isAssemblyColl = !!ganttCollapsed[aKey];
                           const aTotalWeight = (a.tasks || []).reduce((sum, t) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
                           const aWeightedScale = (a.tasks || []).reduce((sum, t) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
                           const aPct = aTotalWeight > 0 ? Math.round(aWeightedScale / aTotalWeight) : 0;
+                          const aSeq = `${pSeq}.${ai + 1}`;
 
                           return (
                             <React.Fragment key={a.id}>
@@ -1006,8 +1036,8 @@ export default function GanttView({
                                         </svg>
                                       </button>
 
-                                      <span className="text-xs font-semibold text-base-muted2 overflow-hidden text-ellipsis whitespace-nowrap block" title={a.name}>
-                                        {a.name}
+                                      <span className="text-xs font-semibold text-base-muted2 overflow-hidden text-ellipsis whitespace-nowrap block" title={`${aSeq} ${a.name}`}>
+                                        {aSeq} {a.name}
                                       </span>
                                     </div>
                                     <span className="font-condensed font-bold text-xs text-base-muted2 pr-2">{aPct}%</span>
@@ -1030,15 +1060,16 @@ export default function GanttView({
 
                               {/* Task list rows under assembly */}
                               {!isAssemblyColl &&
-                                (a.tasks || []).map(t => {
+                                (a.tasks || []).map((t, ti) => {
+                                  const tSeq = `${aSeq}.${ti + 1}`;
                                   return (
                                     <tr key={t.id} className="h-7 border-b border-base-border/30 hover:bg-base-surface2/30 group bg-base-surface2/5">
                                       <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-10 pr-2">
                                         <div className="flex items-center gap-1.5 justify-between">
                                           <div className="flex items-center gap-1 min-w-0 flex-1">
                                             <span className="text-base-muted2/50 font-bold text-[10px] select-none">↳</span>
-                                            <span className="text-[11px] text-base-muted overflow-hidden text-ellipsis whitespace-nowrap block" title={t.name}>
-                                              {t.name}
+                                            <span className="text-[11px] text-base-muted overflow-hidden text-ellipsis whitespace-nowrap block" title={`${tSeq} ${t.name}`}>
+                                              {tSeq} {t.name}
                                             </span>
                                             <span 
                                               className="text-[9px] px-1 bg-base-accent/10 text-base-accent rounded font-mono font-bold shrink-0 select-none"
