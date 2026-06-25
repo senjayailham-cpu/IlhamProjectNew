@@ -630,38 +630,7 @@ function AppContent() {
                     badgeBg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
                   }
 
-                  if (t.id === 'gantt') {
-                    return (
-                      <a
-                        key={t.id}
-                        href="/?fullscreen=gantt"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all group relative cursor-pointer text-base-muted hover:text-base-text hover:bg-base-surface2"
-                      >
-                        <div className="relative flex items-center">
-                          <IconComponent className="h-4 w-4 shrink-0" />
-                        </div>
 
-                        {!sidebarCollapsed && (
-                          <span className="flex-1 text-left truncate">{t.label}</span>
-                        )}
-
-                        {!sidebarCollapsed && (
-                          <span className="text-[10px] text-base-accent/70 font-bold uppercase tracking-wider scale-90 bg-base-accent-dim/10 px-1 py-0.5 rounded border border-base-accent/25">
-                            New Tab
-                          </span>
-                        )}
-
-                        {/* Hover Tooltip for Collapsed Sidebar */}
-                        {sidebarCollapsed && (
-                          <div className="absolute left-full ml-3 px-2.5 py-1 rounded-md bg-base-surface border border-base-border text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text whitespace-nowrap opacity-0 group-hover:opacity-100 transition-all pointer-events-none z-50 shadow-lg">
-                            <span>{t.label} (New Tab)</span>
-                          </div>
-                        )}
-                      </a>
-                    );
-                  }
 
                   return (
                     <button
@@ -857,24 +826,7 @@ function AppContent() {
                         badgeBg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
                       }
 
-                      if (t.id === 'gantt') {
-                        return (
-                          <a
-                            key={t.id}
-                            href="/?fullscreen=gantt"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => setMobileMenuOpen(false)}
-                            className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer text-base-muted hover:text-base-text hover:bg-base-surface2"
-                          >
-                            <IconComponent className="h-4.5 w-4.5 shrink-0" />
-                            <span className="flex-1 text-left truncate">{t.label}</span>
-                            <span className="text-[10px] text-base-accent/70 font-bold uppercase tracking-wider bg-base-accent-dim/10 px-1 py-0.5 rounded border border-base-accent/25 leading-none">
-                              New Tab
-                            </span>
-                          </a>
-                        );
-                      }
+
 
                       return (
                         <button

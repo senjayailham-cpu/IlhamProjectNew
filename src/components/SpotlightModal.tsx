@@ -30,6 +30,7 @@ interface SpotlightModalProps {
   canDeleteTask?: boolean;
   currentUser?: User | null;
   canEditProjectParams?: boolean;
+  selectedMonth?: string;
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -55,7 +56,8 @@ export default function SpotlightModal({
   canAddDifficulty = true,
   canDeleteTask = true,
   currentUser = null,
-  canEditProjectParams = true
+  canEditProjectParams = true,
+  selectedMonth
 }: SpotlightModalProps) {
   const isAdmin = currentUser?.role === 'admin';
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
@@ -88,6 +90,10 @@ export default function SpotlightModal({
   if (!isOpen || !projectId) return null;
   const p = projects.find(x => x.id === projectId);
   if (!p) return null;
+
+  const modalTimesheets = selectedMonth
+    ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === selectedMonth)
+    : timesheets;
 
   const pct = calcPct(p);
   const { total: totalTasks, done: doneTasks } = calcTaskCounts(p);
@@ -350,7 +356,7 @@ export default function SpotlightModal({
                         </div>
                         <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap flex-shrink-0">
                           {(() => {
-                            const usedHours = getManHoursForAssembly(p.client || '', a.id, timesheets);
+                            const usedHours = getManHoursForAssembly(p.client || '', a.id, modalTimesheets);
                             const hasBudget = a.budgetHours !== undefined && a.budgetHours > 0;
                             const isOverBudget = hasBudget && usedHours >= a.budgetHours;
                             return (
@@ -810,7 +816,7 @@ export default function SpotlightModal({
           <div className="text-base-muted font-condensed font-bold uppercase tracking-wider text-[11px] flex flex-wrap items-center gap-x-3 gap-y-1 leading-none">
             <div className="flex items-center gap-1">
               <Clock className="h-4 w-4" />
-              <span>Man-hours used: {p.client ? fmtHrs(getManHoursForWorkOrder(p.client, timesheets)) : 0}h Total</span>
+              <span>Man-hours used: {p.client ? fmtHrs(getManHoursForWorkOrder(p.client, modalTimesheets)) : 0}h {selectedMonth ? `in ${selectedMonth}` : 'Total'}</span>
             </div>
             {(() => {
               const totalWire = (wireLogs || [])

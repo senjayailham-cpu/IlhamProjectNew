@@ -104,24 +104,16 @@ export default function DashboardView({
     const targetProjs = projects.filter(p => {
       if (dashLoc !== 'all' && p.location !== dashLoc) return false;
       if (!selectedMonth) return true;
-      const startM = (p.start || '').slice(0, 7);
-      const dueM = (p.due || '').slice(0, 7);
-      
-      let matchesTargetMonthOrPrev = false;
+
+      // If target month is set, strictly match it
       if (p.targetMonth) {
-        if (p.targetMonth === selectedMonth) {
-          matchesTargetMonthOrPrev = true;
-        } else {
-          const [ty, tm] = p.targetMonth.split('-').map(Number);
-          const prevMonthDate = new Date(ty, tm - 2, 1);
-          const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-          if (prevMonthStr === selectedMonth) {
-            matchesTargetMonthOrPrev = true;
-          }
-        }
+        return p.targetMonth === selectedMonth;
       }
 
-      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`) || matchesTargetMonthOrPrev;
+      const startM = (p.start || '').slice(0, 7);
+      const dueM = (p.due || '').slice(0, 7);
+
+      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`);
     });
 
     if (targetProjs.length === 0) {
@@ -438,6 +430,11 @@ export default function DashboardView({
 
   // Filter projects by month and workshop
   const filteredProjects = projects.filter(p => {
+    // If target month is set, strictly match it
+    if (p.targetMonth) {
+      return p.targetMonth === selectedMonth;
+    }
+
     if (p.status === 'completed' && p.completedDate) {
       // Completed projects belong to their completed month
       return p.completedDate.slice(0, 7) === selectedMonth;
@@ -445,21 +442,7 @@ export default function DashboardView({
     const createdYM = (p.start || p.created || '').slice(0, 7);
     const dueYM = (p.due || '').slice(0, 7);
 
-    let matchesTargetMonthOrPrev = false;
-    if (p.targetMonth) {
-      if (p.targetMonth === selectedMonth) {
-        matchesTargetMonthOrPrev = true;
-      } else {
-        const [ty, tm] = p.targetMonth.split('-').map(Number);
-        const prevMonthDate = new Date(ty, tm - 2, 1);
-        const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-        if (prevMonthStr === selectedMonth) {
-          matchesTargetMonthOrPrev = true;
-        }
-      }
-    }
-
-    return (createdYM === selectedMonth || dueYM === selectedMonth || matchesTargetMonthOrPrev || (createdYM === '' && isCurrentMonth()));
+    return (createdYM === selectedMonth || dueYM === selectedMonth || (createdYM === '' && isCurrentMonth()));
   }).filter(p => {
     if (dashLoc === 'all') return true;
     return p.location === dashLoc;
@@ -493,6 +476,18 @@ export default function DashboardView({
   const todayTimesheets = timesheets.filter(ts => ts.date === todayStr);
   const presentCount = todayTimesheets.filter(ts => ts.status === 'present' || ts.status === 'late').length;
   const absentCount = todayTimesheets.filter(ts => ts.status === 'absent' || ts.status === 'leave').length;
+
+  // Scoped timesheets for selected month and active workshop location
+  const scopedTimesheets = timesheets.filter(ts => {
+    if (!ts.date || ts.date.slice(0, 7) !== selectedMonth) return false;
+    if (dashLoc !== 'all') {
+      const targetProj = projects.find(
+        p => p.client && p.client.trim().toLowerCase() === (ts.workOrder || '').trim().toLowerCase()
+      );
+      if (!targetProj || targetProj.location !== dashLoc) return false;
+    }
+    return true;
+  });
 
   // Ring circular coordinates
   const radius = 36;
@@ -706,8 +701,8 @@ export default function DashboardView({
             <Clock className="h-4.5 w-4.5 text-base-blue" />
             Man-hours
           </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(timesheets))}h</div>
-          <p className="text-xs text-base-muted2 mt-1">logged total</p>
+          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
+          <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
         </div>
 
         {/* KPI: Present Today */}

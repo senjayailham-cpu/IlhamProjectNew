@@ -19,6 +19,7 @@ interface FormsAndModalsProps {
   setProjects: React.Dispatch<React.SetStateAction<any[]>>;
   verifyMarkChanged: () => void;
   logActivity: any;
+  selectedMonth?: string;
 }
 
 export function FormsAndModals({
@@ -33,6 +34,7 @@ export function FormsAndModals({
   setProjects,
   verifyMarkChanged,
   logActivity,
+  selectedMonth,
 }: FormsAndModalsProps) {
   const { currentUser } = authHook;
   const can = (perm: any) => canUtil(currentUser, perm);
@@ -456,6 +458,7 @@ export function FormsAndModals({
         projects={projectsHook.projects}
         timesheets={timesheets}
         wireLogs={wireLogs}
+        selectedMonth={selectedMonth}
         onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
         onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
         onUpdateProject={(updatedProj, logParams) => {

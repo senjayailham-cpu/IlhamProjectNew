@@ -194,6 +194,12 @@ export default function GanttView({
     if (statusFilter === 'completed' && p.status !== 'completed') return false;
     if (ganttProjFilter && p.id !== ganttProjFilter) return false;
 
+    // If target month is set, strictly use it
+    if (p.targetMonth) {
+      if (ganttMonthFilter && p.targetMonth !== ganttMonthFilter) return false;
+      return p.targetMonth === selectedMonth;
+    }
+
     if (ganttMonthFilter && p.due) {
       const d = new Date(p.due + 'T00:00:00');
       if (!isNaN(d.getTime())) {
@@ -202,24 +208,9 @@ export default function GanttView({
       } else return false;
     } else if (ganttMonthFilter && !p.due) return false;
 
-    // Boundary check
-    let matchesTargetMonthOrPrev = false;
-    if (p.targetMonth) {
-      if (p.targetMonth === selectedMonth) {
-        matchesTargetMonthOrPrev = true;
-      } else {
-        const [ty, tm] = p.targetMonth.split('-').map(Number);
-        const prevMonthDate = new Date(ty, tm - 2, 1);
-        const prevMonthStr = `${prevMonthDate.getFullYear()}-${String(prevMonthDate.getMonth() + 1).padStart(2, '0')}`;
-        if (prevMonthStr === selectedMonth) {
-          matchesTargetMonthOrPrev = true;
-        }
-      }
-    }
-
     const pS = p.start ? new Date(p.start + 'T00:00:00') : mStart;
     const pE = p.due ? new Date(p.due + 'T00:00:00') : mEnd;
-    return (pS <= mEnd && pE >= mStart) || matchesTargetMonthOrPrev;
+    return (pS <= mEnd && pE >= mStart);
   });
 
   // Calculate geometric columns based on window boundary sizes

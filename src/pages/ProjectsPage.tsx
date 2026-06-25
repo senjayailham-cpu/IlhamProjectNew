@@ -50,6 +50,10 @@ export function ProjectsPage({
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
 
+  const scopedTimesheetsForPage = currentTabMonthFilter
+    ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === currentTabMonthFilter)
+    : timesheets;
+
   const triggerExcelUpload = () => {
     const inputEl = document.getElementById('project-excel-input-file') as HTMLInputElement | null;
     if (inputEl) inputEl.click();
@@ -490,7 +494,7 @@ export function ProjectsPage({
                     </span>
 
                     {(() => {
-                      const usedHours = getManHoursForWorkOrder(p.client, timesheets);
+                      const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
                       const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
                       const isOverBudget = hasBudget && usedHours >= p.budgetHours;
                       return (
@@ -662,7 +666,7 @@ export function ProjectsPage({
                     {p.location === 'workshop1' ? 'W1' : 'W2'}
                   </span>
                   {(() => {
-                    const usedHours = getManHoursForWorkOrder(p.client, timesheets);
+                    const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
                     const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
                     const isOverBudget = hasBudget && usedHours >= p.budgetHours;
                     return (
