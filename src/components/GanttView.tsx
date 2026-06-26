@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Project, Assembly, Dependency } from '../types';
 import { calcPct, esc, getSequenceNumber } from '../utils/projectUtils';
-import { Maximize2, Minimize2, Link2, Calendar, LayoutGrid, CheckCircle } from 'lucide-react';
+import { Maximize2, Minimize2, Link2, Calendar, LayoutGrid, CheckCircle, Diamond } from 'lucide-react';
 import { useFirestore } from '../hooks/useFirestore';
 
 interface GanttViewProps {
@@ -67,6 +67,7 @@ export default function GanttView({
   }
 
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
 
   // Scoped project and month list configurations
   const [ganttMonthFilter, setGanttMonthFilter] = useState<string>('');
@@ -79,6 +80,47 @@ export default function GanttView({
 
   const toggleCollapse = (pid: string) => {
     setGanttCollapsed(prev => ({ ...prev, [pid]: !prev[pid] }));
+  };
+
+  const toggleTaskMilestone = (rowKey: string) => {
+    const parts = rowKey.split(':');
+    if (parts[0] !== 't') return;
+    const pId = parts[1];
+    const aId = parts[2];
+    const tId = parts[3];
+
+    const updatedProjects = projects.map(p => {
+      if (p.id !== pId) return p;
+
+      const updatedAssemblies = (p.assemblies || []).map(asm => {
+        if (asm.id !== aId) return asm;
+        const updatedTasks = (asm.tasks || []).map(tsk => {
+          if (tsk.id !== tId) return tsk;
+          const nextIsMilestone = !tsk.isMilestone;
+          return {
+            ...tsk,
+            isMilestone: nextIsMilestone,
+            finishDate: nextIsMilestone ? (tsk.date || new Date().toISOString().slice(0, 10)) : tsk.finishDate
+          };
+        });
+        return {
+          ...asm,
+          tasks: updatedTasks
+        };
+      });
+      return {
+        ...p,
+        assemblies: updatedAssemblies
+      };
+    });
+
+    if (setProjects) {
+      setProjects(updatedProjects);
+    }
+    const changedP = updatedProjects.find(p => p.id === pId);
+    if (changedP) {
+      saveItem('projects', changedP);
+    }
   };
 
   const shiftGanttMonth = (delta: number) => {
@@ -405,9 +447,13 @@ export default function GanttView({
     const pMidY = currentY + pRowH / 2;
     const pKey = `p:${p.id}`;
 
-    const pStart = p.start ? new Date(p.start + 'T00:00:00') : mStart;
-    const pEnd = p.due ? new Date(p.due + 'T00:00:00') : mEnd;
-    const isMilestone = p.start && p.due && p.start === p.due;
+    const isPDrag = dragState && dragState.rowKey === pKey;
+    const pStartStr = isPDrag ? (dragState.tempStart || p.start) : p.start;
+    const pEndStr = isPDrag ? (dragState.tempDue || p.due) : p.due;
+
+    const pStart = pStartStr ? new Date(pStartStr + 'T00:00:00') : mStart;
+    const pEnd = pEndStr ? new Date(pEndStr + 'T00:00:00') : mEnd;
+    const isMilestone = pStartStr && pEndStr && pStartStr === pEndStr;
 
     const { barStartX, barEndX } = getBarOffsets(pStart, pEnd, !!isMilestone);
 
@@ -424,20 +470,24 @@ export default function GanttView({
       type: 'project',
       name: pNameWithSeq,
       pct,
-      start: p.start,
-      due: p.due,
+      start: pStartStr,
+      due: pEndStr,
       color: pColor,
       height: pRowH,
       midY: pMidY,
       barStartX,
       barEndX,
       activityCode: p.client ? p.client.toUpperCase() : `PRJ-${p.id.slice(0, 4).toUpperCase()}`,
-      assignedResources: pAssigned
+      assignedResources: pAssigned,
+      isMilestone: !!isMilestone
     });
     currentY += pRowH;
 
     if (!ganttCollapsed[p.id]) {
       (p.assemblies || []).forEach((a, ai) => {
+        const aKey = `a:${p.id}:${a.id}`;
+        const isADrag = dragState && dragState.rowKey === aKey;
+
         let aStart = a.start ? new Date(a.start + 'T00:00:00') : null;
         let aEnd = a.finish ? new Date(a.finish + 'T00:00:00') : null;
 
@@ -459,13 +509,18 @@ export default function GanttView({
         if (!aStart) aStart = pStart;
         if (!aEnd) aEnd = pEnd;
 
+        // If dragging this assembly, override the start and end dates with the live drag state
+        if (isADrag && dragState.tempStart && dragState.tempDue) {
+          aStart = new Date(dragState.tempStart + 'T00:00:00');
+          aEnd = new Date(dragState.tempDue + 'T00:00:00');
+        }
+
         const aTotalWeight = (a.tasks || []).reduce((sum, t) => sum + (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
         const aWeightedScale = (a.tasks || []).reduce((sum, t) => sum + (t.pct || 0) * (typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1), 0);
         const aPct = aTotalWeight > 0 ? Math.round(aWeightedScale / aTotalWeight) : 0;
 
         const aRowH = 36;
         const aMidY = currentY + aRowH / 2;
-        const aKey = `a:${p.id}:${a.id}`;
 
         const { barStartX: aBarStartX, barEndX: aBarEndX } = getBarOffsets(aStart, aEnd, false);
 
@@ -482,15 +537,16 @@ export default function GanttView({
           type: 'assembly',
           name: aNameWithSeq,
           pct: aPct,
-          start: a.start || (aStart ? aStart.toISOString().slice(0, 10) : undefined),
-          due: a.finish || (aEnd ? aEnd.toISOString().slice(0, 10) : undefined),
+          start: isADrag ? dragState.tempStart : (a.start || (aStart ? aStart.toISOString().slice(0, 10) : undefined)),
+          due: isADrag ? dragState.tempDue : (a.finish || (aEnd ? aEnd.toISOString().slice(0, 10) : undefined)),
           color: pColor,
           height: aRowH,
           midY: aMidY,
           barStartX: aBarStartX,
           barEndX: aBarEndX,
           activityCode: a.id ? `ASY-${a.id.slice(0, 4).toUpperCase()}` : 'ASY-100',
-          assignedResources: aAssigned
+          assignedResources: aAssigned,
+          isMilestone: false
         });
         currentY += aRowH;
 
@@ -499,10 +555,18 @@ export default function GanttView({
           (a.tasks || []).forEach((t, ti) => {
             const tRowH = 28;
             const tKey = `t:${p.id}:${a.id}:${t.id}`;
-            const tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
-            const tEnd = t.finishDate ? new Date(t.finishDate + 'T00:00:00') : aEnd;
+            const isTDrag = dragState && dragState.rowKey === tKey;
 
-            const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, !!t.isMilestone);
+            let tStart = t.date ? new Date(t.date + 'T00:00:00') : aStart;
+            let tEnd = t.finishDate ? new Date(t.finishDate + 'T00:00:00') : aEnd;
+
+            if (isTDrag && dragState.tempStart && dragState.tempDue) {
+              tStart = new Date(dragState.tempStart + 'T00:00:00');
+              tEnd = new Date(dragState.tempDue + 'T00:00:00');
+            }
+
+            const isMilestone = t.isMilestone || (tStart && tEnd && tStart.getTime() === tEnd.getTime());
+            const { barStartX: tBarStartX, barEndX: tBarEndX } = getBarOffsets(tStart, tEnd, !!isMilestone);
 
             const tSeq = `${aSeq}.${ti + 1}`;
             const tNameWithSeq = `${tSeq} ${t.name}`;
@@ -512,8 +576,8 @@ export default function GanttView({
               type: 'task',
               name: tNameWithSeq,
               pct: t.pct || 0,
-              start: t.date,
-              due: t.finishDate,
+              start: isTDrag ? dragState.tempStart : t.date,
+              due: isTDrag ? dragState.tempDue : t.finishDate,
               color: pColor,
               height: tRowH,
               midY: currentY + tRowH / 2,
@@ -522,7 +586,7 @@ export default function GanttView({
               activityCode: t.id ? `ACT-${t.id.slice(0, 4).toUpperCase()}` : 'ACT-100',
               difficulty: typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1,
               assignedResources: t.assigned || '',
-              isMilestone: !!t.isMilestone
+              isMilestone: !!isMilestone
             });
             currentY += tRowH;
           });
@@ -577,28 +641,63 @@ export default function GanttView({
         let startPtX = dType === 'FS' || dType === 'FF' ? x1End : x1Start;
         let endPtX = dType === 'FS' || dType === 'SS' ? x2Start : x2End;
 
-        const runOut = 12; // horizontal lead distance outer limits
-        const leadPtX = startPtX + runOut;
-        const subPtX = endPtX - runOut;
-
+        // Custom, beautifully curved connection line logic using Cubic Bezier
         let pathStr = '';
-        if (leadPtX <= subPtX) {
-          pathStr = `M ${startPtX} ${y1} L ${leadPtX} ${y1} L ${leadPtX} ${y2} L ${endPtX} ${y2}`;
+        if (startPtX <= endPtX) {
+          const cp1x = startPtX + Math.max(20, (endPtX - startPtX) / 2);
+          const cp2x = endPtX - Math.max(20, (endPtX - startPtX) / 2);
+          pathStr = `M ${startPtX} ${y1} C ${cp1x} ${y1}, ${cp2x} ${y2}, ${endPtX} ${y2}`;
         } else {
+          // Backward S-loop curve when there is overlapping/out-of-sequence dates
+          const cp1x = startPtX + 25;
+          const cp2x = cp1x;
           const midY = (y1 + y2) / 2;
-          pathStr = `M ${startPtX} ${y1} L ${leadPtX} ${y1} L ${leadPtX} ${midY} L ${subPtX} ${midY} L ${subPtX} ${y2} L ${endPtX} ${y2}`;
+          const cp3x = endPtX - 25;
+          const cp4x = cp3x;
+          pathStr = `M ${startPtX} ${y1} ` +
+                    `C ${cp1x} ${y1}, ${cp2x} ${midY}, ${(cp1x + cp3x) / 2} ${midY} ` +
+                    `C ${cp4x} ${midY}, ${cp4x} ${y2}, ${endPtX} ${y2}`;
         }
 
         // Draw arrowheads
         const arrowSz = 6;
         const arrowPath = `M ${endPtX - arrowSz} ${y2 - arrowSz / 2} L ${endPtX} ${y2} L ${endPtX - arrowSz} ${y2 + arrowSz / 2} Z`;
 
+        const isHovered = hoveredRowKey === row.key || hoveredRowKey === dep.key;
+        const opacity = hoveredRowKey ? (isHovered ? "1.0" : "0.15") : "0.75";
+        const strokeWidth = isHovered ? "2.5" : "1.75";
+        const strokeDasharray = isHovered ? undefined : "4,3";
+
         linkPaths.push(
-          <g key={`${row.key}-from-${dep.key}`}>
-            <path d={pathStr} fill="none" stroke={color} strokeWidth="1.5" strokeDasharray="3,3" opacity="0.65" />
-            <path d={arrowPath} fill={color} stroke={color} strokeWidth="1.5" />
+          <g key={`${row.key}-from-${dep.key}`} style={{ transition: 'all 0.2s ease-in-out' }}>
+            {/* Backdrop glowing background path for the hovered state */}
+            {isHovered && (
+              <path 
+                d={pathStr} 
+                fill="none" 
+                stroke={color} 
+                strokeWidth="5" 
+                opacity="0.3" 
+                style={{ filter: 'blur(2px)' }} 
+              />
+            )}
+            <path 
+              d={pathStr} 
+              fill="none" 
+              stroke={color} 
+              strokeWidth={strokeWidth} 
+              strokeDasharray={strokeDasharray} 
+              opacity={opacity} 
+            />
+            <path 
+              d={arrowPath} 
+              fill={color} 
+              stroke={color} 
+              strokeWidth="1.5" 
+              opacity={opacity} 
+            />
             {dep.lag ? (
-              <g transform={`translate(${(startPtX + endPtX) / 2}, ${(y1 + y2) / 2})`}>
+              <g transform={`translate(${(startPtX + endPtX) / 2}, ${(y1 + y2) / 2})`} opacity={opacity}>
                 <rect x="-14" y="-7" width="28" height="14" rx="3" fill="var(--surface)" stroke="var(--border)" strokeWidth="0.5" />
                 <text x="0" y="3" textAnchor="middle" fill={color} className="font-condensed font-extrabold text-[9px]">
                   {dep.lag > 0 ? `+${dep.lag}` : dep.lag}d
@@ -962,7 +1061,13 @@ export default function GanttView({
                   return (
                     <React.Fragment key={p.id}>
                       {/* Project Head row */}
-                      <tr className="h-11 border-b border-base-border hover:bg-base-surface2/30 group">
+                      <tr 
+                        onMouseEnter={() => setHoveredRowKey(pKey)}
+                        onMouseLeave={() => setHoveredRowKey(null)}
+                        className={`h-11 border-b border-base-border hover:bg-base-surface2/30 group ${
+                          hoveredRowKey === pKey ? 'bg-base-surface2/20' : ''
+                        }`}
+                      >
                         <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-3 pr-2">
                           <div className="flex items-center gap-1.5 w-full h-full justify-between">
                             <div className="flex items-center gap-1 min-w-0 flex-1">
@@ -1014,7 +1119,13 @@ export default function GanttView({
 
                           return (
                             <React.Fragment key={a.id}>
-                              <tr className="h-9 border-b border-base-border/50 hover:bg-base-surface2/30 group">
+                              <tr 
+                                onMouseEnter={() => setHoveredRowKey(aKey)}
+                                onMouseLeave={() => setHoveredRowKey(null)}
+                                className={`h-9 border-b border-base-border/50 hover:bg-base-surface2/30 group ${
+                                  hoveredRowKey === aKey ? 'bg-base-surface2/20' : ''
+                                }`}
+                              >
                                 <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-6 pr-2">
                                   <div className="flex items-center gap-1.5 justify-between">
                                     <div className="flex items-center gap-1.5 min-w-0 flex-1">
@@ -1063,7 +1174,14 @@ export default function GanttView({
                                 (a.tasks || []).map((t, ti) => {
                                   const tSeq = `${aSeq}.${ti + 1}`;
                                   return (
-                                    <tr key={t.id} className="h-7 border-b border-base-border/30 hover:bg-base-surface2/30 group bg-base-surface2/5">
+                                    <tr 
+                                      key={t.id} 
+                                      onMouseEnter={() => setHoveredRowKey(`t:${p.id}:${a.id}:${t.id}`)}
+                                      onMouseLeave={() => setHoveredRowKey(null)}
+                                      className={`h-7 border-b border-base-border/30 hover:bg-base-surface2/30 group bg-base-surface2/5 ${
+                                        hoveredRowKey === `t:${p.id}:${a.id}:${t.id}` ? 'bg-base-surface2/20' : ''
+                                      }`}
+                                    >
                                       <td className="sticky left-0 bg-base-surface border-r-2 border-base-border shadow-[4px_0_8px_-4px_rgba(0,0,0,0.15)] z-10 pl-10 pr-2">
                                         <div className="flex items-center gap-1.5 justify-between">
                                           <div className="flex items-center gap-1 min-w-0 flex-1">
@@ -1080,6 +1198,20 @@ export default function GanttView({
                                           </div>
                                           <div className="flex items-center gap-1.5 shrink-0">
                                             <span className="font-condensed font-bold text-[10px] text-base-muted2 pr-1">{t.pct}%</span>
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                toggleTaskMilestone(`t:${p.id}:${a.id}:${t.id}`);
+                                              }}
+                                              className={`p-1 rounded transition-colors cursor-pointer flex items-center justify-center shrink-0 ${
+                                                t.isMilestone
+                                                  ? 'text-amber-500 bg-amber-500/10 hover:bg-amber-500/20'
+                                                  : 'text-base-muted2/60 hover:text-amber-500 hover:bg-amber-500/10 opacity-0 group-hover:opacity-100 focus:opacity-100'
+                                              }`}
+                                              title={t.isMilestone ? "Unmark Milestone" : "Mark as Milestone"}
+                                            >
+                                              <Diamond className={`h-2.5 w-2.5 ${t.isMilestone ? 'fill-amber-500' : ''}`} />
+                                            </button>
                                             {renderDepsBadges(`t:${p.id}:${a.id}:${t.id}`)}
                                           </div>
                                         </div>
@@ -1111,22 +1243,13 @@ export default function GanttView({
             {/* Absolute Bars Graphic Overlay Container */}
             <div className="absolute inset-0 pointer-events-none z-20">
               {rowList.map(row => {
-                const { key, type, color, pct, start, due, midY, barStartX: origStartX, barEndX: origEndX, activityCode, assignedResources } = row;
-                if (origStartX === undefined || origEndX === undefined) return null;
+                const { key, type, color, pct, start, due, midY, barStartX, barEndX, activityCode, assignedResources } = row;
+                if (barStartX === undefined || barEndX === undefined) return null;
 
                 const isCurrentDrag = dragState && dragState.rowKey === key;
-                const currentStartStr = isCurrentDrag ? (dragState.tempStart || start) : start;
-                const currentDueStr = isCurrentDrag ? (dragState.tempDue || due) : due;
-
                 const isProject = type === 'project';
                 const isAssembly = type === 'assembly';
-                const isMilestone = row.isMilestone || (currentStartStr && currentDueStr && currentStartStr === currentDueStr);
-
-                const currentStart = currentStartStr ? new Date(currentStartStr + 'T00:00:00') : mStart;
-                const currentDue = currentDueStr ? new Date(currentDueStr + 'T00:00:00') : mEnd;
-
-                const { barStartX, barEndX } = getBarOffsets(currentStart, currentDue, isMilestone);
-                if (barStartX === undefined || barEndX === undefined) return null;
+                const isMilestone = row.isMilestone;
 
                 const barWidth = barEndX - barStartX;
 
@@ -1142,7 +1265,9 @@ export default function GanttView({
                   return (
                     <div 
                       key={key}
-                      className={`absolute flex items-center pointer-events-none text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`}
+                      onMouseEnter={() => setHoveredRowKey(key)}
+                      onMouseLeave={() => setHoveredRowKey(null)}
+                      className={`absolute flex items-center pointer-events-auto text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`}
                       style={{
                         left: `${barStartX - diamondSz / 2}px`,
                         top: `${midY - diamondSz / 2}px`,
@@ -1172,9 +1297,9 @@ export default function GanttView({
                         <span className="text-indigo-600 dark:text-indigo-400 font-extrabold">{activityCode || 'MILESTONE'}</span>
                         <span className="text-slate-300 dark:text-slate-600">|</span>
                         <span className="font-semibold">{row.name}</span>
-                        {currentStartStr && (
+                        {start && (
                           <span className="text-slate-400 dark:text-slate-500 font-medium">
-                            ({new Date(currentStartStr).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})
+                            ({new Date(start + 'T00:00:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })})
                           </span>
                         )}
                         {isCurrentDrag && (
@@ -1193,7 +1318,9 @@ export default function GanttView({
                 return (
                   <div 
                     key={key} 
-                    className={`absolute flex items-center pointer-events-none text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`} 
+                    onMouseEnter={() => setHoveredRowKey(key)}
+                    onMouseLeave={() => setHoveredRowKey(null)}
+                    className={`absolute flex items-center pointer-events-auto text-xs ${isCurrentDrag ? 'z-50' : 'z-30'}`} 
                     style={{ 
                       left: `${barStartX}px`, 
                       top: `${midY - barH / 2}px`, 
