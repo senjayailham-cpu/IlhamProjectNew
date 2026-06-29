@@ -671,6 +671,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       link.click();
     } catch (error) {
       console.error('Error exporting PNG:', error);
+      setToastMsg('Export PNG failed. Please try again.');
     } finally {
       restoreCssRules();
       setIsExporting(false);
@@ -785,6 +786,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       doc.save(`gantt_${project.name || 'project'}_${date}.pdf`);
     } catch (error) {
       console.error('Error exporting PDF:', error);
+      setToastMsg('Export PDF failed. Please try again.');
     } finally {
       restoreCssRules();
       setIsExporting(false);
@@ -1048,8 +1050,9 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
 
       const aTotalTasks = asm.tasks?.length || 0;
-      const aDoneTasks = asm.tasks?.filter(t => t.done).length || 0;
-      const aPct = aTotalTasks > 0 ? Math.round((aDoneTasks / aTotalTasks) * 100) : 0;
+      const aPct = aTotalTasks > 0
+        ? Math.round(asm.tasks.reduce((sum, t) => sum + (t.pct || 0), 0) / aTotalTasks)
+        : 0;
 
       const assemblyWbs = `1.${asmIdx + 1}`;
 
@@ -1759,8 +1762,9 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
           if (tx >= sx + 20) {
             path = `M ${sx} ${sy} H ${sx + 10} V ${ty} H ${tx}`;
           } else {
-            const midY = (sy + ty) / 2;
-            path = `M ${sx} ${sy} H ${sx + 10} V ${midY} H ${tx - 10} V ${ty} H ${tx}`;
+            const detourX = Math.max(sx, tx) + 20;
+            const midY = Math.min(sy, ty) - 16;
+            path = `M ${sx} ${sy} V ${midY} H ${detourX} V ${ty} H ${tx}`;
           }
           markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SS') {
@@ -2693,7 +2697,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                 className="absolute pointer-events-none"
                 style={{ 
                   position: 'absolute',
-                  top: '56px', // sits below the 56px header
+                  top: 0,
                   left: 0,
                   width: `${totalTimelineDays * pixelsPerDay}px`, 
                   height: `${rows.length * 32}px`,
@@ -2748,7 +2752,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
             data-export-hide="true"
             className="absolute bg-base-surface border border-base-border rounded-lg shadow-md p-3 text-xs z-[200] max-w-sm font-sans pointer-events-none animate-fade-in print:hidden"
             style={{ 
-              left: `${Math.min(hoveredTask.x, totalTimelineDays * pixelsPerDay - 280)}px`, 
+              left: `${Math.max(0, Math.min(hoveredTask.x, totalTimelineDays * pixelsPerDay - 280))}px`, 
               top: `${hoveredTask.y - (showBaseline && hoveredTask.row.baselineDate ? 180 : 120)}px` 
             }}
           >
