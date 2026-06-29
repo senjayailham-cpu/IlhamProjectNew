@@ -466,7 +466,7 @@ export default function UsersAccessView({
                 <option value="manager">Manager (Edit Scope)</option>
                 <option value="coordinator">Coordinator (Update Tasks)</option>
                 <option value="viewer">Viewer (Read Only)</option>
-                <option value="facility maintanance">Facility Maintanance</option>
+                <option value="facility maintanance">Facility Maintenance</option>
                 <option value="quality control">Quality Control</option>
                 <option value="safety">Safety</option>
                 <option value="project control">Project Control</option>
@@ -587,7 +587,7 @@ export default function UsersAccessView({
                       <option value="manager">Manager</option>
                       <option value="coordinator">Coordinator</option>
                       <option value="viewer">Viewer</option>
-                      <option value="facility maintanance">Facility Maintanance</option>
+                      <option value="facility maintanance">Facility Maintenance</option>
                       <option value="quality control">Quality Control</option>
                       <option value="safety">Safety</option>
                       <option value="project control">Project Control</option>

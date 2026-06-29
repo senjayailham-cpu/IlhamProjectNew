@@ -7,3 +7,4 @@ export * from './InspectionsPage';
 export * from './WireLogPage';
 export * from './ReportPage';
 export * from './UsersPage';
+export * from './GanttPage';

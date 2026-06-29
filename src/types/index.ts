@@ -16,7 +16,7 @@ export enum UserRole {
   Manager = 'manager',
   Coordinator = 'coordinator',
   Viewer = 'viewer',
-  FacilityMaintanance = 'facility maintanance',
+  FacilityMaintenance = 'facility maintanance', // Firestore-compat: intentional legacy spelling, do not change
   QualityControl = 'quality control',
   Safety = 'safety',
   ProjectControl = 'project control'
@@ -109,6 +109,8 @@ export interface Task {
   predecessors?: Dependency[];
   successors?: Dependency[];
   isMilestone?: boolean;
+  baselineDate?: string;      // tanggal start baseline (YYYY-MM-DD)
+  baselineFinish?: string;    // tanggal finish baseline (YYYY-MM-DD)
 }
 
 export interface Dependency {
@@ -127,6 +129,8 @@ export interface Assembly {
   budgetHours?: number;
   predecessors?: Dependency[];
   successors?: Dependency[];
+  baselineStart?: string;
+  baselineFinish?: string;
 }
 
 export interface Project {
@@ -147,6 +151,9 @@ export interface Project {
   budgetHours?: number;
   isArchived?: boolean;
   targetMonth?: string;
+  baselineStart?: string;
+  baselineDue?: string;
+  baselineSetAt?: string;     // timestamp kapan baseline di-set
 }
 
 export interface Employee {

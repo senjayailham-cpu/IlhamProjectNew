@@ -75,7 +75,7 @@ export default function DashboardView({
 
     // Use current real date as boundaries
     const today = new Date();
-    const todayStr = '2026-06-15'; // Syncing with system default current local time
+    const todayStr = new Date().toISOString().slice(0, 10);
 
     const list: Array<{
       day: string;

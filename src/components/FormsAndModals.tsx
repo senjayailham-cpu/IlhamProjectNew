@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BookOpen, LogOut, Save, Trash2, Key } from 'lucide-react';
 import TimesheetModal from './TimesheetModal';
-import SpotlightModal from './SpotlightModal';
 import DepModal from './DepModal';
 import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
+
+const SpotlightModal = lazy(() => import('./SpotlightModal'));
 
 interface FormsAndModalsProps {
   authHook: ReturnType<typeof import('../hooks/useAuth').useAuth>;
@@ -169,7 +170,7 @@ export function FormsAndModals({
                   className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold text-base-text"
                 />
                 <p className="text-[9px] text-base-muted font-normal leading-tight">
-                  Reference month for Gantt & Dashboard. Start date defaults to the month prior if blank.
+                  Reference month for Dashboard. Start date defaults to the month prior if blank.
                 </p>
               </div>
 
@@ -451,54 +452,57 @@ export function FormsAndModals({
       />
 
       {/* Project Spotlight Inspector */}
-      <SpotlightModal
-        isOpen={projectsHook.spotlightOpen}
-        onClose={() => projectsHook.setSpotlightOpen(false)}
-        projectId={projectsHook.spotlightProjectId}
-        projects={projectsHook.projects}
-        timesheets={timesheets}
-        wireLogs={wireLogs}
-        selectedMonth={selectedMonth}
-        onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
-        onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
-        onUpdateProject={(updatedProj, logParams) => {
-          let nextProj = updatedProj;
-          if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
-            nextProj = {
-              ...updatedProj,
-              status: 'completed' as any,
-              completedDate: new Date().toISOString().slice(0, 10)
-            };
-          } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
-            nextProj = {
-              ...updatedProj,
-              status: 'active' as any,
-              completedDate: null
-            };
-          }
-          setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
-          saveItem('projects', nextProj);
-          verifyMarkChanged();
-          if (logParams) {
-            logActivity(
-              logParams.type,
-              logParams.action,
-              nextProj.id,
-              nextProj.name,
-              logParams.asmName,
-              logParams.task,
-              logParams.oldP,
-              logParams.newP
-            );
-          }
-        }}
-        canUpdateTask={can('updateTask')}
-        canAddTaskInline={can('addTaskInline')}
-        canAddDifficulty={can('addDifficulty')}
-        canDeleteTask={can('deleteTask')}
-        currentUser={currentUser}
-        canEditProjectParams={can('editProjectParams')}
-      />
+      <Suspense fallback={null}>
+        <SpotlightModal
+          isOpen={projectsHook.spotlightOpen}
+          onClose={() => projectsHook.setSpotlightOpen(false)}
+          projectId={projectsHook.spotlightProjectId}
+          projects={projectsHook.projects}
+          timesheets={timesheets}
+          wireLogs={wireLogs}
+          selectedMonth={selectedMonth}
+          onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
+          onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
+          onUpdateProject={(updatedProj, logParams) => {
+            let nextProj = updatedProj;
+            if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
+              nextProj = {
+                ...updatedProj,
+                status: 'completed' as any,
+                completedDate: new Date().toISOString().slice(0, 10)
+              };
+            } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
+              nextProj = {
+                ...updatedProj,
+                status: 'active' as any,
+                completedDate: null
+              };
+            }
+            setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
+            saveItem('projects', nextProj);
+            verifyMarkChanged();
+            if (logParams) {
+              logActivity(
+                logParams.type,
+                logParams.action,
+                nextProj.id,
+                nextProj.name,
+                logParams.asmName,
+                logParams.task,
+                logParams.oldP,
+                logParams.newP
+              );
+            }
+          }}
+          canUpdateTask={can('updateTask')}
+          canAddTaskInline={can('addTaskInline')}
+          canAddDifficulty={can('addDifficulty')}
+          canDeleteTask={can('deleteTask')}
+          currentUser={currentUser}
+          canEditProjectParams={can('editProjectParams')}
+          onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
+        />
+      </Suspense>
 
       {/* Dependency Link Editor Modal */}
       <DepModal

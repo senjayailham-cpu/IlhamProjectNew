@@ -1,62 +1,70 @@
 import { Project, Employee, TimesheetEntry, ActivityLog, User, ProblemReport, InspectionRequest, WireLog } from './types';
 import { sha256 } from './utils/helpers';
 
-// Standard seed users (passwords are 'admin123' for admin, '123456' for rizki/hasrad)
+const adminPass = import.meta.env.VITE_DEFAULT_ADMIN_PASS || 'admin123';
+const managerPass = import.meta.env.VITE_DEFAULT_MANAGER_PASS || '123456';
+const staffPass = import.meta.env.VITE_DEFAULT_STAFF_PASS || '123456';
+
 export const DEFAULT_USERS = async (): Promise<User[]> => {
+  const [adminHash, managerHash, staffHash] = await Promise.all([
+    sha256(adminPass),
+    sha256(managerPass),
+    sha256(staffPass)
+  ]);
   return [
     {
       id: 'admin',
       name: 'Administrator',
       role: 'admin',
-      passHash: await sha256('admin123')
+      passHash: adminHash
     },
     {
       id: 'ilhamsenjaya',
       name: 'Admin Ilham Senjaya',
       role: 'admin',
-      passHash: await sha256('Asniwati@132')
+      passHash: adminHash
     },
     {
       id: 'irwanr',
       name: 'Admin Irwan R',
       role: 'admin',
-      passHash: await sha256('admin123')
+      passHash: adminHash
     },
     {
       id: 'rizki',
       name: 'Rizki PPC',
       role: 'manager',
-      passHash: await sha256('123456')
+      passHash: managerHash
     },
     {
       id: 'hasrad',
       name: 'Hasrad Rudin Ismail',
       role: 'manager',
-      passHash: await sha256('123456')
+      passHash: managerHash
     },
     {
       id: 'facility',
       name: 'Facility Specialist',
-      role: 'facility maintanance',
-      passHash: await sha256('123456')
+      role: 'facility maintanance', // role string kept for DB compatibility
+      passHash: staffHash
     },
     {
       id: 'qc',
       name: 'QC Inspector',
       role: 'quality control',
-      passHash: await sha256('123456')
+      passHash: staffHash
     },
     {
       id: 'safety_user',
       name: 'Safety Officer',
       role: 'safety',
-      passHash: await sha256('123456')
+      passHash: staffHash
     },
     {
       id: 'pc',
       name: 'Project Controller',
       role: 'project control',
-      passHash: await sha256('123456')
+      passHash: staffHash
     }
   ];
 };

@@ -14,7 +14,7 @@ export function LoginPage() {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center p-4 bg-linear-to-b from-[#e8e8e8] to-[#f4f5f7] dark:from-[#0d1014] dark:to-[#151921] overflow-y-auto z-50 animate-fade-in">
-      <div className="bg-base-surface shadow-modal border border-base-border2 p-8 rounded-2xl w-full max-w-sm flex flex-col space-y-6 animate-in zoom-in-95 ease-out duration-150 relative">
+      <div className="bg-base-surface shadow-modal border border-base-border2 p-8 rounded-2xl w-full max-w-md flex flex-col space-y-6 animate-in zoom-in-95 ease-out duration-150 relative">
         
         {/* Logo & Identity banner */}
         <div className="flex flex-col items-center space-y-1.5 text-center">
@@ -52,6 +52,7 @@ export function LoginPage() {
             />
           </div>
           <button
+            id="login-submit-btn"
             type="submit"
             className="w-full py-2.5 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-sm tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
           >

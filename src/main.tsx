@@ -2,6 +2,10 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { checkDefaultCredentials } from './utils/securityWarning';
+
+// Call checkDefaultCredentials to warn in development mode if weak passwords are used
+checkDefaultCredentials();
 
 // Safe sandbox event interceptors for iframe runtime environments
 if (typeof window !== 'undefined') {

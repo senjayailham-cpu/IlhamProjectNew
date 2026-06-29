@@ -8,7 +8,6 @@ const activeTabsList = [
   { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
   { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
   { id: 'current', label: 'Current Projects', icon: 'Folder', access: 'all' },
-  { id: 'gantt', label: 'Gantt', icon: 'Clock', access: 'all' },
   { id: 'completed', label: 'Project Complete', icon: 'CheckCircle', access: 'all' },
   { id: 'archive', label: 'Archive', icon: 'Archive', access: 'all' },
   { id: 'tray', label: 'Project Tray', icon: 'Folder', access: 'all' },

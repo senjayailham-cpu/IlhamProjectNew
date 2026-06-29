@@ -133,7 +133,7 @@ export default function Focus24View({
   const standardDepartments = [
     'Project Control',
     'Production',
-    'Facility & Maintanance',
+    'Facility & Maintenance',
     'Lifting',
     'Blasting & Painting',
     'Quality Control',
