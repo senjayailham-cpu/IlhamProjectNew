@@ -86,11 +86,15 @@ const overrideCssRules = () => {
     try {
       originalGetPropertyValue = CSSStyleDeclaration.prototype.getPropertyValue;
       CSSStyleDeclaration.prototype.getPropertyValue = function(property: string) {
-        const val = originalGetPropertyValue.call(this, property);
-        if (typeof val === 'string' && (val.includes('oklab') || val.includes('oklch') || val.includes('light-dark'))) {
+        try {
+          const val = originalGetPropertyValue.call(this, property);
+          if (typeof val === 'string' && (val.includes('oklab') || val.includes('oklch') || val.includes('light-dark'))) {
+            return 'rgba(0, 0, 0, 0)';
+          }
+          return val;
+        } catch (e) {
           return 'rgba(0, 0, 0, 0)';
         }
-        return val;
       };
     } catch (e) {
       console.warn('Failed to override getPropertyValue', e);
@@ -103,9 +107,9 @@ const overrideCssRules = () => {
     try {
       originalGetComputedStyle = window.getComputedStyle;
       window.getComputedStyle = function(element: Element, pseudoElt?: string | null) {
-        const style = originalGetComputedStyle.call(this, element, pseudoElt);
+        const style = originalGetComputedStyle.call(window, element, pseudoElt);
         return new Proxy(style, {
-          get(target, prop, receiver) {
+          get(target, prop) {
             if (prop === 'getPropertyValue') {
               return function(propertyName: string) {
                 const val = target.getPropertyValue(propertyName);
@@ -115,7 +119,10 @@ const overrideCssRules = () => {
                 return val;
               };
             }
-            const val = Reflect.get(target, prop, receiver);
+            const val = Reflect.get(target, prop);
+            if (typeof val === 'function') {
+              return val.bind(target);
+            }
             if (typeof val === 'string' && (val.includes('oklab') || val.includes('oklch') || val.includes('light-dark'))) {
               return 'rgba(0, 0, 0, 0)';
             }
@@ -982,8 +989,8 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     return { timelineStart: start, timelineEnd: end, totalTimelineDays: days };
   }, [pStartD, pDueD, zoomMode]);
 
-  // Generate list of Gantt rows (including WBS numbering)
-  const rows = useMemo(() => {
+  // Generate full unfiltered list of Gantt rows (including WBS numbering)
+  const allRows = useMemo(() => {
     const result: GanttRow[] = [];
 
     // 1. Project level summary row
@@ -1098,6 +1105,11 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       }
     });
 
+    return result;
+  }, [project, collapsedAsms, pStart, pDue, pStartD, pDueD]);
+
+  // Generate list of filtered Gantt rows
+  const rows = useMemo(() => {
     const todayStr = new Date().toISOString().slice(0, 10);
     const searchLower = searchQuery.toLowerCase().trim();
 
@@ -1124,14 +1136,14 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
     // First, identify all task rows (level 2) that match the filter
     const matchingTaskIds = new Set<string>();
-    result.forEach(row => {
+    allRows.forEach(row => {
       if (row.level === 2 && matchesFilter(row)) {
         matchingTaskIds.add(row.id);
       }
     });
 
     // Filter rows based on matching level 2 tasks and hierarchy rules
-    const filteredRows = result.filter(row => {
+    const filteredRows = allRows.filter(row => {
       if (row.level === 0) return true; // Level 0 (project row) selalu tampil
       if (row.level === 2) {
         return matchingTaskIds.has(row.id);
@@ -1142,7 +1154,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
           return true;
         }
         // If search is not empty, check if at least one child task of this assembly matches the filter
-        const childTasks = result.filter(r => r.level === 2 && r.parentAsmId === row.id);
+        const childTasks = allRows.filter(r => r.level === 2 && r.parentAsmId === row.id);
         const hasMatchingChild = childTasks.some(r => matchingTaskIds.has(r.id));
         return hasMatchingChild;
       }
@@ -1150,16 +1162,16 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     });
 
     return filteredRows;
-  }, [project, collapsedAsms, pStart, pDue, pStartD, pDueD, searchQuery, statusFilter]);
+  }, [allRows, searchQuery, statusFilter]);
 
   // WBS Map lookup for predecessor parsing
   const wbsMap = useMemo(() => {
     const map: Record<string, string> = {};
-    rows.forEach(r => {
+    allRows.forEach(r => {
       map[r.wbs] = r.id;
     });
     return map;
-  }, [rows]);
+  }, [allRows]);
 
   // Index map of visible rows for fast O(1) dependency calculations
   const rowIndexMap = useMemo(() => {
@@ -1731,10 +1743,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         const sy = sourceRowIdx * 32 + 16;
         const ty = targetIdx * 32 + 16;
 
-        const todayStr = new Date().toISOString().slice(0, 10);
-        const sourceOverdue = sourceRow.pct < 100 && sourceRow.finish && sourceRow.finish < todayStr;
-        const targetOverdue = targetRow.pct < 100 && targetRow.finish && targetRow.finish < todayStr;
-        const isCritical = !!(sourceOverdue && targetOverdue);
+        const isCritical = criticalPathIds.has(sourceRow.id) && criticalPathIds.has(targetRow.id);
 
         let path = '';
         let markerEnd = 'url(#arrow-right)';
@@ -1747,11 +1756,12 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         if (dep.type === 'FS') {
           const sx = sx_end;
           const tx = tx_start;
+          const detourX = Math.max(sx, tx) + 20;
           if (tx >= sx + 20) {
             path = `M ${sx} ${sy} H ${sx + 10} V ${ty} H ${tx}`;
           } else {
-            const midY = (sy + ty) / 2;
-            path = `M ${sx} ${sy} H ${sx + 10} V ${midY} H ${tx - 10} V ${ty} H ${tx}`;
+            const midY = Math.min(sy, ty) - 16;
+            path = `M ${sx} ${sy} V ${midY} H ${detourX} V ${ty} H ${tx}`;
           }
           markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SS') {
@@ -1765,7 +1775,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
           const tx = tx_end;
           const maxX = Math.max(sx, tx) + 16;
           path = `M ${sx} ${sy} H ${maxX} V ${ty} H ${tx}`;
-          markerEnd = 'url(#arrow-left)';
+          markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SF') {
           const sx = sx_start;
           const tx = tx_end;
@@ -2151,22 +2161,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                       <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
                     )}
 
-                    {/* WBS prefix label */}
-                    {row.level === 0 && (
-                      <span className="font-mono font-bold text-[11px] text-base-accent mr-1.5 bg-base-accent-dim px-1 rounded">
-                        {row.wbs}
-                      </span>
-                    )}
-                    {row.level === 1 && (
-                      <span className="font-mono font-semibold text-[10px] text-base-muted/80 mr-1.5">
-                        {row.wbs}
-                      </span>
-                    )}
-                    {row.level === 2 && (
-                      <span className="font-mono text-[9px] text-base-muted/70 mr-1.5">
-                        {row.wbs}
-                      </span>
-                    )}
+
 
                     <span className={`truncate select-none ${
                       row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :

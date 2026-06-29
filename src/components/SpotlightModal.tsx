@@ -69,7 +69,6 @@ export default function SpotlightModal({
 }: SpotlightModalProps) {
   const isAdmin = currentUser?.role === 'admin';
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
-  const [spotlightTab, setSpotlightTab] = useState<'overview' | 'gantt'>('overview');
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
   const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
   const [quickTaskDates, setQuickTaskDates] = useState<Record<string, string>>({});
@@ -263,70 +262,40 @@ export default function SpotlightModal({
           </div>
         </div>
 
-        {/* Tab Selection Switcher */}
-        <div className="flex border-b border-base-border bg-base-surface select-none shrink-0">
-          <button
-            onClick={() => setSpotlightTab('overview')}
-            className={`flex-1 py-2.5 text-xs font-condensed font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-              spotlightTab === 'overview'
-                ? 'border-base-accent text-base-accent bg-base-accent-dim/10 font-extrabold'
-                : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-surface2/50'
-            }`}
-          >
-            📋 Project Overview
-          </button>
-          <button
-            onClick={() => setSpotlightTab('gantt')}
-            className={`flex-1 py-2.5 text-xs font-condensed font-bold uppercase tracking-wider transition-all border-b-2 cursor-pointer ${
-              spotlightTab === 'gantt'
-                ? 'border-base-accent text-base-accent bg-base-accent-dim/10 font-extrabold'
-                : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-surface2/50'
-            }`}
-          >
-            📊 Gantt Timeline
-          </button>
-        </div>
-
         {/* Center body columns */}
-        {spotlightTab === 'overview' ? (
-          <SpotlightOverviewTab
-            project={p}
-            asms={asms}
-            modalTimesheets={modalTimesheets}
-            wireLogs={wireLogs}
-            collapsedAsms={collapsedAsms}
-            toggleAsm={toggleAsm}
-            canAddTaskInline={canAddTaskInline}
-            canAddDifficulty={canAddDifficulty}
-            canDeleteTask={canDeleteTask}
-            canUpdateTask={canUpdateTask}
-            isAdmin={isAdmin}
-            isOverdue={isOverdue}
-            onUpdateProject={onUpdateProject}
-            onEditAssembly={onEditAssembly}
-            setActiveTargetAssembly={setActiveTargetAssembly}
-            setTaskName={setTaskName}
-            setTaskDifficulty={setTaskDifficulty}
-            setTaskStart={setTaskStart}
-            setTaskFinish={setTaskFinish}
-            setIsTaskModalOpen={setIsTaskModalOpen}
-            setDeleteConfirm={setDeleteConfirm}
-            quickTaskNames={quickTaskNames}
-            setQuickTaskNames={setQuickTaskNames}
-            quickTaskDifficulty={quickTaskDifficulty}
-            setQuickTaskDifficulty={setQuickTaskDifficulty}
-            quickTaskDates={quickTaskDates}
-            setQuickTaskDates={setQuickTaskDates}
-            quickTaskFinishDates={quickTaskFinishDates}
-            setQuickTaskFinishDates={setQuickTaskFinishDates}
-            handleQuickAddTask={handleQuickAddTask}
-            onOpenDepModal={onOpenDepModal}
-          />
-        ) : (
-          <div className="flex-1 overflow-hidden flex flex-col p-5 bg-base-bg">
-            <GanttView project={p} onOpenDepModal={onOpenDepModal} />
-          </div>
-        )}
+        <SpotlightOverviewTab
+          project={p}
+          asms={asms}
+          modalTimesheets={modalTimesheets}
+          wireLogs={wireLogs}
+          collapsedAsms={collapsedAsms}
+          toggleAsm={toggleAsm}
+          canAddTaskInline={canAddTaskInline}
+          canAddDifficulty={canAddDifficulty}
+          canDeleteTask={canDeleteTask}
+          canUpdateTask={canUpdateTask}
+          isAdmin={isAdmin}
+          isOverdue={isOverdue}
+          onUpdateProject={onUpdateProject}
+          onEditAssembly={onEditAssembly}
+          setActiveTargetAssembly={setActiveTargetAssembly}
+          setTaskName={setTaskName}
+          setTaskDifficulty={setTaskDifficulty}
+          setTaskStart={setTaskStart}
+          setTaskFinish={setTaskFinish}
+          setIsTaskModalOpen={setIsTaskModalOpen}
+          setDeleteConfirm={setDeleteConfirm}
+          quickTaskNames={quickTaskNames}
+          setQuickTaskNames={setQuickTaskNames}
+          quickTaskDifficulty={quickTaskDifficulty}
+          setQuickTaskDifficulty={setQuickTaskDifficulty}
+          quickTaskDates={quickTaskDates}
+          setQuickTaskDates={setQuickTaskDates}
+          quickTaskFinishDates={quickTaskFinishDates}
+          setQuickTaskFinishDates={setQuickTaskFinishDates}
+          handleQuickAddTask={handleQuickAddTask}
+          onOpenDepModal={onOpenDepModal}
+        />
 
       {/* Global properties edit button */}
         <div className="px-5 py-3 border-t border-base-border flex items-center justify-between flex-shrink-0 bg-base-surface2 text-xs">
