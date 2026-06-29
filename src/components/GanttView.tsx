@@ -1756,12 +1756,11 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         if (dep.type === 'FS') {
           const sx = sx_end;
           const tx = tx_start;
-          const detourX = Math.max(sx, tx) + 20;
           if (tx >= sx + 20) {
             path = `M ${sx} ${sy} H ${sx + 10} V ${ty} H ${tx}`;
           } else {
-            const midY = Math.min(sy, ty) - 16;
-            path = `M ${sx} ${sy} V ${midY} H ${detourX} V ${ty} H ${tx}`;
+            const midY = (sy + ty) / 2;
+            path = `M ${sx} ${sy} H ${sx + 10} V ${midY} H ${tx - 10} V ${ty} H ${tx}`;
           }
           markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SS') {
