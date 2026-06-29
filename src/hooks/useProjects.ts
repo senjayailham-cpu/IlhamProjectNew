@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Project, Assembly, Task } from '../types';
 import { uid, calcPct } from '../utils';
 import { useFirestore } from './useFirestore';
+import { propagateAllSchedules } from '../utils/projectUtils';
 
 export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
@@ -506,8 +507,17 @@ export function useProjects(
     }
 
     if (nextP !== p) {
-      setProjects(prev => prev.map(proj => proj.id === p.id ? nextP : proj));
-      saveItem('projects', nextP);
+      const updatedProjects = projects.map(proj => proj.id === p.id ? nextP : proj);
+      const finalProjects = propagateAllSchedules(updatedProjects, targetKey);
+      
+      setProjects(finalProjects);
+      
+      finalProjects.forEach(proj => {
+        const orig = projects.find(x => x.id === proj.id);
+        if (orig && JSON.stringify(orig) !== JSON.stringify(proj)) {
+          saveItem('projects', proj);
+        }
+      });
     }
 
     verifyMarkChanged();

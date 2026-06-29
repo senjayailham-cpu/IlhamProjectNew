@@ -1,4 +1,4 @@
-import { Project, TimesheetEntry } from '../types';
+import { Project, TimesheetEntry, Dependency } from '../types';
 
 export function calcTaskCounts(project: Project) {
   let total = 0;
@@ -226,5 +226,193 @@ export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntr
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+}
+
+interface FlatItem {
+  key: string;
+  type: 'project' | 'assembly' | 'task';
+  name: string;
+  start: string;
+  due: string;
+  predecessors: Dependency[];
+  successors: Dependency[];
+  duration: number;
+  isMilestone: boolean;
+  pId: string;
+  aId?: string;
+  tId?: string;
+}
+
+function getDaysBetween(startStr: string, endStr: string): number {
+  if (!startStr || !endStr) return 1;
+  const s = new Date(startStr + 'T00:00:00');
+  const e = new Date(endStr + 'T00:00:00');
+  const diffTime = e.getTime() - s.getTime();
+  if (isNaN(diffTime)) return 1;
+  return Math.max(1, Math.round(diffTime / (1000 * 60 * 60 * 24)) + 1);
+}
+
+function addDaysToDateStr(dateStr: string, days: number): string {
+  if (!dateStr) return '';
+  const d = new Date(dateStr + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+interface Edge {
+  toKey: string;
+  type: 'FS' | 'SS' | 'FF' | 'SF';
+  lag: number;
+}
+
+function getOutgoingEdges(itemKey: string, flatItems: FlatItem[]): Edge[] {
+  const edges: Edge[] = [];
+  const currentItem = flatItems.find(x => x.key === itemKey);
+  if (!currentItem) return edges;
+
+  // 1. Direct successors declared on currentItem
+  (currentItem.successors || []).forEach(s => {
+    edges.push({ toKey: s.key, type: s.type || 'FS', lag: s.lag || 0 });
+  });
+
+  // 2. Predecessor links declared on other items pointing to currentItem
+  flatItems.forEach(other => {
+    (other.predecessors || []).forEach(p => {
+      if (p.key === itemKey) {
+        edges.push({ toKey: other.key, type: p.type || 'FS', lag: p.lag || 0 });
+      }
+    });
+  });
+
+  return edges;
+}
+
+export function propagateAllSchedules(projects: Project[], changedKey: string): Project[] {
+  const flatItems: FlatItem[] = [];
+  projects.forEach(p => {
+    const pKey = `p:${p.id}`;
+    const pStart = p.start || '';
+    const pDue = p.due || '';
+    const pDur = getDaysBetween(pStart, pDue);
+    
+    flatItems.push({
+      key: pKey,
+      type: 'project',
+      name: p.name,
+      start: pStart,
+      due: pDue,
+      predecessors: p.predecessors || [],
+      successors: p.successors || [],
+      duration: pDur,
+      isMilestone: false,
+      pId: p.id
+    });
+
+    (p.assemblies || []).forEach(a => {
+      const aKey = `a:${p.id}:${a.id}`;
+      const aStart = a.start || '';
+      const aDue = a.finish || '';
+      const aDur = getDaysBetween(aStart, aDue);
+
+      flatItems.push({
+        key: aKey,
+        type: 'assembly',
+        name: a.name,
+        start: aStart,
+        due: aDue,
+        predecessors: a.predecessors || [],
+        successors: a.successors || [],
+        duration: aDur,
+        isMilestone: false,
+        pId: p.id,
+        aId: a.id
+      });
+
+      (a.tasks || []).forEach(t => {
+        const tKey = `t:${p.id}:${a.id}:${t.id}`;
+        const tStart = t.date || '';
+        const tDue = t.finishDate || '';
+        const tDur = getDaysBetween(tStart, tDue);
+        const isMilestone = !!(t.isMilestone || (tStart && tDue && tStart === tDue));
+
+        flatItems.push({
+          key: tKey,
+          type: 'task',
+          name: t.name,
+          start: tStart,
+          due: tDue,
+          predecessors: t.predecessors || [],
+          successors: t.successors || [],
+          duration: tDur,
+          isMilestone,
+          pId: p.id,
+          aId: a.id,
+          tId: t.id
+        });
+      });
+    });
+  });
+
+  const queue = [changedKey];
+  const visitCount: Record<string, number> = {};
+
+  while (queue.length > 0) {
+    const currentKey = queue.shift()!;
+    visitCount[currentKey] = (visitCount[currentKey] || 0) + 1;
+    if (visitCount[currentKey] > 15) {
+      continue;
+    }
+
+    const currentItem = flatItems.find(x => x.key === currentKey);
+    if (!currentItem) continue;
+
+    const edges = getOutgoingEdges(currentKey, flatItems);
+    edges.forEach(edge => {
+      const successor = flatItems.find(x => x.key === edge.toKey);
+      if (!successor) return;
+
+      let proposedStart = successor.start;
+      let proposedDue = successor.due;
+
+      if (edge.type === 'FS') {
+        proposedStart = addDaysToDateStr(currentItem.due, 1 + edge.lag);
+        proposedDue = addDaysToDateStr(proposedStart, successor.duration - 1);
+      } else if (edge.type === 'SS') {
+        proposedStart = addDaysToDateStr(currentItem.start, edge.lag);
+        proposedDue = addDaysToDateStr(proposedStart, successor.duration - 1);
+      } else if (edge.type === 'FF') {
+        proposedDue = addDaysToDateStr(currentItem.due, edge.lag);
+        proposedStart = addDaysToDateStr(proposedDue, -(successor.duration - 1));
+      } else if (edge.type === 'SF') {
+        proposedDue = addDaysToDateStr(currentItem.start, -1 + edge.lag);
+        proposedStart = addDaysToDateStr(proposedDue, -(successor.duration - 1));
+      }
+
+      if (proposedStart !== successor.start || proposedDue !== successor.due) {
+        successor.start = proposedStart;
+        successor.due = proposedDue;
+        queue.push(successor.key);
+      }
+    });
+  }
+
+  return projects.map(p => {
+    const pFlat = flatItems.find(x => x.key === `p:${p.id}`);
+    const nextP = pFlat ? { ...p, start: pFlat.start, due: pFlat.due } : p;
+
+    const nextAssemblies = (nextP.assemblies || []).map(a => {
+      const aFlat = flatItems.find(x => x.key === `a:${p.id}:${a.id}`);
+      const nextA = aFlat ? { ...a, start: aFlat.start, finish: aFlat.due } : a;
+
+      const nextTasks = (nextA.tasks || []).map(t => {
+        const tFlat = flatItems.find(x => x.key === `t:${p.id}:${a.id}:${t.id}`);
+        return tFlat ? { ...t, date: tFlat.start, finishDate: tFlat.due } : t;
+      });
+
+      return { ...nextA, tasks: nextTasks };
+    });
+
+    return { ...nextP, assemblies: nextAssemblies };
+  });
 }
 
