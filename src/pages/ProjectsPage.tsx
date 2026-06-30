@@ -118,6 +118,8 @@ export function ProjectsPage({
           assembliesMap: Record<string, {
             name: string;
             budgetHours?: number;
+            start?: string;    // BARU
+            finish?: string;   // BARU
             tasks: {
               name: string;
               isMilestone?: boolean;
@@ -159,14 +161,23 @@ export function ProjectsPage({
           const assemblyBudgetHoursRaw = parseFloat(cellVal(9));
           const assemblyBudgetHours = isNaN(assemblyBudgetHoursRaw) ? undefined : assemblyBudgetHoursRaw;
 
-          const taskName = cellVal(10);
-          const isMilestoneRaw = cellVal(11).toLowerCase();
+          let assemblyStart = parseExcelDate(row[10]);   // BARU - kolom K
+          let assemblyFinish = parseExcelDate(row[11]);  // BARU - kolom L
+
+          if (assemblyStart && assemblyFinish && new Date(assemblyFinish) < new Date(assemblyStart)) {
+            // Tandai sebagai invalid, jangan dipakai (biarkan fallback ke auto-calc dari task)
+            assemblyStart = undefined;
+            assemblyFinish = undefined;
+          }
+
+          const taskName = cellVal(12);                     // geser dari 10 -> 12
+          const isMilestoneRaw = cellVal(13).toLowerCase(); // geser dari 11 -> 13
           const isMilestone = (isMilestoneRaw === 'yes' || isMilestoneRaw === 'true' || isMilestoneRaw === '1' || isMilestoneRaw === 'y');
 
-          const taskStart = parseExcelDate(row[12]);
-          const taskFinish = parseExcelDate(row[13]);
+          const taskStart = parseExcelDate(row[14]);  // geser dari 12 -> 14
+          const taskFinish = parseExcelDate(row[15]); // geser dari 13 -> 15
 
-          const difficultyRaw = parseInt(cellVal(14), 10);
+          const difficultyRaw = parseInt(cellVal(16), 10); // geser dari 14 -> 16
           const difficulty = isNaN(difficultyRaw) || difficultyRaw <= 0 ? 1 : difficultyRaw;
 
           const pKey = pName.toLowerCase() + '||' + pWorkOrder.toLowerCase();
@@ -197,11 +208,15 @@ export function ProjectsPage({
               pGroup.assembliesMap[aKey] = {
                 name: assemblyName,
                 budgetHours: assemblyBudgetHours,
+                start: assemblyStart,
+                finish: assemblyFinish,
                 tasks: []
               };
             }
             const aGroup = pGroup.assembliesMap[aKey];
             if (assemblyBudgetHours && !aGroup.budgetHours) aGroup.budgetHours = assemblyBudgetHours;
+            if (assemblyStart && !aGroup.start) aGroup.start = assemblyStart;
+            if (assemblyFinish && !aGroup.finish) aGroup.finish = assemblyFinish;
 
             if (taskName) {
               aGroup.tasks.push({
@@ -232,6 +247,8 @@ export function ProjectsPage({
               id: uid(),
               name: a.name,
               budgetHours: a.budgetHours,
+              start: a.start,    // BARU - jika kosong, GanttView akan auto-calc dari tasks
+              finish: a.finish,  // BARU - jika kosong, GanttView akan auto-calc dari tasks
               tasks
             };
           });
@@ -269,6 +286,100 @@ export function ProjectsPage({
       ev.target.value = '';
     };
     r.readAsArrayBuffer(file);
+  };
+
+  const handleDownloadTemplate = () => {
+    try {
+      const headers = [
+        'Project Name', 'Work Order', 'Start Date', 'Due Date', 'Category',
+        'Location', 'Budget Hours', 'Target Month', 'Assembly Name',
+        'Assembly Budget Hours', 'Assembly Start', 'Assembly Finish',
+        'Task Name', 'Is Milestone', 'Task Start', 'Task Finish', 'Difficulty'
+      ];
+
+      const sampleRows = [
+        [
+          'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
+          'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
+          '40', '2026-07-02', '2026-07-15',
+          'Design Structural Framing', 'No', '2026-07-02', '2026-07-08', '2'
+        ],
+        [
+          'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
+          'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
+          '40', '2026-07-02', '2026-07-15',
+          'Material Procurement', 'No', '2026-07-09', '2026-07-14', '1'
+        ],
+        [
+          'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
+          'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
+          '40', '2026-07-02', '2026-07-15',
+          'Alpha Phase Milestone', 'Yes', '2026-07-15', '2026-07-15', '1'
+        ]
+      ];
+
+      const cols = [
+        { wch: 22 }, // Project Name
+        { wch: 14 }, // Work Order
+        { wch: 12 }, // Start Date
+        { wch: 12 }, // Due Date
+        { wch: 12 }, // Category
+        { wch: 16 }, // Location
+        { wch: 14 }, // Budget Hours
+        { wch: 14 }, // Target Month
+        { wch: 22 }, // Assembly Name
+        { wch: 20 }, // Assembly Budget Hours
+        { wch: 14 }, // Assembly Start
+        { wch: 14 }, // Assembly Finish
+        { wch: 24 }, // Task Name
+        { wch: 12 }, // Is Milestone
+        { wch: 12 }, // Task Start
+        { wch: 12 }, // Task Finish
+        { wch: 10 }  // Difficulty
+      ];
+
+      const guideHeaders = ['Nama Kolom', 'Wajib', 'Format/Tipe', 'Keterangan'];
+      const guideRows = [
+        ['Project Name', 'Ya', 'Teks', 'Nama project utama (misal: Austin Batam Project A)'],
+        ['Work Order', 'Ya', 'Teks', 'Nomor Work Order unik'],
+        ['Start Date', 'Ya', 'YYYY-MM-DD', 'Tanggal mulai project'],
+        ['Due Date', 'Ya', 'YYYY-MM-DD', 'Tanggal tenggat project'],
+        ['Category', 'Ya', 'Tray / Non-Tray', 'Kategori project ("Tray" atau "Non-Tray")'],
+        ['Location', 'Tidak', 'Teks', 'Lokasi pengerjaan project'],
+        ['Budget Hours', 'Tidak', 'Angka', 'Total budget man-hours project'],
+        ['Target Month', 'Tidak', 'YYYY-MM', 'Bulan target pengerjaan (misal: 2026-07)'],
+        ['Assembly Name', 'Ya', 'Teks', 'Nama assembly/grup di dalam project'],
+        ['Assembly Budget Hours', 'Tidak', 'Angka', 'Budget man-hours untuk assembly ini'],
+        ['Assembly Start', 'Tidak', 'YYYY-MM-DD', 'Opsional. Jika kosong, otomatis dihitung dari tanggal task termuda di assembly tsb'],
+        ['Assembly Finish', 'Tidak', 'YYYY-MM-DD', 'Opsional. Jika kosong, otomatis dihitung dari tanggal task terlambat di assembly tsb'],
+        ['Task Name', 'Ya', 'Teks', 'Nama task di dalam assembly'],
+        ['Is Milestone', 'Tidak', 'Yes / No', 'Apakah task ini berupa milestone (Yes jika ya, default No)'],
+        ['Task Start', 'Ya', 'YYYY-MM-DD', 'Tanggal mulai task'],
+        ['Task Finish', 'Ya', 'YYYY-MM-DD', 'Tanggal selesai task'],
+        ['Difficulty', 'Tidak', 'Angka', 'Bobot tingkat kesulitan task (default: 1)']
+      ];
+
+      const wb = XLSX.utils.book_new();
+
+      const wsData = [headers, ...sampleRows];
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      ws['!cols'] = cols;
+      XLSX.utils.book_append_sheet(wb, ws, 'Template Import');
+
+      const wsGuideData = [guideHeaders, ...guideRows];
+      const wsGuide = XLSX.utils.aoa_to_sheet(wsGuideData);
+      wsGuide['!cols'] = [
+        { wch: 22 },
+        { wch: 10 },
+        { wch: 15 },
+        { wch: 80 }
+      ];
+      XLSX.utils.book_append_sheet(wb, wsGuide, 'Panduan');
+
+      XLSX.writeFile(wb, 'Austin_Batam_Project_Template.xlsx');
+    } catch (err: any) {
+      alert('Error creating template: ' + err.message);
+    }
   };
 
   const highlightText = (text: string, search: string) => {
@@ -406,6 +517,14 @@ export function ProjectsPage({
                 onChange={handleFileChange}
                 className="hidden"
               />
+              <button
+                onClick={handleDownloadTemplate}
+                className="px-3 py-1.5 bg-base-surface border border-base-border text-base-muted2 hover:text-base-text hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
+                title="Download Excel Import Template"
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                <span>Download Template</span>
+              </button>
               <button
                 onClick={openAddProject}
                 className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
