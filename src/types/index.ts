@@ -95,6 +95,7 @@ export interface User {
   allowedFeatures?: string[];
   allowedPermissions?: Record<string, boolean>;
   currentSessionId?: string;
+  uid?: string;
 }
 
 export interface Task {

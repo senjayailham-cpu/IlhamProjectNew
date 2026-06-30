@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Project, Dependency } from '../types';
 import { esc, getSequenceNumber } from '../utils/projectUtils';
-import { Link2, Trash2 } from 'lucide-react';
+import { Link2, Trash2, Search, ChevronDown, Plus } from 'lucide-react';
 
 interface DepModalProps {
   isOpen: boolean;
@@ -31,6 +31,9 @@ export default function DepModal({
   const [succInput, setSuccInput] = useState<string>('');
   const [addSuccType, setAddSuccType] = useState<'FS' | 'SS' | 'FF' | 'SF'>('FS');
   const [addSuccLag, setAddSuccLag] = useState<string>('');
+
+  const [predOpen, setPredOpen] = useState(false);
+  const [succOpen, setSuccOpen] = useState(false);
 
   // Assemble full row mappings with sequence numbers
   const allRows: { key: string; label: string; seq: string; type: 'project' | 'assembly' | 'task' }[] = [];
@@ -80,6 +83,8 @@ export default function DepModal({
     setSuccInput('');
     setAddSuccType('FS');
     setAddSuccLag('');
+    setPredOpen(false);
+    setSuccOpen(false);
   }, [isOpen, rowKey]);
 
   if (!isOpen || !rowKey) return null;
@@ -97,6 +102,22 @@ export default function DepModal({
 
   const matchedPredRow = findRowBySeq(predInput);
   const matchedSuccRow = findRowBySeq(succInput);
+
+  const filteredPredOptions = allRows.filter(r => {
+    if (r.key === rowKey) return false;
+    if (preds.some(p => p.key === r.key)) return false;
+    if (!predInput) return true;
+    const q = predInput.toLowerCase();
+    return r.label.toLowerCase().includes(q) || r.seq.toLowerCase().includes(q);
+  });
+
+  const filteredSuccOptions = allRows.filter(r => {
+    if (r.key === rowKey) return false;
+    if (succs.some(s => s.key === r.key)) return false;
+    if (!succInput) return true;
+    const q = succInput.toLowerCase();
+    return r.label.toLowerCase().includes(q) || r.seq.toLowerCase().includes(q);
+  });
 
   const addLink = (dir: 'pred' | 'succ') => {
     const isPred = dir === 'pred';
@@ -249,17 +270,62 @@ export default function DepModal({
             {/* Sequence Input for Predecessor */}
             <div className="space-y-1 pt-1">
               <div className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={predInput}
-                  onChange={(e) => setPredInput(e.target.value)}
-                  placeholder="Enter predecessor sequence (e.g., 1.1.1)"
-                  className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
-                />
+                <div className="relative flex-1 min-w-0">
+                  <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-muted flex items-center justify-center pointer-events-none">
+                    <Search className="h-3.5 w-3.5" />
+                  </div>
+                  <input
+                    type="text"
+                    value={predInput}
+                    onChange={(e) => {
+                      setPredInput(e.target.value);
+                      setPredOpen(true);
+                    }}
+                    onFocus={() => setPredOpen(true)}
+                    onBlur={() => setTimeout(() => setPredOpen(false), 200)}
+                    placeholder="Search name or type number (e.g. 1.1.1)"
+                    className="w-full pl-8 pr-7 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setPredOpen(!predOpen)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-base-muted hover:text-base-text transition-colors p-0.5 rounded cursor-pointer"
+                  >
+                    <ChevronDown className={`h-3 w-3 transform transition-transform ${predOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {predOpen && filteredPredOptions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-48 overflow-y-auto bg-base-surface border border-base-border2 shadow-xl rounded-lg divide-y divide-base-border/40">
+                      {filteredPredOptions.map(r => (
+                        <button
+                          key={r.key}
+                          type="button"
+                          onMouseDown={() => {
+                            setPredInput(r.seq);
+                            setPredOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-base-surface3 transition-colors flex items-center justify-between text-[11px] cursor-pointer"
+                        >
+                          <div className="flex items-center min-w-0 mr-2">
+                            <span className="bg-base-accent-dim/20 text-base-accent text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                              {r.seq}
+                            </span>
+                            <span className="text-base-text font-medium ml-2 truncate" title={r.label}>
+                              {r.label}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-base-muted font-mono shrink-0 uppercase tracking-wider bg-base-surface2 px-1 py-0.5 rounded">
+                            {r.type}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <select
                   value={addPredType}
                   onChange={(e) => setAddPredType(e.target.value as any)}
-                  className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
+                  className="px-2 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
                 >
                   <option value="FS">FS</option>
                   <option value="SS">SS</option>
@@ -275,17 +341,18 @@ export default function DepModal({
                 />
                 <button
                   onClick={() => addLink('pred')}
-                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors"
+                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors flex items-center gap-1 shrink-0"
                 >
-                  + Add
+                  <Plus className="h-3 w-3" />
+                  <span>Add</span>
                 </button>
               </div>
               {predInput && (
                 <div className="text-[10px] pl-1">
                   {matchedPredRow ? (
-                    <span className="text-emerald-500 font-bold">✓ Connected element: {matchedPredRow.label}</span>
+                    <span className="text-emerald-500 font-bold">✓ Selected: {matchedPredRow.label}</span>
                   ) : (
-                    <span className="text-rose-500 font-medium">✗ No matching item found for sequence "{predInput}"</span>
+                    <span className="text-rose-500 font-medium">✗ No match found for "{predInput}"</span>
                   )}
                 </div>
               )}
@@ -339,17 +406,62 @@ export default function DepModal({
             {/* Sequence Input for Successor */}
             <div className="space-y-1 pt-1">
               <div className="flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={succInput}
-                  onChange={(e) => setSuccInput(e.target.value)}
-                  placeholder="Enter successor sequence (e.g., 1.1.2)"
-                  className="flex-1 min-w-0 w-0 px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
-                />
+                <div className="relative flex-1 min-w-0">
+                  <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-base-muted flex items-center justify-center pointer-events-none">
+                    <Search className="h-3.5 w-3.5" />
+                  </div>
+                  <input
+                    type="text"
+                    value={succInput}
+                    onChange={(e) => {
+                      setSuccInput(e.target.value);
+                      setSuccOpen(true);
+                    }}
+                    onFocus={() => setSuccOpen(true)}
+                    onBlur={() => setTimeout(() => setSuccOpen(false), 200)}
+                    placeholder="Search name or type number (e.g. 1.1.2)"
+                    className="w-full pl-8 pr-7 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-semibold placeholder:text-base-muted3"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setSuccOpen(!succOpen)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-base-muted hover:text-base-text transition-colors p-0.5 rounded cursor-pointer"
+                  >
+                    <ChevronDown className={`h-3 w-3 transform transition-transform ${succOpen ? 'rotate-180' : ''}`} />
+                  </button>
+
+                  {succOpen && filteredSuccOptions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-48 overflow-y-auto bg-base-surface border border-base-border2 shadow-xl rounded-lg divide-y divide-base-border/40">
+                      {filteredSuccOptions.map(r => (
+                        <button
+                          key={r.key}
+                          type="button"
+                          onMouseDown={() => {
+                            setSuccInput(r.seq);
+                            setSuccOpen(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-base-surface3 transition-colors flex items-center justify-between text-[11px] cursor-pointer"
+                        >
+                          <div className="flex items-center min-w-0 mr-2">
+                            <span className="bg-base-accent-dim/20 text-base-accent text-[9px] px-1.5 py-0.5 rounded font-mono font-bold shrink-0">
+                              {r.seq}
+                            </span>
+                            <span className="text-base-text font-medium ml-2 truncate" title={r.label}>
+                              {r.label}
+                            </span>
+                          </div>
+                          <span className="text-[9px] text-base-muted font-mono shrink-0 uppercase tracking-wider bg-base-surface2 px-1 py-0.5 rounded">
+                            {r.type}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <select
                   value={addSuccType}
                   onChange={(e) => setAddSuccType(e.target.value as any)}
-                  className="px-2.5 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
+                  className="px-2 py-2 bg-base-bg text-base-text border border-base-border rounded outline-none text-xs font-condensed font-extrabold cursor-pointer w-16"
                 >
                   <option value="FS">FS</option>
                   <option value="SS">SS</option>
@@ -365,17 +477,18 @@ export default function DepModal({
                 />
                 <button
                   onClick={() => addLink('succ')}
-                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors"
+                  className="px-3.5 py-2 bg-base-accent text-white font-condensed font-bold uppercase tracking-wider rounded-lg text-xs hover:bg-base-accent2 cursor-pointer transition-colors flex items-center gap-1 shrink-0"
                 >
-                  + Add
+                  <Plus className="h-3 w-3" />
+                  <span>Add</span>
                 </button>
               </div>
               {succInput && (
                 <div className="text-[10px] pl-1">
                   {matchedSuccRow ? (
-                    <span className="text-emerald-500 font-bold">✓ Connected element: {matchedSuccRow.label}</span>
+                    <span className="text-emerald-500 font-bold">✓ Selected: {matchedSuccRow.label}</span>
                   ) : (
-                    <span className="text-rose-500 font-medium">✗ No matching item found for sequence "{succInput}"</span>
+                    <span className="text-rose-500 font-medium">✗ No match found for "{succInput}"</span>
                   )}
                 </div>
               )}

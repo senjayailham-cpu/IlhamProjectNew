@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Project } from '../types';
 import GanttView from '../components/GanttView';
 import { Briefcase, Calendar, AlertCircle, FileText, BarChart2 } from 'lucide-react';
@@ -10,17 +10,132 @@ interface GanttPageProps {
 }
 
 export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPageProps) {
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-
-  // Default to selecting the first active project or any project available
-  useEffect(() => {
-    if (projects && projects.length > 0 && !selectedProjectId) {
-      const activeProj = projects.find(p => p.status === 'active') || projects[0];
-      setSelectedProjectId(activeProj.id);
+  // Collect all available target months from projects
+  const availableMonths = useMemo(() => {
+    const months = new Set<string>();
+    projects.forEach(p => {
+      if (p.targetMonth) {
+        months.add(p.targetMonth);
+      } else {
+        const dateStr = p.start || p.created || '';
+        if (dateStr && dateStr.length >= 7) {
+          months.add(dateStr.slice(0, 7));
+        }
+      }
+    });
+    // If empty, add current month
+    if (months.size === 0) {
+      months.add(new Date().toISOString().slice(0, 7));
     }
-  }, [projects, selectedProjectId]);
+    return Array.from(months).sort();
+  }, [projects]);
 
-  const selectedProject = projects.find(p => p.id === selectedProjectId);
+  // Default selected month to the active project's month, or first available target month, or current month
+  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
+    const activeProj = projects.find(p => p.status === 'active');
+    if (activeProj && activeProj.targetMonth) {
+      return activeProj.targetMonth;
+    }
+    
+    const available = Array.from(new Set(
+      projects
+        .map(p => p.targetMonth)
+        .filter((m): m is string => !!m)
+    )).sort();
+    
+    if (available.length > 0) {
+      return available[0];
+    }
+    
+    return new Date().toISOString().slice(0, 7);
+  });
+
+  // Filter projects by selected target month
+  const projectsInMonth = useMemo(() => {
+    return projects.filter(p => {
+      if (p.targetMonth) {
+        return p.targetMonth === selectedMonth;
+      }
+      const fallbackM = (p.start || p.created || '').slice(0, 7);
+      return fallbackM === selectedMonth;
+    });
+  }, [projects, selectedMonth]);
+
+  // Construct a combined virtual project if there are multiple, or use single project directly
+  const virtualProject = useMemo<Project | null>(() => {
+    if (projectsInMonth.length === 0) return null;
+
+    if (projectsInMonth.length === 1) {
+      return projectsInMonth[0];
+    }
+
+    const projectStarts = projectsInMonth.map(p => p.start).filter(Boolean) as string[];
+    const projectDues = projectsInMonth.map(p => p.due).filter(Boolean) as string[];
+
+    const minStart = projectStarts.length > 0 ? projectStarts.sort()[0] : `${selectedMonth}-01`;
+    const maxDue = projectDues.length > 0 ? projectDues.sort().reverse()[0] : `${selectedMonth}-28`;
+
+    // Combine assemblies, prefixes assembly names with project name for clarity
+    const combinedAssemblies = projectsInMonth.flatMap(p => {
+      return p.assemblies.map(asm => ({
+        ...asm,
+        name: `${p.name} - ${asm.name}`
+      }));
+    });
+
+    return {
+      id: `combined-${selectedMonth}`,
+      name: `Combined Projects - ${selectedMonth}`,
+      client: 'Multiple Clients',
+      status: 'active',
+      category: 'tray',
+      location: 'workshop1' as any,
+      created: new Date().toISOString(),
+      start: minStart,
+      due: maxDue,
+      assemblies: combinedAssemblies,
+    } as Project;
+  }, [projectsInMonth, selectedMonth]);
+
+  // Handle saving back from virtual project to original projects
+  const handleUpdateProject = (updatedProj: Project) => {
+    if (!onUpdateProject) return;
+
+    if (projectsInMonth.length === 1) {
+      onUpdateProject(updatedProj);
+      return;
+    }
+
+    // For multiple projects, map updated assemblies back to each original project
+    projectsInMonth.forEach(originalProj => {
+      const updatedAssemblies = originalProj.assemblies.map(origAsm => {
+        const match = updatedProj.assemblies.find(a => a.id === origAsm.id);
+        if (match) {
+          // Remove the project name prefix from assembly name before saving back
+          const prefix = `${originalProj.name} - `;
+          const restoredName = match.name.startsWith(prefix) 
+            ? match.name.substring(prefix.length) 
+            : match.name;
+
+          return {
+            ...match,
+            name: restoredName
+          };
+        }
+        return origAsm;
+      });
+
+      // Check if assemblies or tasks in this project changed
+      const hasChanges = JSON.stringify(updatedAssemblies) !== JSON.stringify(originalProj.assemblies);
+
+      if (hasChanges) {
+        onUpdateProject({
+          ...originalProj,
+          assemblies: updatedAssemblies
+        });
+      }
+    });
+  };
 
   return (
     <div className="flex-1 flex flex-col p-5 space-y-5 animate-in fade-in duration-200">
@@ -36,24 +151,29 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
           </p>
         </div>
 
-        {/* Project Selector */}
-        {projects.length > 0 && (
+        {/* Target Month Selector */}
+        {availableMonths.length > 0 && (
           <div className="flex items-center gap-2">
-            <label htmlFor="project-select" className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider">
-              Select Project:
+            <label htmlFor="month-select" className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider">
+              Target Month:
             </label>
             <div className="relative">
               <select
-                id="project-select"
-                value={selectedProjectId}
-                onChange={(e) => setSelectedProjectId(e.target.value)}
+                id="month-select"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
                 className="appearance-none bg-base-surface2 hover:bg-base-surface3 border border-base-border rounded-lg pl-3 pr-8 py-2 text-xs font-bold text-base-text font-condensed uppercase tracking-wide cursor-pointer focus:outline-none focus:ring-1 focus:ring-base-accent transition-all"
               >
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name} ({p.client || 'Internal'})
-                  </option>
-                ))}
+                {availableMonths.map((m) => {
+                  const [yr, mo] = m.split('-').map(Number);
+                  const date = new Date(yr, mo - 1, 1);
+                  const label = date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+                  return (
+                    <option key={m} value={m}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
               <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-base-muted">
                 ▼
@@ -64,9 +184,13 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
       </div>
 
       {/* Main Gantt View Section */}
-      {selectedProject ? (
+      {virtualProject ? (
         <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs">
-          <GanttView project={selectedProject} onUpdateProject={onUpdateProject} onOpenDepModal={onOpenDepModal} />
+          <GanttView 
+            project={virtualProject} 
+            onUpdateProject={handleUpdateProject} 
+            onOpenDepModal={onOpenDepModal} 
+          />
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-base-border/50 rounded-xl p-12 text-center bg-base-surface/40">
@@ -75,7 +199,7 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
           </div>
           <h3 className="font-condensed font-extrabold text-base text-base-text uppercase tracking-wider">No Projects Found</h3>
           <p className="text-xs text-base-muted font-sans mt-1 max-w-sm">
-            There are currently no active or pending projects configured in the system. Create or assign a project to view its Gantt timeline.
+            There are currently no projects scheduled for {new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}.
           </p>
         </div>
       )}

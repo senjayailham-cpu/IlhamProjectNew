@@ -5,6 +5,7 @@ import DepModal from './DepModal';
 import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
+import { ErrorBoundary } from './ErrorBoundary';
 
 const SpotlightModal = lazy(() => import('./SpotlightModal'));
 
@@ -453,55 +454,61 @@ export function FormsAndModals({
 
       {/* Project Spotlight Inspector */}
       <Suspense fallback={null}>
-        <SpotlightModal
-          isOpen={projectsHook.spotlightOpen}
-          onClose={() => projectsHook.setSpotlightOpen(false)}
-          projectId={projectsHook.spotlightProjectId}
-          projects={projectsHook.projects}
-          timesheets={timesheets}
-          wireLogs={wireLogs}
-          selectedMonth={selectedMonth}
-          onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
-          onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
-          onUpdateProject={(updatedProj, logParams) => {
-            let nextProj = updatedProj;
-            if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
-              nextProj = {
-                ...updatedProj,
-                status: 'completed' as any,
-                completedDate: new Date().toISOString().slice(0, 10)
-              };
-            } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
-              nextProj = {
-                ...updatedProj,
-                status: 'active' as any,
-                completedDate: null
-              };
-            }
-            setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
-            saveItem('projects', nextProj);
-            verifyMarkChanged();
-            if (logParams) {
-              logActivity(
-                logParams.type,
-                logParams.action,
-                nextProj.id,
-                nextProj.name,
-                logParams.asmName,
-                logParams.task,
-                logParams.oldP,
-                logParams.newP
-              );
-            }
-          }}
-          canUpdateTask={can('updateTask')}
-          canAddTaskInline={can('addTaskInline')}
-          canAddDifficulty={can('addDifficulty')}
-          canDeleteTask={can('deleteTask')}
-          currentUser={currentUser}
-          canEditProjectParams={can('editProjectParams')}
-          onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
-        />
+        <ErrorBoundary fallback={
+          <div className="p-8 text-base-red text-red-500 font-bold">
+            Failed to load project details. Please close and try again.
+          </div>
+        }>
+          <SpotlightModal
+            isOpen={projectsHook.spotlightOpen}
+            onClose={() => projectsHook.setSpotlightOpen(false)}
+            projectId={projectsHook.spotlightProjectId}
+            projects={projectsHook.projects}
+            timesheets={timesheets}
+            wireLogs={wireLogs}
+            selectedMonth={selectedMonth}
+            onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
+            onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
+            onUpdateProject={(updatedProj, logParams) => {
+              let nextProj = updatedProj;
+              if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
+                nextProj = {
+                  ...updatedProj,
+                  status: 'completed' as any,
+                  completedDate: new Date().toISOString().slice(0, 10)
+                };
+              } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
+                nextProj = {
+                  ...updatedProj,
+                  status: 'active' as any,
+                  completedDate: null
+                };
+              }
+              setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
+              saveItem('projects', nextProj);
+              verifyMarkChanged();
+              if (logParams) {
+                logActivity(
+                  logParams.type,
+                  logParams.action,
+                  nextProj.id,
+                  nextProj.name,
+                  logParams.asmName,
+                  logParams.task,
+                  logParams.oldP,
+                  logParams.newP
+                );
+              }
+            }}
+            canUpdateTask={can('updateTask')}
+            canAddTaskInline={can('addTaskInline')}
+            canAddDifficulty={can('addDifficulty')}
+            canDeleteTask={can('deleteTask')}
+            currentUser={currentUser}
+            canEditProjectParams={can('editProjectParams')}
+            onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
+          />
+        </ErrorBoundary>
       </Suspense>
 
       {/* Dependency Link Editor Modal */}

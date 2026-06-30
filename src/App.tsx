@@ -14,6 +14,7 @@ import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFir
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
 import { ToastContainer } from './components/Toast';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // Layout Components
 import { AppSidebar } from './components/layout/AppSidebar';
@@ -94,6 +95,26 @@ const sectionGroups = [
     items: ['employees', 'timesheet', 'users']
   }
 ];
+
+function DefaultErrorPage({ tab }: { tab: string }) {
+  return (
+    <div className="flex-1 flex flex-col items-center justify-center p-12 gap-4 text-center bg-base-surface border border-base-border rounded-xl my-6">
+      <div className="text-5xl">⚠️</div>
+      <h2 className="font-condensed font-extrabold text-red-500 text-xl uppercase tracking-wider">
+        Section Failed to Load
+      </h2>
+      <p className="text-sm text-neutral-500 max-w-md">
+        An unexpected error occurred while rendering the {tab} section. This could be due to invalid or malformed data.
+      </p>
+      <button
+        onClick={() => window.location.reload()}
+        className="px-5 py-2.5 bg-neutral-800 text-white font-bold rounded-lg uppercase tracking-wider text-xs hover:bg-neutral-700 transition-all cursor-pointer"
+      >
+        Reload Application
+      </button>
+    </div>
+  );
+}
 
 export function App() {
   return (
@@ -515,7 +536,7 @@ function AppContent() {
   }
 
   if (!currentUser) {
-    return <LoginPage onLoginSuccess={() => {}} />;
+    return <LoginPage />;
   }
 
   // Filter list of tabs allowed for current user session
@@ -584,180 +605,182 @@ function AppContent() {
 
         {/* Core Screen Viewport */}
         <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24">
-          <Suspense fallback={<PageLoadingFallback />}>
-            {activeTab === 'dash' && (
-              <DashboardView
-                projects={projects}
-                timesheets={timesheets}
-                employees={employees}
-                selectedMonth={selectedMonth}
-                setSelectedMonth={setSelectedMonth}
-                openSpotlight={(id) => {
-                  projectsHook.setSpotlightProjectId(id);
-                  projectsHook.setSpotlightOpen(true);
-                }}
-              />
-            )}
+          <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
+            <Suspense fallback={<PageLoadingFallback />}>
+              {activeTab === 'dash' && (
+                <DashboardView
+                  projects={projects}
+                  timesheets={timesheets}
+                  employees={employees}
+                  selectedMonth={selectedMonth}
+                  setSelectedMonth={setSelectedMonth}
+                  openSpotlight={(id) => {
+                    projectsHook.setSpotlightProjectId(id);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
+                />
+              )}
 
-            {activeTab === 'focus24' && (
-              <Focus24View
-                problemReports={problemReports}
-                projects={projects}
-                employees={employees}
-                currentUser={currentUser}
-                onAddProblemReport={handleAddProblemReport}
-                onUpdateProblemStatus={handleUpdateProblemStatus}
-                onDeleteProblemReport={handleDeleteProblemReport}
-                openSpotlight={(id) => {
-                  projectsHook.setSpotlightProjectId(id);
-                  projectsHook.setSpotlightOpen(true);
-                }}
-              />
-            )}
+              {activeTab === 'focus24' && (
+                <Focus24View
+                  problemReports={problemReports}
+                  projects={projects}
+                  employees={employees}
+                  currentUser={currentUser}
+                  onAddProblemReport={handleAddProblemReport}
+                  onUpdateProblemStatus={handleUpdateProblemStatus}
+                  onDeleteProblemReport={handleDeleteProblemReport}
+                  openSpotlight={(id) => {
+                    projectsHook.setSpotlightProjectId(id);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
+                />
+              )}
 
-            {['current', 'completed', 'tray', 'nontray', 'archive'].includes(activeTab) && (
-              <ProjectsPage
-                activeTab={activeTab as any}
-                projects={projects}
-                timesheets={timesheets}
-                wireLogs={wireLogs}
-                projectSearchQuery={projectSearchQuery}
-                setProjectSearchQuery={setProjectSearchQuery}
-                currentTabMonthFilter={currentTabMonthFilter}
-                setCurrentTabMonthFilter={setCurrentTabMonthFilter}
-                openAddProject={projectsHook.openAddProject}
-                openEditProjectForm={projectsHook.openEditProjectForm}
-                openAssemblyAddForm={projectsHook.openAssemblyAddForm}
-                openCopyModalLauncher={projectsHook.openCopyModalLauncher}
-                setSpotlightProjectId={projectsHook.setSpotlightProjectId}
-                setSpotlightOpen={projectsHook.setSpotlightOpen}
-                archiveProject={projectsHook.archiveProject}
-                unarchiveProject={projectsHook.unarchiveProject}
-                importProjectsExcel={projectsHook.importProjectsExcel}
-              />
-            )}
+              {['current', 'completed', 'tray', 'nontray', 'archive'].includes(activeTab) && (
+                <ProjectsPage
+                  activeTab={activeTab as any}
+                  projects={projects}
+                  timesheets={timesheets}
+                  wireLogs={wireLogs}
+                  projectSearchQuery={projectSearchQuery}
+                  setProjectSearchQuery={setProjectSearchQuery}
+                  currentTabMonthFilter={currentTabMonthFilter}
+                  setCurrentTabMonthFilter={setCurrentTabMonthFilter}
+                  openAddProject={projectsHook.openAddProject}
+                  openEditProjectForm={projectsHook.openEditProjectForm}
+                  openAssemblyAddForm={projectsHook.openAssemblyAddForm}
+                  openCopyModalLauncher={projectsHook.openCopyModalLauncher}
+                  setSpotlightProjectId={projectsHook.setSpotlightProjectId}
+                  setSpotlightOpen={projectsHook.setSpotlightOpen}
+                  archiveProject={projectsHook.archiveProject}
+                  unarchiveProject={projectsHook.unarchiveProject}
+                  importProjectsExcel={projectsHook.importProjectsExcel}
+                />
+              )}
 
-            {activeTab === 'inspections' && (
-              <InspectionView
-                inspections={inspections}
-                projects={projects}
-                currentUser={currentUser}
-                onAddInspection={handleAddInspection}
-                onUpdateInspectionStatus={handleUpdateInspectionStatus}
-                onDeleteInspection={handleDeleteInspection}
-              />
-            )}
+              {activeTab === 'inspections' && (
+                <InspectionView
+                  inspections={inspections}
+                  projects={projects}
+                  currentUser={currentUser}
+                  onAddInspection={handleAddInspection}
+                  onUpdateInspectionStatus={handleUpdateInspectionStatus}
+                  onDeleteInspection={handleDeleteInspection}
+                />
+              )}
 
-            {activeTab === 'wire' && (
-              <WireConsumableView
-                wireLogs={wireLogs}
-                projects={projects}
-                employees={employees}
-                currentUser={currentUser}
-                onAddWireLog={handleAddWireLog}
-                onDeleteWireLog={handleDeleteWireLog}
-              />
-            )}
+              {activeTab === 'wire' && (
+                <WireConsumableView
+                  wireLogs={wireLogs}
+                  projects={projects}
+                  employees={employees}
+                  currentUser={currentUser}
+                  onAddWireLog={handleAddWireLog}
+                  onDeleteWireLog={handleDeleteWireLog}
+                />
+              )}
 
-            {activeTab === 'dailyreport' && (
-              <DailyReportView
-                projects={projects}
-                activityLogs={activities}
-                reportDate={reportDate}
-                setReportDate={setReportDate}
-                clearActivityLogs={() => {
-                  setRealActivities([]);
-                  verifyMarkChanged();
-                }}
-                openPrintView={() => window.print()}
-                timesheets={timesheets}
-              />
-            )}
+              {activeTab === 'dailyreport' && (
+                <DailyReportView
+                  projects={projects}
+                  activityLogs={activities}
+                  reportDate={reportDate}
+                  setReportDate={setReportDate}
+                  clearActivityLogs={() => {
+                    setRealActivities([]);
+                    verifyMarkChanged();
+                  }}
+                  openPrintView={() => window.print()}
+                  timesheets={timesheets}
+                />
+              )}
 
-            {activeTab === 'gantt' && (
-              <GanttPage
-                projects={projects}
-                onUpdateProject={(updatedProj) => {
-                  setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
-                  saveItem('projects', updatedProj);
-                  verifyMarkChanged();
-                  logActivity(
-                    'project_edit',
-                    'Updated task schedules via Gantt chart drag-and-drop',
-                    updatedProj.id,
-                    updatedProj.name
-                  );
-                }}
-                onOpenDepModal={(key) => {
-                  projectsHook.setDepModalRowKey(key);
-                  projectsHook.setDepModalOpen(true);
-                }}
-              />
-            )}
+              {activeTab === 'gantt' && (
+                <GanttPage
+                  projects={projects}
+                  onUpdateProject={(updatedProj) => {
+                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                    saveItem('projects', updatedProj);
+                    verifyMarkChanged();
+                    logActivity(
+                      'project_edit',
+                      'Updated task schedules via Gantt chart drag-and-drop',
+                      updatedProj.id,
+                      updatedProj.name
+                    );
+                  }}
+                  onOpenDepModal={(key) => {
+                    projectsHook.setDepModalRowKey(key);
+                    projectsHook.setDepModalOpen(true);
+                  }}
+                />
+              )}
 
-            {activeTab === 'employees' && (
-              <EmployeesView
-                employees={employees}
-                openAddEmployee={employeesHook.openAddEmp}
-                openEditEmployee={employeesHook.openEditEmp}
-                deleteEmployee={employeesHook.removeEmployeeRecord}
-                onImportExcel={employeesHook.importEmployeesExcel}
-              />
-            )}
+              {activeTab === 'employees' && (
+                <EmployeesView
+                  employees={employees}
+                  openAddEmployee={employeesHook.openAddEmp}
+                  openEditEmployee={employeesHook.openEditEmp}
+                  deleteEmployee={employeesHook.removeEmployeeRecord}
+                  onImportExcel={employeesHook.importEmployeesExcel}
+                />
+              )}
 
-            {activeTab === 'timesheet' && (
-              <TimesheetView
-                timesheets={timesheets}
-                employees={employees}
-                projects={projects}
-                timesheetDate={timesheetsHook.timesheetDate}
-                setTimesheetDate={timesheetsHook.setTimesheetDate}
-                openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
-                openEditTimesheet={timesheetsHook.openTimesheetEditForm}
-                deleteTsEntry={timesheetsHook.removeTimesheetEntry}
-                exportTimesheetDaily={timesheetsHook.exportTimesheetExcel}
-                openSpotlight={(pid) => {
-                  projectsHook.setSpotlightProjectId(pid);
-                  projectsHook.setSpotlightOpen(true);
-                }}
-              />
-            )}
+              {activeTab === 'timesheet' && (
+                <TimesheetView
+                  timesheets={timesheets}
+                  employees={employees}
+                  projects={projects}
+                  timesheetDate={timesheetsHook.timesheetDate}
+                  setTimesheetDate={timesheetsHook.setTimesheetDate}
+                  openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
+                  openEditTimesheet={timesheetsHook.openTimesheetEditForm}
+                  deleteTsEntry={timesheetsHook.removeTimesheetEntry}
+                  exportTimesheetDaily={timesheetsHook.exportTimesheetExcel}
+                  openSpotlight={(pid) => {
+                    projectsHook.setSpotlightProjectId(pid);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
+                />
+              )}
 
-            {activeTab === 'users' && (
-              <UsersAccessView
-                users={users}
-                currentUser={currentUser}
-                onUpdateUsers={(updated) => {
-                  const prev = users;
-                  setUsers(updated);
-                  verifyMarkChanged();
-                  
-                  // Granular updates for users
-                  const prevMap = new Map(prev.map(u => [u.id, u]));
-                  updated.forEach(u => {
-                    const oldU = prevMap.get(u.id);
-                    if (!oldU || JSON.stringify(oldU) !== JSON.stringify(u)) {
-                      saveItem('users', u);
-                    }
-                  });
-                  const updatedSet = new Set(updated.map(u => u.id));
-                  prev.forEach(u => {
-                    if (!updatedSet.has(u.id)) {
-                      // Delete the master profile
-                      removeItem('users', u.id);
-                      // If there is an associated Firebase UID, delete that UID mapping document as well
-                      if (u.uid) {
-                        removeItem('users', u.uid);
+              {activeTab === 'users' && (
+                <UsersAccessView
+                  users={users}
+                  currentUser={currentUser}
+                  onUpdateUsers={(updated) => {
+                    const prev = users;
+                    setUsers(updated);
+                    verifyMarkChanged();
+                    
+                    // Granular updates for users
+                    const prevMap = new Map(prev.map(u => [u.id, u]));
+                    updated.forEach(u => {
+                      const oldU = prevMap.get(u.id);
+                      if (!oldU || JSON.stringify(oldU) !== JSON.stringify(u)) {
+                        saveItem('users', u);
                       }
-                    }
-                  });
-                }}
-                activeTabsList={activeTabsList}
-                defaultPermissions={PERMISSIONS}
-                sha256={sha256}
-              />
-            )}
-          </Suspense>
+                    });
+                    const updatedSet = new Set(updated.map(u => u.id));
+                    prev.forEach(u => {
+                      if (!updatedSet.has(u.id)) {
+                        // Delete the master profile
+                        removeItem('users', u.id);
+                        // If there is an associated Firebase UID, delete that UID mapping document as well
+                        if (u.uid) {
+                          removeItem('users', u.uid);
+                        }
+                      }
+                    });
+                  }}
+                  activeTabsList={activeTabsList}
+                  defaultPermissions={PERMISSIONS}
+                  sha256={sha256}
+                />
+              )}
+            </Suspense>
+          </ErrorBoundary>
         </main>
 
         {/* Universal Footer Alignment */}

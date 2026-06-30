@@ -233,6 +233,27 @@ export function SpotlightOverviewTab({
                         </button>
                       )}
 
+                      {onOpenDepModal && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onOpenDepModal(`a:${project.id}:${a.id}`);
+                          }}
+                          className={`p-1 rounded border transition-all cursor-pointer ${
+                            a.predecessors && a.predecessors.length > 0
+                              ? 'bg-base-accent-dim/20 text-base-accent border-base-accent/25 hover:bg-base-accent-dim/40'
+                              : 'bg-base-surface3 border-base-border hover:text-base-accent text-base-muted hover:border-base-border2'
+                          }`}
+                          title={
+                            a.predecessors && a.predecessors.length > 0
+                              ? `Predecessors: ${a.predecessors.length}`
+                              : "Set Predecessor"
+                          }
+                        >
+                          <Link2 className="w-3 h-3" />
+                        </button>
+                      )}
+
                       <div className="w-12 h-1.5 bg-base-border/20 rounded-full overflow-hidden hidden md:block">
                         <div className="h-full rounded-full bg-base-blue transition-all duration-500 ease-out" style={{ width: `${aPct}%` }} />
                       </div>
@@ -339,7 +360,9 @@ export function SpotlightOverviewTab({
                                     {t.name}
                                   </span>
                                   {isLocked && (
-                                    <Lock className="h-3 w-3 text-amber-500 shrink-0" title="Locked (100% complete - can only be edited by Admin)" />
+                                    <span title="Locked (100% complete - can only be edited by Admin)">
+                                      <Lock className="h-3 w-3 text-amber-500 shrink-0" />
+                                    </span>
                                   )}
                                   
                                   {/* Task date display / edit badge */}
@@ -418,17 +441,6 @@ export function SpotlightOverviewTab({
                               </div>
                               
                               <div className="flex items-center gap-3 shrink-0">
-                                {onOpenDepModal && (
-                                  <button
-                                    onClick={() => onOpenDepModal(`t:${project.id}:${a.id}:${t.id}`)}
-                                    className="px-2 py-1 rounded bg-base-accent-dim/20 hover:bg-base-accent-dim/50 text-base-accent hover:text-base-accent2 border border-base-accent/20 transition-all cursor-pointer flex items-center gap-1.5 text-[10px] font-condensed font-bold uppercase tracking-wider"
-                                    title="Set Predecessor"
-                                  >
-                                    <Link2 className="w-3.5 h-3.5 text-current" />
-                                    <span>Set Predecessor</span>
-                                  </button>
-                                )}
-
                                 {canAddDifficulty ? (
                                   <div className="flex items-center gap-1.5 bg-base-surface3/30 px-2 py-1 rounded border border-base-border/50">
                                     <span className="text-[9px] text-base-muted font-bold select-none uppercase tracking-wider font-condensed">Diff:</span>
@@ -515,6 +527,24 @@ export function SpotlightOverviewTab({
                                       <Target className="w-3.5 h-3.5" />
                                     </span>
                                   )
+                                )}
+
+                                {onOpenDepModal && (
+                                  <button
+                                    onClick={() => onOpenDepModal(`t:${project.id}:${a.id}:${t.id}`)}
+                                    className={`p-1 rounded transition-colors ${
+                                      t.predecessors && t.predecessors.length > 0
+                                        ? 'text-base-accent bg-base-accent-dim/20 hover:bg-base-accent-dim/40'
+                                        : 'text-base-muted hover:text-base-accent hover:bg-base-surface3/40'
+                                    }`}
+                                    title={
+                                      t.predecessors && t.predecessors.length > 0
+                                        ? `Predecessors: ${t.predecessors.length}`
+                                        : "Set Predecessor"
+                                    }
+                                  >
+                                    <Link2 className="w-3.5 h-3.5" />
+                                  </button>
                                 )}
 
                                 {/* Inline Delete Button */}

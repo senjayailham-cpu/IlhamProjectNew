@@ -142,8 +142,40 @@ export default function DashboardView({
         const pStart = p.start || `${yearStr}-${monthStr}-01`;
         const pDue = p.due || `${yearStr}-${monthStr}-${totalDays}`;
         
-        // Baseline planned trajectory S-Curve
-        const plannedValue = getInterpolatedPct(dateStr, pStart, pDue, 0, 100);
+        // Flatten all tasks across all assemblies for the project
+        const projectTasks: any[] = [];
+        (p.assemblies || []).forEach(asm => {
+          (asm.tasks || []).forEach(t => {
+            projectTasks.push(t);
+          });
+        });
+
+        let plannedValue = 0;
+        if (projectTasks.length === 0) {
+          plannedValue = getInterpolatedPct(dateStr, pStart, pDue, 0, 100);
+        } else {
+          let totalProjDifficulty = 0;
+          let weightedPlannedSum = 0;
+
+          projectTasks.forEach(t => {
+            const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+            totalProjDifficulty += difficulty;
+
+            const tStart = t.date || pStart;
+            const tFinish = t.finishDate || tStart;
+
+            if (dateStr >= tFinish) {
+              weightedPlannedSum += 100 * difficulty;
+            } else if (dateStr < tStart) {
+              weightedPlannedSum += 0 * difficulty;
+            } else {
+              const taskPct = getInterpolatedPct(dateStr, tStart, tFinish, 0, 100);
+              weightedPlannedSum += taskPct * difficulty;
+            }
+          });
+
+          plannedValue = totalProjDifficulty > 0 ? (weightedPlannedSum / totalProjDifficulty) : 0;
+        }
         totalPlanned += plannedValue;
 
         // Actual trajectory curve based on historic milestones or progress interpolation up to today

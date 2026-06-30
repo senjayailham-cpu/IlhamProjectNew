@@ -257,8 +257,9 @@ function parsePredecessorInput(
 }
 
 // CPM (Critical Path Method) helper to calculate critical path task IDs
-const calculateCriticalPath = (project: Project): Set<string> => {
-  const criticalPathIds = new Set<string>();
+const calculateCriticalPath = (project: Project): { criticalIds: Set<string>; floatMap: Map<string, number> } => {
+  const criticalIds = new Set<string>();
+  const floatMap = new Map<string, number>();
   
   // 1. Gather all tasks in the project
   const tasks: {
@@ -301,7 +302,7 @@ const calculateCriticalPath = (project: Project): Set<string> => {
   });
   
   if (tasks.length === 0) {
-    return criticalPathIds;
+    return { criticalIds, floatMap };
   }
   
   // 2. Topological Sort with cycle detection
@@ -410,12 +411,13 @@ const calculateCriticalPath = (project: Project): Set<string> => {
   // 5. Identify critical path tasks (Total Float = 0)
   tasks.forEach(t => {
     const totalFloat = t.lf - t.ef;
+    floatMap.set(t.id, totalFloat);
     if (Math.abs(totalFloat) < 0.001) {
-      criticalPathIds.add(t.id);
+      criticalIds.add(t.id);
     }
   });
   
-  return criticalPathIds;
+  return { criticalIds, floatMap };
 };
 
 // Cascade Schedule helper function for cascading shifts to successor tasks
@@ -950,9 +952,44 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
   const pStartD = useMemo(() => parseLocalDate(pStart), [pStart]);
   const pDueD = useMemo(() => parseLocalDate(pDue), [pDue]);
 
-  const criticalPathIds = useMemo(() => {
-    return calculateCriticalPath(project);
+  const { criticalPathIds, slackMap } = useMemo(() => {
+    const res = calculateCriticalPath(project);
+    return {
+      criticalPathIds: res.criticalIds,
+      slackMap: res.floatMap
+    };
   }, [project]);
+
+  const criticalAssemblyIds = useMemo(() => {
+    const ids = new Set<string>();
+    project.assemblies?.forEach(asm => {
+      const hasCriticalTask = asm.tasks?.some(t => criticalPathIds.has(t.id));
+      if (hasCriticalTask) {
+        ids.add(asm.id);
+      }
+    });
+    return ids;
+  }, [project, criticalPathIds]);
+
+  const criticalChainLength = useMemo(() => {
+    const criticalTasks = project.assemblies?.flatMap(asm => 
+      asm.tasks?.filter(t => criticalPathIds.has(t.id)) || []
+    ) || [];
+
+    if (criticalTasks.length === 0) return 0;
+
+    const dates = criticalTasks.flatMap(t => {
+      const start = t.date || project.start;
+      const finish = t.finishDate || start;
+      return [parseLocalDate(start), parseLocalDate(finish)];
+    });
+
+    if (dates.length === 0) return 0;
+
+    const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
+    const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
+    return Math.max(1, daysBetween(minDate, maxDate) + 1);
+  }, [project, criticalPathIds]);
 
   // Pixels per day calculated based on the selected zoom level
   const pixelsPerDay = useMemo(() => {
@@ -1073,7 +1110,8 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       });
 
       // Add child tasks if assembly is expanded
-      if (!collapsedAsms[asm.id]) {
+      const isAsmCollapsed = collapsedAsms[asm.id] !== false;
+      if (!isAsmCollapsed) {
         asm.tasks?.forEach((t, taskIdx) => {
           const tStart = t.date || aStart || pStart;
           let tFinish = t.finishDate || tStart;
@@ -1184,6 +1222,21 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     });
     return map;
   }, [rows]);
+
+  const firstCriticalRowIdx = useMemo(() => {
+    return rows.findIndex(row => row.level === 2 && criticalPathIds.has(row.id));
+  }, [rows, criticalPathIds]);
+
+  const jumpToFirstCriticalTask = () => {
+    const idx = rows.findIndex(row => row.level === 2 && criticalPathIds.has(row.id));
+    if (idx !== -1 && rightScrollRef.current) {
+      setSelectedRowId(rows[idx].id);
+      rightScrollRef.current.scrollTo({
+        top: idx * 32,
+        behavior: 'smooth'
+      });
+    }
+  };
 
   // Predecessor label showing WBS-style label instead of index number
   const getPredecessorsLabel = (row: GanttRow): string => {
@@ -1814,10 +1867,29 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
   const toggleAssemblyCollapse = (asmId: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    setCollapsedAsms(prev => ({
-      ...prev,
-      [asmId]: !prev[asmId]
-    }));
+    setCollapsedAsms(prev => {
+      const isCurrentlyCollapsed = prev[asmId] !== false;
+      return {
+        ...prev,
+        [asmId]: isCurrentlyCollapsed ? false : true
+      };
+    });
+  };
+
+  const expandAllAssemblies = () => {
+    const newCollapsed: Record<string, boolean> = {};
+    project.assemblies?.forEach(asm => {
+      newCollapsed[asm.id] = false;
+    });
+    setCollapsedAsms(newCollapsed);
+  };
+
+  const collapseAllAssemblies = () => {
+    const newCollapsed: Record<string, boolean> = {};
+    project.assemblies?.forEach(asm => {
+      newCollapsed[asm.id] = true;
+    });
+    setCollapsedAsms(newCollapsed);
   };
 
   const getStatusColorClass = (status: Project['status']) => {
@@ -1958,6 +2030,29 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
           <div className="w-[1px] h-4 bg-base-border" />
 
+          {/* Expand/Collapse All Buttons */}
+          <div className="flex items-center bg-base-surface border border-base-border rounded-lg p-1">
+            <button 
+              onClick={expandAllAssemblies} 
+              className="px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer text-xs text-base-muted hover:text-base-text flex items-center gap-1.5"
+              title="Expand All Assemblies"
+            >
+              <Maximize2 className="h-3.5 w-3.5 text-current" />
+              <span>Expand All</span>
+            </button>
+            <div className="w-[1px] h-3 bg-base-border mx-1" />
+            <button 
+              onClick={collapseAllAssemblies} 
+              className="px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer text-xs text-base-muted hover:text-base-text flex items-center gap-1.5"
+              title="Collapse All Assemblies"
+            >
+              <Minimize2 className="h-3.5 w-3.5 text-current" />
+              <span>Collapse All</span>
+            </button>
+          </div>
+
+          <div className="w-[1px] h-4 bg-base-border" />
+
           {/* Toggle Switches */}
           <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
             <input 
@@ -2070,6 +2165,41 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         </div>
       </div>
 
+      {/* Critical Path Summary Mini-Panel */}
+      {showCriticalPath && (
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-2.5 bg-base-red-dim/20 border-b border-base-border text-xs select-none">
+          <div className="flex flex-wrap items-center gap-4 text-base-text">
+            <span className="font-condensed font-extrabold text-base-red uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-base-red animate-pulse" />
+              Critical Path Summary
+            </span>
+            <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
+            <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
+              <span>Critical Tasks:</span>
+              <span className="font-mono font-bold text-base-red bg-base-red-dim/30 px-1.5 py-0.5 rounded text-[10px]">
+                {criticalPathIds.size}
+              </span>
+            </div>
+            <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
+            <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
+              <span>Longest Critical Chain Length:</span>
+              <span className="font-mono font-extrabold text-base-text text-[11px]">
+                {criticalChainLength} days
+              </span>
+            </div>
+          </div>
+          {firstCriticalRowIdx !== -1 && (
+            <button
+              onClick={jumpToFirstCriticalTask}
+              className="flex items-center gap-1 px-2.5 py-1 bg-base-red text-white font-condensed font-bold uppercase tracking-wider text-[10px] rounded hover:bg-opacity-90 cursor-pointer transition-colors shrink-0"
+            >
+              <span>Jump to first critical task</span>
+              <span>→</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Gantt Legend */}
       <div className="flex items-center gap-4 px-4 py-2 bg-base-surface/50 border-b border-base-border text-[11px] font-medium text-base-muted2 select-none">
         <span className="flex items-center gap-1"><span className="text-[10px]">🔴</span> Critical Path</span>
@@ -2152,7 +2282,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                         onClick={(e) => toggleAssemblyCollapse(row.id, e)}
                         className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text shrink-0 cursor-pointer transition-all"
                       >
-                        {collapsedAsms[row.id] ? (
+                        {collapsedAsms[row.id] !== false ? (
                           <ChevronRight className="h-3 w-3" />
                         ) : (
                           <ChevronDown className="h-3 w-3" />
@@ -2173,6 +2303,9 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                     }`} title={row.name}>
                       {highlightText(row.name, searchQuery)}
                     </span>
+                    {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
+                      <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
+                    )}
                   </div>
 
                   {/* Duration Days */}
@@ -2525,6 +2658,8 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                 const isSelected = selectedRowId === row.id;
                 const barCoords = getRowBarCoords(row);
                 const baselineCoords = getBaselineCoords(row);
+                const slackValue = slackMap.get(row.id) ?? 999;
+                const hasEarlyWarning = showCriticalPath && row.level === 2 && !criticalPathIds.has(row.id) && slackValue >= 0 && slackValue <= 1;
                 
                 let hoverClass = 'hover:bg-base-surface2/50';
                 if (row.level === 0) hoverClass = 'hover:bg-base-accent-dim/80';
@@ -2589,7 +2724,11 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                         {/* Summary Bar Level 1 (Assembly Rollup) */}
                         {row.level === 1 && (
                           <div 
-                            className="w-full relative flex items-center h-4 select-none"
+                            className={`w-full relative flex items-center h-4 select-none ${
+                              showCriticalPath && criticalAssemblyIds.has(row.id)
+                                ? 'border-l-2 border-red-600 pl-1'
+                                : ''
+                            }`}
                             style={{ cursor: onUpdateProject ? (dragState?.rowId === row.id ? 'grabbing' : 'grab') : 'default' }}
                             onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
                           >
@@ -2621,7 +2760,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                                           ? 'bg-base-red border-base-red animate-pulse' 
                                           : 'bg-base-blue border-base-blue';
                                       })()
-                            }`}
+                            } ${hasEarlyWarning ? 'border-l-2 border-l-amber-400 pl-1' : ''}`}
                             style={{ cursor: onUpdateProject ? 'move' : 'default' }}
                             onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
                             onTouchStart={(e) => handleBarTouchStart(row, 'move', e)}
@@ -2753,7 +2892,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
             className="absolute bg-base-surface border border-base-border rounded-lg shadow-md p-3 text-xs z-[200] max-w-sm font-sans pointer-events-none animate-fade-in print:hidden"
             style={{ 
               left: `${Math.max(0, Math.min(hoveredTask.x, totalTimelineDays * pixelsPerDay - 280))}px`, 
-              top: `${hoveredTask.y - (showBaseline && hoveredTask.row.baselineDate ? 180 : 120)}px` 
+              top: `${hoveredTask.y - (showBaseline && hoveredTask.row.baselineDate ? 210 : 145)}px` 
             }}
           >
             <div className="font-condensed font-extrabold text-xs text-base-text uppercase tracking-wide border-b border-base-border pb-1.5 mb-1.5 flex items-center gap-1.5 justify-between">
@@ -2787,6 +2926,19 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                 <div className="flex justify-between gap-6">
                   <span>Resource:</span>
                   <span className="font-sans text-base-text font-extrabold">{hoveredTask.row.assigned}</span>
+                </div>
+              )}
+              
+              {hoveredTask.row.level === 2 && (
+                <div className="flex justify-between gap-6 border-t border-base-border/40 mt-1.5 pt-1.5">
+                  <span>Slack:</span>
+                  {criticalPathIds.has(hoveredTask.row.id) ? (
+                    <span className="text-red-600 dark:text-red-400 font-extrabold font-condensed uppercase tracking-wider">Critical — 0 days slack</span>
+                  ) : (
+                    <span className="font-mono text-base-text font-extrabold">
+                      {Math.max(0, Math.round(slackMap.get(hoveredTask.row.id) ?? 0))} day(s)
+                    </span>
+                  )}
                 </div>
               )}
               

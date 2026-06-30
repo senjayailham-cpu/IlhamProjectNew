@@ -73,7 +73,7 @@ export function useTimesheets(
     setDeleteConfirm({
       isOpen: true,
       title: 'Remove Logging Entry',
-      message: `Are you sure you want to permanently delete the logs entry for "${entry.employee}" working on project "${entry.projectName || ''}"?`,
+      message: `Are you sure you want to permanently delete the logs entry for "${(entry as any).employee || entry.empName}" working on project "${(entry as any).projectName || entry.workOrder || ''}"?`,
       onConfirm: () => {
         setTimesheets(prev => prev.filter(x => x.id !== id));
         removeItem('timesheets', id);

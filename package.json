@@ -33,6 +33,8 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@types/node": "^22.14.0",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^4.1.9",
     "autoprefixer": "^10.4.21",
     "jsdom": "^29.1.1",
