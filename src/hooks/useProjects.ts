@@ -162,6 +162,41 @@ export function useProjects(
     });
   };
 
+  const deleteProjectsExceptTarget = (targetWorkOrder: string) => {
+    const nonTargetProjects = projects.filter(x => {
+      const wo = (x.client || '').trim().toUpperCase();
+      return wo !== targetWorkOrder.trim().toUpperCase();
+    });
+
+    if (nonTargetProjects.length === 0) {
+      alert(`No other projects found to delete. Remaining projects have Work Order: ${targetWorkOrder}`);
+      return;
+    }
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete Non-Target Projects',
+      message: `Are you sure you want to permanently delete all ${nonTargetProjects.length} projects EXCEPT Work Order "${targetWorkOrder}"? This action is irreversible and will delete all sub-assemblies and tasks within those projects.`,
+      onConfirm: async () => {
+        // Filter out non-target projects from local state
+        setProjects(prev => prev.filter(x => (x.client || '').trim().toUpperCase() === targetWorkOrder.trim().toUpperCase()));
+        
+        // Remove from Firestore
+        for (const p of nonTargetProjects) {
+          try {
+            await removeItem('projects', p.id);
+            logActivity('project_delete', 'Deleted project during bulk cleanup', p.id, p.name);
+          } catch (err) {
+            console.error(`Failed to delete project ${p.id}:`, err);
+          }
+        }
+        
+        verifyMarkChanged();
+        setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
   const archiveProject = (pid: string) => {
     const p = projects.find(x => x.id === pid);
     if (!p) return;
@@ -622,6 +657,7 @@ export function useProjects(
     openEditProjectForm,
     saveProjectForm,
     deleteProjectDetails,
+    deleteProjectsExceptTarget,
     archiveProject,
     unarchiveProject,
     openAssemblyAddForm,

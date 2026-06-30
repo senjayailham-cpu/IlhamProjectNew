@@ -656,6 +656,8 @@ function AppContent() {
                   archiveProject={projectsHook.archiveProject}
                   unarchiveProject={projectsHook.unarchiveProject}
                   importProjectsExcel={projectsHook.importProjectsExcel}
+                  deleteProjectDetails={projectsHook.deleteProjectDetails}
+                  deleteProjectsExceptTarget={projectsHook.deleteProjectsExceptTarget}
                 />
               )}
 

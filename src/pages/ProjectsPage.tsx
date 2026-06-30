@@ -1,6 +1,6 @@
 import React from 'react';
 import { Project, TimesheetEntry, WireLog, Assembly, Task } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2 } from 'lucide-react';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
@@ -26,6 +26,8 @@ interface ProjectsPageProps {
   archiveProject: (pid: string) => void;
   unarchiveProject: (pid: string) => void;
   importProjectsExcel?: (projects: Project[]) => void;
+  deleteProjectDetails?: (pid: string) => void;
+  deleteProjectsExceptTarget?: (targetWorkOrder: string) => void;
 }
 
 export function ProjectsPage({
@@ -46,6 +48,8 @@ export function ProjectsPage({
   archiveProject,
   unarchiveProject,
   importProjectsExcel,
+  deleteProjectDetails,
+  deleteProjectsExceptTarget,
 }: ProjectsPageProps) {
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
@@ -77,6 +81,85 @@ export function ProjectsPage({
     if (!isNaN(dateParsed.getTime())) {
       return dateParsed.toISOString().slice(0, 10);
     }
+    return str;
+  };
+
+  const parseExcelTargetMonth = (val: any): string | undefined => {
+    if (val === undefined || val === null) return undefined;
+    if (val instanceof Date) {
+      const y = val.getFullYear();
+      const m = String(val.getMonth() + 1).padStart(2, '0');
+      return `${y}-${m}`;
+    }
+    if (typeof val === 'number') {
+      const date = new Date(Math.round((val - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      }
+    }
+    const str = String(val).trim();
+    if (!str) return undefined;
+
+    const num = Number(str);
+    if (!isNaN(num)) {
+      const date = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if (!isNaN(date.getTime())) {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      }
+    }
+
+    const cleaned = str.toLowerCase().replace(/[-/]/g, ' ');
+    const parts = cleaned.split(/\s+/).filter(Boolean);
+
+    if (parts.length === 2) {
+      const monthsMap: Record<string, number> = {
+        jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+        jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12,
+        january: 1, february: 2, march: 3, april: 4, june: 6,
+        july: 7, august: 8, september: 9, october: 10, november: 11, december: 12
+      };
+
+      let monthNum: number | undefined;
+      let yearNum: number | undefined;
+
+      if (monthsMap[parts[0]] !== undefined) {
+        monthNum = monthsMap[parts[0]];
+        const yrStr = parts[1];
+        const yr = parseInt(yrStr, 10);
+        if (!isNaN(yr)) {
+          yearNum = yr < 100 ? (yr < 70 ? 2000 + yr : 1900 + yr) : yr;
+        }
+      } else if (monthsMap[parts[1]] !== undefined) {
+        monthNum = monthsMap[parts[1]];
+        const yrStr = parts[0];
+        const yr = parseInt(yrStr, 10);
+        if (!isNaN(yr)) {
+          yearNum = yr < 100 ? (yr < 70 ? 2000 + yr : 1900 + yr) : yr;
+        }
+      }
+
+      if (monthNum !== undefined && yearNum !== undefined) {
+        const mStr = String(monthNum).padStart(2, '0');
+        return `${yearNum}-${mStr}`;
+      }
+    }
+
+    const yyyyMmRegex = /^(\d{4})-(\d{2})$/;
+    if (yyyyMmRegex.test(str)) {
+      return str;
+    }
+
+    const dateParsed = new Date(str);
+    if (!isNaN(dateParsed.getTime())) {
+      const y = dateParsed.getFullYear();
+      const m = String(dateParsed.getMonth() + 1).padStart(2, '0');
+      return `${y}-${m}`;
+    }
+
     return str;
   };
 
@@ -155,7 +238,7 @@ export function ProjectsPage({
           const budgetHoursRaw = parseFloat(cellVal(6));
           const budgetHours = isNaN(budgetHoursRaw) ? undefined : budgetHoursRaw;
 
-          const targetMonth = cellVal(7);
+          const targetMonth = parseExcelTargetMonth(row[7]);
 
           const assemblyName = cellVal(8);
           const assemblyBudgetHoursRaw = parseFloat(cellVal(9));
@@ -525,6 +608,16 @@ export function ProjectsPage({
                 <BookOpen className="h-3.5 w-3.5" />
                 <span>Download Template</span>
               </button>
+              {deleteProjectsExceptTarget && (
+                <button
+                  onClick={() => deleteProjectsExceptTarget('WOAEI0003612')}
+                  className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 text-red-500 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
+                  title="Delete all projects except WOAEI0003612"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>Delete Non-Target Projects</span>
+                </button>
+              )}
               <button
                 onClick={openAddProject}
                 className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
@@ -718,6 +811,19 @@ export function ProjectsPage({
                           <Copy className="h-3.5 w-3.5" />
                         </button>
                       )}
+
+                      {can('deleteProject') && deleteProjectDetails && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteProjectDetails(p.id);
+                          }}
+                          className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors"
+                          title="Delete project permanently"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -865,6 +971,19 @@ export function ProjectsPage({
                       >
                         <RotateCcw className="w-2.5 h-2.5" />
                         <span>Restore</span>
+                      </button>
+                    )}
+                    {can('deleteProject') && deleteProjectDetails && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteProjectDetails(p.id);
+                        }}
+                        className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 text-red-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                        title="Delete project permanently"
+                      >
+                        <Trash2 className="w-2.5 h-2.5" />
+                        <span>Delete</span>
                       </button>
                     )}
                   </div>
