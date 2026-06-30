@@ -61,80 +61,10 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
     });
   }, [projects, selectedMonth]);
 
-  // Construct a combined virtual project if there are multiple, or use single project directly
-  const virtualProject = useMemo<Project | null>(() => {
-    if (projectsInMonth.length === 0) return null;
-
-    if (projectsInMonth.length === 1) {
-      return projectsInMonth[0];
-    }
-
-    const projectStarts = projectsInMonth.map(p => p.start).filter(Boolean) as string[];
-    const projectDues = projectsInMonth.map(p => p.due).filter(Boolean) as string[];
-
-    const minStart = projectStarts.length > 0 ? projectStarts.sort()[0] : `${selectedMonth}-01`;
-    const maxDue = projectDues.length > 0 ? projectDues.sort().reverse()[0] : `${selectedMonth}-28`;
-
-    // Combine assemblies, prefixes assembly names with project name for clarity
-    const combinedAssemblies = projectsInMonth.flatMap(p => {
-      return p.assemblies.map(asm => ({
-        ...asm,
-        name: `${p.name} - ${asm.name}`
-      }));
-    });
-
-    return {
-      id: `combined-${selectedMonth}`,
-      name: `Combined Projects - ${selectedMonth}`,
-      client: 'Multiple Clients',
-      status: 'active',
-      category: 'tray',
-      location: 'workshop1' as any,
-      created: new Date().toISOString(),
-      start: minStart,
-      due: maxDue,
-      assemblies: combinedAssemblies,
-    } as Project;
-  }, [projectsInMonth, selectedMonth]);
-
-  // Handle saving back from virtual project to original projects
+  // Handle saving back to original projects
   const handleUpdateProject = (updatedProj: Project) => {
     if (!onUpdateProject) return;
-
-    if (projectsInMonth.length === 1) {
-      onUpdateProject(updatedProj);
-      return;
-    }
-
-    // For multiple projects, map updated assemblies back to each original project
-    projectsInMonth.forEach(originalProj => {
-      const updatedAssemblies = originalProj.assemblies.map(origAsm => {
-        const match = updatedProj.assemblies.find(a => a.id === origAsm.id);
-        if (match) {
-          // Remove the project name prefix from assembly name before saving back
-          const prefix = `${originalProj.name} - `;
-          const restoredName = match.name.startsWith(prefix) 
-            ? match.name.substring(prefix.length) 
-            : match.name;
-
-          return {
-            ...match,
-            name: restoredName
-          };
-        }
-        return origAsm;
-      });
-
-      // Check if assemblies or tasks in this project changed
-      const hasChanges = JSON.stringify(updatedAssemblies) !== JSON.stringify(originalProj.assemblies);
-
-      if (hasChanges) {
-        onUpdateProject({
-          ...originalProj,
-          assemblies: updatedAssemblies
-        });
-      }
-    });
+    onUpdateProject(updatedProj);
   };
 
   return (
@@ -184,10 +114,10 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
       </div>
 
       {/* Main Gantt View Section */}
-      {virtualProject ? (
+      {projectsInMonth.length > 0 ? (
         <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs">
           <GanttView 
-            project={virtualProject} 
+            projects={projectsInMonth} 
             onUpdateProject={handleUpdateProject} 
             onOpenDepModal={onOpenDepModal} 
           />

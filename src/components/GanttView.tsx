@@ -166,7 +166,8 @@ const overrideCssRules = () => {
 };
 
 interface GanttViewProps {
-  project: Project;
+  project?: Project;
+  projects?: Project[];
   onClose?: () => void;
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
@@ -609,7 +610,69 @@ const cascadeSchedule = (
   return { updatedProject: cloned, shiftedIds };
 };
 
-export default function GanttView({ project, onClose, onUpdateProject, onOpenDepModal }: GanttViewProps) {
+export default function GanttView({ project, projects, onClose, onUpdateProject, onOpenDepModal }: GanttViewProps) {
+  const projectsList = useMemo(() => {
+    let list: Project[] = [];
+    if (projects && projects.length > 0) {
+      list = [...projects];
+    } else if (project) {
+      list = [project];
+    } else {
+      return [];
+    }
+
+    const getProjectStartDate = (p: Project): string => {
+      let minDate: Date | null = null;
+      const pStartStr = p.start || p.created || '';
+      if (pStartStr) {
+        try {
+          minDate = parseLocalDate(pStartStr.slice(0, 10));
+        } catch (e) {
+          // ignore
+        }
+      }
+      p.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (t.date) {
+            try {
+              const d = parseLocalDate(t.date);
+              if (!minDate || d < minDate) minDate = d;
+            } catch (e) {
+              // ignore
+            }
+          }
+        });
+      });
+      return minDate ? formatLocalDate(minDate) : '9999-12-31';
+    };
+
+    return list.sort((a, b) => getProjectStartDate(a).localeCompare(getProjectStartDate(b)));
+  }, [project, projects]);
+
+  const findAndCloneProject = (rowId: string): { original: Project; cloned: Project } | null => {
+    const orig = projectsList.find(p => {
+      if (p.id === rowId) return true;
+      if (p.assemblies?.some(a => a.id === rowId)) return true;
+      if (p.assemblies?.some(a => a.tasks?.some(t => t.id === rowId))) return true;
+      return false;
+    });
+    if (!orig) return null;
+    return {
+      original: orig,
+      cloned: JSON.parse(JSON.stringify(orig)) as Project
+    };
+  };
+
+  const getProjectIdOfRow = (row: GanttRow): string => {
+    if (row.level === 0) return row.id;
+    const p = projectsList.find(proj => {
+      if (row.level === 1) return proj.assemblies?.some(a => a.id === row.id);
+      if (row.level === 2) return proj.assemblies?.some(a => a.id === row.parentAsmId);
+      return false;
+    });
+    return p ? p.id : (project?.id || '');
+  };
+
   // Navigation / Configuration State
   const [zoomMode, setZoomMode] = useState<'day' | 'week' | 'month' | 'quarter'>('week');
   const [showArrows, setShowArrows] = useState<boolean>(true);
@@ -666,9 +729,10 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         (el as HTMLElement).style.display = originalDisplays[idx] || '';
       });
 
+      const downloadName = projectsList.length === 1 && projectsList[0] ? projectsList[0].name : 'Projects';
       const dataUrl = canvas.toDataURL('image/png');
       const link = document.createElement('a');
-      link.download = `gantt_${project.name || 'project'}_${new Date().toISOString().slice(0, 10)}.png`;
+      link.download = `gantt_${downloadName || 'project'}_${new Date().toISOString().slice(0, 10)}.png`;
       link.href = dataUrl;
       link.click();
     } catch (error) {
@@ -729,7 +793,8 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       // Determine how many pages wide the content is
       const numPages = Math.ceil(imgRenderWidth / usableWidth);
       const date = new Date().toISOString().slice(0, 10);
-      const rangeStr = `${project.start || '—'} to ${project.due || '—'}`;
+      const rangeStr = `${pStart || '—'} to ${pDue || '—'}`;
+      const downloadName = projectsList.length === 1 && projectsList[0] ? projectsList[0].name : 'Projects';
 
       const canvasPageWidth = usableWidth / pdfScale;
 
@@ -742,7 +807,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         doc.setFont('helvetica', 'bold');
         doc.setFontSize(18);
         doc.setTextColor(31, 41, 55); // slate-800
-        doc.text(`Gantt Chart - ${project.name || 'Project'}`, 30, 25);
+        doc.text(`Gantt Chart - ${downloadName || 'Project'}`, 30, 25);
 
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(10);
@@ -785,7 +850,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         }
       }
 
-      doc.save(`gantt_${project.name || 'project'}_${date}.pdf`);
+      doc.save(`gantt_${downloadName || 'project'}_${date}.pdf`);
     } catch (error) {
       console.error('Error exporting PDF:', error);
       setToastMsg('Export PDF failed. Please try again.');
@@ -800,21 +865,23 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     const confirmSet = window.confirm("Set current schedule as baseline? This will overwrite the previous baseline.");
     if (!confirmSet) return;
 
-    const updated = JSON.parse(JSON.stringify(project)) as Project;
-    updated.baselineStart = updated.start;
-    updated.baselineDue = updated.due;
-    updated.baselineSetAt = new Date().toISOString();
+    projectsList.forEach(p => {
+      const updated = JSON.parse(JSON.stringify(p)) as Project;
+      updated.baselineStart = updated.start;
+      updated.baselineDue = updated.due;
+      updated.baselineSetAt = new Date().toISOString();
 
-    updated.assemblies?.forEach(asm => {
-      asm.baselineStart = asm.start;
-      asm.baselineFinish = asm.finish;
-      asm.tasks?.forEach(t => {
-        t.baselineDate = t.date;
-        t.baselineFinish = t.finishDate;
+      updated.assemblies?.forEach(asm => {
+        asm.baselineStart = asm.start;
+        asm.baselineFinish = asm.finish;
+        asm.tasks?.forEach(t => {
+          t.baselineDate = t.date;
+          t.baselineFinish = t.finishDate;
+        });
       });
-    });
 
-    onUpdateProject(updated);
+      onUpdateProject(updated);
+    });
   };
 
   useEffect(() => {
@@ -846,9 +913,10 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
   // Left Panel Resizing state (MS Project sheet table resizing)
   const defaultTotalTableWidth = 56 + 200 + 64 + 85 + 85 + 90 + 52; // 632
+  const projectStorageId = project?.id || (projects && projects[0]?.id) || 'default';
   const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
     try {
-      const saved = localStorage.getItem(`gantt_left_panel_width_${project.id}`);
+      const saved = localStorage.getItem(`gantt_left_panel_width_${projectStorageId}`);
       return saved ? parseInt(saved, 10) : defaultTotalTableWidth;
     } catch {
       return defaultTotalTableWidth;
@@ -880,7 +948,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       setIsResizingSplitter(false);
       splitterStartRef.current = null;
       try {
-        localStorage.setItem(`gantt_left_panel_width_${project.id}`, leftPanelWidth.toString());
+        localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, leftPanelWidth.toString());
       } catch (e) {
         // ignore
       }
@@ -893,7 +961,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizingSplitter, leftPanelWidth, project.id]);
+  }, [isResizingSplitter, leftPanelWidth, project?.id, projectsList]);
 
   // Tooltip state
   const [hoveredTask, setHoveredTask] = useState<{
@@ -921,65 +989,88 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
   // Safe calculation of project level start/end dates
   const { start: pStart, due: pDue } = useMemo(() => {
-    let start = project.start;
-    let due = project.due;
+    let overallMinDate: Date | null = null;
+    let overallMaxDate: Date | null = null;
 
-    const taskDates: Date[] = [];
-    project.assemblies?.forEach(asm => {
-      asm.tasks?.forEach(t => {
-        if (t.date) taskDates.push(parseLocalDate(t.date));
-        if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
+    projectsList.forEach(p => {
+      const pStartStr = p.start || p.created || '';
+      if (pStartStr) {
+        const d = parseLocalDate(pStartStr.slice(0, 10));
+        if (!overallMinDate || d < overallMinDate) overallMinDate = d;
+      }
+      if (p.due) {
+        const d = parseLocalDate(p.due.slice(0, 10));
+        if (!overallMaxDate || d > overallMaxDate) overallMaxDate = d;
+      }
+
+      p.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (t.date) {
+            const d = parseLocalDate(t.date);
+            if (!overallMinDate || d < overallMinDate) overallMinDate = d;
+          }
+          if (t.finishDate) {
+            const d = parseLocalDate(t.finishDate);
+            if (!overallMaxDate || d > overallMaxDate) overallMaxDate = d;
+          }
+        });
       });
     });
 
-    if (taskDates.length > 0) {
-      const minDate = new Date(Math.min(...taskDates.map(d => d.getTime())));
-      const maxDate = new Date(Math.max(...taskDates.map(d => d.getTime())));
-      start = formatLocalDate(minDate);
-      due = formatLocalDate(maxDate);
-    } else {
-      if (!start) start = new Date().toISOString().slice(0, 10);
-      if (!due) {
-        const d = parseLocalDate(start);
-        d.setDate(d.getDate() + 30);
-        due = formatLocalDate(d);
-      }
+    let start = overallMinDate ? formatLocalDate(overallMinDate) : new Date().toISOString().slice(0, 10);
+    let due = overallMaxDate ? formatLocalDate(overallMaxDate) : '';
+    if (!due) {
+      const d = parseLocalDate(start);
+      d.setDate(d.getDate() + 30);
+      due = formatLocalDate(d);
     }
 
     return { start, due };
-  }, [project]);
+  }, [projectsList]);
 
   const pStartD = useMemo(() => parseLocalDate(pStart), [pStart]);
   const pDueD = useMemo(() => parseLocalDate(pDue), [pDue]);
 
   const { criticalPathIds, slackMap } = useMemo(() => {
-    const res = calculateCriticalPath(project);
+    const mergedCritical = new Set<string>();
+    const mergedSlack = new Map<string, number>();
+
+    projectsList.forEach(p => {
+      const res = calculateCriticalPath(p);
+      res.criticalIds.forEach(id => mergedCritical.add(id));
+      res.floatMap.forEach((val, id) => mergedSlack.set(id, val));
+    });
+
     return {
-      criticalPathIds: res.criticalIds,
-      slackMap: res.floatMap
+      criticalPathIds: mergedCritical,
+      slackMap: mergedSlack
     };
-  }, [project]);
+  }, [projectsList]);
 
   const criticalAssemblyIds = useMemo(() => {
     const ids = new Set<string>();
-    project.assemblies?.forEach(asm => {
-      const hasCriticalTask = asm.tasks?.some(t => criticalPathIds.has(t.id));
-      if (hasCriticalTask) {
-        ids.add(asm.id);
-      }
+    projectsList.forEach(p => {
+      p.assemblies?.forEach(asm => {
+        const hasCriticalTask = asm.tasks?.some(t => criticalPathIds.has(t.id));
+        if (hasCriticalTask) {
+          ids.add(asm.id);
+        }
+      });
     });
     return ids;
-  }, [project, criticalPathIds]);
+  }, [projectsList, criticalPathIds]);
 
   const criticalChainLength = useMemo(() => {
-    const criticalTasks = project.assemblies?.flatMap(asm => 
-      asm.tasks?.filter(t => criticalPathIds.has(t.id)) || []
-    ) || [];
+    const criticalTasks = projectsList.flatMap(p => 
+      p.assemblies?.flatMap(asm => 
+        asm.tasks?.filter(t => criticalPathIds.has(t.id)) || []
+      ) || []
+    );
 
     if (criticalTasks.length === 0) return 0;
 
     const dates = criticalTasks.flatMap(t => {
-      const start = t.date || project.start;
+      const start = t.date || pStart;
       const finish = t.finishDate || start;
       return [parseLocalDate(start), parseLocalDate(finish)];
     });
@@ -989,7 +1080,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     const minDate = new Date(Math.min(...dates.map(d => d.getTime())));
     const maxDate = new Date(Math.max(...dates.map(d => d.getTime())));
     return Math.max(1, daysBetween(minDate, maxDate) + 1);
-  }, [project, criticalPathIds]);
+  }, [projectsList, criticalPathIds, pStart]);
 
   // Pixels per day calculated based on the selected zoom level
   const pixelsPerDay = useMemo(() => {
@@ -1032,122 +1123,153 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
   const allRows = useMemo(() => {
     const result: GanttRow[] = [];
 
-    // 1. Project level summary row
-    let totalPcts = 0;
-    let totalTasksCount = 0;
-    project.assemblies?.forEach(asm => {
-      asm.tasks?.forEach(t => {
-        totalPcts += t.pct || 0;
-        totalTasksCount++;
+    projectsList.forEach((p, pIdx) => {
+      // 1. Project level summary row
+      let totalPcts = 0;
+      let totalTasksCount = 0;
+      p.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          totalPcts += t.pct || 0;
+          totalTasksCount++;
+        });
       });
-    });
-    const pPct = totalTasksCount > 0 ? Math.round(totalPcts / totalTasksCount) : 0;
-    const pDuration = Math.max(1, daysBetween(pStartD, pDueD) + 1);
-
-    result.push({
-      id: project.id,
-      type: 'project',
-      name: project.name,
-      level: 0,
-      wbs: "1",
-      start: pStart,
-      finish: pDue,
-      duration: pDuration,
-      pct: pPct,
-      done: pPct >= 100,
-      predecessors: project.predecessors,
-      baselineDate: project.baselineStart,
-      baselineFinish: project.baselineDue
-    });
-
-    // 2. Assembly & Task level rows
-    project.assemblies?.forEach((asm, asmIdx) => {
-      let aStart = asm.start;
-      let aFinish = asm.finish;
-
-      const taskDates: Date[] = [];
-      asm.tasks?.forEach(t => {
-        if (t.date) taskDates.push(parseLocalDate(t.date));
-        if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
+      const pPct = totalTasksCount > 0 ? Math.round(totalPcts / totalTasksCount) : 0;
+      
+      // Calculate start and due for this specific project
+      let pStartStr = p.start;
+      let pDueStr = p.due;
+      const pTaskDates: Date[] = [];
+      p.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (t.date) pTaskDates.push(parseLocalDate(t.date));
+          if (t.finishDate) pTaskDates.push(parseLocalDate(t.finishDate));
+        });
       });
-
-      // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks
-      if (taskDates.length > 0) {
-        const minDate = new Date(Math.min(...taskDates.map(d => d.getTime())));
-        const maxDate = new Date(Math.max(...taskDates.map(d => d.getTime())));
-        aStart = formatLocalDate(minDate);
-        aFinish = formatLocalDate(maxDate);
+      if (pTaskDates.length > 0) {
+        const minDate = new Date(Math.min(...pTaskDates.map(d => d.getTime())));
+        const maxDate = new Date(Math.max(...pTaskDates.map(d => d.getTime())));
+        pStartStr = formatLocalDate(minDate);
+        pDueStr = formatLocalDate(maxDate);
       } else {
-        if (!aStart) aStart = pStart;
-        if (!aFinish) aFinish = pDue;
+        if (!pStartStr) pStartStr = p.created?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+        if (!pDueStr) {
+          const d = parseLocalDate(pStartStr);
+          d.setDate(d.getDate() + 30);
+          pDueStr = formatLocalDate(d);
+        }
       }
 
-      const aStartD = parseLocalDate(aStart);
-      const aFinishD = parseLocalDate(aFinish);
-      const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
+      const pStartD_local = parseLocalDate(pStartStr);
+      const pDueD_local = parseLocalDate(pDueStr);
+      const pDuration = Math.max(1, daysBetween(pStartD_local, pDueD_local) + 1);
 
-      const aTotalTasks = asm.tasks?.length || 0;
-      const aPct = aTotalTasks > 0
-        ? Math.round(asm.tasks.reduce((sum, t) => sum + (t.pct || 0), 0) / aTotalTasks)
-        : 0;
-
-      const assemblyWbs = `1.${asmIdx + 1}`;
+      const projectWbs = `${pIdx + 1}`;
 
       result.push({
-        id: asm.id,
-        type: 'assembly',
-        name: asm.name,
-        level: 1,
-        wbs: assemblyWbs,
-        start: aStart,
-        finish: aFinish,
-        duration: aDuration,
-        pct: aPct,
-        done: aPct >= 100,
-        predecessors: asm.predecessors,
-        baselineDate: asm.baselineStart,
-        baselineFinish: asm.baselineFinish
+        id: p.id,
+        type: 'project',
+        name: p.name,
+        level: 0,
+        wbs: projectWbs,
+        start: pStartStr,
+        finish: pDueStr,
+        duration: pDuration,
+        pct: pPct,
+        done: pPct >= 100,
+        predecessors: p.predecessors,
+        baselineDate: p.baselineStart,
+        baselineFinish: p.baselineDue
       });
 
-      // Add child tasks if assembly is expanded
-      const isAsmCollapsed = collapsedAsms[asm.id] !== false;
-      if (!isAsmCollapsed) {
-        asm.tasks?.forEach((t, taskIdx) => {
-          const tStart = t.date || aStart || pStart;
-          let tFinish = t.finishDate || tStart;
+      // 2. Assembly & Task level rows
+      p.assemblies?.forEach((asm, asmIdx) => {
+        let aStart = asm.start;
+        let aFinish = asm.finish;
 
-          if (new Date(tFinish) < new Date(tStart)) {
-            tFinish = tStart;
-          }
-
-          const tStartD = parseLocalDate(tStart);
-          const tFinishD = parseLocalDate(tFinish);
-          const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
-
-          result.push({
-            id: t.id,
-            type: 'task',
-            name: t.name,
-            level: 2,
-            wbs: `${assemblyWbs}.${taskIdx + 1}`,
-            start: tStart,
-            finish: tFinish,
-            duration: tDuration,
-            pct: t.pct || 0,
-            done: !!t.done,
-            isMilestone: !!t.isMilestone,
-            predecessors: t.predecessors,
-            parentAsmId: asm.id,
-            assigned: t.assigned,
-            baselineDate: t.baselineDate,
-            baselineFinish: t.baselineFinish
-          });
+        const taskDates: Date[] = [];
+        asm.tasks?.forEach(t => {
+          if (t.date) taskDates.push(parseLocalDate(t.date));
+          if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
         });
-      }
+
+        // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks
+        if (taskDates.length > 0) {
+          const minDate = new Date(Math.min(...taskDates.map(d => d.getTime())));
+          const maxDate = new Date(Math.max(...taskDates.map(d => d.getTime())));
+          aStart = formatLocalDate(minDate);
+          aFinish = formatLocalDate(maxDate);
+        } else {
+          if (!aStart) aStart = pStartStr;
+          if (!aFinish) aFinish = pDueStr;
+        }
+
+        const aStartD = parseLocalDate(aStart);
+        const aFinishD = parseLocalDate(aFinish);
+        const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
+
+        const aTotalTasks = asm.tasks?.length || 0;
+        const aPct = aTotalTasks > 0
+          ? Math.round(asm.tasks.reduce((sum, t) => sum + (t.pct || 0), 0) / aTotalTasks)
+          : 0;
+
+        const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
+
+        result.push({
+          id: asm.id,
+          type: 'assembly',
+          name: asm.name,
+          level: 1,
+          wbs: assemblyWbs,
+          start: aStart,
+          finish: aFinish,
+          duration: aDuration,
+          pct: aPct,
+          done: aPct >= 100,
+          predecessors: asm.predecessors,
+          baselineDate: asm.baselineStart,
+          baselineFinish: asm.baselineFinish
+        });
+
+        // Add child tasks if assembly is expanded
+        const isAsmCollapsed = collapsedAsms[asm.id] !== false;
+        if (!isAsmCollapsed) {
+          asm.tasks?.forEach((t, taskIdx) => {
+            const tStart = t.date || aStart || pStartStr;
+            let tFinish = t.finishDate || tStart;
+
+            if (new Date(tFinish) < new Date(tStart)) {
+              tFinish = tStart;
+            }
+
+            const tStartD = parseLocalDate(tStart);
+            const tFinishD = parseLocalDate(tFinish);
+            const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+
+            result.push({
+              id: t.id,
+              type: 'task',
+              name: t.name,
+              level: 2,
+              wbs: `${assemblyWbs}.${taskIdx + 1}`,
+              start: tStart,
+              finish: tFinish,
+              duration: tDuration,
+              pct: t.pct || 0,
+              done: !!t.done,
+              isMilestone: !!t.isMilestone,
+              predecessors: t.predecessors,
+              parentAsmId: asm.id,
+              assigned: t.assigned,
+              baselineDate: t.baselineDate,
+              baselineFinish: t.baselineFinish
+            });
+          });
+        }
+      });
     });
 
     return result;
-  }, [project, collapsedAsms, pStart, pDue, pStartD, pDueD]);
+  }, [projectsList, collapsedAsms]);
 
   // Generate list of filtered Gantt rows
   const rows = useMemo(() => {
@@ -1257,23 +1379,24 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
   const saveDate = (rowId: string, field: 'start' | 'finish', newVal: string) => {
     if (!newVal || !onUpdateProject) return;
 
-    // Deep clone project
-    const updated = JSON.parse(JSON.stringify(project)) as Project;
+    const res = findAndCloneProject(rowId);
+    if (!res) return;
+    const updated = res.cloned;
 
-    if (rowId === project.id) {
+    if (rowId === updated.id) {
       // Project level
       if (field === 'start') updated.start = newVal;
       else updated.due = newVal;
     } else {
       // Find in assemblies
-      const asm = updated.assemblies.find(a => a.id === rowId);
+      const asm = updated.assemblies?.find(a => a.id === rowId);
       if (asm) {
         if (field === 'start') asm.start = newVal;
         else asm.finish = newVal;
       } else {
         // Find in tasks
-        for (const a of updated.assemblies) {
-          const t = a.tasks.find(t => t.id === rowId);
+        for (const a of updated.assemblies || []) {
+          const t = a.tasks?.find(t => t.id === rowId);
           if (t) {
             if (field === 'start') t.date = newVal;
             else t.finishDate = newVal;
@@ -1294,17 +1417,19 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
   const savePredecessors = (rowId: string, inputStr: string) => {
     if (!onUpdateProject) return;
     const deps = parsePredecessorInput(inputStr, wbsMap);
-    const updated = JSON.parse(JSON.stringify(project)) as Project;
+    const res = findAndCloneProject(rowId);
+    if (!res) return;
+    const updated = res.cloned;
 
-    if (rowId === project.id) {
+    if (rowId === updated.id) {
       updated.predecessors = deps;
     } else {
-      const asm = updated.assemblies.find(a => a.id === rowId);
+      const asm = updated.assemblies?.find(a => a.id === rowId);
       if (asm) {
         asm.predecessors = deps;
       } else {
-        for (const a of updated.assemblies) {
-          const t = a.tasks.find(t => t.id === rowId);
+        for (const a of updated.assemblies || []) {
+          const t = a.tasks?.find(t => t.id === rowId);
           if (t) {
             t.predecessors = deps;
             break;
@@ -1322,11 +1447,12 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
     // Clamp between 0 and 100
     const clampedPct = Math.min(100, Math.max(0, newPct));
 
-    // Deep clone project
-    const updated = JSON.parse(JSON.stringify(project)) as Project;
+    const res = findAndCloneProject(taskId);
+    if (!res) return;
+    const updated = res.cloned;
 
     let found = false;
-    for (const a of updated.assemblies) {
+    for (const a of updated.assemblies || []) {
       const t = a.tasks?.find(t => t.id === taskId);
       if (t) {
         t.pct = clampedPct;
@@ -1473,11 +1599,13 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
   const totalTasksCountInProject = useMemo(() => {
     let count = 0;
-    project.assemblies?.forEach(asm => {
-      count += asm.tasks?.length || 0;
+    projectsList.forEach(p => {
+      p.assemblies?.forEach(asm => {
+        count += asm.tasks?.length || 0;
+      });
     });
     return count;
-  }, [project]);
+  }, [projectsList]);
 
   const isFilterActive = searchQuery !== '' || statusFilter !== 'all';
 
@@ -1682,75 +1810,80 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       if (dragState.tempStart && dragState.tempFinish) {
         const hasChanged = dragState.tempStart !== dragState.initialStart || dragState.tempFinish !== dragState.initialFinish;
         if (hasChanged) {
-          if (dragState.rowType === 'project') {
-            // Level 0 Project: Update project.start and project.due
-            onUpdateProject && onUpdateProject({
-              ...project,
-              start: dragState.tempStart,
-              due: dragState.tempFinish
-            });
-          } else if (dragState.rowType === 'assembly') {
-            // Level 1 Assembly: Update assembly start and finish and cascade deltaDays to child tasks
-            const dStart = parseLocalDate(dragState.initialStart);
-            const dTempStart = parseLocalDate(dragState.tempStart);
-            const deltaDays = daysBetween(dStart, dTempStart);
+          const res = findAndCloneProject(dragState.rowId);
+          if (res) {
+            const targetProj = res.cloned;
 
-            const updatedAssemblies = project.assemblies.map(asm => {
-              if (asm.id !== dragState.rowId) return asm;
+            if (dragState.rowType === 'project') {
+              // Level 0 Project: Update project.start and project.due
+              onUpdateProject && onUpdateProject({
+                ...targetProj,
+                start: dragState.tempStart,
+                due: dragState.tempFinish
+              });
+            } else if (dragState.rowType === 'assembly') {
+              // Level 1 Assembly: Update assembly start and finish and cascade deltaDays to child tasks
+              const dStart = parseLocalDate(dragState.initialStart);
+              const dTempStart = parseLocalDate(dragState.tempStart);
+              const deltaDays = daysBetween(dStart, dTempStart);
 
-              const updatedTasks = (asm.tasks || []).map(t => {
-                const nextTaskStart = t.date ? addDaysToLocalDate(t.date, deltaDays) : t.date;
-                const nextTaskFinish = t.finishDate ? addDaysToLocalDate(t.finishDate, deltaDays) : t.finishDate;
+              const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
+                if (asm.id !== dragState.rowId) return asm;
+
+                const updatedTasks = (asm.tasks || []).map(t => {
+                  const nextTaskStart = t.date ? addDaysToLocalDate(t.date, deltaDays) : t.date;
+                  const nextTaskFinish = t.finishDate ? addDaysToLocalDate(t.finishDate, deltaDays) : t.finishDate;
+                  return {
+                    ...t,
+                    date: nextTaskStart,
+                    finishDate: nextTaskFinish
+                  };
+                });
+
                 return {
-                  ...t,
-                  date: nextTaskStart,
-                  finishDate: nextTaskFinish
+                  ...asm,
+                  start: dragState.tempStart,
+                  finish: dragState.tempFinish,
+                  tasks: updatedTasks
                 };
               });
 
-              return {
-                ...asm,
-                start: dragState.tempStart,
-                finish: dragState.tempFinish,
-                tasks: updatedTasks
+              const baseUpdated = {
+                ...targetProj,
+                assemblies: updatedAssemblies
               };
-            });
+              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+              if (shiftedIds.size > 0) {
+                setCascadedTaskIds(shiftedIds);
+              }
+              onUpdateProject && onUpdateProject(updatedProject);
+            } else if (dragState.rowType === 'task') {
+              // Level 2 Task: Update the single task
+              const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
+                if (asm.id !== dragState.parentAsmId) return asm;
+                return {
+                  ...asm,
+                  tasks: (asm.tasks || []).map(t => {
+                    if (t.id !== dragState.rowId) return t;
+                    return {
+                      ...t,
+                      date: dragState.tempStart,
+                      finishDate: dragState.tempFinish
+                    };
+                  })
+                };
+              });
 
-            const baseUpdated = {
-              ...project,
-              assemblies: updatedAssemblies
-            };
-            const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-            if (shiftedIds.size > 0) {
-              setCascadedTaskIds(shiftedIds);
-            }
-            onUpdateProject && onUpdateProject(updatedProject);
-          } else if (dragState.rowType === 'task') {
-            // Level 2 Task: Update the single task
-            const updatedAssemblies = project.assemblies.map(asm => {
-              if (asm.id !== dragState.parentAsmId) return asm;
-              return {
-                ...asm,
-                tasks: asm.tasks.map(t => {
-                  if (t.id !== dragState.rowId) return t;
-                  return {
-                    ...t,
-                    date: dragState.tempStart,
-                    finishDate: dragState.tempFinish
-                  };
-                })
+              const baseUpdated = {
+                ...targetProj,
+                assemblies: updatedAssemblies
               };
-            });
-
-            const baseUpdated = {
-              ...project,
-              assemblies: updatedAssemblies
-            };
-            const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-            if (shiftedIds.size > 0) {
-              setCascadedTaskIds(shiftedIds);
+              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+              if (shiftedIds.size > 0) {
+                setCascadedTaskIds(shiftedIds);
+              }
+              onUpdateProject && onUpdateProject(updatedProject);
             }
-            onUpdateProject && onUpdateProject(updatedProject);
           }
         }
       }
@@ -1772,7 +1905,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
       document.body.style.webkitUserSelect = '';
       document.body.style.cursor = '';
     };
-  }, [dragState, pixelsPerDay, project, onUpdateProject]);
+  }, [dragState, pixelsPerDay, project, projectsList, onUpdateProject]);
 
   // Generate SVG dependency path lines
   const arrows = useMemo(() => {
@@ -1878,16 +2011,20 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
 
   const expandAllAssemblies = () => {
     const newCollapsed: Record<string, boolean> = {};
-    project.assemblies?.forEach(asm => {
-      newCollapsed[asm.id] = false;
+    projectsList.forEach(p => {
+      p.assemblies?.forEach(asm => {
+        newCollapsed[asm.id] = false;
+      });
     });
     setCollapsedAsms(newCollapsed);
   };
 
   const collapseAllAssemblies = () => {
     const newCollapsed: Record<string, boolean> = {};
-    project.assemblies?.forEach(asm => {
-      newCollapsed[asm.id] = true;
+    projectsList.forEach(p => {
+      p.assemblies?.forEach(asm => {
+        newCollapsed[asm.id] = true;
+      });
     });
     setCollapsedAsms(newCollapsed);
   };
@@ -1911,7 +2048,7 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
   const colPredWidth = 90;
   const colPctWidth = 52;
   const colVarWidth = 48;
-  const isBaselineActiveAndSet = showBaseline && !!project.baselineSetAt;
+  const isBaselineActiveAndSet = showBaseline && projectsList.some(p => !!p.baselineSetAt);
   const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + (isBaselineActiveAndSet ? colVarWidth : 0);
 
   return (
@@ -1923,11 +2060,13 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
         {/* Title & Info */}
         <div className="flex items-center gap-3">
           <h2 className="font-condensed font-extrabold text-lg sm:text-xl tracking-tight flex items-center gap-2">
-            📊 Gantt Chart — <span className="text-base-accent font-black">{project.name}</span>
+            📊 Gantt Chart — <span className="text-base-accent font-black">{projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}</span>
           </h2>
-          <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border ${getStatusColorClass(project.status)}`}>
-            {project.status}
-          </span>
+          {projectsList.length === 1 && projectsList[0] && (
+            <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border ${getStatusColorClass(projectsList[0].status)}`}>
+              {projectsList[0].status}
+            </span>
+          )}
         </div>
 
         {/* Action Controls */}
@@ -2437,9 +2576,10 @@ export default function GanttView({ project, onClose, onUpdateProject, onOpenDep
                               if (onOpenDepModal) {
                                 e.stopPropagation();
                                 let rowKey = '';
-                                if (row.level === 0) rowKey = `p:${project.id}`;
-                                else if (row.level === 1) rowKey = `a:${project.id}:${row.id}`;
-                                else if (row.level === 2) rowKey = `t:${project.id}:${row.parentAsmId}:${row.id}`;
+                                const pId = getProjectIdOfRow(row);
+                                if (row.level === 0) rowKey = `p:${pId}`;
+                                else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
+                                else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
                                 if (rowKey) onOpenDepModal(rowKey);
                               }
                             }}
