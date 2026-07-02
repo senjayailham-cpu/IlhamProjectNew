@@ -601,24 +601,6 @@ export function ProjectsPage({
                 className="hidden"
               />
               <button
-                onClick={handleDownloadTemplate}
-                className="px-3 py-1.5 bg-base-surface border border-base-border text-base-muted2 hover:text-base-text hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
-                title="Download Excel Import Template"
-              >
-                <BookOpen className="h-3.5 w-3.5" />
-                <span>Download Template</span>
-              </button>
-              {deleteProjectsExceptTarget && (
-                <button
-                  onClick={() => deleteProjectsExceptTarget('WOAEI0003612')}
-                  className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 text-red-500 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
-                  title="Delete all projects except WOAEI0003612"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                  <span>Delete Non-Target Projects</span>
-                </button>
-              )}
-              <button
                 onClick={openAddProject}
                 className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
               >

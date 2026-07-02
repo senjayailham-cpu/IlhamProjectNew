@@ -163,6 +163,14 @@ export interface Employee {
   position?: string;
   location?: string;
   coordinator?: string;
+  empNo?: string;
+  shift?: string;
+  joinDate?: string;
+  eoc?: string;
+  employmentStatus?: string;
+  isExEmployee?: boolean;
+  resignDate?: string;
+  resignReason?: string;
 }
 
 export interface TimesheetEntry {

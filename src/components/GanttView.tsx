@@ -2439,7 +2439,12 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
                       row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
                       row.level === 1 ? 'font-condensed font-bold text-xs text-base-text uppercase tracking-wide' :
                       'font-medium text-xs text-base-muted2'
-                    }`} title={row.name}>
+                    } ${row.pct === 100 ? 'line-through opacity-50 decoration-emerald-500/70' : ''}`} title={row.name}>
+                      {row.pct === 100 && (
+                        <span className="no-underline inline-flex items-center text-emerald-500 font-bold mr-1" title="Completed">
+                          ✓ — 
+                        </span>
+                      )}
                       {highlightText(row.name, searchQuery)}
                     </span>
                     {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
@@ -2915,8 +2920,8 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
 
                             {/* Task name inside label if wide enough */}
                             {barCoords.width > 80 && (
-                              <span className="relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8">
-                                {row.name} ({row.pct}%)
+                              <span className={`relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8 ${row.pct === 100 ? 'line-through opacity-75' : ''}`}>
+                                {row.pct === 100 ? `✓ — ${row.name}` : row.name} ({row.pct}%)
                               </span>
                             )}
 

@@ -110,10 +110,12 @@ export default function DashboardView({
         return p.targetMonth === selectedMonth;
       }
 
-      const startM = (p.start || '').slice(0, 7);
-      const dueM = (p.due || '').slice(0, 7);
+      const pStart = p.start || '';
+      const pDue = p.due || '';
+      const startM = pStart.slice(0, 7);
+      const dueM = pDue.slice(0, 7);
 
-      return startM === selectedMonth || dueM === selectedMonth || (p.start <= `${selectedMonth}-31` && p.due >= `${selectedMonth}-01`);
+      return startM === selectedMonth || dueM === selectedMonth || (pStart && pDue && pStart <= `${selectedMonth}-31` && pDue >= `${selectedMonth}-01`);
     });
 
     if (targetProjs.length === 0) {
@@ -139,8 +141,9 @@ export default function DashboardView({
       const isFuture = dateStr > todayStr;
 
       targetProjs.forEach(p => {
-        const pStart = p.start || `${yearStr}-${monthStr}-01`;
-        const pDue = p.due || `${yearStr}-${monthStr}-${totalDays}`;
+        const hasBaseline = !!p.baselineSetAt;
+        const pStart = (hasBaseline ? p.baselineStart : p.start) || p.start || `${yearStr}-${monthStr}-01`;
+        const pDue = (hasBaseline ? p.baselineDue : p.due) || p.due || `${yearStr}-${monthStr}-${totalDays}`;
         
         // Flatten all tasks across all assemblies for the project
         const projectTasks: any[] = [];
@@ -161,8 +164,8 @@ export default function DashboardView({
             const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
             totalProjDifficulty += difficulty;
 
-            const tStart = t.date || pStart;
-            const tFinish = t.finishDate || tStart;
+            const tStart = (hasBaseline ? t.baselineDate : t.date) || t.date || pStart;
+            const tFinish = (hasBaseline ? t.baselineFinish : t.finishDate) || t.finishDate || tStart;
 
             if (dateStr >= tFinish) {
               weightedPlannedSum += 100 * difficulty;
@@ -181,18 +184,19 @@ export default function DashboardView({
         // Actual trajectory curve based on historic milestones or progress interpolation up to today
         let actualValue = 0;
         const currentPct = calcPct(p);
+        const actualStart = p.start || `${yearStr}-${monthStr}-01`;
 
         if (p.status === 'completed' && p.completedDate) {
           if (dateStr >= p.completedDate) {
             actualValue = 100;
           } else {
-            actualValue = getInterpolatedPct(dateStr, pStart, p.completedDate, 0, 100);
+            actualValue = getInterpolatedPct(dateStr, actualStart, p.completedDate, 0, 100);
           }
         } else {
           if (dateStr >= todayStr) {
             actualValue = currentPct;
           } else {
-            actualValue = getInterpolatedPct(dateStr, pStart, todayStr, 0, currentPct);
+            actualValue = getInterpolatedPct(dateStr, actualStart, todayStr, 0, currentPct);
           }
         }
         totalActual += actualValue;

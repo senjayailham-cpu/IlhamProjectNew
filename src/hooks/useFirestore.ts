@@ -43,11 +43,26 @@ export function useFirestore() {
     }
   };
 
+  const removeBatch = async (colName: string, ids: string[]) => {
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += 500) {
+      chunks.push(ids.slice(i, i + 500));
+    }
+    for (const chunk of chunks) {
+      const batch = writeBatch(db);
+      for (const id of chunk) {
+        batch.delete(doc(db, colName, id));
+      }
+      await batch.commit();
+    }
+  };
+
   return {
     cleanFirestoreData,
     saveItem,
     removeItem,
     saveBatch,
+    removeBatch,
   };
 }
 

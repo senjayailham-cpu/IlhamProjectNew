@@ -204,7 +204,7 @@ function AppContent() {
     }
   }, [isOffline]);
 
-  const { saveItem, removeItem } = useFirestore();
+  const { saveItem, removeItem, saveBatch } = useFirestore();
 
   // Activity Logger
   const logActivity = (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => {
@@ -251,6 +251,56 @@ function AppContent() {
 
   const employeesHook = useEmployees(verifyMarkChanged, setDeleteConfirm);
   const { employees, setEmployees } = employeesHook;
+
+  const handleMarkExEmployee = async (id: string, resignDate: string, resignReason: string) => {
+    setEmployees(prev => prev.map(e => {
+      if (e.id === id) {
+        return { ...e, isExEmployee: true, resignDate, resignReason };
+      }
+      return e;
+    }));
+    await saveItem('employees', { id, isExEmployee: true, resignDate, resignReason });
+    verifyMarkChanged();
+  };
+
+  const handleReinstateEmployee = async (id: string) => {
+    setEmployees(prev => prev.map(e => {
+      if (e.id === id) {
+        const copy = { ...e };
+        copy.isExEmployee = false;
+        copy.resignDate = '';
+        copy.resignReason = '';
+        return copy;
+      }
+      return e;
+    }));
+    await saveItem('employees', { id, isExEmployee: false, resignDate: '', resignReason: '' });
+    verifyMarkChanged();
+  };
+
+  const handleBulkUpdateEmployees = async (ids: string[], updates: Partial<Employee>) => {
+    let updatedList: Employee[] = [];
+    setEmployees(prev => {
+      const next = prev.map(e => {
+        if (ids.includes(e.id)) {
+          const updated = { ...e, ...updates };
+          updatedList.push(updated);
+          return updated;
+        }
+        return e;
+      });
+      return next;
+    });
+
+    if (updatedList.length > 0) {
+      await saveBatch('employees', updatedList);
+    }
+    verifyMarkChanged();
+    logActivity(
+      'project_edit',
+      `Performed bulk update for ${ids.length} personnel: ${Object.keys(updates).map(k => `${k}=${(updates as any)[k]}`).join(', ')}`
+    );
+  };
 
   const timesheetsHook = useTimesheets(verifyMarkChanged, setDeleteConfirm);
   const { timesheets, setTimesheets } = timesheetsHook;
@@ -308,12 +358,21 @@ function AppContent() {
           const colRef = collection(db, colName);
           const unsub = onSnapshot(colRef, (snapshot) => {
             const list: any[] = [];
+            const seenIds = new Set<string>();
             snapshot.forEach((d) => {
               const data = d.data();
               // Filter out the UID mapping documents from the users collection.
               // A UID mapping document's Firestore ID is the Firebase UID, which is different from the user's portal ID (data.id).
               if (colName === 'users' && d.id !== data.id) {
                 return;
+              }
+              
+              const itemId = data.id || d.id;
+              if (itemId && seenIds.has(itemId)) {
+                return;
+              }
+              if (itemId) {
+                seenIds.add(itemId);
               }
               list.push(data);
             });
@@ -719,13 +778,20 @@ function AppContent() {
                 />
               )}
 
-              {activeTab === 'employees' && (
+               {activeTab === 'employees' && (
                 <EmployeesView
                   employees={employees}
+                  timesheets={timesheets}
+                  wireLogs={wireLogs}
+                  currentUser={currentUser}
                   openAddEmployee={employeesHook.openAddEmp}
                   openEditEmployee={employeesHook.openEditEmp}
                   deleteEmployee={employeesHook.removeEmployeeRecord}
                   onImportExcel={employeesHook.importEmployeesExcel}
+                  onMarkExEmployee={handleMarkExEmployee}
+                  onReinstateEmployee={handleReinstateEmployee}
+                  onClearAllEmployees={employeesHook.clearAllEmployees}
+                  onBulkUpdateEmployees={handleBulkUpdateEmployees}
                 />
               )}
 

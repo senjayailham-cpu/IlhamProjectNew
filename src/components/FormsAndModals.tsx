@@ -409,26 +409,55 @@ export function FormsAndModals({
       {/* Employee Modal Form Dialog */}
       {employeesHook.empModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-sm p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150">
+          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-md p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150">
             <h3 className="font-condensed font-extrabold uppercase text-base text-base-text border-b border-base-border pb-2">
               {employeesHook.editingEmpId ? 'Modify Personnel' : 'Add Personnel'}
             </h3>
-            <div className="space-y-4 text-xs font-semibold">
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Full Name</label>
-                <input type="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Position Role</label>
-                <input type="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Site Location</label>
-                <input type="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Coordinator PPC</label>
-                <input type="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+            <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-xs font-semibold">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1 col-span-2">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Full Name</label>
+                  <input type="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Employee No</label>
+                  <input type="text" value={employeesHook.empNo} onChange={(e) => employeesHook.setEmpNo(e.target.value)} placeholder="e.g. 2110051" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Shift</label>
+                  <select value={employeesHook.shift} onChange={(e) => employeesHook.setShift(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text">
+                    <option value="DAY SHIFT">DAY SHIFT</option>
+                    <option value="NIGHT SHIFT">NIGHT SHIFT</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Position Role</label>
+                  <input type="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Site Location</label>
+                  <input type="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Coordinator PPC</label>
+                  <input type="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Join Date</label>
+                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">End of Contract (EOC)</label>
+                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text" />
+                </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Employment Status</label>
+                  <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text">
+                    <option value="Permanent">Permanent</option>
+                    <option value="Contract">Contract</option>
+                    <option value="Finish Contract">Finish Contract</option>
+                  </select>
+                </div>
               </div>
             </div>
             <div className="flex gap-2 justify-end text-xs pt-2">

@@ -15,8 +15,13 @@ export function useEmployees(
   const [empPosition, setEmpPosition] = useState<string>('');
   const [empLocation, setEmpLocation] = useState<string>('');
   const [empCoordinator, setEmpCoordinator] = useState<string>('');
+  const [empNo, setEmpNo] = useState<string>('');
+  const [shift, setShift] = useState<string>('DAY SHIFT');
+  const [joinDate, setJoinDate] = useState<string>('');
+  const [eoc, setEoc] = useState<string>('');
+  const [employmentStatus, setEmploymentStatus] = useState<string>('Permanent');
 
-  const { saveItem, removeItem, saveBatch } = useFirestore();
+  const { saveItem, removeItem, saveBatch, removeBatch } = useFirestore();
 
   const openAddEmp = () => {
     setEditingEmpId(null);
@@ -24,6 +29,11 @@ export function useEmployees(
     setEmpPosition('');
     setEmpLocation('');
     setEmpCoordinator('');
+    setEmpNo('');
+    setShift('DAY SHIFT');
+    setJoinDate('');
+    setEoc('');
+    setEmploymentStatus('Permanent');
     setEmpModalOpen(true);
   };
 
@@ -35,22 +45,34 @@ export function useEmployees(
     setEmpPosition(e.position || '');
     setEmpLocation(e.location || '');
     setEmpCoordinator(e.coordinator || '');
+    setEmpNo(e.empNo || '');
+    setShift(e.shift || 'DAY SHIFT');
+    setJoinDate(e.joinDate || '');
+    setEoc(e.eoc || '');
+    setEmploymentStatus(e.employmentStatus || 'Permanent');
     setEmpModalOpen(true);
   };
 
   const saveEmployeeForm = () => {
     if (!empName.trim()) return alert('Name required.');
     if (editingEmpId) {
+      const existing = employees.find(e => e.id === editingEmpId);
       const updatedEmp = {
+        ...existing,
         id: editingEmpId,
         name: empName.trim(),
         position: empPosition.trim(),
         location: empLocation.trim(),
         coordinator: empCoordinator.trim(),
+        empNo: empNo.trim(),
+        shift: shift,
+        joinDate: joinDate,
+        eoc: eoc,
+        employmentStatus: employmentStatus,
       };
       setEmployees(prev => prev.map(e => {
         if (e.id === editingEmpId) {
-          return { ...e, ...updatedEmp };
+          return updatedEmp;
         }
         return e;
       }));
@@ -62,6 +84,12 @@ export function useEmployees(
         position: empPosition.trim(),
         location: empLocation.trim(),
         coordinator: empCoordinator.trim(),
+        empNo: empNo.trim(),
+        shift: shift,
+        joinDate: joinDate,
+        eoc: eoc,
+        employmentStatus: employmentStatus,
+        isExEmployee: false,
       };
       setEmployees(prev => [...prev, newEmp]);
       saveItem('employees', newEmp);
@@ -106,6 +134,22 @@ export function useEmployees(
     verifyMarkChanged();
   };
 
+  const clearAllEmployees = () => {
+    if (employees.length === 0) return alert('No employees to delete.');
+    setDeleteConfirm({
+      isOpen: true,
+      title: 'Delete All Employees',
+      message: `Are you sure you want to permanently delete ALL ${employees.length} employees? This action is irreversible and will wipe out the entire workforce roster.`,
+      onConfirm: async () => {
+        const ids = employees.map(x => x.id);
+        setEmployees([]);
+        await removeBatch('employees', ids);
+        verifyMarkChanged();
+        setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
   return {
     employees,
     setEmployees,
@@ -121,11 +165,22 @@ export function useEmployees(
     setEmpLocation,
     empCoordinator,
     setEmpCoordinator,
+    empNo,
+    setEmpNo,
+    shift,
+    setShift,
+    joinDate,
+    setJoinDate,
+    eoc,
+    setEoc,
+    employmentStatus,
+    setEmploymentStatus,
     openAddEmp,
     openEditEmp,
     saveEmployeeForm,
     removeEmployeeRecord,
-    importEmployeesExcel
+    importEmployeesExcel,
+    clearAllEmployees
   };
 }
 export default useEmployees;
