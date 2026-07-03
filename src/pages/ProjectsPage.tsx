@@ -1,5 +1,5 @@
 import React from 'react';
-import { Project, TimesheetEntry, WireLog, Assembly, Task } from '../types';
+import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog } from '../types';
 import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2 } from 'lucide-react';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
@@ -13,6 +13,7 @@ interface ProjectsPageProps {
   projects: Project[];
   timesheets: TimesheetEntry[];
   wireLogs: WireLog[];
+  consumptionLogs?: MaterialConsumptionLog[];
   projectSearchQuery: string;
   setProjectSearchQuery: (query: string) => void;
   currentTabMonthFilter: string;
@@ -35,6 +36,7 @@ export function ProjectsPage({
   projects,
   timesheets,
   wireLogs,
+  consumptionLogs = [],
   projectSearchQuery,
   setProjectSearchQuery,
   currentTabMonthFilter,
@@ -757,7 +759,7 @@ export function ProjectsPage({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            downloadProjectPDF(p, timesheets, wireLogs);
+                            downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
                           }}
                           className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md"
                           title="Download completion PDF report"
@@ -920,7 +922,7 @@ export function ProjectsPage({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          downloadProjectPDF(p, timesheets, wireLogs);
+                          downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
                         }}
                         className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1-sm p"
                         title="Download PDF"

@@ -6,6 +6,7 @@ import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
+import { MaterialConsumptionLog } from '../types';
 
 const SpotlightModal = lazy(() => import('./SpotlightModal'));
 
@@ -18,6 +19,7 @@ interface FormsAndModalsProps {
   setDeleteConfirm: React.Dispatch<React.SetStateAction<any>>;
   timesheets: any[];
   wireLogs: any[];
+  consumptionLogs?: MaterialConsumptionLog[];
   setProjects: React.Dispatch<React.SetStateAction<any[]>>;
   verifyMarkChanged: () => void;
   logActivity: any;
@@ -33,6 +35,7 @@ export function FormsAndModals({
   setDeleteConfirm,
   timesheets,
   wireLogs,
+  consumptionLogs = [],
   setProjects,
   verifyMarkChanged,
   logActivity,
@@ -495,6 +498,7 @@ export function FormsAndModals({
             projects={projectsHook.projects}
             timesheets={timesheets}
             wireLogs={wireLogs}
+            consumptionLogs={consumptionLogs}
             selectedMonth={selectedMonth}
             onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
             onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}

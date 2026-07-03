@@ -543,8 +543,17 @@ export function useProjects(
 
     if (nextP !== p) {
       const updatedProjects = projects.map(proj => proj.id === p.id ? nextP : proj);
-      const finalProjects = propagateAllSchedules(updatedProjects, targetKey);
-      
+
+      // Propagate from each predecessor of the target so the target's own
+      // start/finish dates recalculate based on its new predecessor links.
+      // Then propagate from the target itself so its successors also shift.
+      let finalProjects = updatedProjects;
+      const seedKeys = preds.length > 0 ? preds.map((pr: any) => pr.key) : [targetKey];
+      seedKeys.forEach((seedKey: string) => {
+        finalProjects = propagateAllSchedules(finalProjects, seedKey);
+      });
+      finalProjects = propagateAllSchedules(finalProjects, targetKey);
+
       setProjects(finalProjects);
       
       finalProjects.forEach(proj => {

@@ -12,7 +12,11 @@ import {
   Search,
   Bookmark,
   Flag,
-  Download
+  Download,
+  Plus,
+  X,
+  Trash2,
+  Link
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -171,6 +175,11 @@ interface GanttViewProps {
   onClose?: () => void;
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
+  depModalOpen?: boolean;
+  depModalRowKey?: string;
+  setDepModalOpen?: (open: boolean) => void;
+  onSaveDependencies?: (targetKey: string, preds: Dependency[], succs: Dependency[]) => void;
+  onCloseDepModal?: () => void;
 }
 
 interface GanttRow {
@@ -610,7 +619,18 @@ const cascadeSchedule = (
   return { updatedProject: cloned, shiftedIds };
 };
 
-export default function GanttView({ project, projects, onClose, onUpdateProject, onOpenDepModal }: GanttViewProps) {
+export default function GanttView({ 
+  project, 
+  projects, 
+  onClose, 
+  onUpdateProject, 
+  onOpenDepModal,
+  depModalOpen,
+  depModalRowKey,
+  setDepModalOpen,
+  onSaveDependencies,
+  onCloseDepModal
+}: GanttViewProps) {
   const projectsList = useMemo(() => {
     let list: Project[] = [];
     if (projects && projects.length > 0) {
@@ -895,6 +915,60 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
+
+  // Draw-to-Connect Interaction States
+  const [connectMode, setConnectMode] = useState<boolean>(false);
+  const [connectDraw, setConnectDraw] = useState<{
+    sourceRowId: string;
+    sourceX: number;
+    sourceY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+  const [pendingConnect, setPendingConnect] = useState<{
+    sourceRowId: string;
+    targetRowId: string;
+  } | null>(null);
+  const [pendingDepType, setPendingDepType] = useState<'FS' | 'SS' | 'FF' | 'SF'>('FS');
+  const [pendingDepLag, setPendingDepLag] = useState<string>('0');
+  const [connectPopupPos, setConnectPopupPos] = useState<{ x: number; y: number } | null>(null);
+
+  // Smart Search Side Panel States
+  const [depPanelOpen, setDepPanelOpen] = useState<boolean>(false);
+  const [depPanelRowId, setDepPanelRowId] = useState<string | null>(null);
+  const [depPanelSearch, setDepPanelSearch] = useState<string>('');
+  const [depPanelType, setDepPanelType] = useState<'FS' | 'SS' | 'FF' | 'SF'>('FS');
+  const [depPanelLag, setDepPanelLag] = useState<string>('0');
+
+  // Sync external trigger (SpotlightModal / onOpenDepModal) with internal Side Panel
+  useEffect(() => {
+    if (depModalOpen && depModalRowKey) {
+      setDepPanelRowId(depModalRowKey);
+      setDepPanelOpen(true);
+      setDepPanelSearch('');
+      if (setDepModalOpen) {
+        setDepModalOpen(false);
+      }
+    }
+  }, [depModalOpen, depModalRowKey, setDepModalOpen]);
+
+  // Escape key global handler to dismiss connection drawing / side panel
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (connectMode) setConnectMode(false);
+        if (connectDraw) setConnectDraw(null);
+        if (pendingConnect) setPendingConnect(null);
+        if (depPanelOpen) setDepPanelOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleGlobalKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown);
+    };
+  }, [connectMode, connectDraw, pendingConnect, depPanelOpen]);
+
+
 
   // Filtering States & Ref
   const [searchQuery, setSearchQuery] = useState('');
@@ -1345,6 +1419,34 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
     return map;
   }, [rows]);
 
+  // Memoized search results for linking new predecessors
+  const availablePredecessors = useMemo(() => {
+    if (!depPanelRowId) return [];
+    
+    // Parse depPanelRowId (format: t:pId:asmId:taskId) to find actual row ID
+    const parts = depPanelRowId.split(':');
+    const rowId = parts[parts.length - 1];
+    const targetRow = rows.find(r => r.id === rowId);
+    if (!targetRow) return [];
+    
+    const currentKeys = new Set(targetRow.predecessors?.map(d => d.key) || []);
+    
+    // Filter all level 2 tasks that are NOT target, and NOT already linked
+    return rows.filter(row => {
+      if (row.level !== 2) return false;
+      if (row.id === targetRow.id) return false;
+      if (currentKeys.has(row.id)) return false;
+      if (!depPanelSearch) return true;
+      
+      const term = depPanelSearch.toLowerCase();
+      return row.name.toLowerCase().includes(term) || row.wbs.toLowerCase().includes(term);
+    });
+  }, [rows, depPanelRowId, depPanelSearch]);
+
+  const displayedPredecessors = useMemo(() => {
+    return availablePredecessors.slice(0, 5);
+  }, [availablePredecessors]);
+
   const firstCriticalRowIdx = useMemo(() => {
     return rows.findIndex(row => row.level === 2 && criticalPathIds.has(row.id));
   }, [rows, criticalPathIds]);
@@ -1438,6 +1540,81 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
       }
     }
     onUpdateProject(updated);
+  };
+
+  // Direct predecessors list saving (bypasses string parsing and uses scheduling cascade/propagation if onSaveDependencies prop is available)
+  const savePredecessorsDirect = (rowId: string, deps: Dependency[]) => {
+    let rowKey = '';
+    const targetRow = rows.find(r => r.id === rowId);
+    if (targetRow) {
+      const pId = getProjectIdOfRow(targetRow);
+      if (targetRow.level === 0) rowKey = `p:${pId}`;
+      else if (targetRow.level === 1) rowKey = `a:${pId}:${targetRow.id}`;
+      else if (targetRow.level === 2) rowKey = `t:${pId}:${targetRow.parentAsmId}:${targetRow.id}`;
+    }
+
+    if (rowKey && onSaveDependencies) {
+      onSaveDependencies(rowKey, deps, []);
+      return;
+    }
+
+    if (!onUpdateProject) return;
+    const res = findAndCloneProject(rowId);
+    if (!res) return;
+    const updated = res.cloned;
+
+    if (rowId === updated.id) {
+      updated.predecessors = deps;
+    } else {
+      const asm = updated.assemblies?.find(a => a.id === rowId);
+      if (asm) {
+        asm.predecessors = deps;
+      } else {
+        for (const a of updated.assemblies || []) {
+          const t = a.tasks?.find(t => t.id === rowId);
+          if (t) {
+            t.predecessors = deps;
+            break;
+          }
+        }
+      }
+    }
+    onUpdateProject(updated);
+  };
+
+  const handleAddPredecessor = (predId: string) => {
+    if (!depPanelRowId) return;
+    const targetRow = rows.find(r => r.id === depPanelRowId);
+    if (!targetRow) return;
+    const currentDeps = targetRow.predecessors || [];
+    const parsedLag = parseInt(depPanelLag.replace('d', ''), 10);
+    const lagValue = !isNaN(parsedLag) && parsedLag !== 0 ? parsedLag : undefined;
+    const newDep: Dependency = {
+      key: predId,
+      type: depPanelType,
+      lag: lagValue
+    };
+    
+    // Avoid duplicate predecessor links
+    let nextDeps = [...currentDeps];
+    const existingIdx = nextDeps.findIndex(d => d.key === newDep.key);
+    if (existingIdx !== -1) {
+      nextDeps[existingIdx] = newDep;
+    } else {
+      nextDeps.push(newDep);
+    }
+
+    savePredecessorsDirect(depPanelRowId, nextDeps);
+    setDepPanelSearch('');
+  };
+
+  const handleDeletePredecessor = (predId: string) => {
+    if (!depPanelRowId) return;
+    const targetRow = rows.find(r => r.id === depPanelRowId);
+    if (!targetRow) return;
+    const currentDeps = targetRow.predecessors || [];
+    const nextDeps = currentDeps.filter(d => d.key !== predId);
+    savePredecessorsDirect(depPanelRowId, nextDeps);
   };
 
   // Inline Progress (%) Saving handler
@@ -2234,14 +2411,32 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
           </label>
 
           {onUpdateProject !== undefined && (
-            <button
-              onClick={handleSetBaseline}
-              className="flex items-center gap-1 px-2.5 py-1 rounded border border-base-border hover:bg-base-accent/10 hover:text-base-accent transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 bg-base-surface"
-              title="Set current schedule as baseline"
-            >
-              <Bookmark className="h-3.5 w-3.5 shrink-0 text-base-accent" />
-              <span>Set Baseline</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSetBaseline}
+                className="flex items-center gap-1 px-2.5 py-1 rounded border border-base-border hover:bg-base-accent/10 hover:text-base-accent transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 bg-base-surface"
+                title="Set current schedule as baseline"
+              >
+                <Bookmark className="h-3.5 w-3.5 shrink-0 text-base-accent" />
+                <span>Set Baseline</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  setConnectMode(!connectMode);
+                  if (depPanelOpen) setDepPanelOpen(false);
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed h-[34px] border ${
+                  connectMode 
+                    ? 'bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm' 
+                    : 'border-base-border hover:bg-green-500/10 hover:text-green-600 text-base-muted2 bg-base-surface'
+                }`}
+                title="Toggle Draw-to-Connect Mode (click and drag from a task bar's green dot to link a predecessor)"
+              >
+                <Link className="h-3.5 w-3.5 shrink-0" />
+                <span>Draw Link</span>
+              </button>
+            </div>
           )}
 
           <div className="w-[1px] h-4 bg-base-border" />
@@ -2574,31 +2769,51 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
                         }}
                       />
                     ) : (
-                      <div className="flex items-center gap-1 select-none">
+                      <div className="flex items-center justify-center gap-1 select-none w-full relative">
                         {row.predecessors && row.predecessors.length > 0 ? (
                           <span 
                             onClick={(e) => {
-                              if (onOpenDepModal) {
-                                e.stopPropagation();
-                                let rowKey = '';
-                                const pId = getProjectIdOfRow(row);
-                                if (row.level === 0) rowKey = `p:${pId}`;
-                                else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
-                                else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
-                                if (rowKey) onOpenDepModal(rowKey);
+                              e.stopPropagation();
+                              let rowKey = '';
+                              const pId = getProjectIdOfRow(row);
+                              if (row.level === 0) rowKey = `p:${pId}`;
+                              else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
+                              else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
+                              if (rowKey) {
+                                setDepPanelRowId(rowKey);
+                                setDepPanelOpen(true);
+                                setDepPanelSearch('');
                               }
                             }}
-                            className="text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer"
-                            title="Click to manage predecessors in modal"
+                            className="text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
+                            title="Click to manage predecessors"
                           >
                             {getPredecessorsLabel(row)}
                           </span>
                         ) : (
-                          <span className="text-base-muted">—</span>
+                          <span className="text-base-muted/40 group-hover:hidden select-none">—</span>
                         )}
-                        {onUpdateProject && (
-                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>
-                        )}
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            let rowKey = '';
+                            const pId = getProjectIdOfRow(row);
+                            if (row.level === 0) rowKey = `p:${pId}`;
+                            else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
+                            else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
+                            if (rowKey) {
+                              setDepPanelRowId(rowKey);
+                              setDepPanelOpen(true);
+                              setDepPanelSearch('');
+                            }
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-base-muted hover:text-base-accent rounded cursor-pointer absolute right-1"
+                          title="Manage dependencies"
+                        >
+                          <Link className="h-3 w-3" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -2705,6 +2920,47 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
           <div 
             className="gantt-relative-container relative min-h-full" 
             style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}
+            onMouseMove={(e) => {
+              if (connectDraw) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top - 56; // relative to the rows zone
+                setConnectDraw(prev => prev ? {
+                  ...prev,
+                  currentX: x,
+                  currentY: y
+                } : null);
+              }
+            }}
+            onMouseUp={(e) => {
+              if (connectDraw) {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top - 56; // relative to the rows zone
+
+                const targetRowIdx = Math.floor(y / 32);
+
+                if (targetRowIdx >= 0 && targetRowIdx < rows.length) {
+                  const targetRow = rows[targetRowIdx];
+                  if (targetRow && targetRow.level === 2 && targetRow.id !== connectDraw.sourceRowId) {
+                    setPendingConnect({
+                      sourceRowId: connectDraw.sourceRowId,
+                      targetRowId: targetRow.id
+                    });
+                    setConnectPopupPos({
+                      x: e.clientX,
+                      y: e.clientY
+                    });
+                  }
+                }
+                setConnectDraw(null);
+              }
+            }}
+            onMouseLeave={() => {
+              if (connectDraw) {
+                setConnectDraw(null);
+              }
+            }}
           >
             {/* 1. TIMELINE HEADER BAND (56px) */}
             <div className="h-14 border-b border-base-border sticky top-0 z-30 select-none shrink-0 bg-base-surface">
@@ -2848,6 +3104,33 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
                           alignItems: 'center'
                         }}
                       >
+                        {/* Connector Dot for Draw-to-Connect dependency arrows */}
+                        {row.level === 2 && !row.isMilestone && (
+                          <div
+                            data-export-hide="true"
+                            className={`absolute -right-1.5 z-30 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white shadow-sm cursor-crosshair transition-all duration-150 flex items-center justify-center ${
+                              connectMode ? 'opacity-100 animate-pulse scale-115' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
+                            }`}
+                            title="Drag to connect dependency"
+                            onMouseDown={(e) => {
+                              e.stopPropagation();
+                              e.preventDefault();
+                              const container = document.querySelector('.gantt-relative-container');
+                              if (container) {
+                                const rect = container.getBoundingClientRect();
+                                const startX = e.clientX - rect.left;
+                                const startY = e.clientY - rect.top - 56;
+                                setConnectDraw({
+                                  sourceRowId: row.id,
+                                  sourceX: startX,
+                                  sourceY: startY,
+                                  currentX: startX,
+                                  currentY: startY
+                                });
+                              }
+                            }}
+                          />
+                        )}
                         {/* Summary Bar Level 0 (Project rollup) */}
                         {row.level === 0 && (
                           <div 
@@ -3025,6 +3308,18 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
                     opacity={arr.isCritical ? 1 : 0.9}
                   />
                 ))}
+
+                {/* Live Rubber-Band Connection Line */}
+                {connectDraw && (
+                  <path
+                    d={`M ${connectDraw.sourceX} ${connectDraw.sourceY} L ${connectDraw.currentX} ${connectDraw.currentY}`}
+                    fill="none"
+                    stroke="#22c55e"
+                    strokeWidth="2.5"
+                    strokeDasharray="4,4"
+                    markerEnd="url(#arrow-right)"
+                  />
+                )}
               </svg>
             </div>
           </div>
@@ -3131,6 +3426,309 @@ export default function GanttView({ project, projects, onClose, onUpdateProject,
             <span className="text-base-text font-bold">{toastMsg}</span>
           </div>
         )}
+
+        {/* DRAW-TO-CONNECT POPUP DIALOG */}
+        {pendingConnect && (
+          <div 
+            data-export-hide="true"
+            className="fixed bg-base-surface border-2 border-green-500 rounded-xl shadow-2xl p-4 z-[250] w-64 text-xs font-sans animate-fade-in print:hidden"
+            style={{ 
+              left: `${connectPopupPos.x}px`, 
+              top: `${connectPopupPos.y}px`,
+              transform: 'translate(-50%, -100%) translateY(-12px)'
+            }}
+          >
+            <div className="flex items-center gap-1.5 font-condensed font-extrabold text-sm uppercase tracking-wide border-b border-base-border pb-2 mb-3 text-green-500">
+              <Link className="h-4 w-4" />
+              <span>Link Dependency</span>
+            </div>
+            
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">Relationship Type</label>
+                <select
+                  value={pendingDepType}
+                  onChange={(e) => setPendingDepType(e.target.value as any)}
+                  className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-medium text-base-text"
+                >
+                  <option value="FS">Finish-to-Start (FS)</option>
+                  <option value="SS">Start-to-Start (SS)</option>
+                  <option value="FF">Finish-to-Finish (FF)</option>
+                  <option value="SF">Start-to-Finish (SF)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">Lag (e.g. 2d, -1d)</label>
+                <input
+                  type="text"
+                  placeholder="0d"
+                  value={pendingDepLag}
+                  onChange={(e) => setPendingDepLag(e.target.value)}
+                  className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-mono text-base-text"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (pendingConnect) {
+                      const sourceRow = rows.find(r => r.id === pendingConnect.sourceRowId);
+                      const targetRow = rows.find(r => r.id === pendingConnect.targetRowId);
+                      if (sourceRow && targetRow) {
+                        setDepPanelRowId(targetRow.id);
+                        setDepPanelType(pendingDepType);
+                        setDepPanelLag(pendingDepLag);
+                        
+                        // We must call handleAddPredecessor inside a functional style or direct update
+                        const currentDeps = targetRow.predecessors || [];
+                        const parsedLag = parseInt(pendingDepLag.replace('d', ''), 10);
+                        const lagValue = !isNaN(parsedLag) && parsedLag !== 0 ? parsedLag : undefined;
+                        const newDep = {
+                          key: sourceRow.id,
+                          type: pendingDepType,
+                          lag: lagValue
+                        };
+                        const nextDeps = [...currentDeps];
+                        const existingIdx = nextDeps.findIndex(d => d.key === newDep.key);
+                        if (existingIdx !== -1) {
+                          nextDeps[existingIdx] = newDep;
+                        } else {
+                          nextDeps.push(newDep);
+                        }
+                        savePredecessorsDirect(targetRow.id, nextDeps);
+
+                        setToastMsg(`Linked ${sourceRow.wbs} → ${targetRow.wbs} (${pendingDepType}${pendingDepLag ? `+${pendingDepLag}` : ''})`);
+                        setTimeout(() => setToastMsg(null), 3000);
+                      }
+                    }
+                    setPendingConnect(null);
+                  }}
+                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors shadow-sm cursor-pointer"
+                >
+                  Add Link
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPendingConnect(null)}
+                  className="px-3 bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border py-1.5 rounded font-bold transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* SMART SEARCH DEPENDENCY SIDE PANEL */}
+        {depPanelOpen && (() => {
+          let targetRow: any = null;
+          if (depPanelRowId) {
+            const parts = depPanelRowId.split(':');
+            const rowId = parts[parts.length - 1];
+            targetRow = rows.find(r => r.id === rowId);
+          }
+
+          if (!targetRow) return null;
+
+          return (
+            <div 
+              data-export-hide="true"
+              className="fixed inset-y-0 right-0 z-50 w-96 bg-base-surface border-l border-base-border shadow-2xl flex flex-col font-sans select-none print:hidden animate-fade-in"
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-base-border flex items-center justify-between bg-base-surface2 shrink-0">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-base-accent/10 text-base-accent rounded">
+                    <Link className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-condensed font-extrabold text-sm text-base-text tracking-tight uppercase">Dependencies</h3>
+                    <p className="text-[10px] text-base-muted font-bold font-mono">WBS {targetRow.wbs} — {targetRow.name}</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => {
+                    setDepPanelOpen(false);
+                    setDepPanelRowId(null);
+                  }}
+                  className="p-1 rounded-full hover:bg-base-surface3 text-base-muted hover:text-base-text transition-all cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="flex-1 overflow-y-auto p-4 space-y-5">
+                {/* Active Predecessors List */}
+                <div>
+                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Active Predecessors</h4>
+                  {targetRow.predecessors && targetRow.predecessors.length > 0 ? (
+                    <div className="space-y-2">
+                      {targetRow.predecessors.map((dep: any) => {
+                        const predRow = rows.find(r => r.id === dep.key);
+                        if (!predRow) return null;
+                        return (
+                          <div 
+                            key={`dep-item-${dep.key}`}
+                            className="flex items-center justify-between p-2.5 bg-base-surface2 border border-base-border rounded-lg"
+                          >
+                            <div className="min-w-0 pr-2">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono text-[9px] font-bold bg-base-accent-dim text-base-accent px-1.5 py-0.5 rounded">
+                                  {predRow.wbs}
+                                </span>
+                                <span className="text-[11px] font-bold truncate text-base-text">{predRow.name}</span>
+                              </div>
+                              <div className="mt-1 text-[9px] text-base-muted font-mono">
+                                Type: <span className="text-base-text font-bold">{dep.type}</span>
+                                {dep.lag ? ` | Lag: ` : ''}
+                                {dep.lag ? <span className="text-base-text font-bold">{dep.lag}d</span> : ''}
+                              </div>
+                            </div>
+                            
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleDeletePredecessor(dep.key);
+                              }}
+                              className="p-1.5 text-base-muted hover:text-base-red hover:bg-base-red-dim/20 rounded-md transition-all cursor-pointer"
+                              title="Delete dependency link"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 bg-base-surface2/50 border border-dashed border-base-border rounded-lg text-[10px] text-base-muted font-bold font-condensed">
+                      No active predecessors for this task.
+                    </div>
+                  )}
+                </div>
+
+                {/* Divider */}
+                <div className="border-t border-base-border/50" />
+
+                {/* Search & Add Section */}
+                <div>
+                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Link New Predecessor</h4>
+                  
+                  {/* Search Input */}
+                  <div className="relative flex items-center mb-3">
+                    <Search className="absolute left-2.5 h-3.5 w-3.5 text-base-muted pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="Search tasks by name or WBS..."
+                      value={depPanelSearch}
+                      onChange={(e) => setDepPanelSearch(e.target.value)}
+                      className="w-full bg-base-surface2 border border-base-border rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none focus:border-base-accent font-medium text-base-text"
+                    />
+                  </div>
+
+                  {/* Results List */}
+                  {(() => {
+                    const query = depPanelSearch.toLowerCase().trim();
+                    const available = rows.filter(r => {
+                      if (r.level !== 2) return false;
+                      if (r.id === targetRow.id) return false;
+                      const isLinked = targetRow.predecessors?.some((dep: any) => dep.key === r.id);
+                      if (isLinked) return false;
+                      if (query) {
+                        return r.name.toLowerCase().includes(query) || r.wbs.toLowerCase().includes(query);
+                      }
+                      return true;
+                    });
+
+                    if (available.length === 0) {
+                      return (
+                        <div className="text-center py-4 text-[10px] text-base-muted font-bold font-condensed">
+                          No matching available tasks.
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                        {available.slice(0, 10).map((r: any) => (
+                          <div 
+                            key={`search-item-${r.id}`}
+                            className="p-2 bg-base-surface2/40 hover:bg-base-surface2 border border-base-border rounded-lg flex flex-col gap-2 transition-all"
+                          >
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-mono text-[9px] font-bold text-base-muted">{r.wbs}</span>
+                              <span className="text-[11px] font-bold truncate text-base-text flex-1">{r.name}</span>
+                            </div>
+
+                            {/* Link Quick Creator Controls */}
+                            <div className="flex items-center gap-1.5">
+                              {/* Relationship Select */}
+                              <select
+                                id={`type-sel-${r.id}`}
+                                className="bg-base-surface border border-base-border text-[9px] font-bold rounded px-1 py-0.5 outline-none font-sans text-base-text"
+                                defaultValue="FS"
+                              >
+                                <option value="FS">FS</option>
+                                <option value="SS">SS</option>
+                                <option value="FF">FF</option>
+                                <option value="SF">SF</option>
+                              </select>
+
+                              {/* Lag Input */}
+                              <input
+                                id={`lag-inp-${r.id}`}
+                                type="text"
+                                placeholder="Lag"
+                                className="bg-base-surface border border-base-border text-[9px] rounded px-1 py-0.5 w-10 text-center outline-none font-mono text-base-text"
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const typeSel = document.getElementById(`type-sel-${r.id}`) as HTMLSelectElement;
+                                  const lagInp = document.getElementById(`lag-inp-${r.id}`) as HTMLInputElement;
+                                  const typeVal = typeSel?.value || 'FS';
+                                  const lagVal = lagInp?.value ? lagInp.value.replace('d', '') : '';
+
+                                  const currentDeps = targetRow.predecessors || [];
+                                  const parsedLag = parseInt(lagVal.replace('d', ''), 10);
+                                  const lagValue = !isNaN(parsedLag) && parsedLag !== 0 ? parsedLag : undefined;
+                                  const newDep = {
+                                    key: r.id,
+                                    type: typeVal as any,
+                                    lag: lagValue
+                                  };
+                                  const nextDeps = [...currentDeps];
+                                  const existingIdx = nextDeps.findIndex(d => d.key === newDep.key);
+                                  if (existingIdx !== -1) {
+                                    nextDeps[existingIdx] = newDep;
+                                  } else {
+                                    nextDeps.push(newDep);
+                                  }
+                                  savePredecessorsDirect(targetRow.id, nextDeps);
+                                  setDepPanelSearch('');
+                                  
+                                  setToastMsg(`Added Predecessor: ${r.wbs} → ${targetRow.wbs}`);
+                                  setTimeout(() => setToastMsg(null), 3000);
+                                }}
+                                className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-base-accent text-white hover:bg-base-accent/90 transition-all rounded text-[9px] font-bold uppercase cursor-pointer"
+                              >
+                                <Plus className="h-2.5 w-2.5" />
+                                <span>Link</span>
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

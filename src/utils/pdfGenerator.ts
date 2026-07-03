@@ -1,11 +1,12 @@
 import { jsPDF } from 'jspdf';
-import { Project, TimesheetEntry, WireLog } from '../types';
+import { Project, TimesheetEntry, WireLog, MaterialConsumptionLog } from '../types';
 import { fmtHrs } from './projectUtils';
 
 export function downloadProjectPDF(
   project: Project,
   timesheets: TimesheetEntry[],
-  wireLogs: WireLog[]
+  wireLogs: WireLog[],
+  consumptionLogs?: MaterialConsumptionLog[]
 ) {
   // Create PDF document
   const doc = new jsPDF({
@@ -171,70 +172,92 @@ export function downloadProjectPDF(
 
   doc.saveGraphicsState();
   
+  const projectConsumption = (consumptionLogs || []).filter(
+    log => log.projectId === project.id
+  );
+
   // Total Man-Hours Card
   doc.setFillColor(245, 248, 255);
   doc.setDrawColor(190, 210, 250);
-  doc.rect(margin, currentY, 56, 20, 'FD');
+  doc.rect(margin, currentY, 42, 20, 'FD');
   
   doc.setTextColor(70, 90, 120);
   doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text("ACTUAL LABOR", margin + 4, currentY + 5);
+  doc.setFontSize(7.5);
+  doc.text("ACTUAL LABOR", margin + 3, currentY + 5);
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(11);
   doc.setTextColor(34, 43, 69);
-  doc.text(`${fmtHrs(totalActualHours)} hrs`, margin + 4, currentY + 12);
-  doc.setFontSize(7);
+  doc.text(`${fmtHrs(totalActualHours)} hrs`, margin + 3, currentY + 12);
+  doc.setFontSize(6.5);
   doc.setTextColor(110, 120, 135);
-  doc.text(budgetHours > 0 ? `Budgeted limit: ${budgetHours} hrs` : "No limit set", margin + 4, currentY + 17);
+  doc.text(budgetHours > 0 ? `Limit: ${budgetHours} hrs` : "No limit set", margin + 3, currentY + 17);
 
   // Variance Card
   const varColor = (hoursVariance !== null && hoursVariance < 0) ? [185, 28, 28] : [5, 150, 105];
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(220, 225, 230);
-  doc.rect(margin + 62, currentY, 56, 20, 'FD');
+  doc.rect(margin + 46, currentY, 42, 20, 'FD');
   
   doc.setTextColor(70, 90, 120);
   doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text("BUDGET VARIANCE", margin + 62 + 4, currentY + 5);
+  doc.setFontSize(7.5);
+  doc.text("BUDGET VARIANCE", margin + 46 + 3, currentY + 5);
   
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(11);
   doc.setTextColor(varColor[0], varColor[1], varColor[2]);
   if (hoursVariance === null) {
-    doc.text("N/A", margin + 62 + 4, currentY + 12);
+    doc.text("N/A", margin + 46 + 3, currentY + 12);
   } else {
-    doc.text(`${hoursVariance >= 0 ? '+' : ''}${fmtHrs(hoursVariance)} hrs`, margin + 62 + 4, currentY + 12);
+    doc.text(`${hoursVariance >= 0 ? '+' : ''}${fmtHrs(hoursVariance)} hrs`, margin + 46 + 3, currentY + 12);
   }
-  doc.setFontSize(7);
+  doc.setFontSize(6.5);
   doc.setTextColor(110, 120, 135);
   doc.text(
     hoursVariance === null 
-      ? "Specify project budget limit" 
+      ? "Specify project budget" 
       : hoursVariance >= 0 
-        ? "Under budget (Optimal)" 
-        : "Over budget (Overrun)", 
-    margin + 62 + 4, 
+        ? "Under budget" 
+        : "Over budget", 
+    margin + 46 + 3, 
     currentY + 17
   );
 
   // Wire Consumables Card
   doc.setFillColor(254, 251, 237); // Light amber
   doc.setDrawColor(245, 220, 160);
-  doc.rect(margin + 124, currentY, 56, 20, 'FD');
+  doc.rect(margin + 92, currentY, 42, 20, 'FD');
   
   doc.setTextColor(150, 100, 30);
   doc.setFont('Helvetica', 'normal');
-  doc.setFontSize(8);
-  doc.text("TOTAL WELDING WIRE", margin + 124 + 4, currentY + 5);
+  doc.setFontSize(7.5);
+  doc.text("WELDING WIRE", margin + 92 + 3, currentY + 5);
   doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(14);
+  doc.setFontSize(11);
   doc.setTextColor(217, 119, 6);
-  doc.text(`${totalWireKg.toFixed(1)} kg`, margin + 124 + 4, currentY + 12);
-  doc.setFontSize(7);
+  doc.text(`${totalWireKg.toFixed(1)} kg`, margin + 92 + 3, currentY + 12);
+  doc.setFontSize(6.5);
   doc.setTextColor(150, 110, 50);
-  doc.text("Calculated from welder logs", margin + 124 + 4, currentY + 17);
+  doc.text("From welder logs", margin + 92 + 3, currentY + 17);
+
+  // Other Materials Usage Card
+  doc.setFillColor(243, 244, 246); // Light gray
+  doc.setDrawColor(209, 213, 219);
+  doc.rect(margin + 138, currentY, 42, 20, 'FD');
+  
+  doc.setTextColor(55, 65, 81);
+  doc.setFont('Helvetica', 'normal');
+  doc.setFontSize(7.5);
+  doc.text("OTHER MATERIALS", margin + 138 + 3, currentY + 5);
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(11);
+  doc.setTextColor(17, 24, 39);
+  doc.text(`${projectConsumption.length} logs`, margin + 138 + 3, currentY + 12);
+  doc.setFontSize(6.5);
+  doc.setTextColor(107, 114, 128);
+  const distinctTypes = new Set(projectConsumption.map(c => c.materialId)).size;
+  doc.text(`${distinctTypes} distinct types`, margin + 138 + 3, currentY + 17);
 
   doc.restoreGraphicsState();
   currentY += 28;
@@ -405,6 +428,89 @@ export function downloadProjectPDF(
         ? wl.notes.length > 25 ? wl.notes.substring(0, 24) + '...' : wl.notes
         : '-';
       doc.text(notesToDraw, margin + 138, currentY + 4.5);
+
+      doc.restoreGraphicsState();
+      currentY += 8;
+    });
+  }
+
+  currentY += 5;
+
+  // --- Other Materials Consumption Logs Table ---
+  checkPageBreak(35);
+  doc.saveGraphicsState();
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(10);
+  doc.setTextColor(34, 43, 69);
+  doc.text("OTHER MATERIALS CONSUMPTION & USAGE LOG", margin, currentY);
+  
+  doc.setDrawColor(34, 43, 69);
+  doc.setLineWidth(0.4);
+  doc.line(margin, currentY + 2, 210 - margin, currentY + 2);
+  doc.restoreGraphicsState();
+
+  currentY += 7;
+
+  // Headers
+  checkPageBreak(12);
+  doc.saveGraphicsState();
+  doc.setFillColor(240, 243, 246);
+  doc.rect(margin, currentY, printableWidth, 7, 'F');
+  
+  doc.setFont('Helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(60, 70, 85);
+  doc.text("DATE", margin + 3, currentY + 5);
+  doc.text("MATERIAL ITEM", margin + 25, currentY + 5);
+  doc.text("QTY USED", margin + 85, currentY + 5);
+  doc.text("SUB-ASSEMBLY", margin + 110, currentY + 5);
+  doc.text("ISSUED BY / MR", margin + 150, currentY + 5);
+  
+  doc.restoreGraphicsState();
+  currentY += 7.5;
+
+  if (projectConsumption.length === 0) {
+    checkPageBreak(10);
+    doc.setFont('Helvetica', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(120, 120, 120);
+    doc.text("No other material consumption records logged for this project.", margin + 3, currentY + 5);
+    currentY += 10;
+  } else {
+    // Sort project consumption logs by date descending
+    const sortedConsumption = [...projectConsumption].sort((a, b) => b.date.localeCompare(a.date));
+    sortedConsumption.forEach((cl, index) => {
+      checkPageBreak(8);
+
+      doc.saveGraphicsState();
+      if (index % 2 === 1) {
+        doc.setFillColor(249, 250, 252);
+        doc.rect(margin, currentY - 1, printableWidth, 8, 'F');
+      }
+      doc.setDrawColor(235, 238, 243);
+      doc.setLineWidth(0.2);
+      doc.line(margin, currentY + 7, 210 - margin, currentY + 7);
+
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(40, 45, 55);
+
+      doc.text(cl.date || '', margin + 3, currentY + 4.5);
+      
+      const matToDraw = cl.materialName.length > 32 ? cl.materialName.substring(0, 31) + '.' : cl.materialName;
+      doc.text(matToDraw, margin + 25, currentY + 4.5);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.text(`${cl.qtyUsed} ${cl.unit}`, margin + 85, currentY + 4.5);
+      
+      doc.setFont('Helvetica', 'normal');
+      const subAsmName = cl.assemblyName || 'General Project';
+      const subAsmToDraw = subAsmName.length > 20 ? subAsmName.substring(0, 19) + '.' : subAsmName;
+      doc.text(subAsmToDraw, margin + 110, currentY + 4.5);
+
+      const issuerAndMr = cl.mrNo ? `${cl.issuedBy} (${cl.mrNo})` : cl.issuedBy;
+      const issuerToDraw = issuerAndMr.length > 18 ? issuerAndMr.substring(0, 17) + '.' : issuerAndMr;
+      doc.text(issuerToDraw, margin + 150, currentY + 4.5);
 
       doc.restoreGraphicsState();
       currentY += 8;

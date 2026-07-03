@@ -159,6 +159,24 @@ service cloud.firestore {
       allow delete: if isAdmin() || hasRole(['manager', 'coordinator']);
     }
 
+    match /materials/{materialId} {
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control', 'facility maintanance', 'quality control', 'safety']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager', 'coordinator']);
+    }
+
+    match /materialRequests/{requestId} {
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control', 'facility maintanance', 'quality control', 'safety']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager', 'coordinator']);
+    }
+
+    match /consumptionLogs/{logId} {
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isAdmin() || hasRole(['manager', 'coordinator', 'project control', 'facility maintanance', 'quality control', 'safety']) || (isSignedIn() && incoming() == existing());
+      allow delete: if isAdmin() || hasRole(['manager', 'coordinator']);
+    }
+
     match /system_config/{configId} {
       allow read, write: if isAdmin() || isSignedIn();
     }

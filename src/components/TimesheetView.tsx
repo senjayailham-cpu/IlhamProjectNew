@@ -59,8 +59,20 @@ export default function TimesheetView({
   // Navigation between Daily Log and Monthly/Weekly Reporting
   const [activeSegment, setActiveSegment] = useState<'daily' | 'reporting'>('daily');
   
+  // Search & Filter states for daily log
+  const [searchQuery, setSearchQuery] = useState('');
+  const [projectFilter, setProjectFilter] = useState('');
+  const [employeeFilter, setEmployeeFilter] = useState('');
+
   // Daily states
   const [tsGroupCollapsed, setTsGroupCollapsed] = useState<Record<string, boolean>>({});
+
+  // Reset filters on date or tab segment change
+  React.useEffect(() => {
+    setSearchQuery('');
+    setProjectFilter('');
+    setEmployeeFilter('');
+  }, [timesheetDate, activeSegment]);
 
   const shiftDate = (d: number) => {
     const dt = new Date(timesheetDate + 'T00:00:00');
@@ -122,19 +134,34 @@ export default function TimesheetView({
 
   const dayEntries = timesheets.filter(e => e.date === timesheetDate);
 
-  // Group stats counts
+  const filteredDayEntries = dayEntries.filter(e => {
+    const matchesSearch = searchQuery === '' || 
+      e.empName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.workOrder || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.desc || '').toLowerCase().includes(searchQuery.toLowerCase());
+      
+    const matchesProject = projectFilter === '' || 
+      (e.workOrder || '').trim().toLowerCase() === projectFilter.trim().toLowerCase();
+      
+    const matchesEmployee = employeeFilter === '' || 
+      e.empId === employeeFilter;
+      
+    return matchesSearch && matchesProject && matchesEmployee;
+  });
+
+  // Group stats counts (derived from filtered entries)
   const counts = { present: 0, late: 0, absent: 0, leave: 0 };
-  dayEntries.forEach(e => {
+  filteredDayEntries.forEach(e => {
     if (e.status in counts) {
       counts[e.status as keyof typeof counts]++;
     }
   });
 
-  const totalHrsToday = dayEntries.reduce((s, e) => s + (e.totalHours || 0), 0);
+  const totalHrsToday = filteredDayEntries.reduce((s, e) => s + (e.totalHours || 0), 0);
 
-  // Group rows by Coordinator
+  // Group rows by Coordinator (derived from filtered entries)
   const coordGroups: Record<string, TimesheetEntry[]> = {};
-  dayEntries.forEach(e => {
+  filteredDayEntries.forEach(e => {
     const emp = employees.find(x => x.id === e.empId);
     const coord = (emp?.coordinator || '').trim() || '— No coordinator —';
     if (!coordGroups[coord]) {
@@ -521,7 +548,8 @@ export default function TimesheetView({
           daysArray={daysArray}
           MONTHS_LIST={MONTHS_LIST}
           yearsArray={yearsArray}
-          dayEntries={dayEntries}
+          dayEntries={filteredDayEntries}
+          unfilteredDayEntriesCount={dayEntries.length}
           counts={counts}
           totalHrsToday={totalHrsToday}
           sortedWOs={sortedWOs}
@@ -539,6 +567,12 @@ export default function TimesheetView({
           deleteTsEntry={deleteTsEntry}
           toggleGroup={toggleGroup}
           openSpotlight={openSpotlight}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          projectFilter={projectFilter}
+          setProjectFilter={setProjectFilter}
+          employeeFilter={employeeFilter}
+          setEmployeeFilter={setEmployeeFilter}
         />
       ) : (
         <PerformanceReportTab

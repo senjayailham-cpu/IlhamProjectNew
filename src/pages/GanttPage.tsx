@@ -7,9 +7,19 @@ interface GanttPageProps {
   projects: Project[];
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
+  depModalOpen?: boolean;
+  externalRowKey?: string | null;
+  onCloseDepModal?: () => void;
 }
 
-export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPageProps) {
+export function GanttPage({ 
+  projects, 
+  onUpdateProject, 
+  onOpenDepModal,
+  depModalOpen,
+  externalRowKey,
+  onCloseDepModal
+}: GanttPageProps) {
   // Collect all available target months from projects
   const availableMonths = useMemo(() => {
     const months = new Set<string>();
@@ -120,6 +130,9 @@ export function GanttPage({ projects, onUpdateProject, onOpenDepModal }: GanttPa
             projects={projectsInMonth} 
             onUpdateProject={handleUpdateProject} 
             onOpenDepModal={onOpenDepModal} 
+            depModalOpen={depModalOpen}
+            depModalRowKey={externalRowKey || undefined}
+            onCloseDepModal={onCloseDepModal}
           />
         </div>
       ) : (

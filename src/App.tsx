@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog } from './types';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
@@ -34,6 +34,7 @@ const ProjectsPage = lazy(() => import('./pages/ProjectsPage').then(m => ({ defa
 const TimesheetView = lazy(() => import('./components/TimesheetView'));
 const InspectionView = lazy(() => import('./components/InspectionView'));
 const WireConsumableView = lazy(() => import('./components/WireConsumableView'));
+const MaterialsView = lazy(() => import('./components/MaterialsView'));
 const UsersAccessView = lazy(() => import('./components/UsersAccessView'));
 const DailyReportView = lazy(() => import('./components/DailyReportView'));
 const EmployeesView = lazy(() => import('./components/EmployeesView'));
@@ -42,7 +43,7 @@ const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package
 } from 'lucide-react';
 
 const activeTabsList = [
@@ -56,6 +57,7 @@ const activeTabsList = [
   { id: 'nontray', label: 'Project Non-Tray', icon: 'Folder', access: 'all' },
   { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
   { id: 'wire', label: 'Wire Consumable', icon: 'Flame', access: 'all' },
+  { id: 'materials', label: 'Materials', icon: 'Package', access: 'all' },
   { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
   { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
@@ -74,7 +76,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   FileText,
   Users,
   ShieldCheck,
-  BarChart2
+  BarChart2,
+  Package
 };
 
 const sectionGroups = [
@@ -88,7 +91,7 @@ const sectionGroups = [
   },
   {
     title: 'Operations',
-    items: ['inspections', 'wire', 'dailyreport']
+    items: ['inspections', 'wire', 'materials', 'dailyreport']
   },
   {
     title: 'Management',
@@ -134,6 +137,9 @@ function AppContent() {
   const [problemReports, setRealProblemReports] = useState<ProblemReport[]>([]);
   const [inspections, setRealInspections] = useState<InspectionRequest[]>([]);
   const [wireLogs, setRealWireLogs] = useState<WireLog[]>([]);
+  const [materials, setRealMaterials] = useState<MaterialItem[]>([]);
+  const [materialRequests, setRealMaterialRequests] = useState<MaterialRequest[]>([]);
+  const [consumptionLogs, setRealConsumptionLogs] = useState<MaterialConsumptionLog[]>([]);
 
   // Toggle states for sidebar and navigation
   const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
@@ -159,6 +165,9 @@ function AppContent() {
   const setProblemReports = setRealProblemReports;
   const setInspections = setRealInspections;
   const setWireLogs = setRealWireLogs;
+  const setMaterials = setRealMaterials;
+  const setMaterialRequests = setRealMaterialRequests;
+  const setConsumptionLogs = setRealConsumptionLogs;
 
   // Local states for custom search filters
   const [projectSearchQuery, setProjectSearchQuery] = useState<string>('');
@@ -392,6 +401,9 @@ function AppContent() {
         listenToCollection('inspections', setInspections);
         listenToCollection('users', setUsers);
         listenToCollection('wireLogs', setWireLogs);
+        listenToCollection('materials', setMaterials);
+        listenToCollection('materialRequests', setMaterialRequests);
+        listenToCollection('consumptionLogs', setConsumptionLogs);
       } catch (err) {
         console.error("Firestore setup sync error:", err);
       }
@@ -585,6 +597,85 @@ function AppContent() {
     await removeItem('wireLogs', id);
   };
 
+  const handleAddMaterial = async (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => {
+    const now = new Date().toISOString();
+    const newItem: MaterialItem = { ...item, id: 'mat_' + uid(), createdAt: now, updatedAt: now };
+    setMaterials(prev => [newItem, ...prev]);
+    verifyMarkChanged();
+    await saveItem('materials', newItem);
+  };
+
+  const handleUpdateMaterialStock = async (id: string, newStock: number) => {
+    const now = new Date().toISOString();
+    setMaterials(prev => prev.map(m => m.id === id ? { ...m, currentStock: newStock, updatedAt: now } : m));
+    verifyMarkChanged();
+    await saveItem('materials', { id, currentStock: newStock, updatedAt: now });
+  };
+
+  const handleDeleteMaterial = async (id: string) => {
+    setMaterials(prev => prev.filter(m => m.id !== id));
+    verifyMarkChanged();
+    await removeItem('materials', id);
+  };
+
+  const handleAddMaterialRequest = async (mr: Omit<MaterialRequest, 'id' | 'mrNo'>) => {
+    try {
+      const counterDocRef = doc(db, 'system_config', 'counters');
+      const newMrId = 'mr_' + uid();
+      const yrCode = new Date().getFullYear();
+      const mrNo = await runTransaction(db, async (transaction) => {
+        const snap = await transaction.get(counterDocRef);
+        const data = snap.exists() ? snap.data() : {};
+        const next = (data.mrCounter || 0) + 1;
+        transaction.set(counterDocRef, { ...data, mrCounter: next }, { merge: true });
+        return `MR-${yrCode}-${String(next).padStart(3, '0')}`;
+      });
+      const newMr: MaterialRequest = { ...mr, id: newMrId, mrNo };
+      setMaterialRequests(prev => [newMr, ...prev]);
+      verifyMarkChanged();
+      await saveItem('materialRequests', newMr);
+    } catch (err) {
+      console.error('Failed to create MR:', err);
+    }
+  };
+
+  const handleUpdateMaterialRequestStatus = async (
+    id: string,
+    status: 'Draft' | 'Submitted' | 'Approved' | 'Issued' | 'Rejected',
+    extra?: { approvedBy?: string; rejectedReason?: string; issuedBy?: string }
+  ) => {
+    const now = new Date().toISOString().slice(0, 10);
+    setMaterialRequests(prev => prev.map(mr => {
+      if (mr.id !== id) return mr;
+      return {
+        ...mr,
+        status,
+        approvedBy: extra?.approvedBy || mr.approvedBy,
+        approvedDate: status === 'Approved' ? now : mr.approvedDate,
+        rejectedReason: extra?.rejectedReason || mr.rejectedReason,
+        issuedBy: extra?.issuedBy || mr.issuedBy,
+        issuedDate: status === 'Issued' ? now : mr.issuedDate,
+      };
+    }));
+    verifyMarkChanged();
+    await saveItem('materialRequests', { id, status, ...extra, ...(status === 'Approved' ? { approvedDate: now } : {}), ...(status === 'Issued' ? { issuedDate: now } : {}) });
+  };
+
+  const handleDeleteMaterialRequest = async (id: string) => {
+    setMaterialRequests(prev => prev.filter(mr => mr.id !== id));
+    verifyMarkChanged();
+    await removeItem('materialRequests', id);
+  };
+
+  const handleAddConsumptionLog = async (log: Omit<MaterialConsumptionLog, 'id'>) => {
+    const newLog: MaterialConsumptionLog = { ...log, id: 'cl_' + uid() };
+    setConsumptionLogs(prev => [newLog, ...prev]);
+    // Reduce stock automatically
+    handleUpdateMaterialStock(log.materialId, Math.max(0, (materials.find(m => m.id === log.materialId)?.currentStock || 0) - log.qtyUsed));
+    verifyMarkChanged();
+    await saveItem('consumptionLogs', newLog);
+  };
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-base-bg flex flex-col items-center justify-center p-6 space-y-4">
@@ -702,6 +793,7 @@ function AppContent() {
                   projects={projects}
                   timesheets={timesheets}
                   wireLogs={wireLogs}
+                  consumptionLogs={consumptionLogs}
                   projectSearchQuery={projectSearchQuery}
                   setProjectSearchQuery={setProjectSearchQuery}
                   currentTabMonthFilter={currentTabMonthFilter}
@@ -742,6 +834,23 @@ function AppContent() {
                 />
               )}
 
+              {activeTab === 'materials' && (
+                <MaterialsView
+                  materials={materials}
+                  materialRequests={materialRequests}
+                  consumptionLogs={consumptionLogs}
+                  projects={projects}
+                  currentUser={currentUser}
+                  onAddMaterial={handleAddMaterial}
+                  onUpdateMaterialStock={handleUpdateMaterialStock}
+                  onDeleteMaterial={handleDeleteMaterial}
+                  onAddMaterialRequest={handleAddMaterialRequest}
+                  onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
+                  onDeleteMaterialRequest={handleDeleteMaterialRequest}
+                  onAddConsumptionLog={handleAddConsumptionLog}
+                />
+              )}
+
               {activeTab === 'dailyreport' && (
                 <DailyReportView
                   projects={projects}
@@ -775,6 +884,9 @@ function AppContent() {
                     projectsHook.setDepModalRowKey(key);
                     projectsHook.setDepModalOpen(true);
                   }}
+                  depModalOpen={projectsHook.depModalOpen}
+                  externalRowKey={projectsHook.depModalRowKey}
+                  onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
                 />
               )}
 
@@ -869,6 +981,7 @@ function AppContent() {
         setDeleteConfirm={setDeleteConfirm}
         timesheets={timesheets}
         wireLogs={wireLogs}
+        consumptionLogs={consumptionLogs}
         setProjects={setProjects}
         verifyMarkChanged={verifyMarkChanged}
         logActivity={logActivity}

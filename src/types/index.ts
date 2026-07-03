@@ -280,3 +280,93 @@ export interface WireLog {
   amountKg: number;
   notes?: string;
 }
+
+// ============================================================================
+// MATERIAL MANAGEMENT TYPES
+// ============================================================================
+
+export type MaterialCategory =
+  | 'Welding Consumable'
+  | 'Raw Material'
+  | 'PPE'
+  | 'Tools & Equipment'
+  | 'Paint & Chemical'
+  | 'Other';
+
+export type MaterialUnit =
+  | 'kg'
+  | 'pcs'
+  | 'roll'
+  | 'liter'
+  | 'meter'
+  | 'box'
+  | 'set';
+
+export type MaterialRequestStatus =
+  | 'Draft'
+  | 'Submitted'
+  | 'Approved'
+  | 'Issued'
+  | 'Rejected';
+
+export type MaterialRequestUrgency = 'Normal' | 'Urgent' | 'Critical';
+
+export interface MaterialItem {
+  id: string;
+  name: string;
+  category: MaterialCategory;
+  unit: MaterialUnit;
+  currentStock: number;
+  minStock: number;
+  location?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface MaterialRequestLine {
+  materialId: string;
+  materialName: string;
+  unit: MaterialUnit;
+  qtyRequested: number;
+  qtyIssued?: number;
+}
+
+export interface MaterialRequest {
+  id: string;
+  mrNo: string;
+  projectId: string;
+  projectName: string;
+  assemblyId?: string;
+  assemblyName?: string;
+  urgency: MaterialRequestUrgency;
+  status: MaterialRequestStatus;
+  items: MaterialRequestLine[];
+  requestedBy: string;
+  requestedById: string;
+  requestedDate: string;
+  notes?: string;
+  approvedBy?: string;
+  approvedDate?: string;
+  rejectedReason?: string;
+  issuedBy?: string;
+  issuedDate?: string;
+}
+
+export interface MaterialConsumptionLog {
+  id: string;
+  date: string;
+  materialId: string;
+  materialName: string;
+  unit: MaterialUnit;
+  qtyUsed: number;
+  projectId: string;
+  projectName: string;
+  assemblyId?: string;
+  assemblyName?: string;
+  issuedBy: string;
+  mrId?: string;
+  mrNo?: string;
+  notes?: string;
+}
+

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { User, Project, Assembly, Task } from '../types';
+import { User, Project, Assembly, Task, MaterialConsumptionLog } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
 import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock } from 'lucide-react';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
@@ -17,6 +17,7 @@ interface SpotlightModalProps {
   projects: Project[];
   timesheets: any[];
   wireLogs?: any[];
+  consumptionLogs?: MaterialConsumptionLog[];
   onEdit: (pid: string) => void;
   onEditAssembly?: (pid: string, aid: string) => void;
   onUpdateProject?: (
@@ -55,6 +56,7 @@ export default function SpotlightModal({
   projects,
   timesheets,
   wireLogs = [],
+  consumptionLogs = [],
   onEdit,
   onEditAssembly,
   onUpdateProject,
@@ -320,7 +322,7 @@ export default function SpotlightModal({
           <div className="flex flex-wrap gap-2">
             {p.status === 'completed' && (
               <button
-                onClick={() => downloadProjectPDF(p, timesheets, wireLogs || [])}
+                onClick={() => downloadProjectPDF(p, timesheets, wireLogs || [], consumptionLogs)}
                 className="px-3.5 py-1.5 border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-500 hover:text-white rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer flex items-center gap-1.5 transition-all"
                 title="Download completion report in PDF format"
               >

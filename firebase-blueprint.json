@@ -131,6 +131,85 @@
         "notes": { "type": "string" }
       },
       "required": ["id", "date", "welderId", "projectId", "assemblyId", "amountKg"]
+    },
+    "MaterialItem": {
+      "title": "MaterialItem",
+      "description": "Material inventory stock items.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string", "enum": ["Welding Consumable", "Raw Material", "PPE", "Tools & Equipment", "Paint & Chemical", "Other"] },
+        "unit": { "type": "string", "enum": ["kg", "pcs", "roll", "liter", "meter", "box", "set"] },
+        "currentStock": { "type": "number" },
+        "minStock": { "type": "number" },
+        "location": { "type": "string" },
+        "notes": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "category", "unit", "currentStock", "minStock"]
+    },
+    "MaterialRequest": {
+      "title": "MaterialRequest",
+      "description": "Material request documents (MRs).",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mrNo": { "type": "string" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "assemblyId": { "type": "string" },
+        "assemblyName": { "type": "string" },
+        "urgency": { "type": "string", "enum": ["Normal", "Urgent", "Critical"] },
+        "status": { "type": "string", "enum": ["Draft", "Submitted", "Approved", "Issued", "Rejected"] },
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "materialId": { "type": "string" },
+              "materialName": { "type": "string" },
+              "unit": { "type": "string" },
+              "qtyRequested": { "type": "number" },
+              "qtyIssued": { "type": "number" }
+            },
+            "required": ["materialId", "materialName", "unit", "qtyRequested"]
+          }
+        },
+        "requestedBy": { "type": "string" },
+        "requestedById": { "type": "string" },
+        "requestedDate": { "type": "string" },
+        "notes": { "type": "string" },
+        "approvedBy": { "type": "string" },
+        "approvedDate": { "type": "string" },
+        "rejectedReason": { "type": "string" },
+        "issuedBy": { "type": "string" },
+        "issuedDate": { "type": "string" }
+      },
+      "required": ["id", "mrNo", "projectId", "projectName", "urgency", "status", "items", "requestedBy", "requestedById", "requestedDate"]
+    },
+    "MaterialConsumptionLog": {
+      "title": "MaterialConsumptionLog",
+      "description": "Logs tracking material consumption in the workshop.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "date": { "type": "string" },
+        "materialId": { "type": "string" },
+        "materialName": { "type": "string" },
+        "unit": { "type": "string" },
+        "qtyUsed": { "type": "number" },
+        "projectId": { "type": "string" },
+        "projectName": { "type": "string" },
+        "assemblyId": { "type": "string" },
+        "assemblyName": { "type": "string" },
+        "issuedBy": { "type": "string" },
+        "mrId": { "type": "string" },
+        "mrNo": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "required": ["id", "date", "materialId", "materialName", "unit", "qtyUsed", "projectId", "projectName", "issuedBy"]
     }
   },
   "firestore": {
@@ -161,6 +240,18 @@
     "/wireLogs/{wireLogId}": {
       "schema": "WireLog",
       "description": "Daily wire consumable registry for welding personnel."
+    },
+    "/materials/{materialId}": {
+      "schema": "MaterialItem",
+      "description": "Store available material items in warehouse."
+    },
+    "/materialRequests/{requestId}": {
+      "schema": "MaterialRequest",
+      "description": "Material request sheets."
+    },
+    "/consumptionLogs/{logId}": {
+      "schema": "MaterialConsumptionLog",
+      "description": "Daily or job-based material consumption logs."
     }
   }
 }

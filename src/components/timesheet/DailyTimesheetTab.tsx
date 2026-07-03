@@ -7,7 +7,10 @@ import {
   ClipboardList, 
   Trash2, 
   Edit, 
-  ExternalLink
+  ExternalLink,
+  Search,
+  X,
+  Filter
 } from 'lucide-react';
 
 const STATUS_PILLS = {
@@ -29,6 +32,7 @@ export interface DailyTimesheetTabProps {
   MONTHS_LIST: { value: number; label: string }[];
   yearsArray: number[];
   dayEntries: TimesheetEntry[];
+  unfilteredDayEntriesCount: number;
   counts: { present: number; late: number; absent: number; leave: number };
   totalHrsToday: number;
   sortedWOs: [string, { hrs: number; list: Set<string> }][];
@@ -46,6 +50,12 @@ export interface DailyTimesheetTabProps {
   deleteTsEntry: (id: string) => void;
   toggleGroup: (coord: string) => void;
   openSpotlight?: (pid: string) => void;
+  searchQuery: string;
+  setSearchQuery: (query: string) => void;
+  projectFilter: string;
+  setProjectFilter: (filter: string) => void;
+  employeeFilter: string;
+  setEmployeeFilter: (filter: string) => void;
 }
 
 export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
@@ -59,6 +69,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   MONTHS_LIST,
   yearsArray,
   dayEntries,
+  unfilteredDayEntriesCount,
   counts,
   totalHrsToday,
   sortedWOs,
@@ -75,7 +86,13 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   openEditTimesheet,
   deleteTsEntry,
   toggleGroup,
-  openSpotlight
+  openSpotlight,
+  searchQuery,
+  setSearchQuery,
+  projectFilter,
+  setProjectFilter,
+  employeeFilter,
+  setEmployeeFilter
 }) => {
   return (
     <>
@@ -178,6 +195,92 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
             <span>Add Entry</span>
           </button>
         </div>
+      </div>
+
+      {/* Search and Filter Controls */}
+      <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-card space-y-3 animate-fade-in">
+        <div className="flex flex-col md:flex-row gap-3">
+          {/* Search Input */}
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-2.5 h-4 w-4 text-base-muted" />
+            <input
+              type="text"
+              placeholder="Search employee name, work order, or description..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-9 pr-9 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs text-base-text placeholder:text-base-muted focus:outline-none focus:border-base-accent transition-all"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-2.5 p-0.5 rounded-full hover:bg-base-surface3 text-base-muted transition-colors cursor-pointer"
+                title="Clear search"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* Project Filter Dropdown */}
+          <div className="relative min-w-[200px]">
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs text-base-text appearance-none focus:outline-none focus:border-base-accent transition-all cursor-pointer font-sans"
+            >
+              <option value="">All Projects / Work Orders</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.client || ''}>
+                  {p.client ? `[${p.client}] ` : ''}{p.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-2.5 pointer-events-none text-base-muted">
+              <Filter className="h-4 w-4" />
+            </div>
+          </div>
+
+          {/* Employee Filter Dropdown */}
+          <div className="relative min-w-[200px]">
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="w-full pl-3 pr-8 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs text-base-text appearance-none focus:outline-none focus:border-base-accent transition-all cursor-pointer font-sans"
+            >
+              <option value="">All Employees</option>
+              {employees.map(emp => (
+                <option key={emp.id} value={emp.id}>
+                  {emp.name} ({emp.position || 'Crew'})
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-3 top-2.5 pointer-events-none text-base-muted">
+              <Filter className="h-4 w-4" />
+            </div>
+          </div>
+        </div>
+
+        {/* Active Filters / Reset Indicator */}
+        {(searchQuery || projectFilter || employeeFilter) && (
+          <div className="flex items-center justify-between border-t border-base-border/50 pt-2 text-xs">
+            <div className="text-base-muted flex items-center gap-1.5">
+              <span>Showing <strong>{dayEntries.length}</strong> of <strong>{unfilteredDayEntriesCount}</strong> entries</span>
+              <span className="h-1 w-1 rounded-full bg-base-muted/40"></span>
+              <span className="text-[10px] bg-base-accent/10 text-base-accent font-semibold px-1.5 py-0.5 rounded">Filter active</span>
+            </div>
+            <button
+              onClick={() => {
+                setSearchQuery('');
+                setProjectFilter('');
+                setEmployeeFilter('');
+              }}
+              className="text-[11px] font-bold text-base-red hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+            >
+              <X className="h-3 w-3" />
+              <span>Clear Filters</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* KPI Dashboard widget cards */}

@@ -1,0 +1,1774 @@
+import React, { useState, useMemo } from 'react';
+import * as XLSX from 'xlsx';
+import {
+  MaterialItem,
+  MaterialRequest,
+  MaterialConsumptionLog,
+  Project,
+  User,
+  MaterialCategory,
+  MaterialUnit,
+  MaterialRequestStatus,
+  MaterialRequestUrgency,
+  MaterialRequestLine
+} from '../types';
+import {
+  Package,
+  Plus,
+  Search,
+  Trash2,
+  Edit2,
+  Check,
+  X,
+  FileSpreadsheet,
+  AlertTriangle,
+  CheckCircle2,
+  ListFilter,
+  Layers,
+  ArrowRight,
+  TrendingDown,
+  Clock,
+  Send,
+  Activity,
+  Download,
+  Upload
+} from 'lucide-react';
+
+interface MaterialsViewProps {
+  materials: MaterialItem[];
+  materialRequests: MaterialRequest[];
+  consumptionLogs: MaterialConsumptionLog[];
+  projects: Project[];
+  currentUser: User;
+  onAddMaterial: (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onUpdateMaterialStock: (id: string, newStock: number) => void;
+  onDeleteMaterial: (id: string) => void;
+  onAddMaterialRequest: (mr: Omit<MaterialRequest, 'id' | 'mrNo'>) => void;
+  onUpdateMaterialRequestStatus: (
+    id: string,
+    status: MaterialRequestStatus,
+    extra?: { approvedBy?: string; rejectedReason?: string; issuedBy?: string }
+  ) => void;
+  onDeleteMaterialRequest: (id: string) => void;
+  onAddConsumptionLog: (log: Omit<MaterialConsumptionLog, 'id'>) => void;
+}
+
+const CATEGORIES: MaterialCategory[] = [
+  'Welding Consumable',
+  'Raw Material',
+  'PPE',
+  'Tools & Equipment',
+  'Paint & Chemical',
+  'Other'
+];
+
+const UNITS: MaterialUnit[] = [
+  'kg',
+  'pcs',
+  'roll',
+  'liter',
+  'meter',
+  'box',
+  'set'
+];
+
+export default function MaterialsView({
+  materials = [],
+  materialRequests = [],
+  consumptionLogs = [],
+  projects = [],
+  currentUser,
+  onAddMaterial,
+  onUpdateMaterialStock,
+  onDeleteMaterial,
+  onAddMaterialRequest,
+  onUpdateMaterialRequestStatus,
+  onDeleteMaterialRequest,
+  onAddConsumptionLog
+}: MaterialsViewProps) {
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<'stock' | 'requests' | 'logs'>('stock');
+
+  // Authorization helper
+  const isAdminOrManager = useMemo(() => {
+    return currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  }, [currentUser]);
+
+  // Tab 1 — Stock State & Filters
+  const [stockSearch, setStockSearch] = useState('');
+  const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('');
+  const [isAddingMaterial, setIsAddingMaterial] = useState(false);
+  const [editingStockId, setEditingStockId] = useState<string | null>(null);
+  const [editingStockVal, setEditingStockVal] = useState<string>('');
+  const [importMsg, setImportMsg] = useState<string | null>(null);
+
+  // Add material form state
+  const [newMatName, setNewMatName] = useState('');
+  const [newMatCategory, setNewMatCategory] = useState<MaterialCategory>('Welding Consumable');
+  const [newMatUnit, setNewMatUnit] = useState<MaterialUnit>('pcs');
+  const [newMatCurrentStock, setNewMatCurrentStock] = useState('0');
+  const [newMatMinStock, setNewMatMinStock] = useState('0');
+  const [newMatLocation, setNewMatLocation] = useState('');
+  const [newMatNotes, setNewMatNotes] = useState('');
+  const [addMaterialError, setAddMaterialError] = useState('');
+
+  // Tab 2 — Material Requests State & Filters
+  const [mrStatusFilter, setMrStatusFilter] = useState<string>('All');
+  const [isCreatingRequest, setIsCreatingRequest] = useState(false);
+  
+  // Create MR state
+  const [mrProjectId, setMrProjectId] = useState('');
+  const [mrAssemblyId, setMrAssemblyId] = useState('');
+  const [mrUrgency, setMrUrgency] = useState<MaterialRequestUrgency>('Normal');
+  const [mrNotes, setMrNotes] = useState('');
+  const [mrLines, setMrLines] = useState<Array<{ materialId: string; qty: string }>>([]);
+  const [mrError, setMrError] = useState('');
+
+  // Rejection state
+  const [rejectingMrId, setRejectingMrId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  // Tab 3 — Consumption Logs State & Filters
+  const [logSearch, setLogSearch] = useState('');
+  const [isAddingLog, setIsAddingLog] = useState(false);
+
+  // Manual Log Entry form state
+  const [logDate, setLogDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [logMaterialId, setLogMaterialId] = useState('');
+  const [logQty, setLogQty] = useState('');
+  const [logProjectId, setLogProjectId] = useState('');
+  const [logAssemblyId, setLogAssemblyId] = useState('');
+  const [logNotes, setLogNotes] = useState('');
+  const [logError, setLogError] = useState('');
+
+  // Dynamic Assemblies list for MR creation
+  const selectedMrProjectObj = useMemo(() => {
+    return projects.find(p => p.id === mrProjectId);
+  }, [projects, mrProjectId]);
+
+  const activeProjects = useMemo(() => {
+    return projects.filter(p => !p.isArchived && p.status !== 'completed');
+  }, [projects]);
+
+  // Dynamic Assemblies list for manual logs
+  const selectedLogProjectObj = useMemo(() => {
+    return projects.find(p => p.id === logProjectId);
+  }, [projects, logProjectId]);
+
+  // Stock Summary calculations
+  const stockSummary = useMemo(() => {
+    const total = materials.length;
+    let low = 0;
+    let out = 0;
+    materials.forEach(m => {
+      if (m.currentStock === 0) {
+        out++;
+      } else if (m.currentStock < m.minStock) {
+        low++;
+      }
+    });
+    return { total, low, out };
+  }, [materials]);
+
+  // Filtered Stock Items
+  const filteredMaterials = useMemo(() => {
+    return materials.filter(m => {
+      const matchSearch = m.name.toLowerCase().includes(stockSearch.toLowerCase()) || 
+                          m.category.toLowerCase().includes(stockSearch.toLowerCase());
+      const matchCat = !stockCategoryFilter ? true : m.category === stockCategoryFilter;
+      return matchSearch && matchCat;
+    });
+  }, [materials, stockSearch, stockCategoryFilter]);
+
+  // Filtered Requests (newest first)
+  const filteredRequests = useMemo(() => {
+    const sorted = [...materialRequests].sort((a, b) => b.requestedDate.localeCompare(a.requestedDate));
+    if (mrStatusFilter === 'All') return sorted;
+    return sorted.filter(r => r.status === mrStatusFilter);
+  }, [materialRequests, mrStatusFilter]);
+
+  // Filtered Consumption Logs (newest first)
+  const filteredLogs = useMemo(() => {
+    const sorted = [...consumptionLogs].sort((a, b) => b.date.localeCompare(a.date));
+    return sorted.filter(l => {
+      const matchMat = l.materialName.toLowerCase().includes(logSearch.toLowerCase());
+      const matchProj = l.projectName.toLowerCase().includes(logSearch.toLowerCase());
+      return matchMat || matchProj;
+    });
+  }, [consumptionLogs, logSearch]);
+
+  const handleDownloadTemplate = () => {
+    try {
+      const headers = ['Name', 'Category', 'Unit', 'Current Stock', 'Min Stock', 'Location', 'Notes'];
+      const sampleRows = [
+        ['Welding Wire ER70S-6 1.2mm', 'Welding Consumable', 'kg', 50, 10, 'Rack A-1', 'For MIG welding'],
+        ['Safety Helmet', 'PPE', 'pcs', 20, 5, 'Storage Room', 'Full face shield type'],
+        ['Thinner NC', 'Paint & Chemical', 'liter', 15, 3, 'Chemical Cabinet', 'Flammable — store safely'],
+      ];
+      const cols = [{ wch: 35 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 35 }];
+
+      const guideHeaders = ['Column', 'Required', 'Format', 'Description'];
+      const guideRows = [
+        ['Name', 'Yes', 'Text', 'Material name, must be unique'],
+        ['Category', 'Yes', 'Text', 'Must be one of: Welding Consumable, Raw Material, PPE, Tools & Equipment, Paint & Chemical, Other'],
+        ['Unit', 'Yes', 'Text', 'Must be one of: kg, pcs, roll, liter, meter, box, set'],
+        ['Current Stock', 'Yes', 'Number', 'Current quantity in stock (number only, no unit)'],
+        ['Min Stock', 'Yes', 'Number', 'Minimum stock threshold for low-stock alert'],
+        ['Location', 'No', 'Text', 'Storage location (e.g. Rack A-1, Shelf B)'],
+        ['Notes', 'No', 'Text', 'Additional notes about this material'],
+      ];
+
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...sampleRows]);
+      ws['!cols'] = cols;
+      XLSX.utils.book_append_sheet(wb, ws, 'Template Import');
+
+      const wsGuide = XLSX.utils.aoa_to_sheet([guideHeaders, ...guideRows]);
+      wsGuide['!cols'] = [{ wch: 20 }, { wch: 12 }, { wch: 15 }, { wch: 60 }];
+      XLSX.utils.book_append_sheet(wb, wsGuide, 'Panduan');
+
+      XLSX.writeFile(wb, 'Material_Stock_Template.xlsx');
+    } catch (err: any) {
+      alert('Error creating template: ' + err.message);
+    }
+  };
+
+  const triggerExcelUpload = () => {
+    const inputEl = document.getElementById('mat-excel-input-file') as HTMLInputElement | null;
+    if (inputEl) inputEl.click();
+  };
+
+  const handleFileChange = (ev: React.ChangeEvent<HTMLInputElement>) => {
+    const file = ev.target.files && ev.target.files[0];
+    if (!file) return;
+
+    const r = new FileReader();
+    r.onload = (e) => {
+      try {
+        const dataArr = new Uint8Array(e.target?.result as ArrayBuffer);
+        const wb = XLSX.read(dataArr, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+
+        if (!rows.length) {
+          alert('No data found in the spreadsheet.');
+          return;
+        }
+
+        // Flexible column header matching (case-insensitive, trimmed)
+        const norm = (s: any) => s.toString().trim().toLowerCase();
+        const findKey = (row: any, ...variants: string[]) => {
+          const keys = Object.keys(row);
+          for (const v of variants) {
+            const f = keys.find(k => norm(k) === norm(v));
+            if (f) return f;
+          }
+          return null;
+        };
+
+        const first = rows[0] as any;
+        const kName     = findKey(first, 'name', 'material name', 'nama', 'item');
+        const kCat      = findKey(first, 'category', 'kategori', 'type', 'tipe');
+        const kUnit     = findKey(first, 'unit', 'satuan', 'uom');
+        const kCurrent  = findKey(first, 'current stock', 'currentstock', 'stock', 'qty', 'quantity', 'stok');
+        const kMin      = findKey(first, 'min stock', 'minstock', 'minimum', 'min', 'minimum stock');
+        const kLocation = findKey(first, 'location', 'lokasi', 'shelf', 'rack');
+        const kNotes    = findKey(first, 'notes', 'catatan', 'remarks', 'keterangan');
+
+        if (!kName) {
+          alert('Could not find "Name" column. Please use the provided template.');
+          return;
+        }
+
+        // Valid values for category and unit
+        const validCategories = ['Welding Consumable', 'Raw Material', 'PPE', 'Tools & Equipment', 'Paint & Chemical', 'Other'];
+        const validUnits = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
+
+        const validImport: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>[] = [];
+        const errors: string[] = [];
+
+        rows.forEach((row: any, idx: number) => {
+          const rowNum = idx + 2; // +2 because row 1 is header
+          const name = row[kName]?.toString().trim();
+          if (!name) return; // skip empty rows silently
+
+          const rawCat = kCat ? row[kCat]?.toString().trim() : 'Other';
+          const rawUnit = kUnit ? row[kUnit]?.toString().trim() : 'pcs';
+          const rawCurrent = kCurrent ? Number(row[kCurrent]) : 0;
+          const rawMin = kMin ? Number(row[kMin]) : 0;
+
+          // Fuzzy match category
+          const matchedCat = validCategories.find(c => norm(c) === norm(rawCat)) || 'Other';
+          // Fuzzy match unit
+          const matchedUnit = validUnits.find(u => norm(u) === norm(rawUnit)) || 'pcs';
+
+          if (isNaN(rawCurrent)) {
+            errors.push(`Row ${rowNum}: "${name}" — Current Stock is not a valid number.`);
+            return;
+          }
+          if (isNaN(rawMin)) {
+            errors.push(`Row ${rowNum}: "${name}" — Min Stock is not a valid number.`);
+            return;
+          }
+
+          validImport.push({
+            name,
+            category: matchedCat as MaterialCategory,
+            unit: matchedUnit as MaterialUnit,
+            currentStock: rawCurrent,
+            minStock: rawMin,
+            location: kLocation ? row[kLocation]?.toString().trim() : '',
+            notes: kNotes ? row[kNotes]?.toString().trim() : '',
+          });
+        });
+
+        if (errors.length > 0) {
+          alert(`Import completed with ${errors.length} error(s):\n\n${errors.slice(0, 5).join('\n')}${errors.length > 5 ? `\n...and ${errors.length - 5} more.` : ''}`);
+        }
+
+        if (validImport.length > 0) {
+          // Call onAddMaterial for each valid item
+          validImport.forEach(item => onAddMaterial(item));
+          setImportMsg(`✓ Successfully imported ${validImport.length} material records.`);
+          setTimeout(() => {
+            setImportMsg(null);
+          }, 3000);
+        } else {
+          alert('No valid material records found to import.');
+        }
+      } catch (err: any) {
+        alert('Failed to parse spreadsheet: ' + err.message);
+      }
+      ev.target.value = ''; // reset input
+    };
+    r.readAsArrayBuffer(file);
+  };
+
+  // Form handlers
+  const handleCreateMaterialSubmit = () => {
+    if (!newMatName.trim()) {
+      setAddMaterialError('Material Name is required');
+      return;
+    }
+    const currentStockNum = Number(newMatCurrentStock);
+    const minStockNum = Number(newMatMinStock);
+    if (isNaN(currentStockNum) || currentStockNum < 0) {
+      setAddMaterialError('Current Stock must be a non-negative number');
+      return;
+    }
+    if (isNaN(minStockNum) || minStockNum < 0) {
+      setAddMaterialError('Minimum Stock must be a non-negative number');
+      return;
+    }
+
+    onAddMaterial({
+      name: newMatName.trim(),
+      category: newMatCategory,
+      unit: newMatUnit,
+      currentStock: currentStockNum,
+      minStock: minStockNum,
+      location: newMatLocation.trim() || undefined,
+      notes: newMatNotes.trim() || undefined
+    });
+
+    // Reset Form
+    setNewMatName('');
+    setNewMatCategory('Welding Consumable');
+    setNewMatUnit('pcs');
+    setNewMatCurrentStock('0');
+    setNewMatMinStock('0');
+    setNewMatLocation('');
+    setNewMatNotes('');
+    setAddMaterialError('');
+    setIsAddingMaterial(false);
+  };
+
+  const handleEditStockSave = (id: string) => {
+    const val = Number(editingStockVal);
+    if (isNaN(val) || val < 0) {
+      alert('Stock quantity must be a non-negative number');
+      return;
+    }
+    onUpdateMaterialStock(id, val);
+    setEditingStockId(null);
+    setEditingStockVal('');
+  };
+
+  const handleCreateMRSubmit = () => {
+    if (!mrProjectId) {
+      setMrError('Please select a project');
+      return;
+    }
+    if (mrLines.length === 0) {
+      setMrError('Please add at least one material to the request list');
+      return;
+    }
+
+    // Verify lines
+    const validLines: MaterialRequestLine[] = [];
+    for (const line of mrLines) {
+      if (!line.materialId) {
+        setMrError('Please select a material for all items');
+        return;
+      }
+      const qtyNum = Number(line.qty);
+      if (isNaN(qtyNum) || qtyNum <= 0) {
+        setMrError('Requested quantities must be greater than zero');
+        return;
+      }
+      const mat = materials.find(m => m.id === line.materialId);
+      if (!mat) {
+        setMrError('Selected material not found');
+        return;
+      }
+      validLines.push({
+        materialId: line.materialId,
+        materialName: mat.name,
+        unit: mat.unit,
+        qtyRequested: qtyNum
+      });
+    }
+
+    const proj = projects.find(p => p.id === mrProjectId);
+    const assem = proj?.assemblies.find(a => a.id === mrAssemblyId);
+
+    onAddMaterialRequest({
+      projectId: mrProjectId,
+      projectName: proj?.name || 'Unknown Project',
+      assemblyId: mrAssemblyId || undefined,
+      assemblyName: assem?.name || undefined,
+      urgency: mrUrgency,
+      status: 'Submitted',
+      items: validLines,
+      requestedBy: currentUser?.name || 'Anonymous',
+      requestedById: currentUser?.id || 'guest',
+      requestedDate: new Date().toISOString().slice(0, 10),
+      notes: mrNotes.trim() || undefined
+    });
+
+    // Reset Form
+    setMrProjectId('');
+    setMrAssemblyId('');
+    setMrUrgency('Normal');
+    setMrNotes('');
+    setMrLines([]);
+    setMrError('');
+    setIsCreatingRequest(false);
+  };
+
+  const handleManualLogSubmit = () => {
+    if (!logDate) {
+      setLogError('Date is required');
+      return;
+    }
+    if (!logMaterialId) {
+      setLogError('Please select a material');
+      return;
+    }
+    const qtyNum = Number(logQty);
+    if (isNaN(qtyNum) || qtyNum <= 0) {
+      setLogError('Quantity used must be greater than zero');
+      return;
+    }
+    if (!logProjectId) {
+      setLogError('Please select a project');
+      return;
+    }
+
+    const mat = materials.find(m => m.id === logMaterialId);
+    if (!mat) {
+      setLogError('Selected material not found');
+      return;
+    }
+
+    // Optional stock warning - proceed directly, append to notes if warning applies
+    let finalNotes = logNotes.trim();
+    if (qtyNum > mat.currentStock) {
+      const warningNote = `Warning: Quantity used (${qtyNum} ${mat.unit}) exceeds current stock in hand (${mat.currentStock} ${mat.unit}) at registration.`;
+      finalNotes = finalNotes ? `${finalNotes} | ${warningNote}` : warningNote;
+    }
+
+    const proj = projects.find(p => p.id === logProjectId);
+    const assem = proj?.assemblies.find(a => a.id === logAssemblyId);
+
+    onAddConsumptionLog({
+      date: logDate,
+      materialId: logMaterialId,
+      materialName: mat.name,
+      unit: mat.unit,
+      qtyUsed: qtyNum,
+      projectId: logProjectId,
+      projectName: proj?.name || 'Unknown Project',
+      assemblyId: logAssemblyId || undefined,
+      assemblyName: assem?.name || undefined,
+      issuedBy: currentUser?.name || 'Admin',
+      notes: finalNotes || undefined
+    });
+
+    // Reset Form
+    setLogMaterialId('');
+    setLogQty('');
+    setLogProjectId('');
+    setLogAssemblyId('');
+    setLogNotes('');
+    setLogError('');
+    setIsAddingLog(false);
+  };
+
+  const handleApproveMR = (mrId: string) => {
+    onUpdateMaterialRequestStatus(mrId, 'Approved', {
+      approvedBy: currentUser?.name || 'Manager'
+    });
+  };
+
+  const handleRejectMRSubmit = () => {
+    if (!rejectReason.trim()) {
+      alert('Please state a reason for rejection.');
+      return;
+    }
+    if (rejectingMrId) {
+      onUpdateMaterialRequestStatus(rejectingMrId, 'Rejected', {
+        rejectedReason: rejectReason.trim()
+      });
+      setRejectingMrId(null);
+      setRejectReason('');
+    }
+  };
+
+  const handleIssueMR = (mr: MaterialRequest) => {
+    // Reduce stock automatically for each approved item when marked as issued
+    mr.items.forEach(item => {
+      const mat = materials.find(m => m.id === item.materialId);
+      const curStock = mat ? mat.currentStock : 0;
+      onUpdateMaterialStock(item.materialId, Math.max(0, curStock - item.qtyRequested));
+
+      // Also append to consumption log automatically
+      onAddConsumptionLog({
+        date: new Date().toISOString().slice(0, 10),
+        materialId: item.materialId,
+        materialName: item.materialName,
+        unit: item.unit,
+        qtyUsed: item.qtyRequested,
+        projectId: mr.projectId,
+        projectName: mr.projectName,
+        assemblyId: mr.assemblyId,
+        assemblyName: mr.assemblyName,
+        issuedBy: currentUser?.name || 'Admin',
+        mrId: mr.id,
+        mrNo: mr.mrNo,
+        notes: `Issued from MR: ${mr.mrNo}. ` + (mr.notes || '')
+      });
+    });
+
+    onUpdateMaterialRequestStatus(mr.id, 'Issued', {
+      issuedBy: currentUser?.name || 'Admin'
+    });
+  };
+
+  const handleExportLogsCSV = () => {
+    const headers = [
+      'Date',
+      'Material Name',
+      'Quantity Used',
+      'Unit',
+      'Project',
+      'Sub-Assembly',
+      'Issued By',
+      'MR No',
+      'Remarks'
+    ];
+
+    const csvRows = filteredLogs.map(log => [
+      log.date,
+      log.materialName,
+      log.qtyUsed,
+      log.unit,
+      log.projectName,
+      log.assemblyName || '-',
+      log.issuedBy,
+      log.mrNo || 'Manual Entry',
+      log.notes || ''
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...csvRows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `material_consumption_logs_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  return (
+    <div className="space-y-6 max-w-7xl mx-auto px-4 md:px-0">
+      {/* HEADER TITLE */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-base-border pb-4 gap-4">
+        <div>
+          <h2 className="text-xl font-condensed font-black uppercase tracking-tight text-base-text flex items-center gap-2">
+            <Package className="h-5 w-5 text-base-accent" />
+            <span>Material Management</span>
+          </h2>
+          <p className="text-xs text-base-muted font-sans font-medium mt-1">
+            Track material stock level, handle assembly material requests, and manage direct consumption audits.
+          </p>
+        </div>
+
+        {/* TABS CONTROLLER */}
+        <div className="flex bg-base-surface2 border border-base-border p-1 rounded-xl shadow-xs self-start">
+          <button
+            onClick={() => setActiveTab('stock')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all ${
+              activeTab === 'stock'
+                ? 'bg-base-accent text-white shadow-xs'
+                : 'text-base-muted hover:text-base-text'
+            }`}
+          >
+            Stock Inventory
+          </button>
+          <button
+            onClick={() => setActiveTab('requests')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all ${
+              activeTab === 'requests'
+                ? 'bg-base-accent text-white shadow-xs'
+                : 'text-base-muted hover:text-base-text'
+            }`}
+          >
+            Material Requests
+          </button>
+          <button
+            onClick={() => setActiveTab('logs')}
+            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all ${
+              activeTab === 'logs'
+                ? 'bg-base-accent text-white shadow-xs'
+                : 'text-base-muted hover:text-base-text'
+            }`}
+          >
+            Consumption Log
+          </button>
+        </div>
+      </div>
+
+      {/* ========================================== */}
+      {/* TAB 1 — STOCK INVENTORY                    */}
+      {/* ========================================== */}
+      {activeTab === 'stock' && (
+        <div className="space-y-6">
+          {/* STATS SUMMARY CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-base-accent-dim/20 text-base-accent">
+                <Package className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold font-condensed uppercase text-base-muted tracking-wider">
+                  Total Items
+                </span>
+                <span className="text-xl font-mono font-black text-base-text">
+                  {stockSummary.total}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-amber-500/10 text-amber-500">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold font-condensed uppercase text-base-muted tracking-wider">
+                  Low Stock
+                </span>
+                <span className="text-xl font-mono font-black text-amber-500">
+                  {stockSummary.low}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-red-500/10 text-red-500">
+                <TrendingDown className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold font-condensed uppercase text-base-muted tracking-wider">
+                  Out of Stock
+                </span>
+                <span className="text-xl font-mono font-black text-red-500">
+                  {stockSummary.out}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* ADD MATERIAL DIALOG/COLLAPSIBLE FORM */}
+          {isAddingMaterial && (
+            <div className="bg-base-surface border border-base-accent rounded-xl p-5 shadow-xs space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-base-border pb-2">
+                <h3 className="font-condensed font-black uppercase text-sm text-base-accent tracking-wide flex items-center gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  <span>Add New Stock Item</span>
+                </h3>
+                <button
+                  onClick={() => setIsAddingMaterial(false)}
+                  className="p-1 rounded hover:bg-base-surface2 text-base-muted hover:text-base-text cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {addMaterialError && (
+                <div className="p-2 text-xs text-red-500 bg-red-500/10 rounded-lg font-medium">
+                  {addMaterialError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Material Name <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Lincoln Welding Wire 1.2mm"
+                    value={newMatName}
+                    onChange={e => setNewMatName(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Category
+                  </label>
+                  <select
+                    value={newMatCategory}
+                    onChange={e => setNewMatCategory(e.target.value as MaterialCategory)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  >
+                    {CATEGORIES.map(cat => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Stock Unit
+                  </label>
+                  <select
+                    value={newMatUnit}
+                    onChange={e => setNewMatUnit(e.target.value as MaterialUnit)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  >
+                    {UNITS.map(un => (
+                      <option key={un} value={un}>
+                        {un}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Current Stock Qty
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newMatCurrentStock}
+                    onChange={e => setNewMatCurrentStock(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Min Stock Threshold (Low Alert)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={newMatMinStock}
+                    onChange={e => setNewMatMinStock(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text font-mono"
+                  />
+                </div>
+
+                <div className="md:col-span-1">
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Storage Location
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Shelf A-3, Workshop 1"
+                    value={newMatLocation}
+                    onChange={e => setNewMatLocation(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Internal Specifications / Notes
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Specification codes, supplier notes, shelf heights..."
+                    value={newMatNotes}
+                    onChange={e => setNewMatNotes(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div className="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-base-border">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingMaterial(false)}
+                    className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateMaterialSubmit}
+                    className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
+                  >
+                    <Check className="h-4 w-4" />
+                    <span>Save Material</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* STOCK FILTER BAR */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-base-surface border border-base-border p-3.5 rounded-xl shadow-xs">
+            <div className="flex flex-col sm:flex-row items-center gap-3 w-full md:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-base-muted pointer-events-none" />
+                <input
+                  type="text"
+                  placeholder="Filter stock by name..."
+                  value={stockSearch}
+                  onChange={e => setStockSearch(e.target.value)}
+                  className="w-full bg-base-surface2 border border-base-border rounded-lg pl-9 pr-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <ListFilter className="h-4 w-4 text-base-muted hidden sm:inline" />
+                <select
+                  value={stockCategoryFilter}
+                  onChange={e => setStockCategoryFilter(e.target.value)}
+                  className="w-full sm:w-48 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                >
+                  <option value="">All Categories</option>
+                  {CATEGORIES.map(cat => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+              <input
+                type="file"
+                id="mat-excel-input-file"
+                accept=".xlsx,.xls"
+                onChange={handleFileChange}
+                className="hidden"
+              />
+
+              <button
+                type="button"
+                onClick={handleDownloadTemplate}
+                className="w-full sm:w-auto px-4 py-2 bg-base-surface2 border border-base-border text-base-text hover:bg-base-surface3 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span>Download Template</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={triggerExcelUpload}
+                className="w-full sm:w-auto px-4 py-2 bg-base-surface2 border border-base-border text-base-text hover:bg-base-surface3 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Upload className="h-3.5 w-3.5" />
+                <span>Import Excel</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setIsAddingMaterial(true)}
+                className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Plus className="h-4 w-4" />
+                <span>Add Material</span>
+              </button>
+            </div>
+          </div>
+
+          {/* IMPORT SUCCESS MESSAGE */}
+          {importMsg && (
+            <div className="p-3 text-xs text-green-600 bg-green-500/10 border border-green-500/20 rounded-xl font-semibold animate-fade-in">
+              {importMsg}
+            </div>
+          )}
+
+          {/* STOCK INVENTORY DATA TABLE */}
+          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
+                  <th className="px-4 py-3">Material Name</th>
+                  <th className="px-4 py-3">Category</th>
+                  <th className="px-4 py-3 text-right">Current Stock</th>
+                  <th className="px-4 py-3 text-right">Min Stock</th>
+                  <th className="px-4 py-3">Location</th>
+                  <th className="px-4 py-3 text-center">Status</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
+                {filteredMaterials.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-base-muted italic">
+                      No stock materials found matching current filters. Click "Add Material" above to initialize stock items.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredMaterials.map(m => {
+                    const isEditing = editingStockId === m.id;
+                    const isLow = m.currentStock > 0 && m.currentStock < m.minStock;
+                    const isOut = m.currentStock === 0;
+
+                    return (
+                      <tr key={m.id} className="hover:bg-base-surface2/30 transition-colors">
+                        <td className="px-4 py-3.5">
+                          <span className="block font-bold text-base-text">{m.name}</span>
+                          {m.notes && (
+                            <span className="block text-[10px] text-base-muted font-normal italic mt-0.5 truncate max-w-sm">
+                              {m.notes}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-base-muted">{m.category}</td>
+                        <td className="px-4 py-3.5 text-right font-mono font-bold">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <input
+                                type="number"
+                                min="0"
+                                value={editingStockVal}
+                                onChange={e => setEditingStockVal(e.target.value)}
+                                className="w-16 bg-base-surface2 border border-base-border rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-base-accent"
+                                autoFocus
+                              />
+                              <button
+                                onClick={() => handleEditStockSave(m.id)}
+                                className="p-1 text-green-500 hover:bg-green-500/10 rounded cursor-pointer"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                onClick={() => setEditingStockId(null)}
+                                className="p-1 text-red-500 hover:bg-red-500/10 rounded cursor-pointer"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-end gap-2">
+                              <span className={isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-base-text'}>
+                                {m.currentStock}
+                              </span>
+                              <span className="text-[9px] text-base-muted font-normal uppercase">{m.unit}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-right font-mono text-base-muted">
+                          {m.minStock} <span className="text-[9px] uppercase">{m.unit}</span>
+                        </td>
+                        <td className="px-4 py-3.5 text-base-muted font-normal">
+                          {m.location || <span className="italic text-base-muted/50">Unassigned</span>}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          {isOut ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-500">
+                              Out of Stock
+                            </span>
+                          ) : isLow ? (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500">
+                              Low Stock
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-green-500/10 text-green-500">
+                              OK
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3.5 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            {!isEditing && (
+                              <button
+                                onClick={() => {
+                                  setEditingStockId(m.id);
+                                  setEditingStockVal(String(m.currentStock));
+                                }}
+                                className="p-1.5 rounded hover:bg-base-surface2 text-base-muted hover:text-base-accent transition-colors cursor-pointer"
+                                title="Edit Current Stock"
+                              >
+                                <Edit2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {isAdminOrManager && (
+                              <button
+                                onClick={() => {
+                                  onDeleteMaterial(m.id);
+                                }}
+                                className="p-1.5 rounded hover:bg-red-500/10 text-base-muted hover:text-red-500 transition-colors cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* TAB 2 — MATERIAL REQUESTS (MR)             */}
+      {/* ========================================== */}
+      {activeTab === 'requests' && (
+        <div className="space-y-6">
+          {/* CREATE NEW REQUEST DIALOG */}
+          {isCreatingRequest && (
+            <div className="bg-base-surface border border-base-accent rounded-xl p-5 shadow-xs space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-base-border pb-2">
+                <h3 className="font-condensed font-black uppercase text-sm text-base-accent tracking-wide flex items-center gap-1.5">
+                  <Send className="h-4 w-4" />
+                  <span>Draft New Material Request (MR)</span>
+                </h3>
+                <button
+                  onClick={() => setIsCreatingRequest(false)}
+                  className="p-1 rounded hover:bg-base-surface2 text-base-muted hover:text-base-text cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {mrError && (
+                <div className="p-2 text-xs text-red-500 bg-red-500/10 rounded-lg font-medium">
+                  {mrError}
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                      Target Project <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      required
+                      value={mrProjectId}
+                      onChange={e => {
+                        setMrProjectId(e.target.value);
+                        setMrAssemblyId('');
+                      }}
+                      className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                    >
+                      <option value="">-- Select Active Project --</option>
+                      {activeProjects.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} ({p.client})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                      Connected Sub-Assembly (Optional)
+                    </label>
+                    <select
+                      value={mrAssemblyId}
+                      onChange={e => setMrAssemblyId(e.target.value)}
+                      disabled={!mrProjectId}
+                      className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text disabled:opacity-50"
+                    >
+                      <option value="">-- Select Assembly --</option>
+                      {selectedMrProjectObj?.assemblies.map(a => (
+                        <option key={a.id} value={a.id}>
+                          {a.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                      Urgency Priority
+                    </label>
+                    <select
+                      value={mrUrgency}
+                      onChange={e => setMrUrgency(e.target.value as MaterialRequestUrgency)}
+                      className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                    >
+                      <option value="Normal">Normal</option>
+                      <option value="Urgent">Urgent</option>
+                      <option value="Critical">Critical</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* LINE ITEMS GENERATOR */}
+                <div className="bg-base-surface2 rounded-xl p-4 border border-base-border space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] uppercase font-bold text-base-muted font-condensed tracking-wider">
+                      Request Items List
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setMrLines(prev => [...prev, { materialId: '', qty: '1' }])}
+                      className="px-2.5 py-1 bg-base-surface border border-base-border hover:bg-base-surface3 transition-all rounded text-[9px] font-bold uppercase flex items-center gap-1 cursor-pointer"
+                    >
+                      <Plus className="h-3 w-3" />
+                      <span>Add Item Row</span>
+                    </button>
+                  </div>
+
+                  {mrLines.length === 0 ? (
+                    <div className="text-center py-4 text-[10px] text-base-muted italic">
+                      No material items added yet. Click "Add Item Row" to start adding requested items.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {mrLines.map((line, idx) => {
+                        const currentMat = materials.find(m => m.id === line.materialId);
+
+                        return (
+                          <div key={idx} className="flex items-center gap-3 bg-base-surface p-2 border border-base-border rounded-lg animate-fade-in">
+                            <div className="flex-1">
+                              <select
+                                value={line.materialId}
+                                onChange={e => {
+                                  const updated = [...mrLines];
+                                  updated[idx].materialId = e.target.value;
+                                  setMrLines(updated);
+                                }}
+                                className="w-full bg-base-surface2 border border-base-border rounded px-2.5 py-1 text-xs outline-none focus:border-base-accent font-semibold text-base-text"
+                              >
+                                <option value="">-- Select Material Item --</option>
+                                {materials.map(m => (
+                                  <option key={m.id} value={m.id}>
+                                    {m.name} ({m.category} — Stock: {m.currentStock} {m.unit})
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="w-24 flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                placeholder="Qty"
+                                value={line.qty}
+                                onChange={e => {
+                                  const updated = [...mrLines];
+                                  updated[idx].qty = e.target.value;
+                                  setMrLines(updated);
+                                }}
+                                className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1 text-xs outline-none text-right font-bold text-base-text font-mono"
+                              />
+                              <span className="text-[10px] font-bold uppercase text-base-muted select-none w-8">
+                                {currentMat ? currentMat.unit : 'pcs'}
+                              </span>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => setMrLines(prev => prev.filter((_, i) => i !== idx))}
+                              className="p-1 rounded text-base-muted hover:text-red-500 hover:bg-red-500/10 cursor-pointer"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Additional Instructions / Purpose remarks
+                  </label>
+                  <textarea
+                    rows={2}
+                    placeholder="Provide details about the work order, specific welder allocations, assembly stages..."
+                    value={mrNotes}
+                    onChange={e => setMrNotes(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-base-border">
+                  <button
+                    type="button"
+                    onClick={() => setIsCreatingRequest(false)}
+                    className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCreateMRSubmit}
+                    className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    <span>Submit Request</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* REJECT MODAL FORM BLOCK */}
+          {rejectingMrId && (
+            <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 space-y-3 animate-fade-in">
+              <h4 className="font-condensed font-black text-xs text-red-500 uppercase tracking-wide">
+                Reject Material Request
+              </h4>
+              <div className="flex gap-2 items-center">
+                <input
+                  type="text"
+                  required
+                  placeholder="Specify reason for rejection..."
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                  className="flex-1 bg-base-surface border border-base-border rounded-lg px-3 py-1.5 text-xs outline-none focus:border-red-500 font-semibold text-base-text"
+                />
+                <button
+                  onClick={handleRejectMRSubmit}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white font-condensed font-bold text-xs uppercase rounded-lg transition-colors cursor-pointer"
+                >
+                  Confirm Reject
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectingMrId(null);
+                    setRejectReason('');
+                  }}
+                  className="px-3 py-1.5 bg-base-surface border border-base-border text-xs font-condensed font-bold uppercase rounded-lg cursor-pointer hover:bg-base-surface2 text-base-text"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* REQUESTS LIST FILTER BAR */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-base-surface border border-base-border p-3.5 rounded-xl shadow-xs">
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <ListFilter className="h-4 w-4 text-base-muted" />
+              <select
+                value={mrStatusFilter}
+                onChange={e => setMrStatusFilter(e.target.value)}
+                className="w-full sm:w-48 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Draft">Draft</option>
+                <option value="Submitted">Submitted (Pending)</option>
+                <option value="Approved">Approved</option>
+                <option value="Issued">Issued</option>
+                <option value="Rejected">Rejected</option>
+              </select>
+            </div>
+
+            <button
+              onClick={() => setIsCreatingRequest(true)}
+              className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            >
+              <Plus className="h-4 w-4" />
+              <span>New Request</span>
+            </button>
+          </div>
+
+          {/* REQUESTS GRAPH CARDS */}
+          <div className="space-y-4">
+            {filteredRequests.length === 0 ? (
+              <div className="bg-base-surface border border-base-border rounded-xl p-8 text-center text-base-muted italic text-xs">
+                No material requests matched current filter criteria.
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredRequests.map(mr => {
+                  const isNormal = mr.urgency === 'Normal';
+                  const isUrgent = mr.urgency === 'Urgent';
+                  const isCritical = mr.urgency === 'Critical';
+
+                  return (
+                    <div
+                      key={mr.id}
+                      className="bg-base-surface border border-base-border rounded-xl p-4.5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all relative overflow-hidden"
+                    >
+                      {/* Priority Strip Indicator */}
+                      <div
+                        className={`absolute left-0 top-0 bottom-0 w-1 ${
+                          isCritical ? 'bg-red-500' : isUrgent ? 'bg-amber-500' : 'bg-base-muted'
+                        }`}
+                      />
+
+                      <div className="pl-2 space-y-3">
+                        {/* Title Bar */}
+                        <div className="flex items-center justify-between gap-2 border-b border-base-border pb-2.5">
+                          <div>
+                            <span className="text-xs font-mono font-black text-base-accent block">
+                              {mr.mrNo}
+                            </span>
+                            <span className="text-[10px] text-base-muted font-mono block mt-0.5">
+                              {mr.requestedDate}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            {/* Urgency Badge */}
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase font-condensed ${
+                                isCritical
+                                  ? 'bg-red-500 text-white'
+                                  : isUrgent
+                                  ? 'bg-amber-500 text-slate-950'
+                                  : 'bg-base-surface2 text-base-muted border border-base-border'
+                              }`}
+                            >
+                              {mr.urgency}
+                            </span>
+
+                            {/* Status Badge */}
+                            <span
+                              className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                                mr.status === 'Submitted'
+                                  ? 'bg-blue-500/15 text-blue-500 border border-blue-500/20'
+                                  : mr.status === 'Approved'
+                                  ? 'bg-green-500/15 text-green-500 border border-green-500/20'
+                                  : mr.status === 'Issued'
+                                  ? 'bg-teal-500/15 text-teal-500 border border-teal-500/20'
+                                  : mr.status === 'Rejected'
+                                  ? 'bg-red-500/15 text-red-500 border border-red-500/20'
+                                  : 'bg-base-surface3 text-base-muted'
+                              }`}
+                            >
+                              {mr.status}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Project Info */}
+                        <div className="text-[11px] space-y-1">
+                          <div className="flex items-start gap-1">
+                            <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
+                              Project:
+                            </span>
+                            <span className="text-base-text font-bold truncate">{mr.projectName}</span>
+                          </div>
+                          {mr.assemblyName && (
+                            <div className="flex items-start gap-1">
+                              <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
+                                Assembly:
+                              </span>
+                              <span className="text-base-text font-bold truncate text-base-accent">
+                                {mr.assemblyName}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-start gap-1">
+                            <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
+                              Requestor:
+                            </span>
+                            <span className="text-base-text font-medium truncate">{mr.requestedBy}</span>
+                          </div>
+                        </div>
+
+                        {/* Items Requested Panel */}
+                        <div className="bg-base-surface2 rounded-lg p-2.5 border border-base-border/50 text-[11px]">
+                          <span className="block text-[9px] uppercase font-bold text-base-muted font-condensed tracking-wider mb-1.5">
+                            Requested Materials
+                          </span>
+                          <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
+                            {mr.items.map((it, idx) => (
+                              <div key={idx} className="flex justify-between items-center py-0.5 border-b border-base-border/30 last:border-0">
+                                <span className="font-semibold text-base-text truncate pr-2">
+                                  {it.materialName}
+                                </span>
+                                <span className="font-mono font-bold text-base-accent shrink-0">
+                                  {it.qtyRequested} <span className="text-[9px] font-normal uppercase text-base-muted">{it.unit}</span>
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Notes / Reject Info */}
+                        {mr.notes && (
+                          <div className="text-[10px] text-base-muted italic pl-1 border-l-2 border-base-border">
+                            " {mr.notes} "
+                          </div>
+                        )}
+
+                        {mr.status === 'Rejected' && mr.rejectedReason && (
+                          <div className="text-[10px] text-red-500 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
+                            <span className="font-bold">Rejection Reason:</span> {mr.rejectedReason}
+                          </div>
+                        )}
+
+                        {/* Signatures audit trails */}
+                        <div className="text-[9px] text-base-muted font-mono pt-1 flex flex-wrap gap-x-3 gap-y-1">
+                          {mr.approvedBy && (
+                            <span>Approved by: <strong className="text-base-text">{mr.approvedBy}</strong></span>
+                          )}
+                          {mr.issuedBy && (
+                            <span>Issued by: <strong className="text-base-text">{mr.issuedBy}</strong></span>
+                          )}
+                        </div>
+
+                        {/* Actions for Manager/Admin */}
+                        {isAdminOrManager && (
+                          <div className="flex gap-2 pt-2 border-t border-base-border/60">
+                            {mr.status === 'Submitted' && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleApproveMR(mr.id)}
+                                  className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <CheckCircle2 className="h-3.5 w-3.5" />
+                                  <span>Approve MR</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setRejectingMrId(mr.id)}
+                                  className="flex-1 py-1.5 bg-red-500/15 hover:bg-red-500 hover:text-white text-red-500 font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                  <span>Reject MR</span>
+                                </button>
+                              </>
+                            )}
+
+                            {mr.status === 'Approved' && (
+                              <button
+                                type="button"
+                                onClick={() => handleIssueMR(mr)}
+                                className="w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-all flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                              >
+                                <Layers className="h-3.5 w-3.5 animate-pulse" />
+                                <span>Mark as Issued (Dispense Stock)</span>
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                onDeleteMaterialRequest(mr.id);
+                              }}
+                              className="px-2 py-1.5 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
+                              title="Delete MR"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* TAB 3 — CONSUMPTION LOG                    */}
+      {/* ========================================== */}
+      {activeTab === 'logs' && (
+        <div className="space-y-6">
+          {/* MANUAL LOG DIALOG */}
+          {isAddingLog && (
+            <div className="bg-base-surface border border-base-accent rounded-xl p-5 shadow-xs space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between border-b border-base-border pb-2">
+                <h3 className="font-condensed font-black uppercase text-sm text-base-accent tracking-wide flex items-center gap-1.5">
+                  <Activity className="h-4 w-4" />
+                  <span>Log Manual Stock Consumption Entry</span>
+                </h3>
+                <button
+                  onClick={() => setIsAddingLog(false)}
+                  className="p-1 rounded hover:bg-base-surface2 text-base-muted hover:text-base-text cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {logError && (
+                <div className="p-2 text-xs text-red-500 bg-red-500/10 rounded-lg font-medium">
+                  {logError}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Consumption Date <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={logDate}
+                    onChange={e => setLogDate(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Select Material <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={logMaterialId}
+                    onChange={e => setLogMaterialId(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  >
+                    <option value="">-- Choose Material --</option>
+                    {materials.map(m => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.unit} — Current Stock: {m.currentStock})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Quantity Used <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0.1"
+                    step="any"
+                    required
+                    placeholder="e.g. 5"
+                    value={logQty}
+                    onChange={e => setLogQty(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Project Allocation <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    required
+                    value={logProjectId}
+                    onChange={e => {
+                      setLogProjectId(e.target.value);
+                      setLogAssemblyId('');
+                    }}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  >
+                    <option value="">-- Choose Target Project --</option>
+                    {projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Connected Sub-Assembly (Optional)
+                  </label>
+                  <select
+                    value={logAssemblyId}
+                    onChange={e => setLogAssemblyId(e.target.value)}
+                    disabled={!logProjectId}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text disabled:opacity-50"
+                  >
+                    <option value="">-- Select Assembly --</option>
+                    {selectedLogProjectObj?.assemblies.map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Authorized Signatory / Staff
+                  </label>
+                  <input
+                    type="text"
+                    disabled
+                    value={currentUser?.name || 'Staff'}
+                    className="w-full bg-base-surface3 border border-base-border rounded-lg px-3 py-2 text-xs outline-none font-semibold text-base-text opacity-70"
+                  />
+                </div>
+
+                <div className="md:col-span-3">
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Specific Allocation Notes / Purpose
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Specific joint weld-outs, workshop storage replacements..."
+                    value={logNotes}
+                    onChange={e => setLogNotes(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div className="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-base-border">
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingLog(false)}
+                    className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleManualLogSubmit}
+                    className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check className="h-4 w-4" />
+                    <span>Save Log Entry</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* LOGS FILTER BAR */}
+          <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-base-surface border border-base-border p-3.5 rounded-xl shadow-xs">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-2.5 h-4 w-4 text-base-muted pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Filter logs by material or project..."
+                value={logSearch}
+                onChange={e => setLogSearch(e.target.value)}
+                className="w-full bg-base-surface2 border border-base-border rounded-lg pl-9 pr-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 w-full md:w-auto">
+              <button
+                onClick={handleExportLogsCSV}
+                className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                title="Export list to Excel-ready CSV format"
+              >
+                <FileSpreadsheet className="h-4 w-4" />
+                <span>Export to Excel</span>
+              </button>
+
+              {isAdminOrManager && (
+                <button
+                  onClick={() => setIsAddingLog(true)}
+                  className="flex-1 md:flex-none px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>Add Log Entry</span>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* AUDITED LOG TABLE */}
+          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
+                  <th className="px-4 py-3">Date</th>
+                  <th className="px-4 py-3">Material Name</th>
+                  <th className="px-4 py-3 text-right">Qty Dispensed</th>
+                  <th className="px-4 py-3">Allocated Project & Assembly</th>
+                  <th className="px-4 py-3">Issued By</th>
+                  <th className="px-4 py-3">MR Reference</th>
+                  <th className="px-4 py-3">Notes</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
+                {filteredLogs.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-6 py-12 text-center text-base-muted italic">
+                      No consumption audit logs found matching current search.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredLogs.map(log => (
+                    <tr key={log.id} className="hover:bg-base-surface2/30 transition-colors">
+                      <td className="px-4 py-3.5 font-mono text-base-muted whitespace-nowrap">
+                        {log.date}
+                      </td>
+                      <td className="px-4 py-3.5 font-bold text-base-text">
+                        {log.materialName}
+                      </td>
+                      <td className="px-4 py-3.5 text-right font-mono font-black text-amber-500 whitespace-nowrap">
+                        -{log.qtyUsed} <span className="text-[9px] font-normal uppercase text-base-muted">{log.unit}</span>
+                      </td>
+                      <td className="px-4 py-3.5">
+                        <span className="block font-bold text-base-text">{log.projectName}</span>
+                        {log.assemblyName && (
+                          <span className="block text-[10px] text-base-accent font-medium">
+                            {log.assemblyName}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 text-base-text">
+                        {log.issuedBy}
+                      </td>
+                      <td className="px-4 py-3.5">
+                        {log.mrNo ? (
+                          <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-base-accent-dim text-base-accent">
+                            {log.mrNo}
+                          </span>
+                        ) : (
+                          <span className="text-base-muted italic text-[10px]">Manual Entry</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3.5 max-w-xs truncate text-base-muted font-normal italic" title={log.notes}>
+                        {log.notes || '-'}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
