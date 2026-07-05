@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { Project, TimesheetEntry, Employee } from '../types';
+import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest } from '../types';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -20,6 +20,8 @@ interface DashboardViewProps {
   selectedMonth: string;
   setSelectedMonth: (val: string) => void;
   openSpotlight: (id: string) => void;
+  materials?: MaterialItem[];
+  materialRequests?: MaterialRequest[];
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -36,7 +38,9 @@ export default function DashboardView({
   employees,
   selectedMonth,
   setSelectedMonth,
-  openSpotlight
+  openSpotlight,
+  materials = [],
+  materialRequests = [],
 }: DashboardViewProps) {
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
 
@@ -652,6 +656,14 @@ export default function DashboardView({
               Workshop 2
             </button>
           </div>
+
+          <div className="flex items-center gap-1.5 text-xs font-condensed font-bold text-base-green mt-1">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-base-green opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-base-green"></span>
+            </span>
+            LIVE
+          </div>
         </div>
 
         {/* Big circular progress gauge */}
@@ -689,159 +701,442 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* KPI Cards Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
-        {/* KPI: Total Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-accent border-b-4 border-b-base-accent">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <Folder className="h-4.5 w-4.5 text-base-accent" />
-            Total projects
+      {/* SECTION 2 — Bento KPI Grid */}
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {/* Card 1 - Total Projects */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <Folder className="h-4.5 w-4.5 text-base-accent" />
+                Total projects
+              </div>
+              <svg className="w-10 h-3 text-base-accent/35" viewBox="0 0 50 10">
+                <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="7" r="1" fill="currentColor" />
+                <circle cx="12" cy="4" r="1" fill="currentColor" />
+                <circle cx="22" cy="6" r="1" fill="currentColor" />
+                <circle cx="32" cy="3" r="1" fill="currentColor" />
+                <circle cx="42" cy="5" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">{filteredProjects.length}</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
           </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">{filteredProjects.length}</div>
-          <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
+
+          {/* Card 2 - Active */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4.5 w-4.5 text-base-blue" />
+                Active
+              </div>
+              <svg className="w-10 h-3 text-base-blue/35" viewBox="0 0 50 10">
+                <path d="M 2,6 L 12,3 L 22,7 L 32,4 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="6" r="1" fill="currentColor" />
+                <circle cx="12" cy="3" r="1" fill="currentColor" />
+                <circle cx="22" cy="7" r="1" fill="currentColor" />
+                <circle cx="32" cy="4" r="1" fill="currentColor" />
+                <circle cx="42" cy="5" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{activeCount}</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">in progress</p>
+          </div>
+
+          {/* Card 3 - Completed */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="h-4.5 w-4.5 text-base-green" />
+                Completed
+              </div>
+              <svg className="w-10 h-3 text-base-green/35" viewBox="0 0 50 10">
+                <path d="M 2,5 L 12,6 L 22,4 L 32,7 L 42,3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="5" r="1" fill="currentColor" />
+                <circle cx="12" cy="6" r="1" fill="currentColor" />
+                <circle cx="22" cy="4" r="1" fill="currentColor" />
+                <circle cx="32" cy="7" r="1" fill="currentColor" />
+                <circle cx="42" cy="3" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{completedCount}</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">finished</p>
+          </div>
+
+          {/* Card 4 - Overdue */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
+                Overdue
+              </div>
+              <svg className="w-10 h-3 text-base-red/35" viewBox="0 0 50 10">
+                <path d="M 2,3 L 12,5 L 22,3 L 32,6 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="3" r="1" fill="currentColor" />
+                <circle cx="12" cy="5" r="1" fill="currentColor" />
+                <circle cx="22" cy="3" r="1" fill="currentColor" />
+                <circle cx="32" cy="6" r="1" fill="currentColor" />
+                <circle cx="42" cy="7" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{overdueCount}</div>
+              {overdueCount > 0 && (
+                <span className="text-xs font-condensed font-bold text-base-red bg-base-red/10 px-2 py-0.5 rounded-full animate-pulse">
+                  ⚠ Action needed
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">past due date</p>
+          </div>
         </div>
 
-        {/* KPI: Active Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-blue border-b-4 border-b-base-blue">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <Clock className="h-4.5 w-4.5 text-base-blue" />
-            Active
+        {/* Second row - attendance + manhours */}
+        <div className="grid grid-cols-3 gap-3 mt-3">
+          {/* Card 5 - Man Hours */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4.5 w-4.5 text-base-blue" />
+                Man-hours
+              </div>
+              <svg className="w-10 h-3 text-base-blue/35" viewBox="0 0 50 10">
+                <path d="M 2,7 L 12,5 L 22,6 L 32,4 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="7" r="1" fill="currentColor" />
+                <circle cx="12" cy="5" r="1" fill="currentColor" />
+                <circle cx="22" cy="6" r="1" fill="currentColor" />
+                <circle cx="32" cy="4" r="1" fill="currentColor" />
+                <circle cx="42" cy="7" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
           </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{activeCount}</div>
-          <p className="text-xs text-base-muted2 mt-1">in progress</p>
-        </div>
 
-        {/* KPI: Completed Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-green border-b-4 border-b-base-green">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <CheckCircle className="h-4.5 w-4.5 text-base-green" />
-            Completed
+          {/* Card 6 - Present Today */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <Users className="h-4.5 w-4.5 text-base-green" />
+                Present
+              </div>
+              <svg className="w-10 h-3 text-base-green/35" viewBox="0 0 50 10">
+                <path d="M 2,4 L 12,6 L 22,3 L 32,5 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="4" r="1" fill="currentColor" />
+                <circle cx="12" cy="6" r="1" fill="currentColor" />
+                <circle cx="22" cy="3" r="1" fill="currentColor" />
+                <circle cx="32" cy="5" r="1" fill="currentColor" />
+                <circle cx="42" cy="7" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{presentCount}</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
           </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{completedCount}</div>
-          <p className="text-xs text-base-muted2 mt-1">finished</p>
-        </div>
 
-        {/* KPI: Overdue Projects */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-red border-b-4 border-b-base-red">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
-            Overdue
+          {/* Card 7 - Absent Today */}
+          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-default">
+            <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
+                Absent
+              </div>
+              <svg className="w-10 h-3 text-base-red/35" viewBox="0 0 50 10">
+                <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="7" r="1" fill="currentColor" />
+                <circle cx="12" cy="4" r="1" fill="currentColor" />
+                <circle cx="22" cy="6" r="1" fill="currentColor" />
+                <circle cx="32" cy="3" r="1" fill="currentColor" />
+                <circle cx="42" cy="4" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
           </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{overdueCount}</div>
-          <p className="text-xs text-base-muted2 mt-1">past due date</p>
-        </div>
-
-        {/* KPI: Man-hours */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-blue border-b-4 border-b-base-blue">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <Clock className="h-4.5 w-4.5 text-base-blue" />
-            Man-hours
-          </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
-          <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
-        </div>
-
-        {/* KPI: Present Today */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-green border-b-4 border-b-base-green">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <Users className="h-4.5 w-4.5 text-base-green" />
-            Present
-          </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{presentCount}</div>
-          <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
-        </div>
-
-        {/* KPI: Absent Today */}
-        <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift hover:glow-red border-b-4 border-b-base-red">
-          <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 mb-3">
-            <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
-            Absent
-          </div>
-          <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
-          <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
         </div>
       </div>
 
-      {/* Dynamic S-Curve Trend Chart Card */}
-      <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-6 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
-              <TrendingUp className="h-5 w-5 text-base-accent" />
-              Cumulative Project Progress Trend (S-Curve)
+      {/* SECTION 3 — Main Content Bento (3-column on desktop) */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+
+        {/* LEFT COLUMN — spans 2 cols */}
+        <div className="xl:col-span-2 space-y-4">
+
+          {/* S-Curve Chart — keep existing chart code exactly, just re-wrap */}
+          <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-base-accent" />
+                  Cumulative Project Progress Trend (S-Curve)
+                </h3>
+                <p className="text-xs text-base-muted2">
+                  Comparison of actual cumulative completion percentage against planned trajectory for the selected period.
+                </p>
+              </div>
+              <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 self-start sm:self-auto select-none">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3.5 h-0.75 bg-base-accent rounded-full" />
+                  <span className="text-base-text">Actual Completion</span>
+                </div>
+                <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
+                  <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-blue" />
+                  <span className="text-base-muted2">Planned Baseline</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="h-[260px] w-full pt-1">
+              <ResponsiveContainer width="99%" height={255}>
+                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -22, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.25}/>
+                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis 
+                    dataKey="day" 
+                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <YAxis 
+                    domain={[0, 100]} 
+                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(val) => `${val}%`}
+                  />
+                  <Tooltip content={<CustomChartTooltip />} />
+                  <Area 
+                    name="Actual Progress"
+                    type="monotone" 
+                    dataKey="actual" 
+                    stroke="var(--accent)" 
+                    strokeWidth={3}
+                    fillOpacity={1} 
+                    fill="url(#colorActual)"
+                    activeDot={{ r: 5, strokeWidth: 0, fill: 'var(--accent)' }}
+                    connectNulls
+                  />
+                  <Area 
+                    name="Planned Baseline"
+                    type="monotone" 
+                    dataKey="planned" 
+                    stroke="var(--blue)" 
+                    strokeWidth={2}
+                    strokeDasharray="4 4"
+                    fill="none" 
+                    activeDot={false}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Project Progress List — keep existing code, add subtle improvement */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+            <div className="px-5 py-4 border-b border-base-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="20" x2="18" y2="10" />
+                  <line x1="12" y1="20" x2="12" y2="4" />
+                  <line x1="6" y1="20" x2="6" y2="14" />
+                </svg>
+                <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Project Progress</h3>
+              </div>
+              {/* Add project count badge */}
+              <span className="text-xs font-condensed font-bold bg-base-accent/10 text-base-accent px-2 py-0.5 rounded-full">
+                {filteredProjects.length} projects
+              </span>
+            </div>
+            <div className="p-5 divide-y divide-base-border/50">
+              {filteredProjects.length === 0 ? (
+                <div className="text-base-muted text-xs py-4 text-center">No projects assigned during this period.</div>
+              ) : (
+                filteredProjects.map((p, i) => {
+                  const pct = calcPct(p);
+                  const col = BAR_COLORS[i % BAR_COLORS.length];
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => openSpotlight(p.id)}
+                      className="py-3 flex items-center gap-4 cursor-pointer hover:bg-base-surface2/30 px-2 rounded-lg transition-colors group"
+                    >
+                      <span className="text-sm font-semibold flex-1 min-width-0 overflow-hidden text-ellipsis whitespace-nowrap text-base-text group-hover:text-base-accent transition-colors">
+                        {p.name}
+                      </span>
+                      <div className="flex-1 max-w-[124px] sm:max-w-[200px] h-2 bg-base-border/20 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: col }} />
+                      </div>
+                      <span className="font-condensed font-bold text-sm text-base-muted min-width-[36px] text-right">{pct}%</span>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* RIGHT COLUMN — spans 1 col */}
+        <div className="space-y-4">
+
+          {/* WIDGET 1 — Today's Attendance Summary */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5">
+            <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted mb-4 flex items-center gap-1.5">
+              <Users className="h-4 w-4 text-base-accent" />
+              Today's Headcount
             </h3>
-            <p className="text-xs text-base-muted2">
-              Comparison of actual cumulative completion percentage against planned trajectory for the selected period.
-            </p>
-          </div>
-          <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 self-start sm:self-auto select-none">
-            <div className="flex items-center gap-1.5">
-              <span className="w-3.5 h-0.75 bg-base-accent rounded-full" />
-              <span className="text-base-text">Actual Completion</span>
+            {/* Big attendance visual */}
+            <div className="flex items-center justify-center gap-6 py-2">
+              <div className="text-center">
+                <div className="text-4xl font-condensed font-extrabold text-base-green">{presentCount}</div>
+                <div className="text-xs text-base-muted font-condensed font-bold uppercase mt-1">Present</div>
+              </div>
+              <div className="text-2xl text-base-border font-light">/</div>
+              <div className="text-center">
+                <div className="text-4xl font-condensed font-extrabold text-base-text">{employees.length}</div>
+                <div className="text-xs text-base-muted font-condensed font-bold uppercase mt-1">Total</div>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
-              <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-blue" />
-              <span className="text-base-muted2">Planned Baseline</span>
+            {/* Attendance bar */}
+            <div className="mt-4">
+              <div className="h-3 bg-base-border/30 rounded-full overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all duration-700"
+                  style={{
+                    width: employees.length > 0 ? `${Math.round((presentCount / employees.length) * 100)}%` : '0%',
+                    background: 'linear-gradient(90deg, var(--green), var(--accent))'
+                  }}
+                />
+              </div>
+              <div className="flex justify-between text-[10px] text-base-muted font-condensed font-bold uppercase mt-1">
+                <span>{employees.length > 0 ? Math.round((presentCount / employees.length) * 100) : 0}% attendance rate</span>
+                <span>{absentCount} absent</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        <div className="h-[260px] w-full pt-1">
-          <ResponsiveContainer width="99%" height={255}>
-            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -22, bottom: 0 }}>
-              <defs>
-                <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.25}/>
-                  <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-              <XAxis 
-                dataKey="day" 
-                tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
-                tickLine={false}
-                axisLine={false}
-              />
-              <YAxis 
-                domain={[0, 100]} 
-                tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
-                tickLine={false}
-                axisLine={false}
-                tickFormatter={(val) => `${val}%`}
-              />
-              <Tooltip content={<CustomChartTooltip />} />
-              <Area 
-                name="Actual Progress"
-                type="monotone" 
-                dataKey="actual" 
-                stroke="var(--accent)" 
-                strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorActual)"
-                activeDot={{ r: 5, strokeWidth: 0, fill: 'var(--accent)' }}
-                connectNulls
-              />
-              <Area 
-                name="Planned Baseline"
-                type="monotone" 
-                dataKey="planned" 
-                stroke="var(--blue)" 
-                strokeWidth={2}
-                strokeDasharray="4 4"
-                fill="none" 
-                activeDot={false}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          {/* WIDGET 2 — Material Alerts (new) */}
+          {(materials.length > 0 || materialRequests.length > 0) && (() => {
+            const lowStockItems = materials.filter(m => m.currentStock > 0 && m.currentStock < m.minStock);
+            const outOfStockItems = materials.filter(m => m.currentStock === 0);
+            const pendingMRs = materialRequests.filter(mr => mr.status === 'Submitted');
+            return (
+              <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5">
+                <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted mb-4 flex items-center gap-1.5">
+                  <Package className="h-4 w-4 text-base-accent" />
+                  Material Alerts
+                </h3>
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-base-red/8 border border-base-red/15">
+                    <span className="text-xs font-condensed font-bold text-base-red flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-base-red" />
+                      Out of Stock
+                    </span>
+                    <span className="text-sm font-condensed font-extrabold text-base-red">{outOfStockItems.length} items</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-base-accent/8 border border-base-accent/15">
+                    <span className="text-xs font-condensed font-bold text-base-accent flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-base-accent" />
+                      Low Stock
+                    </span>
+                    <span className="text-sm font-condensed font-extrabold text-base-accent">{lowStockItems.length} items</span>
+                  </div>
+                  <div className="flex items-center justify-between p-2.5 rounded-lg bg-base-blue/8 border border-base-blue/15">
+                    <span className="text-xs font-condensed font-bold text-base-blue flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-base-blue" />
+                      Pending MR
+                    </span>
+                    <span className="text-sm font-condensed font-extrabold text-base-blue">{pendingMRs.length} requests</span>
+                  </div>
+                </div>
+                {(outOfStockItems.length > 0 || lowStockItems.length > 0) && (
+                  <div className="mt-3 pt-3 border-t border-base-border space-y-1.5">
+                    <p className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted">Critical items:</p>
+                    {[...outOfStockItems, ...lowStockItems].slice(0, 3).map(m => (
+                      <div key={m.id} className="flex items-center justify-between text-xs">
+                        <span className="text-base-text truncate max-w-[140px]">{m.name}</span>
+                        <span className={`font-condensed font-bold ${m.currentStock === 0 ? 'text-base-red' : 'text-base-accent'}`}>
+                          {m.currentStock} {m.unit}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* WIDGET 3 — Status Donut (keep existing donut, re-wrap) */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+            <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
+              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+              </svg>
+              <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Status Breakdown</h3>
+            </div>
+            <div className="p-5 flex flex-col sm:flex-row xl:flex-col items-center justify-around gap-4">
+              <div className="relative h-[120px] w-[120px]">
+                <svg className="h-[120px] w-[120px]" viewBox="0 0 120 120">
+                  <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(0,0,0,0.04)" strokeWidth="14" />
+                  {donutCircles}
+                </svg>
+              </div>
+
+              <div className="space-y-2 flex-1 max-w-[200px] w-full">
+                {statusKeys.map(s => (
+                  <div key={s} className="flex items-center justify-between text-xs py-1 border-b border-base-border/30 last:border-none">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s] }} />
+                      <span className="text-base-muted2 font-medium capitalize">{s}</span>
+                    </div>
+                    <span className="font-condensed font-bold text-sm" style={{ color: STATUS_COLORS[s] }}>
+                      {statusCounts[s]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
         </div>
       </div>
 
-      {/* Dynamic Overdue Blocker & Dependency Alerts Panel */}
-      <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-6 space-y-6 relative overflow-hidden">
+      {/* SECTION 4 — Critical Path Blockers (keep existing, visual upgrade only) */}
+      <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-5 space-y-6 relative overflow-hidden">
         {/* Top visual accents */}
         <div className="absolute top-0 inset-x-0 h-1.5 bg-linear-to-r from-base-red via-base-accent to-base-blue opacity-90" />
         
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        {/* Subtle background pattern */}
+        <div className="absolute inset-0 opacity-[0.015] pointer-events-none"
+          style={{ backgroundImage: 'radial-gradient(var(--text) 1px, transparent 1px)', backgroundSize: '20px 20px' }}
+        />
+
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="space-y-1">
             <h2 className="font-condensed font-extrabold text-xl uppercase tracking-wider text-base-text flex items-center gap-2">
               <ShieldAlert className="h-5.5 w-5.5 text-base-red" />
@@ -870,7 +1165,7 @@ export default function DashboardView({
           </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 relative z-10">
           {/* Column 1: Overdue Blockers list */}
           <div className="space-y-3">
             <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted flex items-center gap-1.5 border-b border-base-border pb-2">
@@ -978,82 +1273,6 @@ export default function DashboardView({
                 ))}
               </div>
             )}
-          </div>
-        </div>
-      </div>
-
-      {/* Breakdown sections layout (Columns side by side) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* Project progress lists */}
-        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
-            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <line x1="18" y1="20" x2="18" y2="10" />
-              <line x1="12" y1="20" x2="12" y2="4" />
-              <line x1="6" y1="20" x2="6" y2="14" />
-            </svg>
-            <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Project Progress</h3>
-          </div>
-          <div className="p-5 divide-y divide-base-border/50">
-            {filteredProjects.length === 0 ? (
-              <div className="text-base-muted text-xs py-4 text-center">No projects assigned during this period.</div>
-            ) : (
-              filteredProjects.map((p, i) => {
-                const pct = calcPct(p);
-                const col = BAR_COLORS[i % BAR_COLORS.length];
-                return (
-                  <div
-                    key={p.id}
-                    onClick={() => openSpotlight(p.id)}
-                    className="py-3 flex items-center gap-4 cursor-pointer hover:bg-base-surface2/30 px-2 rounded-lg transition-colors group"
-                  >
-                    <span className="text-sm font-semibold flex-1 min-width-0 overflow-hidden text-ellipsis whitespace-nowrap text-base-text group-hover:text-base-accent transition-colors">
-                      {p.name}
-                    </span>
-                    <div className="flex-1 max-w-[124px] sm:max-w-[200px] h-2 bg-base-border/20 rounded-full overflow-hidden">
-                      <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: col }} />
-                    </div>
-                    <span className="font-condensed font-bold text-sm text-base-muted min-width-[36px] text-right">{pct}%</span>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Status Distribution */}
-        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
-          <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
-            <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Status Breakdown</h3>
-          </div>
-          <div className="p-5 flex flex-col sm:flex-row items-center justify-around gap-6">
-            {/* Donut graphic */}
-            <div className="relative h-[120px] w-[120px]">
-              <svg className="h-[120px] w-[120px]" viewBox="0 0 120 120">
-                {/* Background base */}
-                <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(0,0,0,0.04)" strokeWidth="14" />
-                {donutCircles}
-              </svg>
-            </div>
-
-            {/* Donut Map legends list */}
-            <div className="space-y-2 flex-1 max-w-[200px]">
-              {statusKeys.map(s => (
-                <div key={s} className="flex items-center justify-between text-xs py-1 border-b border-base-border/30 last:border-none">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s] }} />
-                    <span className="text-base-muted2 font-medium capitalize">{s}</span>
-                  </div>
-                  <span className="font-condensed font-bold text-sm" style={{ color: STATUS_COLORS[s] }}>
-                    {statusCounts[s]}
-                  </span>
-                </div>
-              ))}
-            </div>
           </div>
         </div>
       </div>

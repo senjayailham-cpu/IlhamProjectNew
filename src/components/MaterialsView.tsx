@@ -141,6 +141,17 @@ export default function MaterialsView({
   const [logNotes, setLogNotes] = useState('');
   const [logError, setLogError] = useState('');
 
+  const [stockWarning, setStockWarning] = useState<string | null>(null);
+  const [stockWarningPending, setStockWarningPending] = useState<boolean>(false);
+
+  // Clear stock warning states when log form is closed
+  React.useEffect(() => {
+    if (!isAddingLog) {
+      setStockWarning(null);
+      setStockWarningPending(false);
+    }
+  }, [isAddingLog]);
+
   // Dynamic Assemblies list for MR creation
   const selectedMrProjectObj = useMemo(() => {
     return projects.find(p => p.id === mrProjectId);
@@ -481,6 +492,15 @@ export default function MaterialsView({
       return;
     }
 
+    if (qtyNum > mat.currentStock && !stockWarningPending) {
+      setStockWarning(`Stock insufficient: requested ${qtyNum} ${mat.unit} but only ${mat.currentStock} ${mat.unit} available. Click "Save Anyway" to proceed.`);
+      setStockWarningPending(true);
+      return; // Stop here, wait for user confirmation
+    }
+    // If stockWarningPending is true, user already confirmed — proceed normally
+    setStockWarning(null);
+    setStockWarningPending(false);
+
     // Optional stock warning - proceed directly, append to notes if warning applies
     let finalNotes = logNotes.trim();
     if (qtyNum > mat.currentStock) {
@@ -512,6 +532,8 @@ export default function MaterialsView({
     setLogAssemblyId('');
     setLogNotes('');
     setLogError('');
+    setStockWarning(null);
+    setStockWarningPending(false);
     setIsAddingLog(false);
   };
 
@@ -566,43 +588,53 @@ export default function MaterialsView({
   };
 
   const handleExportLogsCSV = () => {
-    const headers = [
-      'Date',
-      'Material Name',
-      'Quantity Used',
-      'Unit',
-      'Project',
-      'Sub-Assembly',
-      'Issued By',
-      'MR No',
-      'Remarks'
-    ];
+    try {
+      const headers = [
+        'Date', 'Material Name', 'Qty Used', 'Unit',
+        'Project', 'Sub-Assembly', 'Issued By', 'MR No', 'Notes'
+      ];
+      const rows = filteredLogs.map(log => [
+        log.date,
+        log.materialName,
+        log.qtyUsed,
+        log.unit,
+        log.projectName,
+        log.assemblyName || '-',
+        log.issuedBy,
+        log.mrNo || 'Manual Entry',
+        log.notes || ''
+      ]);
 
-    const csvRows = filteredLogs.map(log => [
-      log.date,
-      log.materialName,
-      log.qtyUsed,
-      log.unit,
-      log.projectName,
-      log.assemblyName || '-',
-      log.issuedBy,
-      log.mrNo || 'Manual Entry',
-      log.notes || ''
-    ]);
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+      ws['!cols'] = [
+        { wch: 12 }, { wch: 30 }, { wch: 10 }, { wch: 8 },
+        { wch: 25 }, { wch: 22 }, { wch: 18 }, { wch: 14 }, { wch: 30 }
+      ];
+      XLSX.utils.book_append_sheet(wb, ws, 'Consumption Log');
 
-    const csvContent = [
-      headers.join(','),
-      ...csvRows.map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
+      // Summary sheet by material
+      const summaryMap: Record<string, { name: string; unit: string; total: number }> = {};
+      filteredLogs.forEach(log => {
+        if (!summaryMap[log.materialId]) {
+          summaryMap[log.materialId] = { name: log.materialName, unit: log.unit, total: 0 };
+        }
+        summaryMap[log.materialId].total += log.qtyUsed;
+      });
+      const summaryHeaders = ['Material Name', 'Unit', 'Total Used'];
+      const summaryRows = Object.values(summaryMap)
+        .sort((a, b) => b.total - a.total)
+        .map(s => [s.name, s.unit, s.total]);
+      const wsSummary = XLSX.utils.aoa_to_sheet([summaryHeaders, ...summaryRows]);
+      wsSummary['!cols'] = [{ wch: 30 }, { wch: 10 }, { wch: 12 }];
+      XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary by Material');
 
-    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `material_consumption_logs_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      const dateStr = new Date().toISOString().slice(0, 10);
+      XLSX.writeFile(wb, `Material_Consumption_Log_${dateStr}.xlsx`);
+    } catch (err: any) {
+      console.error('Export failed:', err);
+      alert('Export failed. Please try again.');
+    }
   };
 
   return (
@@ -660,7 +692,7 @@ export default function MaterialsView({
       {activeTab === 'stock' && (
         <div className="space-y-6">
           {/* STATS SUMMARY CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3">
               <div className="p-2.5 rounded-lg bg-base-accent-dim/20 text-base-accent">
                 <Package className="h-5 w-5" />
@@ -699,6 +731,20 @@ export default function MaterialsView({
                 </span>
                 <span className="text-xl font-mono font-black text-red-500">
                   {stockSummary.out}
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3">
+              <div className="p-2.5 rounded-lg bg-base-accent/10 text-base-accent">
+                <Clock className="h-5 w-5" />
+              </div>
+              <div>
+                <span className="block text-[10px] font-bold font-condensed uppercase text-base-muted tracking-wider">
+                  Pending Requests
+                </span>
+                <span className="text-xl font-mono font-black text-base-accent">
+                  {materialRequests.filter(mr => mr.status === 'Submitted').length}
                 </span>
               </div>
             </div>
@@ -1650,21 +1696,52 @@ export default function MaterialsView({
                   />
                 </div>
 
-                <div className="md:col-span-3 flex justify-end gap-2 pt-2 border-t border-base-border">
-                  <button
-                    type="button"
-                    onClick={() => setIsAddingLog(false)}
-                    className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleManualLogSubmit}
-                    className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
-                  >
-                    <Check className="h-4 w-4" />
-                    <span>Save Log Entry</span>
-                  </button>
+                <div className="md:col-span-3 pt-2 border-t border-base-border">
+                  {stockWarning && (
+                    <div className="text-xs text-yellow-600 bg-yellow-50 border border-yellow-200 rounded-lg px-3 py-2 mb-3 animate-fade-in flex items-center gap-2">
+                      <span>⚠️</span>
+                      <span>{stockWarning}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-end gap-2">
+                    {stockWarningPending ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => { setStockWarning(null); setStockWarningPending(false); }}
+                          className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer text-base-text"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleManualLogSubmit}
+                          className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Check className="h-4 w-4" />
+                          <span>Save Anyway</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => setIsAddingLog(false)}
+                          className="px-4 py-2 border border-base-border hover:bg-base-surface2 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer text-base-text"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleManualLogSubmit}
+                          className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
+                        >
+                          <Check className="h-4 w-4" />
+                          <span>Save Log Entry</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1687,10 +1764,10 @@ export default function MaterialsView({
               <button
                 onClick={handleExportLogsCSV}
                 className="flex-1 md:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer"
-                title="Export list to Excel-ready CSV format"
+                title="Export list as Excel spreadsheet (.xlsx)"
               >
                 <FileSpreadsheet className="h-4 w-4" />
-                <span>Export to Excel</span>
+                <span>Export Excel</span>
               </button>
 
               {isAdminOrManager && (

@@ -645,6 +645,43 @@ function AppContent() {
     extra?: { approvedBy?: string; rejectedReason?: string; issuedBy?: string }
   ) => {
     const now = new Date().toISOString().slice(0, 10);
+
+    // Auto-reduce stock and create consumption log entries when MR is Issued
+    if (status === 'Issued') {
+      const mr = materialRequests.find(r => r.id === id);
+      if (mr) {
+        for (const item of mr.items) {
+          // Reduce stock
+          const mat = materials.find(m => m.id === item.materialId);
+          if (mat) {
+            const qtyToIssue = item.qtyIssued ?? item.qtyRequested;
+            const newStock = Math.max(0, mat.currentStock - qtyToIssue);
+            handleUpdateMaterialStock(mat.id, newStock);
+
+            // Create consumption log entry automatically
+            const newLog: MaterialConsumptionLog = {
+              id: 'cl_' + uid(),
+              date: now,
+              materialId: item.materialId,
+              materialName: item.materialName,
+              unit: item.unit,
+              qtyUsed: qtyToIssue,
+              projectId: mr.projectId,
+              projectName: mr.projectName,
+              assemblyId: mr.assemblyId,
+              assemblyName: mr.assemblyName,
+              issuedBy: extra?.issuedBy || 'System',
+              mrId: mr.id,
+              mrNo: mr.mrNo,
+              notes: `Auto-issued from MR: ${mr.mrNo}`,
+            };
+            setConsumptionLogs(prev => [newLog, ...prev]);
+            await saveItem('consumptionLogs', newLog);
+          }
+        }
+      }
+    }
+
     setMaterialRequests(prev => prev.map(mr => {
       if (mr.id !== id) return mr;
       return {
@@ -762,6 +799,8 @@ function AppContent() {
                   projects={projects}
                   timesheets={timesheets}
                   employees={employees}
+                  materials={materials}
+                  materialRequests={materialRequests}
                   selectedMonth={selectedMonth}
                   setSelectedMonth={setSelectedMonth}
                   openSpotlight={(id) => {
