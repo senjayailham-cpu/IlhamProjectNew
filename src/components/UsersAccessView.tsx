@@ -25,7 +25,13 @@ const permissionMeta = [
   { id: 'addTaskInline', label: 'Add Task Inside Project Pop-up', desc: 'Allows adding new tasks to sub-assembly lists directly inside the project overview modal' },
   { id: 'manageUsers', label: 'Manage Users & Access', desc: 'Allows editing user profiles, visible tabs and admin rules' },
   { id: 'exportData', label: 'Export Reports', desc: 'Allows exporting excel spreadsheets and CSV log files' },
-  { id: 'importData', label: 'Import Excel Records', desc: 'Allows seeding data via excel file uploads' }
+  { id: 'importData', label: 'Import Excel Records', desc: 'Allows seeding data via excel file uploads' },
+  { id: 'requestInspection', label: 'Request QC Inspection', desc: 'Allows submitting a new Request For Inspection (RFI)' },
+  { id: 'approveInspection', label: 'QC Inspector Review', desc: 'Allows signing-off, approving or issuing rework punchlists for RFIs' },
+  { id: 'deleteInspection', label: 'Delete Inspection Record', desc: 'Allows permanent deletion of RFI and inspection request history' },
+  { id: 'manageMaterials', label: 'Manage Material Inventory', desc: 'Allows adding stock items, importing material excel data, and modifying quantities' },
+  { id: 'requestMaterial', label: 'Create Material Requests', desc: 'Allows drafting and submitting requests for project/assembly materials' },
+  { id: 'issueMaterial', label: 'Approve & Issue Materials', desc: 'Allows approving, rejecting and issuing material requests to dispense stock' }
 ];
 
 export default function UsersAccessView({

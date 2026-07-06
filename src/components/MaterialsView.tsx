@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import * as XLSX from 'xlsx';
+import { can } from '../utils/permissions';
 import {
   MaterialItem,
   MaterialRequest,
@@ -92,6 +93,18 @@ export default function MaterialsView({
   // Authorization helper
   const isAdminOrManager = useMemo(() => {
     return currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  }, [currentUser]);
+
+  const canManageMaterials = useMemo(() => {
+    return can(currentUser, 'manageMaterials');
+  }, [currentUser]);
+
+  const canRequestMaterial = useMemo(() => {
+    return can(currentUser, 'requestMaterial');
+  }, [currentUser]);
+
+  const canIssueMaterial = useMemo(() => {
+    return can(currentUser, 'issueMaterial');
   }, [currentUser]);
 
   // Tab 1 — Stock State & Filters
@@ -944,23 +957,27 @@ export default function MaterialsView({
                 <span>Download Template</span>
               </button>
 
-              <button
-                type="button"
-                onClick={triggerExcelUpload}
-                className="w-full sm:w-auto px-4 py-2 bg-base-surface2 border border-base-border text-base-text hover:bg-base-surface3 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <Upload className="h-3.5 w-3.5" />
-                <span>Import Excel</span>
-              </button>
+              {canManageMaterials && (
+                <>
+                  <button
+                    type="button"
+                    onClick={triggerExcelUpload}
+                    className="w-full sm:w-auto px-4 py-2 bg-base-surface2 border border-base-border text-base-text hover:bg-base-surface3 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Upload className="h-3.5 w-3.5" />
+                    <span>Import Excel</span>
+                  </button>
 
-              <button
-                type="button"
-                onClick={() => setIsAddingMaterial(true)}
-                className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <Plus className="h-4 w-4" />
-                <span>Add Material</span>
-              </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddingMaterial(true)}
+                    className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                  >
+                    <Plus className="h-4 w-4" />
+                    <span>Add Material</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1065,7 +1082,7 @@ export default function MaterialsView({
                         </td>
                         <td className="px-4 py-3.5 text-center">
                           <div className="flex items-center justify-center gap-1.5">
-                            {!isEditing && (
+                            {!isEditing && canManageMaterials && (
                               <button
                                 onClick={() => {
                                   setEditingStockId(m.id);
@@ -1077,7 +1094,7 @@ export default function MaterialsView({
                                 <Edit2 className="h-3.5 w-3.5" />
                               </button>
                             )}
-                            {isAdminOrManager && (
+                            {canManageMaterials && (
                               <button
                                 onClick={() => {
                                   onDeleteMaterial(m.id);
@@ -1350,13 +1367,15 @@ export default function MaterialsView({
               </select>
             </div>
 
-            <button
-              onClick={() => setIsCreatingRequest(true)}
-              className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-            >
-              <Plus className="h-4 w-4" />
-              <span>New Request</span>
-            </button>
+            {canRequestMaterial && (
+              <button
+                onClick={() => setIsCreatingRequest(true)}
+                className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              >
+                <Plus className="h-4 w-4" />
+                <span>New Request</span>
+              </button>
+            )}
           </div>
 
           {/* REQUESTS GRAPH CARDS */}
@@ -1498,7 +1517,7 @@ export default function MaterialsView({
                         </div>
 
                         {/* Actions for Manager/Admin */}
-                        {isAdminOrManager && (
+                        {canIssueMaterial && (
                           <div className="flex gap-2 pt-2 border-t border-base-border/60">
                             {mr.status === 'Submitted' && (
                               <>
@@ -1770,7 +1789,7 @@ export default function MaterialsView({
                 <span>Export Excel</span>
               </button>
 
-              {isAdminOrManager && (
+              {canManageMaterials && (
                 <button
                   onClick={() => setIsAddingLog(true)}
                   className="flex-1 md:flex-none px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"

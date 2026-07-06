@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Project, InspectionRequest, UserRoleType } from '../types';
+import { Project, InspectionRequest, UserRoleType, User } from '../types';
+import { can } from '../utils/permissions';
 import { 
   ClipboardCheck, 
   FileText, 
@@ -22,7 +23,7 @@ import {
 interface InspectionViewProps {
   projects: Project[];
   inspections: InspectionRequest[];
-  currentUser: { id: string; name: string; role: UserRoleType } | null;
+  currentUser: User | null;
   onAddInspection: (ins: Omit<InspectionRequest, 'id' | 'rfiNo'>) => void;
   onUpdateInspectionStatus: (
     id: string, 
@@ -88,10 +89,10 @@ export default function InspectionView({
   const selectedFormProject = projects.find(p => p.id === formProjectId);
   const formAssemblies = selectedFormProject?.assemblies || [];
 
-  // Allowed to create: Admin, Manager, Coordinator, Project Control
-  const canRequest = currentUser && ['admin', 'manager', 'coordinator', 'project control'].includes(currentUser.role);
-  // Allowed to inspect: Admin, Manager, Quality Control
-  const canInspect = currentUser && ['admin', 'manager', 'quality control'].includes(currentUser.role);
+  // Allowed to create: requestInspection permission check
+  const canRequest = can(currentUser, 'requestInspection');
+  // Allowed to inspect: approveInspection permission check
+  const canInspect = can(currentUser, 'approveInspection');
 
   // Filter requests
   const filteredRequests = inspections.filter(r => {
@@ -1007,7 +1008,7 @@ export default function InspectionView({
             {/* Footer block */}
             <div className="bg-base-surface2 border-t border-base-border px-5 py-3.5 flex justify-between items-center">
               <div>
-                {onDeleteInspection && currentUser && currentUser.role === 'admin' && (
+                {onDeleteInspection && can(currentUser, 'deleteInspection') && (
                   <button
                     onClick={() => {
                       setDeleteConfirm({

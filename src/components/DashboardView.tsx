@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest } from '../types';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -43,6 +43,7 @@ export default function DashboardView({
   materialRequests = [],
 }: DashboardViewProps) {
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
+  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'absent' | null>(null);
 
   // Custom component for styling Recharts Tooltips with Tailwind theme variables.
   const CustomChartTooltip = ({ active, payload, label }: any) => {
@@ -705,7 +706,10 @@ export default function DashboardView({
       <div className="space-y-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {/* Card 1 - Total Projects */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group cursor-default">
+          <div 
+            onClick={() => setActiveModal('project')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -728,7 +732,10 @@ export default function DashboardView({
           </div>
 
           {/* Card 2 - Active */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-default">
+          <div 
+            onClick={() => setActiveModal('active')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -751,7 +758,10 @@ export default function DashboardView({
           </div>
 
           {/* Card 3 - Completed */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-default">
+          <div 
+            onClick={() => setActiveModal('completed')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -774,7 +784,10 @@ export default function DashboardView({
           </div>
 
           {/* Card 4 - Overdue */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-default">
+          <div 
+            onClick={() => setActiveModal('overdue')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -851,7 +864,10 @@ export default function DashboardView({
           </div>
 
           {/* Card 7 - Absent Today */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-default">
+          <div 
+            onClick={() => setActiveModal('absent')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -1276,6 +1292,291 @@ export default function DashboardView({
           </div>
         </div>
       </div>
+
+      {/* Interactive Detail Modal Popups */}
+      {activeModal && (
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setActiveModal(null)}
+        >
+          <div 
+            className="bg-base-surface border border-base-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-base-border bg-base-surface2 flex items-center justify-between flex-shrink-0">
+              <div className="flex items-center gap-2.5">
+                {activeModal === 'project' && <Folder className="h-5.5 w-5.5 text-base-accent" />}
+                {activeModal === 'active' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
+                {activeModal === 'completed' && <CheckCircle className="h-5.5 w-5.5 text-base-green" />}
+                {activeModal === 'overdue' && <AlertTriangle className="h-5.5 w-5.5 text-base-red" />}
+                {activeModal === 'absent' && <ShieldAlert className="h-5.5 w-5.5 text-base-red" />}
+                
+                <h3 className="font-condensed font-black text-xl uppercase tracking-wider text-base-text">
+                  {activeModal === 'project' && 'All Projects'}
+                  {activeModal === 'active' && 'Active Projects'}
+                  {activeModal === 'completed' && 'Completed Projects'}
+                  {activeModal === 'overdue' && 'Overdue Projects'}
+                  {activeModal === 'absent' && 'Absent Personnel Today'}
+                </h3>
+                
+                <span className="px-2 py-0.5 rounded-full bg-base-surface3 border border-base-border text-xs font-condensed font-bold text-base-muted select-none">
+                  {activeModal === 'project' && filteredProjects.length}
+                  {activeModal === 'active' && activeCount}
+                  {activeModal === 'completed' && completedCount}
+                  {activeModal === 'overdue' && overdueCount}
+                  {activeModal === 'absent' && absentCount}
+                </span>
+              </div>
+              
+              <button 
+                onClick={() => setActiveModal(null)}
+                className="p-1.5 rounded-lg hover:bg-base-surface3 transition-colors text-base-muted hover:text-base-text cursor-pointer"
+                aria-label="Close"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body / Scrollable Content */}
+            <div className="overflow-y-auto flex-1 p-6 space-y-4">
+              {/* If no data */}
+              {((activeModal === 'project' && filteredProjects.length === 0) ||
+                (activeModal === 'active' && activeCount === 0) ||
+                (activeModal === 'completed' && completedCount === 0) ||
+                (activeModal === 'overdue' && overdueCount === 0) ||
+                (activeModal === 'absent' && absentCount === 0)) ? (
+                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                  <div className="w-12 h-12 rounded-full bg-base-surface2 flex items-center justify-center border border-base-border">
+                    <AlertCircle className="h-6 w-6 text-base-muted" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-condensed font-bold text-sm uppercase tracking-wider text-base-text">No Records Found</p>
+                    <p className="text-xs text-base-muted">There are no entries under this category for the current scope.</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="divide-y divide-base-border border border-base-border rounded-xl overflow-hidden bg-base-surface">
+                  {activeModal === 'project' && filteredProjects.map(p => {
+                    const pct = calcPct(p);
+                    return (
+                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
+                              WO: {p.client}
+                            </span>
+                            <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                              p.status === 'completed' ? 'bg-base-green-dim text-base-green' :
+                              p.status === 'active' ? 'bg-base-blue-dim text-base-blue' :
+                              p.status === 'pending' ? 'bg-base-accent-dim text-base-accent' :
+                              'bg-base-surface3 text-base-muted'
+                            }`}>
+                              {p.status}
+                            </span>
+                          </div>
+                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
+                          <p className="text-[11px] text-base-muted">
+                            Due Date: <span className="font-mono">{p.due || 'No date'}</span>
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <div className="text-right space-y-1 hidden sm:block">
+                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
+                            <p className="font-mono text-sm font-bold text-base-text">{pct}%</p>
+                          </div>
+                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
+                            <div className="bg-base-accent h-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <button
+                            onClick={() => {
+                              openSpotlight(p.id);
+                              setActiveModal(null);
+                            }}
+                            className="p-2 bg-base-accent-dim hover:bg-base-accent hover:text-white text-base-accent transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-accent/25"
+                          >
+                            <span>Details</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {activeModal === 'active' && filteredProjects.filter(p => p.status === 'active').map(p => {
+                    const pct = calcPct(p);
+                    return (
+                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
+                              WO: {p.client}
+                            </span>
+                            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-base-blue-dim text-base-blue">
+                              {p.assemblies?.length || 0} Assemblies
+                            </span>
+                          </div>
+                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
+                          <p className="text-[11px] text-base-muted">
+                            Due Date: <span className="font-mono">{p.due || 'No date'}</span>
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <div className="text-right space-y-1 hidden sm:block">
+                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
+                            <p className="font-mono text-sm font-bold text-base-text">{pct}%</p>
+                          </div>
+                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
+                            <div className="bg-base-blue h-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <button
+                            onClick={() => {
+                              openSpotlight(p.id);
+                              setActiveModal(null);
+                            }}
+                            className="p-2 bg-base-blue-dim hover:bg-base-blue hover:text-white text-base-blue transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-blue/25"
+                          >
+                            <span>Details</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {activeModal === 'completed' && filteredProjects.filter(p => p.status === 'completed').map(p => (
+                    <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
+                      <div className="space-y-1 min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
+                            WO: {p.client}
+                          </span>
+                          <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-base-green-dim text-base-green">
+                            100% DONE
+                          </span>
+                        </div>
+                        <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
+                        {p.completedDate && (
+                          <p className="text-[11px] text-base-green font-medium">
+                            Completed Date: <span className="font-mono">{p.completedDate}</span>
+                          </p>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-4 flex-shrink-0">
+                        <button
+                          onClick={() => {
+                            openSpotlight(p.id);
+                            setActiveModal(null);
+                          }}
+                          className="p-2 bg-base-green-dim hover:bg-base-green hover:text-white text-base-green transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-green/25"
+                        >
+                          <span>Details</span>
+                          <ArrowRight className="h-3 w-3" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  {activeModal === 'overdue' && filteredProjects.filter(p => p.due && p.due < todayStr && p.status !== 'completed').map(p => {
+                    const pct = calcPct(p);
+                    const days = daysDiff(todayStr, p.due || '');
+                    return (
+                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
+                              WO: {p.client}
+                            </span>
+                            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-base-red-dim text-base-red animate-pulse">
+                              {days} days overdue
+                            </span>
+                          </div>
+                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
+                          <p className="text-[11px] text-base-red font-medium">
+                            Target Date was: <span className="font-mono">{p.due}</span>
+                          </p>
+                        </div>
+                        
+                        <div className="flex items-center gap-4 flex-shrink-0">
+                          <div className="text-right space-y-1 hidden sm:block">
+                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
+                            <p className="font-mono text-sm font-bold text-base-red">{pct}%</p>
+                          </div>
+                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
+                            <div className="bg-base-red h-full" style={{ width: `${pct}%` }} />
+                          </div>
+                          <button
+                            onClick={() => {
+                              openSpotlight(p.id);
+                              setActiveModal(null);
+                            }}
+                            className="p-2 bg-base-red-dim hover:bg-base-red hover:text-white text-base-red transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-red/25"
+                          >
+                            <span>Details</span>
+                            <ArrowRight className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {activeModal === 'absent' && timesheets.filter(ts => ts.date === todayStr && (ts.status === 'absent' || ts.status === 'leave')).map(ts => {
+                    const empDetail = employees.find(e => e.id === ts.empId);
+                    return (
+                      <div key={ts.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
+                        <div className="space-y-1 min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+                              ts.status === 'leave' ? 'bg-base-accent-dim text-base-accent' : 'bg-base-red-dim text-base-red'
+                            }`}>
+                              {ts.status.toUpperCase()}
+                            </span>
+                            {empDetail?.position && (
+                              <span className="text-[10px] font-condensed uppercase tracking-wider text-base-muted font-bold">
+                                {empDetail.position}
+                              </span>
+                            )}
+                          </div>
+                          <p className="font-semibold text-sm text-base-text">{ts.empName}</p>
+                          {ts.desc && (
+                            <p className="text-xs text-base-muted bg-base-surface3 p-2 rounded-lg border border-base-border mt-1">
+                              Reason: <span className="italic">"{ts.desc}"</span>
+                            </p>
+                          )}
+                        </div>
+                        
+                        <div className="flex-shrink-0 text-right text-[11px] font-condensed text-base-muted">
+                          {empDetail?.location && (
+                            <span className="bg-base-surface3 border border-base-border px-2 py-0.5 rounded font-bold uppercase">
+                              {empDetail.location}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-base-border bg-base-surface2 flex items-center justify-between flex-shrink-0">
+              <span className="text-[11px] text-base-muted font-condensed uppercase tracking-wider">
+                Click details to open project spotlight
+              </span>
+              <button 
+                onClick={() => setActiveModal(null)}
+                className="px-4 py-2 bg-base-surface border border-base-border hover:bg-base-surface3 text-base-text transition-colors rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

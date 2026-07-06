@@ -790,6 +790,13 @@ function AppContent() {
           onExportCSV={() => exportProjectsCSV(projects, timesheets)}
           projects={projects}
           activities={activities}
+          employees={employees}
+          materials={materials}
+          setActiveTab={setActiveTab}
+          openSpotlight={(id) => {
+            projectsHook.setSpotlightProjectId(id);
+            projectsHook.setSpotlightOpen(true);
+          }}
         />
 
         {/* Core Screen Viewport */}
