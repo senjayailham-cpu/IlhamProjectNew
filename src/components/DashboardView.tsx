@@ -703,7 +703,7 @@ export default function DashboardView({
 
       {/* SECTION 2 — Bento KPI Grid */}
       <div className="space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-5 gap-3">
           {/* Card 1 - Total Projects */}
           <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group cursor-default">
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -800,10 +800,7 @@ export default function DashboardView({
             </div>
             <p className="text-xs text-base-muted2 mt-1">past due date</p>
           </div>
-        </div>
 
-        {/* Second row - attendance + manhours */}
-        <div className="grid grid-cols-3 gap-3 mt-3">
           {/* Card 5 - Man Hours */}
           <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-default">
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -825,52 +822,6 @@ export default function DashboardView({
               <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
-          </div>
-
-          {/* Card 6 - Present Today */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-default">
-            <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Users className="h-4.5 w-4.5 text-base-green" />
-                Present
-              </div>
-              <svg className="w-10 h-3 text-base-green/35" viewBox="0 0 50 10">
-                <path d="M 2,4 L 12,6 L 22,3 L 32,5 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="2" cy="4" r="1" fill="currentColor" />
-                <circle cx="12" cy="6" r="1" fill="currentColor" />
-                <circle cx="22" cy="3" r="1" fill="currentColor" />
-                <circle cx="32" cy="5" r="1" fill="currentColor" />
-                <circle cx="42" cy="7" r="1" fill="currentColor" />
-              </svg>
-            </div>
-            <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{presentCount}</div>
-            </div>
-            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
-          </div>
-
-          {/* Card 7 - Absent Today */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-default">
-            <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
-                Absent
-              </div>
-              <svg className="w-10 h-3 text-base-red/35" viewBox="0 0 50 10">
-                <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="2" cy="7" r="1" fill="currentColor" />
-                <circle cx="12" cy="4" r="1" fill="currentColor" />
-                <circle cx="22" cy="6" r="1" fill="currentColor" />
-                <circle cx="32" cy="3" r="1" fill="currentColor" />
-                <circle cx="42" cy="4" r="1" fill="currentColor" />
-              </svg>
-            </div>
-            <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
-            </div>
-            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
           </div>
         </div>
       </div>

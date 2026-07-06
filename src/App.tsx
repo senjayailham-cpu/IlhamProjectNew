@@ -788,6 +788,10 @@ function AppContent() {
           isOffline={isOffline}
           canExport={can('exportData')}
           onExportCSV={() => exportProjectsCSV(projects, timesheets)}
+          projects={projects}
+          activityLogs={activities}
+          users={users}
+          activeTab={activeTab}
         />
 
         {/* Core Screen Viewport */}
