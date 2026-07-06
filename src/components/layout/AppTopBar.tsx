@@ -2,7 +2,7 @@ import React from 'react';
 import { User, Project, TimesheetEntry, ActivityLog } from '../../types';
 import ThemeToggle from '../ThemeToggle';
 import { Download } from 'lucide-react';
-import { NotificationPanel } from '../NotificationPanel';
+import { NotificationBell } from '../NotificationBell';
 
 interface AppTopBarProps {
   activeTabLabel: string;
@@ -15,9 +15,7 @@ interface AppTopBarProps {
   canExport: boolean;
   onExportCSV: () => void;
   projects: Project[];
-  activityLogs: ActivityLog[];
-  users: User[];
-  activeTab: string;
+  activities: ActivityLog[];
 }
 
 export function AppTopBar({
@@ -31,9 +29,7 @@ export function AppTopBar({
   canExport,
   onExportCSV,
   projects,
-  activityLogs,
-  users,
-  activeTab,
+  activities,
 }: AppTopBarProps) {
   return (
     <header className="hidden md:flex h-14 bg-base-surface/80 backdrop-blur-md border-b border-base-border px-6 items-center justify-between sticky top-0 z-30 select-none shadow-[0_1px_2px_rgba(0,0,0,0.01)] shrink-0">
@@ -49,17 +45,14 @@ export function AppTopBar({
       </div>
 
       <div className="flex items-center gap-3">
-        <ThemeToggle />
-        
         {currentUser && (
-          <NotificationPanel
+          <NotificationBell
             projects={projects}
-            activityLogs={activityLogs}
+            activities={activities}
             currentUser={currentUser}
-            users={users}
-            activeTab={activeTab}
           />
         )}
+        <ThemeToggle />
         
         {canExport && (
           <button 
