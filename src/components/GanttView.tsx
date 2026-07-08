@@ -699,7 +699,26 @@ export default function GanttView({
   const [showProgress, setShowProgress] = useState<boolean>(true);
   const [showCriticalPath, setShowCriticalPath] = useState<boolean>(false);
   const [showBaseline, setShowBaseline] = useState<boolean>(false);
+  const [showSCurve, setShowSCurve] = useState<boolean>(() =>
+    localStorage.getItem('gantt_showSCurve') === 'true'
+  );
   const [cascadedTaskIds, setCascadedTaskIds] = useState<Set<string>>(new Set());
+
+  // AUTO-SCHEDULE FEATURE
+  const [autoSchedule, setAutoSchedule] = useState<boolean>(() => {
+    const saved = localStorage.getItem('gantt_autoSchedule');
+    return saved !== null ? saved === 'true' : true; // default ON
+  });
+
+  // Save to localStorage on change
+  useEffect(() => {
+    localStorage.setItem('gantt_autoSchedule', String(autoSchedule));
+  }, [autoSchedule]);
+
+  // ── S-CURVE FEATURE PERSISTENCE ──
+  useEffect(() => {
+    localStorage.setItem('gantt_showSCurve', String(showSCurve));
+  }, [showSCurve]);
 
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -1046,13 +1065,26 @@ export default function GanttView({
 
   const leftScrollRef = useRef<HTMLDivElement>(null);
   const rightScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRafRef = useRef<number | null>(null);
 
-  // Sync left panel scroll with right timeline vertical scroll
+  // Sync left panel scroll with right timeline vertical scroll using requestAnimationFrame throttling
   const handleScroll = () => {
-    if (rightScrollRef.current && leftScrollRef.current) {
-      leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop;
-    }
+    if (scrollRafRef.current !== null) return; // already scheduled
+    scrollRafRef.current = requestAnimationFrame(() => {
+      if (rightScrollRef.current && leftScrollRef.current) {
+        leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop;
+      }
+      scrollRafRef.current = null;
+    });
   };
+
+  useEffect(() => {
+    return () => {
+      if (scrollRafRef.current !== null) {
+        cancelAnimationFrame(scrollRafRef.current);
+      }
+    };
+  }, []);
 
   // Handle wheel scrolling on the left panel by forwarding to the right scroll panel
   const handleLeftWheel = (e: React.WheelEvent<HTMLDivElement>) => {
@@ -1105,6 +1137,15 @@ export default function GanttView({
   const pStartD = useMemo(() => parseLocalDate(pStart), [pStart]);
   const pDueD = useMemo(() => parseLocalDate(pDue), [pDue]);
 
+  const scheduleKey = useMemo(() => {
+    // Only recompute CPM when dates change, not pct/done
+    return projectsList.map(p =>
+      p.assemblies?.flatMap(asm =>
+        asm.tasks?.map(t => `${t.id}:${t.date}:${t.finishDate}`)
+      ).join('|')
+    ).join('||');
+  }, [projectsList]);
+
   const { criticalPathIds, slackMap } = useMemo(() => {
     const mergedCritical = new Set<string>();
     const mergedSlack = new Map<string, number>();
@@ -1119,7 +1160,8 @@ export default function GanttView({
       criticalPathIds: mergedCritical,
       slackMap: mergedSlack
     };
-  }, [projectsList]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scheduleKey]);
 
   const criticalAssemblyIds = useMemo(() => {
     const ids = new Set<string>();
@@ -1212,16 +1254,25 @@ export default function GanttView({
       // Calculate start and due for this specific project
       let pStartStr = p.start;
       let pDueStr = p.due;
-      const pTaskDates: Date[] = [];
+      let minTime = Infinity;
+      let maxTime = -Infinity;
       p.assemblies?.forEach(asm => {
         asm.tasks?.forEach(t => {
-          if (t.date) pTaskDates.push(parseLocalDate(t.date));
-          if (t.finishDate) pTaskDates.push(parseLocalDate(t.finishDate));
+          if (t.date) {
+            const ms = parseLocalDate(t.date).getTime();
+            if (ms < minTime) minTime = ms;
+            if (ms > maxTime) maxTime = ms;
+          }
+          if (t.finishDate) {
+            const ms = parseLocalDate(t.finishDate).getTime();
+            if (ms < minTime) minTime = ms;
+            if (ms > maxTime) maxTime = ms;
+          }
         });
       });
-      if (pTaskDates.length > 0) {
-        const minDate = new Date(Math.min(...pTaskDates.map(d => d.getTime())));
-        const maxDate = new Date(Math.max(...pTaskDates.map(d => d.getTime())));
+      if (minTime !== Infinity) {
+        const minDate = new Date(minTime);
+        const maxDate = new Date(maxTime);
         pStartStr = formatLocalDate(minDate);
         pDueStr = formatLocalDate(maxDate);
       } else {
@@ -1507,12 +1558,18 @@ export default function GanttView({
         }
       }
     }
-    // Cascade schedule
-    const { updatedProject, shiftedIds } = cascadeSchedule(updated, rowId);
-    if (shiftedIds.size > 0) {
-      setCascadedTaskIds(shiftedIds);
+    // AUTO-SCHEDULE FEATURE
+    if (autoSchedule) {
+      // Auto-Schedule ON: cascade successor tasks
+      const { updatedProject, shiftedIds } = cascadeSchedule(updated, rowId);
+      if (shiftedIds.size > 0) {
+        setCascadedTaskIds(shiftedIds);
+      }
+      onUpdateProject(updatedProject);
+    } else {
+      // Auto-Schedule OFF: save only the dragged/edited task, no cascade
+      onUpdateProject(updated);
     }
-    onUpdateProject(updatedProject);
   };
 
   // Inline Predecessors Saving handler
@@ -1654,31 +1711,32 @@ export default function GanttView({
   const topHeaders = useMemo(() => {
     const list: { label: string; width: number }[] = [];
     const temp = new Date(timelineStart);
-    let currentLabel = '';
-    let currentWidth = 0;
 
     while (temp <= timelineEnd) {
       let label = '';
+      let nextBoundary: Date;
+
       if (zoomMode === 'day' || zoomMode === 'week') {
         label = temp.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        nextBoundary = new Date(temp.getFullYear(), temp.getMonth() + 1, 1);
       } else {
         label = temp.getFullYear().toString();
+        nextBoundary = new Date(temp.getFullYear() + 1, 0, 1);
       }
 
-      if (currentLabel === '') {
-        currentLabel = label;
-        currentWidth = pixelsPerDay;
-      } else if (currentLabel === label) {
-        currentWidth += pixelsPerDay;
-      } else {
-        list.push({ label: currentLabel, width: currentWidth });
-        currentLabel = label;
-        currentWidth = pixelsPerDay;
+      if (nextBoundary > timelineEnd) {
+        nextBoundary = new Date(timelineEnd);
+        nextBoundary.setDate(nextBoundary.getDate() + 1); // include the end day
       }
-      temp.setDate(temp.getDate() + 1);
-    }
-    if (currentWidth > 0) {
-      list.push({ label: currentLabel, width: currentWidth });
+
+      const daysToJump = daysBetween(temp, nextBoundary);
+      if (daysToJump <= 0) {
+        list.push({ label, width: pixelsPerDay });
+        temp.setDate(temp.getDate() + 1);
+      } else {
+        list.push({ label, width: daysToJump * pixelsPerDay });
+        temp.setDate(temp.getDate() + daysToJump);
+      }
     }
     return list;
   }, [timelineStart, timelineEnd, pixelsPerDay, zoomMode]);
@@ -1814,6 +1872,111 @@ export default function GanttView({
     }); // e.g. "Sun, 28 Jun 2026"
   }, []);
 
+  // ── S-CURVE FEATURE ──
+  const sCurveData = useMemo(() => {
+    if (!showSCurve) return null;
+
+    // Only use task-level rows (level === 2), skip milestones
+    const taskRows = allRows.filter(r =>
+      r.level === 2 && !r.isMilestone && r.start && r.finish
+    );
+
+    if (taskRows.length === 0) return null;
+
+    // Each task contributes equal weight (1/N of total progress)
+    // For planned: assume linear progress from baselineDate to baselineFinish
+    //              (if no baseline, use actual start/finish)
+    // For actual:  assume linear progress from start to finish at pct%
+    //              (tasks past finish with pct<100 cap at pct)
+
+    const N = taskRows.length;
+    const weight = 1 / N; // each task = 1/N of total (0-100 scale)
+
+    // Build day-by-day cumulative arrays
+    // Index = day offset from timelineStart
+    const totalDays = totalTimelineDays;
+    const plannedArr = new Float32Array(totalDays + 1).fill(0);
+    const actualArr  = new Float32Array(totalDays + 1).fill(0);
+
+    taskRows.forEach(row => {
+      // --- PLANNED curve (baseline or actual dates as fallback) ---
+      const planStart  = parseLocalDate(row.baselineDate  || row.start!);
+      const planFinish = parseLocalDate(row.baselineFinish || row.finish!);
+      const planDays   = Math.max(1, daysBetween(planStart, planFinish) + 1);
+
+      const planStartIdx  = Math.max(0, daysBetween(timelineStart, planStart));
+      const planFinishIdx = Math.min(totalDays, daysBetween(timelineStart, planFinish));
+
+      // Distribute this task's weight linearly across its planned duration
+      if (planStartIdx <= planFinishIdx) {
+        const increment = weight / planDays;
+        for (let d = planStartIdx; d <= planFinishIdx; d++) {
+          plannedArr[d] = (plannedArr[d] || 0) + increment;
+        }
+      }
+
+      // --- ACTUAL curve ---
+      const actStart  = parseLocalDate(row.start!);
+      const actFinish = parseLocalDate(row.finish!);
+      const actDays   = Math.max(1, daysBetween(actStart, actFinish) + 1);
+
+      const actStartIdx  = Math.max(0, daysBetween(timelineStart, actStart));
+      const actFinishIdx = Math.min(totalDays, daysBetween(timelineStart, actFinish));
+
+      // Progress portion this task has actually completed
+      const completedFraction = (row.pct || 0) / 100;
+
+      // Distribute completed progress linearly up to finish
+      // For tasks past due with pct<100, show flat line after their finish
+      if (actStartIdx <= actFinishIdx) {
+        const increment = (weight * completedFraction) / actDays;
+        for (let d = actStartIdx; d <= actFinishIdx; d++) {
+          actualArr[d] = (actualArr[d] || 0) + increment;
+        }
+      }
+    });
+
+    // Convert to cumulative (prefix sum), scale to 0–100
+    let plannedCum = 0;
+    let actualCum  = 0;
+    const points: { day: number; planned: number; actual: number }[] = [];
+
+    for (let d = 0; d <= totalDays; d++) {
+      plannedCum = Math.min(100, plannedCum + (plannedArr[d] || 0) * 100);
+      actualCum = Math.min(100, actualCum + (actualArr[d] || 0) * 100);
+      // Sample every 3 days to reduce SVG path complexity (or every 1 day if short)
+      const sampleInterval = totalDays < 7 ? 1 : 3;
+      if (d % sampleInterval === 0 || d === totalDays) {
+        points.push({ day: d, planned: plannedCum, actual: actualCum });
+      }
+    }
+
+    return points; // array of { day, planned, actual }
+  }, [showSCurve, allRows, timelineStart, totalTimelineDays]);
+
+  const SCURVE_H = 60;  // chart height in px
+
+  const sCurvePaths = useMemo(() => {
+    if (!sCurveData || sCurveData.length === 0) return null;
+
+    const toX = (day: number) => day * pixelsPerDay;
+    const toY = (pct: number) => SCURVE_H - (pct / 100) * (SCURVE_H - 4) - 2;
+
+    const buildPath = (key: 'planned' | 'actual') => {
+      return sCurveData
+        .map((pt, i) =>
+          `${i === 0 ? 'M' : 'L'} ${toX(pt.day).toFixed(1)} ${toY(pt[key]).toFixed(1)}`
+        )
+        .join(' ');
+    };
+
+    return {
+      planned: buildPath('planned'),
+      actual:  buildPath('actual'),
+      totalWidth: totalTimelineDays * pixelsPerDay,
+    };
+  }, [sCurveData, pixelsPerDay, totalTimelineDays]);
+
   const scrollToToday = () => {
     if (!rightScrollRef.current) return;
     if (!isTodayInTimeline) {
@@ -1855,29 +2018,28 @@ export default function GanttView({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Row coordinate helper supporting real-time drag adjustments
-  const getRowBarCoords = (row: GanttRow) => {
-    let startStr = row.start;
-    let finishStr = row.finish;
+  // AUTO-SCHEDULE FEATURE KEYBOARD SHORTCUT
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+Shift+A = toggle Auto-Schedule
+      if (e.ctrlKey && e.shiftKey && e.key === 'A') {
+        e.preventDefault();
+        setAutoSchedule(prev => {
+          const next = !prev;
+          // Brief toast-like feedback via title
+          document.title = `Auto-Schedule ${next ? 'ON' : 'OFF'} — ${document.title}`;
+          setTimeout(() => {
+            document.title = document.title.replace(/^Auto-Schedule (ON|OFF) — /, '');
+          }, 2000);
+          return next;
+        });
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
-    if (dragState && dragState.rowId === row.id) {
-      startStr = dragState.tempStart || row.start;
-      finishStr = dragState.tempFinish || row.finish;
-    }
 
-    if (!startStr) return null;
-    const startD = parseLocalDate(startStr);
-    const left = daysBetween(timelineStart, startD) * pixelsPerDay;
-    
-    let width = 0;
-    if (!row.isMilestone) {
-      const finishD = finishStr ? parseLocalDate(finishStr) : startD;
-      const duration = Math.max(1, daysBetween(startD, finishD) + 1);
-      width = duration * pixelsPerDay;
-    }
-    
-    return { left, width };
-  };
 
   // Baseline coordinate helper
   const getBaselineCoords = (row: GanttRow) => {
@@ -2029,11 +2191,16 @@ export default function GanttView({
                 ...targetProj,
                 assemblies: updatedAssemblies
               };
-              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-              if (shiftedIds.size > 0) {
-                setCascadedTaskIds(shiftedIds);
+              // AUTO-SCHEDULE FEATURE
+              if (autoSchedule) {
+                const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+                if (shiftedIds.size > 0) {
+                  setCascadedTaskIds(shiftedIds);
+                }
+                onUpdateProject && onUpdateProject(updatedProject);
+              } else {
+                onUpdateProject && onUpdateProject(baseUpdated);
               }
-              onUpdateProject && onUpdateProject(updatedProject);
             } else if (dragState.rowType === 'task') {
               // Level 2 Task: Update the single task
               const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
@@ -2055,11 +2222,16 @@ export default function GanttView({
                 ...targetProj,
                 assemblies: updatedAssemblies
               };
-              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-              if (shiftedIds.size > 0) {
-                setCascadedTaskIds(shiftedIds);
+              // AUTO-SCHEDULE FEATURE
+              if (autoSchedule) {
+                const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+                if (shiftedIds.size > 0) {
+                  setCascadedTaskIds(shiftedIds);
+                }
+                onUpdateProject && onUpdateProject(updatedProject);
+              } else {
+                onUpdateProject && onUpdateProject(baseUpdated);
               }
-              onUpdateProject && onUpdateProject(updatedProject);
             }
           }
         }
@@ -2084,6 +2256,36 @@ export default function GanttView({
     };
   }, [dragState, pixelsPerDay, project, projectsList, onUpdateProject]);
 
+  // Precomputed Map of row coordinate helper supporting real-time drag adjustments
+  const rowBarCoordsCache = useMemo(() => {
+    const cache = new Map<string, { left: number; width: number } | null>();
+    rows.forEach(row => {
+      let startStr = row.start;
+      let finishStr = row.finish;
+
+      if (dragState && dragState.rowId === row.id) {
+        startStr = dragState.tempStart || row.start;
+        finishStr = dragState.tempFinish || row.finish;
+      }
+
+      if (!startStr) {
+        cache.set(row.id, null);
+        return;
+      }
+      const startD = parseLocalDate(startStr);
+      const left = daysBetween(timelineStart, startD) * pixelsPerDay;
+      
+      let width = 0;
+      if (!row.isMilestone) {
+        const finishD = finishStr ? parseLocalDate(finishStr) : startD;
+        const duration = Math.max(1, daysBetween(startD, finishD) + 1);
+        width = duration * pixelsPerDay;
+      }
+      cache.set(row.id, { left, width });
+    });
+    return cache;
+  }, [rows, timelineStart, pixelsPerDay, dragState]);
+
   // Generate SVG dependency path lines
   const arrows = useMemo(() => {
     if (!showArrows) return [];
@@ -2101,8 +2303,8 @@ export default function GanttView({
         if (sourceRowIdx === undefined) return; // predecessor row is collapsed or hidden
 
         const sourceRow = rows[sourceRowIdx];
-        const sourceCoords = getRowBarCoords(sourceRow);
-        const targetCoords = getRowBarCoords(targetRow);
+        const sourceCoords = rowBarCoordsCache.get(sourceRow.id);
+        const targetCoords = rowBarCoordsCache.get(targetRow.id);
 
         if (!sourceCoords || !targetCoords) return;
 
@@ -2155,7 +2357,7 @@ export default function GanttView({
     });
 
     return list;
-  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows, dragState]);
+  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows]);
 
   const handleMouseEnter = (row: GanttRow, event: React.MouseEvent) => {
     if (isTouchDragging) return;
@@ -2301,11 +2503,22 @@ export default function GanttView({
                 </button>
               )}
             </div>
-            {isFilterActive && (
-              <span className="text-[10px] text-base-muted font-mono leading-none ml-1">
-                Showing {visibleTasksCount} of {totalTasksCountInProject} tasks
-              </span>
-            )}
+            <div className="flex items-center gap-2 min-h-[14px] ml-1">
+              {isFilterActive && (
+                <span className="text-[10px] text-base-muted font-mono leading-none">
+                  Showing {visibleTasksCount} of {totalTasksCountInProject} tasks
+                </span>
+              )}
+              {autoSchedule && cascadedTaskIds.size > 0 && (
+                <span className="flex items-center gap-1 text-[10px] font-condensed 
+                                 font-bold text-amber-600 animate-[fadeIn_0.2s_ease]">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                  </svg>
+                  {cascadedTaskIds.size} task{cascadedTaskIds.size > 1 ? 's' : ''} auto-shifted
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Zoom Level Toggle Buttons */}
@@ -2369,6 +2582,40 @@ export default function GanttView({
 
           <div className="w-[1px] h-4 bg-base-border" />
 
+          {/* AUTO-SCHEDULE FEATURE */}
+          <button
+            onClick={() => setAutoSchedule(prev => !prev)}
+            title={autoSchedule 
+              ? "Auto-Schedule ON — successors cascade automatically. Click to turn OFF." 
+              : "Auto-Schedule OFF — only dragged task moves. Click to turn ON."}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border 
+                        font-condensed font-bold uppercase tracking-wider text-[10px] 
+                        h-[34px] cursor-pointer transition-all select-none
+                        ${autoSchedule
+                          ? 'bg-base-accent-dim border-base-accent text-base-accent hover:bg-base-accent hover:text-white'
+                          : 'bg-base-surface border-base-border text-base-muted hover:text-base-text hover:border-base-muted'
+                        }`}
+          >
+            <svg 
+              width="12" height="12" viewBox="0 0 24 24" 
+              fill={autoSchedule ? 'currentColor' : 'none'} 
+              stroke="currentColor" strokeWidth="2"
+              strokeLinecap="round" strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+            <span>Auto-Schedule</span>
+            <span className={`text-[9px] px-1 py-0.5 rounded font-black leading-none
+                              ${autoSchedule 
+                                ? 'bg-base-accent text-white' 
+                                : 'bg-base-surface3 text-base-muted border border-base-border'}`}>
+              {autoSchedule ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
+          <div className="w-[1px] h-4 bg-base-border" />
+
           {/* Toggle Switches */}
           <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
             <input 
@@ -2408,6 +2655,16 @@ export default function GanttView({
               className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
             />
             <span>Show Baseline</span>
+          </label>
+
+          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
+            <input
+              type="checkbox"
+              checked={showSCurve}
+              onChange={e => setShowSCurve(e.target.checked)}
+              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
+            />
+            <span>S-Curve</span>
           </label>
 
           {onUpdateProject !== undefined && (
@@ -2896,6 +3153,21 @@ export default function GanttView({
                 </div>
               );
             })}
+
+            {/* ── S-CURVE FEATURE SPACER ── */}
+            {showSCurve && sCurvePaths && (
+              <div
+                className="flex-shrink-0 border-t border-base-border bg-base-surface3"
+                style={{ height: `${SCURVE_H + 28}px`, width: `${totalTableWidth}px` }}
+              >
+                <div className="flex items-center h-6 px-3 border-b border-base-border">
+                  <span className="font-condensed font-bold text-[9px] uppercase
+                                   tracking-widest text-base-muted">
+                    S-Curve Chart
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -3057,7 +3329,7 @@ export default function GanttView({
               ) : (
                 rows.map((row, idx) => {
                 const isSelected = selectedRowId === row.id;
-                const barCoords = getRowBarCoords(row);
+                const barCoords = rowBarCoordsCache.get(row.id);
                 const baselineCoords = getBaselineCoords(row);
                 const slackValue = slackMap.get(row.id) ?? 999;
                 const hasEarlyWarning = showCriticalPath && row.level === 2 && !criticalPathIds.has(row.id) && slackValue >= 0 && slackValue <= 1;
@@ -3176,7 +3448,7 @@ export default function GanttView({
                           <div 
                             className={`w-full h-4.5 rounded relative overflow-hidden flex items-center select-none text-[9px] font-bold text-white transition-all shadow-xs border ${
                               cascadedTaskIds.has(row.id)
-                                ? 'border-dashed border-2 border-amber-400 animate-pulse bg-base-blue'
+                                ? 'border-2 border-amber-400 ring-2 ring-amber-400/40 ring-offset-0 animate-[pulse_0.6s_ease-in-out_3] bg-amber-500'
                                 : row.done 
                                   ? 'bg-base-green border-base-green' 
                                   : showCriticalPath && criticalPathIds.has(row.id)
@@ -3199,6 +3471,15 @@ export default function GanttView({
                                 className="absolute left-0 top-0 bottom-0 bg-black/25 pointer-events-none"
                                 style={{ width: `${row.pct}%` }}
                               />
+                            )}
+
+                            {/* AUTO-SCHEDULE FEATURE SHIFTED LABEL */}
+                            {cascadedTaskIds.has(row.id) && (
+                              <span className="absolute inset-0 flex items-center justify-center 
+                                               text-[8px] font-black text-amber-900 uppercase 
+                                               tracking-widest pointer-events-none z-10">
+                                ↕ shifted
+                              </span>
                             )}
 
                             {/* Task name inside label if wide enough */}
@@ -3322,6 +3603,167 @@ export default function GanttView({
                 )}
               </svg>
             </div>
+
+            {/* ── S-CURVE OVERLAY ── */}
+            {showSCurve && sCurvePaths && (
+              <div
+                className="relative border-t border-base-border bg-base-surface2 flex-shrink-0"
+                style={{ height: `${SCURVE_H + 28}px`, width: `${sCurvePaths.totalWidth}px` }}
+              >
+                {/* Labels row */}
+                <div className="absolute top-0 left-0 right-0 flex items-center gap-3 px-3 h-6
+                                border-b border-base-border bg-base-surface z-10">
+                  <span className="font-condensed font-extrabold text-[9px] uppercase
+                                   tracking-widest text-base-muted">
+                    S-Curve
+                  </span>
+                  {/* Planned legend */}
+                  <span className="flex items-center gap-1 text-[9px] text-base-muted">
+                    <svg width="18" height="4" aria-hidden="true">
+                      <line x1="0" y1="2" x2="18" y2="2"
+                            stroke="var(--accent)" strokeWidth="2"
+                            strokeDasharray="4 2"/>
+                    </svg>
+                    Planned
+                  </span>
+                  {/* Actual legend */}
+                  <span className="flex items-center gap-1 text-[9px] text-base-muted">
+                    <svg width="18" height="4" aria-hidden="true">
+                      <line x1="0" y1="2" x2="18" y2="2"
+                            stroke="var(--green)" strokeWidth="2"/>
+                    </svg>
+                    Actual
+                  </span>
+                  {/* Live pct readout */}
+                  {(() => {
+                    const lastPt = sCurveData?.[sCurveData.length - 1];
+                    if (!lastPt) return null;
+                    const diff = lastPt.actual - lastPt.planned;
+                    const color = diff >= 0 ? 'var(--green)' : 'var(--red)';
+                    const label = diff >= 0
+                      ? `+${diff.toFixed(1)}% ahead`
+                      : `${diff.toFixed(1)}% behind`;
+                    return (
+                      <span className="ml-auto text-[9px] font-condensed font-black"
+                            style={{ color }}>
+                        {label}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                {/* SVG chart area */}
+                <svg
+                  width={sCurvePaths.totalWidth}
+                  height={SCURVE_H}
+                  viewBox={`0 0 ${sCurvePaths.totalWidth} ${SCURVE_H}`}
+                  className="absolute bottom-0 left-0"
+                  style={{ overflow: 'visible' }}
+                  aria-label="S-Curve planned vs actual progress"
+                  role="img"
+                >
+                  {/* Horizontal grid lines at 25%, 50%, 75%, 100% */}
+                  {[25, 50, 75, 100].map(pct => {
+                    const y = SCURVE_H - (pct / 100) * (SCURVE_H - 4) - 2;
+                    return (
+                      <g key={pct}>
+                        <line
+                          x1={0} y1={y}
+                          x2={sCurvePaths.totalWidth} y2={y}
+                          stroke="var(--border)" strokeWidth="0.5"
+                        />
+                        <text
+                          x={4} y={y - 2}
+                          fontSize="7" fill="var(--muted)"
+                          fontFamily="var(--font-condensed, sans-serif)"
+                        >
+                          {pct}%
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {/* Today vertical line */}
+                  {(() => {
+                    const todayD = daysBetween(timelineStart, new Date());
+                    if (todayD < 0 || todayD > totalTimelineDays) return null;
+                    const tx = todayD * pixelsPerDay;
+                    return (
+                      <line
+                        x1={tx} y1={0} x2={tx} y2={SCURVE_H}
+                        stroke="var(--red)" strokeWidth="1"
+                        strokeDasharray="3 3" opacity="0.6"
+                      />
+                    );
+                  })()}
+
+                  {/* Area fill under Planned curve */}
+                  <path
+                    d={`${sCurvePaths.planned} L ${sCurvePaths.totalWidth} ${SCURVE_H} L 0 ${SCURVE_H} Z`}
+                    fill="var(--accent)" fillOpacity="0.06"
+                  />
+
+                  {/* Area fill under Actual curve */}
+                  <path
+                    d={`${sCurvePaths.actual} L ${sCurvePaths.totalWidth} ${SCURVE_H} L 0 ${SCURVE_H} Z`}
+                    fill="var(--green)" fillOpacity="0.10"
+                  />
+
+                  {/* Planned line — dashed amber */}
+                  <path
+                    d={sCurvePaths.planned}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="1.5"
+                    strokeDasharray="5 3"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Actual line — solid green */}
+                  <path
+                    d={sCurvePaths.actual}
+                    fill="none"
+                    stroke="var(--green)"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+
+                  {/* Variance shading between planned and actual at today */}
+                  {(() => {
+                    const todayD = Math.min(
+                      totalTimelineDays,
+                      Math.max(0, daysBetween(timelineStart, new Date()))
+                    );
+                    const todayPt = sCurveData?.find(p => p.day >= todayD);
+                    if (!todayPt) return null;
+                    const tx = todayD * pixelsPerDay;
+                    const py = SCURVE_H - (todayPt.planned / 100) * (SCURVE_H - 4) - 2;
+                    const ay = SCURVE_H - (todayPt.actual  / 100) * (SCURVE_H - 4) - 2;
+                    const isAhead = todayPt.actual >= todayPt.planned;
+                    return (
+                      <g>
+                        {/* Vertical variance line */}
+                        <line
+                          x1={tx} y1={Math.min(py, ay)}
+                          x2={tx} y2={Math.max(py, ay)}
+                          stroke={isAhead ? 'var(--green)' : 'var(--red)'}
+                          strokeWidth="2"
+                          strokeDasharray="2 2"
+                        />
+                        {/* Dot on planned */}
+                        <circle cx={tx} cy={py} r="3"
+                          fill="var(--accent)" stroke="var(--surface)" strokeWidth="1.5"/>
+                        {/* Dot on actual */}
+                        <circle cx={tx} cy={ay} r="3"
+                          fill="var(--green)" stroke="var(--surface)" strokeWidth="1.5"/>
+                      </g>
+                    );
+                  })()}
+                </svg>
+              </div>
+            )}
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest } from '../types';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
 import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X } from 'lucide-react';
@@ -43,7 +43,8 @@ export default function DashboardView({
   materialRequests = [],
 }: DashboardViewProps) {
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
-  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'absent' | null>(null);
+  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | null>(null);
+  const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
 
   // Custom component for styling Recharts Tooltips with Tailwind theme variables.
   const CustomChartTooltip = ({ active, payload, label }: any) => {
@@ -530,6 +531,53 @@ export default function DashboardView({
     return true;
   });
 
+  // Memoized lists for the detail modals
+  const overdueProjectsList = useMemo(() => {
+    return filteredProjects.filter(p => p.due && p.due < todayStr && p.status !== 'completed');
+  }, [filteredProjects, todayStr]);
+
+  const overdueTasksList = useMemo(() => {
+    const list: Array<{
+      id: string;
+      taskName: string;
+      projectName: string;
+      projectId: string;
+      assemblyName: string;
+      assigned: string;
+      finishDate: string;
+      progress: number;
+    }> = [];
+
+    filteredProjects.forEach(p => {
+      (p.assemblies || []).forEach(asm => {
+        (asm.tasks || []).forEach(t => {
+          if (!t.done && t.pct < 100 && t.finishDate && t.finishDate < todayStr) {
+            list.push({
+              id: t.id,
+              taskName: t.name,
+              projectName: p.name,
+              projectId: p.id,
+              assemblyName: asm.name,
+              assigned: t.assigned || 'Unassigned',
+              finishDate: t.finishDate,
+              progress: t.pct,
+            });
+          }
+        });
+      });
+    });
+
+    return list;
+  }, [filteredProjects, todayStr]);
+
+  const presentPersonnelToday = useMemo(() => {
+    return todayTimesheets.filter(ts => ts.status === 'present' || ts.status === 'late');
+  }, [todayTimesheets]);
+
+  const absentPersonnelToday = useMemo(() => {
+    return todayTimesheets.filter(ts => ts.status === 'absent' || ts.status === 'leave');
+  }, [todayTimesheets]);
+
   // Ring circular coordinates
   const radius = 36;
   const circ = 2 * Math.PI * radius;
@@ -785,7 +833,10 @@ export default function DashboardView({
 
           {/* Card 4 - Overdue */}
           <div 
-            onClick={() => setActiveModal('overdue')}
+            onClick={() => {
+              setActiveModal('overdue');
+              setOverdueTab(overdueCount > 0 ? 'projects' : overdueTasksList.length > 0 ? 'tasks' : 'projects');
+            }}
             className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -804,21 +855,32 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{overdueCount}</div>
-              {overdueCount > 0 && (
-                <span className="text-xs font-condensed font-bold text-base-red bg-base-red/10 px-2 py-0.5 rounded-full animate-pulse">
-                  ⚠ Action needed
+              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">
+                {overdueCount} <span className="text-xs font-medium text-base-muted">Proj</span>
+                {overdueTasksList.length > 0 && (
+                  <>
+                    <span className="text-base-muted text-sm mx-1">/</span>
+                    <span className="text-base-red/90">{overdueTasksList.length}</span> <span className="text-xs font-medium text-base-muted">Tasks</span>
+                  </>
+                )}
+              </div>
+              {(overdueCount > 0 || overdueTasksList.length > 0) && (
+                <span className="text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
+                  ⚠ Alert
                 </span>
               )}
             </div>
-            <p className="text-xs text-base-muted2 mt-1">past due date</p>
+            <p className="text-xs text-base-muted2 mt-1">past target date</p>
           </div>
         </div>
 
         {/* Second row - attendance + manhours */}
         <div className="grid grid-cols-3 gap-3 mt-3">
           {/* Card 5 - Man Hours */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-default">
+          <div 
+            onClick={() => setActiveModal('man-hours')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -841,7 +903,10 @@ export default function DashboardView({
           </div>
 
           {/* Card 6 - Present Today */}
-          <div className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-default">
+          <div 
+            onClick={() => setActiveModal('present')}
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+          >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
@@ -1300,7 +1365,7 @@ export default function DashboardView({
           onClick={() => setActiveModal(null)}
         >
           <div 
-            className="bg-base-surface border border-base-border rounded-2xl shadow-2xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="bg-base-surface border border-base-border rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -1310,22 +1375,28 @@ export default function DashboardView({
                 {activeModal === 'active' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
                 {activeModal === 'completed' && <CheckCircle className="h-5.5 w-5.5 text-base-green" />}
                 {activeModal === 'overdue' && <AlertTriangle className="h-5.5 w-5.5 text-base-red" />}
+                {activeModal === 'man-hours' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
+                {activeModal === 'present' && <Users className="h-5.5 w-5.5 text-base-green" />}
                 {activeModal === 'absent' && <ShieldAlert className="h-5.5 w-5.5 text-base-red" />}
                 
                 <h3 className="font-condensed font-black text-xl uppercase tracking-wider text-base-text">
                   {activeModal === 'project' && 'All Projects'}
                   {activeModal === 'active' && 'Active Projects'}
                   {activeModal === 'completed' && 'Completed Projects'}
-                  {activeModal === 'overdue' && 'Overdue Projects'}
-                  {activeModal === 'absent' && 'Absent Personnel Today'}
+                  {activeModal === 'overdue' && 'Overdue Items'}
+                  {activeModal === 'man-hours' && 'Man-hours Log Detail'}
+                  {activeModal === 'present' && 'Present Personnel Today'}
+                  {activeModal === 'absent' && 'Absent/Leave Personnel Today'}
                 </h3>
                 
                 <span className="px-2 py-0.5 rounded-full bg-base-surface3 border border-base-border text-xs font-condensed font-bold text-base-muted select-none">
                   {activeModal === 'project' && filteredProjects.length}
                   {activeModal === 'active' && activeCount}
                   {activeModal === 'completed' && completedCount}
-                  {activeModal === 'overdue' && overdueCount}
-                  {activeModal === 'absent' && absentCount}
+                  {activeModal === 'overdue' && (overdueProjectsList.length + overdueTasksList.length)}
+                  {activeModal === 'man-hours' && scopedTimesheets.length}
+                  {activeModal === 'present' && presentPersonnelToday.length}
+                  {activeModal === 'absent' && absentPersonnelToday.length}
                 </span>
               </div>
               
@@ -1338,14 +1409,43 @@ export default function DashboardView({
               </button>
             </div>
 
-            {/* Modal Body / Scrollable Content */}
-            <div className="overflow-y-auto flex-1 p-6 space-y-4">
-              {/* If no data */}
+            {/* Overdue sub-tab navigation bar */}
+            {activeModal === 'overdue' && (
+              <div className="px-6 py-2 bg-base-surface3 border-b border-base-border flex gap-2">
+                <button
+                  onClick={() => setOverdueTab('projects')}
+                  className={`px-4 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider rounded-lg border transition-all cursor-pointer ${
+                    overdueTab === 'projects'
+                      ? 'bg-base-red text-white border-base-red shadow-sm'
+                      : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-muted2'
+                  }`}
+                >
+                  Overdue Projects ({overdueProjectsList.length})
+                </button>
+                <button
+                  onClick={() => setOverdueTab('tasks')}
+                  className={`px-4 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider rounded-lg border transition-all cursor-pointer ${
+                    overdueTab === 'tasks'
+                      ? 'bg-base-red text-white border-base-red shadow-sm'
+                      : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-muted2'
+                  }`}
+                >
+                  Overdue Tasks ({overdueTasksList.length})
+                </button>
+              </div>
+            )}
+
+            {/* Modal Body / Scrollable Table Content */}
+            <div className="overflow-y-auto flex-1 p-6">
+              {/* Check empty states */}
               {((activeModal === 'project' && filteredProjects.length === 0) ||
                 (activeModal === 'active' && activeCount === 0) ||
                 (activeModal === 'completed' && completedCount === 0) ||
-                (activeModal === 'overdue' && overdueCount === 0) ||
-                (activeModal === 'absent' && absentCount === 0)) ? (
+                (activeModal === 'overdue' && overdueTab === 'projects' && overdueProjectsList.length === 0) ||
+                (activeModal === 'overdue' && overdueTab === 'tasks' && overdueTasksList.length === 0) ||
+                (activeModal === 'man-hours' && scopedTimesheets.length === 0) ||
+                (activeModal === 'present' && presentPersonnelToday.length === 0) ||
+                (activeModal === 'absent' && absentPersonnelToday.length === 0)) ? (
                 <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
                   <div className="w-12 h-12 rounded-full bg-base-surface2 flex items-center justify-center border border-base-border">
                     <AlertCircle className="h-6 w-6 text-base-muted" />
@@ -1356,215 +1456,485 @@ export default function DashboardView({
                   </div>
                 </div>
               ) : (
-                <div className="divide-y divide-base-border border border-base-border rounded-xl overflow-hidden bg-base-surface">
-                  {activeModal === 'project' && filteredProjects.map(p => {
-                    const pct = calcPct(p);
-                    return (
-                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
-                              WO: {p.client}
-                            </span>
-                            <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-                              p.status === 'completed' ? 'bg-base-green-dim text-base-green' :
-                              p.status === 'active' ? 'bg-base-blue-dim text-base-blue' :
-                              p.status === 'pending' ? 'bg-base-accent-dim text-base-accent' :
-                              'bg-base-surface3 text-base-muted'
-                            }`}>
-                              {p.status}
-                            </span>
-                          </div>
-                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
-                          <p className="text-[11px] text-base-muted">
-                            Due Date: <span className="font-mono">{p.due || 'No date'}</span>
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 flex-shrink-0">
-                          <div className="text-right space-y-1 hidden sm:block">
-                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
-                            <p className="font-mono text-sm font-bold text-base-text">{pct}%</p>
-                          </div>
-                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
-                            <div className="bg-base-accent h-full" style={{ width: `${pct}%` }} />
-                          </div>
-                          <button
-                            onClick={() => {
-                              openSpotlight(p.id);
-                              setActiveModal(null);
-                            }}
-                            className="p-2 bg-base-accent-dim hover:bg-base-accent hover:text-white text-base-accent transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-accent/25"
-                          >
-                            <span>Details</span>
-                            <ArrowRight className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {activeModal === 'active' && filteredProjects.filter(p => p.status === 'active').map(p => {
-                    const pct = calcPct(p);
-                    return (
-                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
-                              WO: {p.client}
-                            </span>
-                            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-base-blue-dim text-base-blue">
-                              {p.assemblies?.length || 0} Assemblies
-                            </span>
-                          </div>
-                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
-                          <p className="text-[11px] text-base-muted">
-                            Due Date: <span className="font-mono">{p.due || 'No date'}</span>
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 flex-shrink-0">
-                          <div className="text-right space-y-1 hidden sm:block">
-                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
-                            <p className="font-mono text-sm font-bold text-base-text">{pct}%</p>
-                          </div>
-                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
-                            <div className="bg-base-blue h-full" style={{ width: `${pct}%` }} />
-                          </div>
-                          <button
-                            onClick={() => {
-                              openSpotlight(p.id);
-                              setActiveModal(null);
-                            }}
-                            className="p-2 bg-base-blue-dim hover:bg-base-blue hover:text-white text-base-blue transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-blue/25"
-                          >
-                            <span>Details</span>
-                            <ArrowRight className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {activeModal === 'completed' && filteredProjects.filter(p => p.status === 'completed').map(p => (
-                    <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
-                      <div className="space-y-1 min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
-                            WO: {p.client}
-                          </span>
-                          <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-base-green-dim text-base-green">
-                            100% DONE
-                          </span>
-                        </div>
-                        <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
-                        {p.completedDate && (
-                          <p className="text-[11px] text-base-green font-medium">
-                            Completed Date: <span className="font-mono">{p.completedDate}</span>
-                          </p>
-                        )}
-                      </div>
-                      
-                      <div className="flex items-center gap-4 flex-shrink-0">
-                        <button
-                          onClick={() => {
-                            openSpotlight(p.id);
-                            setActiveModal(null);
-                          }}
-                          className="p-2 bg-base-green-dim hover:bg-base-green hover:text-white text-base-green transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-green/25"
-                        >
-                          <span>Details</span>
-                          <ArrowRight className="h-3 w-3" />
-                        </button>
-                      </div>
+                <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface">
+                  {/* Category 1: All Projects */}
+                  {activeModal === 'project' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Work Order</th>
+                            <th className="py-2.5 px-4 font-bold">Project Name</th>
+                            <th className="py-2.5 px-4 font-bold">Category</th>
+                            <th className="py-2.5 px-4 font-bold">Location</th>
+                            <th className="py-2.5 px-4 font-bold">Status</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Progress</th>
+                            <th className="py-2.5 px-4 font-bold">Due Date</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {filteredProjects.map(p => {
+                            const pct = calcPct(p);
+                            return (
+                              <tr key={p.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-mono font-bold text-base-muted">
+                                  {p.client || '—'}
+                                </td>
+                                <td className="py-3 px-4 font-medium truncate max-w-[180px]" title={p.name}>
+                                  {p.name}
+                                </td>
+                                <td className="py-3 px-4 capitalize text-base-muted2">
+                                  {p.category}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="text-[10px] uppercase font-condensed font-extrabold px-2 py-0.5 rounded border bg-base-surface3 text-base-muted">
+                                    {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    p.status === 'completed' ? 'bg-base-green-dim text-base-green' :
+                                    p.status === 'active' ? 'bg-base-blue-dim text-base-blue' :
+                                    p.status === 'pending' ? 'bg-base-accent-dim text-base-accent' :
+                                    'bg-base-surface3 text-base-muted'
+                                  }`}>
+                                    {p.status}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2 justify-center">
+                                    <span className="font-mono font-bold w-8 text-right">{pct}%</span>
+                                    <div className="w-16 bg-base-surface3 h-1.5 rounded-full overflow-hidden border border-base-border">
+                                      <div className="bg-base-accent h-full" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 font-mono text-base-muted">
+                                  {p.due || 'No date'}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    onClick={() => {
+                                      openSpotlight(p.id);
+                                      setActiveModal(null);
+                                    }}
+                                    className="inline-flex items-center gap-1 p-1 px-2.5 bg-base-accent-dim hover:bg-base-accent hover:text-white text-base-accent transition-all rounded-lg font-condensed font-bold text-[11px] uppercase tracking-wider border border-base-accent/25 cursor-pointer"
+                                  >
+                                    <span>View</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                  ))}
+                  )}
 
-                  {activeModal === 'overdue' && filteredProjects.filter(p => p.due && p.due < todayStr && p.status !== 'completed').map(p => {
-                    const pct = calcPct(p);
-                    const days = daysDiff(todayStr, p.due || '');
-                    return (
-                      <div key={p.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs font-mono bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border font-semibold text-base-muted">
-                              WO: {p.client}
-                            </span>
-                            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded bg-base-red-dim text-base-red animate-pulse">
-                              {days} days overdue
-                            </span>
-                          </div>
-                          <p className="font-semibold text-sm text-base-text truncate">{p.name}</p>
-                          <p className="text-[11px] text-base-red font-medium">
-                            Target Date was: <span className="font-mono">{p.due}</span>
-                          </p>
-                        </div>
-                        
-                        <div className="flex items-center gap-4 flex-shrink-0">
-                          <div className="text-right space-y-1 hidden sm:block">
-                            <p className="font-condensed font-black text-xs text-base-muted uppercase tracking-wider">Progress</p>
-                            <p className="font-mono text-sm font-bold text-base-red">{pct}%</p>
-                          </div>
-                          <div className="w-24 bg-base-surface3 h-1.5 rounded-full overflow-hidden hidden sm:block border border-base-border">
-                            <div className="bg-base-red h-full" style={{ width: `${pct}%` }} />
-                          </div>
-                          <button
-                            onClick={() => {
-                              openSpotlight(p.id);
-                              setActiveModal(null);
-                            }}
-                            className="p-2 bg-base-red-dim hover:bg-base-red hover:text-white text-base-red transition-all rounded-lg font-condensed font-bold text-xs uppercase tracking-wider flex items-center gap-1.5 cursor-pointer border border-base-red/25"
-                          >
-                            <span>Details</span>
-                            <ArrowRight className="h-3 w-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Category 2: Active Projects */}
+                  {activeModal === 'active' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Work Order</th>
+                            <th className="py-2.5 px-4 font-bold">Project Name</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Assemblies</th>
+                            <th className="py-2.5 px-4 font-bold">Location</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Progress</th>
+                            <th className="py-2.5 px-4 font-bold">Due Date</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {filteredProjects.filter(p => p.status === 'active').map(p => {
+                            const pct = calcPct(p);
+                            return (
+                              <tr key={p.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-mono font-bold text-base-muted">
+                                  {p.client || '—'}
+                                </td>
+                                <td className="py-3 px-4 font-medium truncate max-w-[200px]" title={p.name}>
+                                  {p.name}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <span className="text-[10px] font-mono bg-base-surface3 border px-2 py-0.5 rounded font-bold">
+                                    {p.assemblies?.length || 0}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="text-[10px] uppercase font-condensed font-extrabold px-2 py-0.5 rounded border bg-base-surface3 text-base-muted">
+                                    {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2 justify-center">
+                                    <span className="font-mono font-bold w-8 text-right">{pct}%</span>
+                                    <div className="w-16 bg-base-surface3 h-1.5 rounded-full overflow-hidden border border-base-border">
+                                      <div className="bg-base-blue h-full" style={{ width: `${pct}%` }} />
+                                    </div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 font-mono text-base-muted">
+                                  {p.due || 'No date'}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    onClick={() => {
+                                      openSpotlight(p.id);
+                                      setActiveModal(null);
+                                    }}
+                                    className="inline-flex items-center gap-1 p-1 px-2.5 bg-base-blue-dim hover:bg-base-blue hover:text-white text-base-blue transition-all rounded-lg font-condensed font-bold text-[11px] uppercase tracking-wider border border-base-blue/25 cursor-pointer"
+                                  >
+                                    <span>View</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
 
-                  {activeModal === 'absent' && timesheets.filter(ts => ts.date === todayStr && (ts.status === 'absent' || ts.status === 'leave')).map(ts => {
-                    const empDetail = employees.find(e => e.id === ts.empId);
-                    return (
-                      <div key={ts.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-base-surface2 transition-colors">
-                        <div className="space-y-1 min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-                              ts.status === 'leave' ? 'bg-base-accent-dim text-base-accent' : 'bg-base-red-dim text-base-red'
-                            }`}>
-                              {ts.status.toUpperCase()}
-                            </span>
-                            {empDetail?.position && (
-                              <span className="text-[10px] font-condensed uppercase tracking-wider text-base-muted font-bold">
-                                {empDetail.position}
-                              </span>
-                            )}
-                          </div>
-                          <p className="font-semibold text-sm text-base-text">{ts.empName}</p>
-                          {ts.desc && (
-                            <p className="text-xs text-base-muted bg-base-surface3 p-2 rounded-lg border border-base-border mt-1">
-                              Reason: <span className="italic">"{ts.desc}"</span>
-                            </p>
-                          )}
-                        </div>
-                        
-                        <div className="flex-shrink-0 text-right text-[11px] font-condensed text-base-muted">
-                          {empDetail?.location && (
-                            <span className="bg-base-surface3 border border-base-border px-2 py-0.5 rounded font-bold uppercase">
-                              {empDetail.location}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {/* Category 3: Completed Projects */}
+                  {activeModal === 'completed' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Work Order</th>
+                            <th className="py-2.5 px-4 font-bold">Project Name</th>
+                            <th className="py-2.5 px-4 font-bold">Location</th>
+                            <th className="py-2.5 px-4 font-bold">Date Completed</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {filteredProjects.filter(p => p.status === 'completed').map(p => {
+                            return (
+                              <tr key={p.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-mono font-bold text-base-muted">
+                                  {p.client || '—'}
+                                </td>
+                                <td className="py-3 px-4 font-medium truncate max-w-[240px]" title={p.name}>
+                                  {p.name}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="text-[10px] uppercase font-condensed font-extrabold px-2 py-0.5 rounded border bg-base-surface3 text-base-muted">
+                                    {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 font-mono text-base-green font-semibold">
+                                  {p.completedDate || 'Completed'}
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <button
+                                    onClick={() => {
+                                      openSpotlight(p.id);
+                                      setActiveModal(null);
+                                    }}
+                                    className="inline-flex items-center gap-1 p-1 px-2.5 bg-base-green-dim hover:bg-base-green hover:text-white text-base-green transition-all rounded-lg font-condensed font-bold text-[11px] uppercase tracking-wider border border-base-green/25 cursor-pointer"
+                                  >
+                                    <span>View</span>
+                                    <ArrowRight className="h-3 w-3" />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Category 4: Overdue Items (Tabbed) */}
+                  {activeModal === 'overdue' && (
+                    <div className="overflow-x-auto">
+                      {overdueTab === 'projects' ? (
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                              <th className="py-2.5 px-4 font-bold">Work Order</th>
+                              <th className="py-2.5 px-4 font-bold">Project Name</th>
+                              <th className="py-2.5 px-4 font-bold text-base-red">Target Date</th>
+                              <th className="py-2.5 px-4 font-bold text-center">Days Overdue</th>
+                              <th className="py-2.5 px-4 font-bold text-center">Progress</th>
+                              <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                            {overdueProjectsList.map(p => {
+                              const pct = calcPct(p);
+                              const days = daysDiff(todayStr, p.due || '');
+                              return (
+                                <tr key={p.id} className="hover:bg-base-surface2/50 transition-colors">
+                                  <td className="py-3 px-4 font-mono font-bold text-base-muted">
+                                    {p.client || '—'}
+                                  </td>
+                                  <td className="py-3 px-4 font-medium truncate max-w-[200px]" title={p.name}>
+                                    {p.name}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono font-semibold text-base-red">
+                                    {p.due}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-bold text-base-red">
+                                    {days} days
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-2 justify-center">
+                                      <span className="font-mono font-bold w-8 text-right text-base-red">{pct}%</span>
+                                      <div className="w-16 bg-base-surface3 h-1.5 rounded-full overflow-hidden border border-base-border">
+                                        <div className="bg-base-red h-full" style={{ width: `${pct}%` }} />
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <button
+                                      onClick={() => {
+                                        openSpotlight(p.id);
+                                        setActiveModal(null);
+                                      }}
+                                      className="inline-flex items-center gap-1 p-1 px-2.5 bg-base-red-dim hover:bg-base-red hover:text-white text-base-red transition-all rounded-lg font-condensed font-bold text-[11px] uppercase tracking-wider border border-base-red/25 cursor-pointer"
+                                    >
+                                      <span>View</span>
+                                      <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                              <th className="py-2.5 px-4 font-bold">Task Name</th>
+                              <th className="py-2.5 px-4 font-bold">Project</th>
+                              <th className="py-2.5 px-4 font-bold">Assembly</th>
+                              <th className="py-2.5 px-4 font-bold">Assigned</th>
+                              <th className="py-2.5 px-4 font-bold text-base-red">Target Finish</th>
+                              <th className="py-2.5 px-4 font-bold text-center">Days Overdue</th>
+                              <th className="py-2.5 px-4 font-bold text-center">Progress</th>
+                              <th className="py-2.5 px-4 font-bold text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                            {overdueTasksList.map(t => {
+                              const days = daysDiff(todayStr, t.finishDate || '');
+                              return (
+                                <tr key={t.id} className="hover:bg-base-surface2/50 transition-colors">
+                                  <td className="py-3 px-4 font-semibold text-base-text max-w-[160px] truncate" title={t.taskName}>
+                                    {t.taskName}
+                                  </td>
+                                  <td className="py-3 px-4 text-base-muted2 max-w-[150px] truncate" title={t.projectName}>
+                                    {t.projectName}
+                                  </td>
+                                  <td className="py-3 px-4 text-base-muted2 max-w-[120px] truncate" title={t.assemblyName}>
+                                    {t.assemblyName}
+                                  </td>
+                                  <td className="py-3 px-4 text-base-muted font-medium whitespace-nowrap">
+                                    {t.assigned}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono font-semibold text-base-red">
+                                    {t.finishDate}
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-bold text-base-red">
+                                    {days} days
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-mono font-bold text-base-red">
+                                    {t.progress}%
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <button
+                                      onClick={() => {
+                                        openSpotlight(t.projectId);
+                                        setActiveModal(null);
+                                      }}
+                                      className="inline-flex items-center gap-1 p-1 px-2.5 bg-base-red-dim hover:bg-base-red hover:text-white text-base-red transition-all rounded-lg font-condensed font-bold text-[11px] uppercase tracking-wider border border-base-red/25 cursor-pointer"
+                                    >
+                                      <span>View</span>
+                                      <ArrowRight className="h-3 w-3" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Category 5: Man-hours breakdown */}
+                  {activeModal === 'man-hours' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Date</th>
+                            <th className="py-2.5 px-4 font-bold">Employee</th>
+                            <th className="py-2.5 px-4 font-bold">Work Order</th>
+                            <th className="py-2.5 px-4 font-bold">Assembly</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Hours</th>
+                            <th className="py-2.5 px-4 font-bold">Status</th>
+                            <th className="py-2.5 px-4 font-bold">Activity Description</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {scopedTimesheets.map(ts => {
+                            return (
+                              <tr key={ts.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-mono text-base-muted whitespace-nowrap">
+                                  {ts.date}
+                                </td>
+                                <td className="py-3 px-4 font-semibold text-base-text whitespace-nowrap">
+                                  {ts.empName}
+                                </td>
+                                <td className="py-3 px-4 font-mono font-bold text-base-muted">
+                                  {ts.workOrder || '—'}
+                                </td>
+                                <td className="py-3 px-4 text-base-muted2 max-w-[120px] truncate" title={ts.assemblyName}>
+                                  {ts.assemblyName || '—'}
+                                </td>
+                                <td className="py-3 px-4 text-center font-mono font-bold text-base-blue">
+                                  {ts.totalHours}h
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    ts.status === 'present' ? 'bg-base-green-dim text-base-green' :
+                                    ts.status === 'late' ? 'bg-base-accent-dim text-base-accent' :
+                                    'bg-base-surface3 text-base-muted'
+                                  }`}>
+                                    {ts.status}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 max-w-[200px] truncate text-base-muted2 italic" title={ts.desc}>
+                                  {ts.desc || 'No description'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Category 6: Present Personnel Today */}
+                  {activeModal === 'present' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Employee Name</th>
+                            <th className="py-2.5 px-4 font-bold">Position</th>
+                            <th className="py-2.5 px-4 font-bold">Location</th>
+                            <th className="py-2.5 px-4 font-bold">Status</th>
+                            <th className="py-2.5 px-4 font-bold">Work Order (Assignment)</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Hours Logged</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {presentPersonnelToday.map(ts => {
+                            const empDetail = employees.find(e => e.id === ts.empId);
+                            return (
+                              <tr key={ts.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-semibold text-base-text">
+                                  {ts.empName}
+                                </td>
+                                <td className="py-3 px-4 text-base-muted font-medium">
+                                  {empDetail?.position || 'Personnel'}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="text-[10px] uppercase font-condensed font-extrabold px-2 py-0.5 rounded border bg-base-surface3 text-base-muted">
+                                    {empDetail?.location || 'Unassigned'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    ts.status === 'late' ? 'bg-base-accent-dim text-base-accent' : 'bg-base-green-dim text-base-green'
+                                  }`}>
+                                    {ts.status.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-base-muted2">
+                                  {ts.workOrder ? (
+                                    <span className="font-mono font-bold text-base-muted bg-base-surface3 border border-base-border px-1.5 py-0.5 rounded">
+                                      WO: {ts.workOrder}
+                                    </span>
+                                  ) : (
+                                    '—'
+                                  )}
+                                  {ts.assemblyName && <span className="text-[11px] ml-1.5 text-base-muted2">({ts.assemblyName})</span>}
+                                </td>
+                                <td className="py-3 px-4 text-center font-mono font-bold text-base-green">
+                                  {ts.totalHours}h
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {/* Category 7: Absent Today */}
+                  {activeModal === 'absent' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Employee Name</th>
+                            <th className="py-2.5 px-4 font-bold">Position</th>
+                            <th className="py-2.5 px-4 font-bold">Location</th>
+                            <th className="py-2.5 px-4 font-bold">Status</th>
+                            <th className="py-2.5 px-4 font-bold">Reason for Absence</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {absentPersonnelToday.map(ts => {
+                            const empDetail = employees.find(e => e.id === ts.empId);
+                            return (
+                              <tr key={ts.id} className="hover:bg-base-surface2/50 transition-colors">
+                                <td className="py-3 px-4 font-semibold text-base-text">
+                                  {ts.empName}
+                                </td>
+                                <td className="py-3 px-4 text-base-muted font-medium">
+                                  {empDetail?.position || 'Personnel'}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="text-[10px] uppercase font-condensed font-extrabold px-2 py-0.5 rounded border bg-base-surface3 text-base-muted">
+                                    {empDetail?.location || 'Unassigned'}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                    ts.status === 'leave' ? 'bg-base-accent-dim text-base-accent' : 'bg-base-red-dim text-base-red'
+                                  }`}>
+                                    {ts.status.toUpperCase()}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 italic text-base-muted max-w-[280px] truncate" title={ts.desc}>
+                                  {ts.desc || 'No reason provided'}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-base-border bg-base-surface2 flex items-center justify-between flex-shrink-0">
-              <span className="text-[11px] text-base-muted font-condensed uppercase tracking-wider">
+              <span className="text-[11px] text-base-muted font-condensed uppercase tracking-wider select-none">
                 Click details to open project spotlight
               </span>
               <button 
