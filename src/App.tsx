@@ -857,6 +857,25 @@ function AppContent() {
                   importProjectsExcel={projectsHook.importProjectsExcel}
                   deleteProjectDetails={projectsHook.deleteProjectDetails}
                   deleteProjectsExceptTarget={projectsHook.deleteProjectsExceptTarget}
+                  // Gantt interactivity handlers
+                  onUpdateProject={(updatedProj) => {
+                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                    saveItem('projects', updatedProj);
+                    verifyMarkChanged();
+                    logActivity(
+                      'project_edit',
+                      'Updated task schedules via Gantt chart drag-and-drop',
+                      updatedProj.id,
+                      updatedProj.name
+                    );
+                  }}
+                  onOpenDepModal={(key) => {
+                    projectsHook.setDepModalRowKey(key);
+                    projectsHook.setDepModalOpen(true);
+                  }}
+                  depModalOpen={projectsHook.depModalOpen}
+                  depModalRowKey={projectsHook.depModalRowKey}
+                  onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
                 />
               )}
 

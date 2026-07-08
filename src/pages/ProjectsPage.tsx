@@ -1,12 +1,13 @@
 import React from 'react';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2 } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar } from 'lucide-react';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
 import { can as canUtil } from '../utils/permissions';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
+import GanttView from '../components/GanttView';
 
 interface ProjectsPageProps {
   activeTab: 'current' | 'completed' | 'tray' | 'nontray' | 'archive';
@@ -29,6 +30,12 @@ interface ProjectsPageProps {
   importProjectsExcel?: (projects: Project[]) => void;
   deleteProjectDetails?: (pid: string) => void;
   deleteProjectsExceptTarget?: (targetWorkOrder: string) => void;
+  // GANTT INTERACTIVE PROPS
+  onUpdateProject?: (project: Project) => void;
+  onOpenDepModal?: (rowKey: string) => void;
+  depModalOpen?: boolean;
+  depModalRowKey?: string | null;
+  onCloseDepModal?: () => void;
 }
 
 export function ProjectsPage({
@@ -52,9 +59,28 @@ export function ProjectsPage({
   importProjectsExcel,
   deleteProjectDetails,
   deleteProjectsExceptTarget,
+  onUpdateProject,
+  onOpenDepModal,
+  depModalOpen,
+  depModalRowKey,
+  onCloseDepModal,
 }: ProjectsPageProps) {
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
+
+  const [viewMode, setViewMode] = React.useState<'list' | 'timeline'>(() => {
+    try {
+      return (localStorage.getItem('gantt_projects_viewMode') as 'list' | 'timeline') || 'list';
+    } catch (_) {
+      return 'list';
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('gantt_projects_viewMode', viewMode);
+    } catch (_) {}
+  }, [viewMode]);
 
   const scopedTimesheetsForPage = currentTabMonthFilter
     ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === currentTabMonthFilter)
@@ -541,6 +567,34 @@ export function ProjectsPage({
               Current <span className="text-base-accent">Schedules</span>
             </h2>
 
+            {/* Interactive View Toggle: List vs Timeline Gantt */}
+            <div className="flex bg-base-surface2 border border-base-border rounded-lg p-0.5 shadow-xs">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  viewMode === 'list'
+                    ? 'bg-base-accent text-white shadow-xs'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Standard List View"
+              >
+                <List className="h-3 w-3" />
+                <span>List</span>
+              </button>
+              <button
+                onClick={() => setViewMode('timeline')}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                  viewMode === 'timeline'
+                    ? 'bg-base-accent text-white shadow-xs'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Interactive Timeline Gantt View"
+              >
+                <Calendar className="h-3 w-3" />
+                <span>Timeline</span>
+              </button>
+            </div>
+
             {/* Real-time Search Box */}
             <div id="project-search-container" className="relative w-full sm:max-w-xs md:max-w-sm">
               <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-base-muted">
@@ -613,208 +667,247 @@ export function ProjectsPage({
         </div>
 
         {/* List current active cards */}
-        <div className="grid grid-cols-1 gap-4">
-          {filteredProjects.length === 0 ? (
-            <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
-              <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
-              <div className="flex gap-2 justify-center">
-                {projectSearchQuery && (
-                  <button
-                    id="current-projects-no-results-clear-btn"
-                    onClick={() => setProjectSearchQuery('')}
-                    className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                  >
-                    Clear search filter
-                  </button>
-                )}
-                {currentTabMonthFilter && (
-                  <button
-                    id="current-projects-no-results-clear-month-btn"
-                    onClick={() => setCurrentTabMonthFilter('')}
-                    className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                  >
-                    Clear month filter
-                  </button>
-                )}
+        {viewMode === 'timeline' ? (
+          <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs overflow-hidden">
+            {filteredProjects.length === 0 ? (
+              <div className="py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
+                <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
+                <div className="flex gap-2 justify-center">
+                  {projectSearchQuery && (
+                    <button
+                      id="current-projects-no-results-clear-btn-timeline"
+                      onClick={() => setProjectSearchQuery('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear search filter
+                    </button>
+                  )}
+                  {currentTabMonthFilter && (
+                    <button
+                      id="current-projects-no-results-clear-month-btn-timeline"
+                      onClick={() => setCurrentTabMonthFilter('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear month filter
+                    </button>
+                  )}
+                </div>
               </div>
-            </div>
-          ) : (
-            filteredProjects.map(p => {
-              const pct = calcPct(p);
-              const hasActiveSearch = projectSearchQuery.trim() !== '';
+            ) : (
+              <GanttView
+                projects={filteredProjects}
+                onUpdateProject={onUpdateProject}
+                onOpenDepModal={onOpenDepModal}
+                depModalOpen={depModalOpen}
+                depModalRowKey={depModalRowKey || undefined}
+                onCloseDepModal={onCloseDepModal}
+              />
+            )}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4">
+            {filteredProjects.length === 0 ? (
+              <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
+                <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
+                <div className="flex gap-2 justify-center">
+                  {projectSearchQuery && (
+                    <button
+                      id="current-projects-no-results-clear-btn"
+                      onClick={() => setProjectSearchQuery('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear search filter
+                    </button>
+                  )}
+                  {currentTabMonthFilter && (
+                    <button
+                      id="current-projects-no-results-clear-month-btn"
+                      onClick={() => setCurrentTabMonthFilter('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear month filter
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              filteredProjects.map(p => {
+                const pct = calcPct(p);
+                const hasActiveSearch = projectSearchQuery.trim() !== '';
 
-              return (
-                <div
-                  key={p.id}
-                  className={`py-1.5 px-3 rounded-lg relative overflow-hidden group transition-all duration-200 border flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 ${
-                    hasActiveSearch
-                      ? 'bg-base-surface border-2 border-base-accent animate-pulse-highlight'
-                      : 'bg-base-surface border-base-border shadow-xs hover:border-base-border2'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                    <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
-                    <div className="min-w-0 pr-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <h3
-                          onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                          className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors leading-tight truncate"
-                        >
-                          {highlightText(p.name, projectSearchQuery)}
-                        </h3>
-                        {hasActiveSearch && (
-                          <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider">
-                            MATCH
+                return (
+                  <div
+                    key={p.id}
+                    className={`py-1.5 px-3 rounded-lg relative overflow-hidden group transition-all duration-200 border flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 ${
+                      hasActiveSearch
+                        ? 'bg-base-surface border-2 border-base-accent animate-pulse-highlight'
+                        : 'bg-base-surface border-base-border shadow-xs hover:border-base-border2'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                      <div className="min-w-0 pr-2">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <h3
+                            onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                            className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors leading-tight truncate"
+                          >
+                            {highlightText(p.name, projectSearchQuery)}
+                          </h3>
+                          {hasActiveSearch && (
+                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider">
+                              MATCH
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono">
+                          {highlightText(p.client, projectSearchQuery)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
+                      {(p.start || p.due) && (
+                        <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
+                          📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
+                        </span>
+                      )}
+                      {p.targetMonth && (
+                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
+                          🎯 Target: {p.targetMonth}
+                        </span>
+                      )}
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                        {p.location === 'workshop1' ? 'W1' : 'W2'}
+                      </span>
+
+                      {(() => {
+                        const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
+                        const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
+                        const isOverBudget = hasBudget && usedHours >= p.budgetHours;
+                        return (
+                          <span
+                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border transition-all ${
+                              isOverBudget
+                                ? 'bg-red-500/10 text-red-500 border-red-500/30'
+                                : hasBudget
+                                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                  : 'bg-base-accent-dim/20 text-base-accent border-transparent'
+                            }`}
+                          >
+                            <Clock className="h-2.5 w-2.5" />
+                            <span>
+                              {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
+                            </span>
                           </span>
+                        );
+                      })()}
+
+                      {(() => {
+                        const totalWire = (wireLogs || [])
+                          .filter(wl => wl.projectId === p.id)
+                          .reduce((sum, wl) => sum + wl.amountKg, 0);
+                        if (totalWire === 0) return null;
+                        return (
+                          <span
+                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
+                            title="Total wire consumables logged"
+                          >
+                            <Flame className="h-2.5 w-2.5 animate-pulse" />
+                            <span>{totalWire.toFixed(1)} kg</span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
+                      <div className="flex items-center gap-3">
+                        <div className="text-[11px] text-base-muted font-bold font-condensed uppercase tracking-wider hidden sm:block">
+                          {p.assemblies ? p.assemblies.length : 0} subassemblies
+                        </div>
+
+                        <div className="space-y-0.5 w-20">
+                          <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
+                            <span>Progress</span>
+                            <span>{pct}%</span>
+                          </div>
+                          <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-20">
+                            <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {can('addAssembly') && (
+                          <button
+                            onClick={() => openAssemblyAddForm(p.id)}
+                            className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors"
+                          >
+                            + Assy
+                          </button>
+                        )}
+
+                        {p.status === 'completed' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
+                            }}
+                            className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md"
+                            title="Download completion PDF report"
+                          >
+                            <Download className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                          className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md"
+                          title="Open spotlight inspector"
+                        >
+                          <BookOpen className="h-3.5 w-3.5" />
+                        </button>
+
+                        {can('editProject') && (
+                          <button
+                            onClick={() => openEditProjectForm(p.id)}
+                            className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
+                            title="Edit parameters"
+                          >
+                            <Edit className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+
+                        {can('editProject') && (
+                          <button
+                            onClick={() => openCopyModalLauncher(p.id)}
+                            className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
+                            title="Clone project"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+
+                        {can('deleteProject') && deleteProjectDetails && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteProjectDetails(p.id);
+                            }}
+                            className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors"
+                            title="Delete project permanently"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
                         )}
                       </div>
-                      <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono">
-                        {highlightText(p.client, projectSearchQuery)}
-                      </p>
                     </div>
                   </div>
-
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
-                    {(p.start || p.due) && (
-                      <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
-                        📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
-                      </span>
-                    )}
-                    {p.targetMonth && (
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
-                        🎯 Target: {p.targetMonth}
-                      </span>
-                    )}
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
-                      {p.location === 'workshop1' ? 'W1' : 'W2'}
-                    </span>
-
-                    {(() => {
-                      const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
-                      const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
-                      const isOverBudget = hasBudget && usedHours >= p.budgetHours;
-                      return (
-                        <span
-                          className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border transition-all ${
-                            isOverBudget
-                              ? 'bg-red-500/10 text-red-500 border-red-500/30'
-                              : hasBudget
-                                ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                                : 'bg-base-accent-dim/20 text-base-accent border-transparent'
-                          }`}
-                        >
-                          <Clock className="h-2.5 w-2.5" />
-                          <span>
-                            {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
-                          </span>
-                        </span>
-                      );
-                    })()}
-
-                    {(() => {
-                      const totalWire = (wireLogs || [])
-                        .filter(wl => wl.projectId === p.id)
-                        .reduce((sum, wl) => sum + wl.amountKg, 0);
-                      if (totalWire === 0) return null;
-                      return (
-                        <span
-                          className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
-                          title="Total wire consumables logged"
-                        >
-                          <Flame className="h-2.5 w-2.5 animate-pulse" />
-                          <span>{totalWire.toFixed(1)} kg</span>
-                        </span>
-                      );
-                    })()}
-                  </div>
-
-                  <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
-                    <div className="flex items-center gap-3">
-                      <div className="text-[11px] text-base-muted font-bold font-condensed uppercase tracking-wider hidden sm:block">
-                        {p.assemblies ? p.assemblies.length : 0} subassemblies
-                      </div>
-
-                      <div className="space-y-0.5 w-20">
-                        <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
-                          <span>Progress</span>
-                          <span>{pct}%</span>
-                        </div>
-                        <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-20">
-                          <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      {can('addAssembly') && (
-                        <button
-                          onClick={() => openAssemblyAddForm(p.id)}
-                          className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors"
-                        >
-                          + Assy
-                        </button>
-                      )}
-
-                      {p.status === 'completed' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
-                          }}
-                          className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md"
-                          title="Download completion PDF report"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-
-                      <button
-                        onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                        className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md"
-                        title="Open spotlight inspector"
-                      >
-                        <BookOpen className="h-3.5 w-3.5" />
-                      </button>
-
-                      {can('editProject') && (
-                        <button
-                          onClick={() => openEditProjectForm(p.id)}
-                          className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
-                          title="Edit parameters"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-
-                      {can('editProject') && (
-                        <button
-                          onClick={() => openCopyModalLauncher(p.id)}
-                          className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
-                          title="Clone project"
-                        >
-                          <Copy className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-
-                      {can('deleteProject') && deleteProjectDetails && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteProjectDetails(p.id);
-                          }}
-                          className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors"
-                          title="Delete project permanently"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
+                );
+              })
+            )}
+          </div>
+        )}
       </div>
     );
   }
