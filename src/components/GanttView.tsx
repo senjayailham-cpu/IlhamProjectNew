@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Project, Assembly, Task, Dependency } from '../types';
@@ -723,14 +724,19 @@ export default function GanttView({
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState<boolean>(false);
+  const [isPrefsDropdownOpen, setIsPrefsDropdownOpen] = useState<boolean>(false);
   const [isTouchDragging, setIsTouchDragging] = useState<boolean>(false);
   const ganttWorkspaceRef = useRef<HTMLDivElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const prefsDropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (exportDropdownRef.current && !exportDropdownRef.current.contains(event.target as Node)) {
         setIsExportDropdownOpen(false);
+      }
+      if (prefsDropdownRef.current && !prefsDropdownRef.current.contains(event.target as Node)) {
+        setIsPrefsDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -2453,7 +2459,7 @@ export default function GanttView({
           {/* Today Button */}
           <button 
             onClick={scrollToToday}
-            className="flex items-center gap-2 px-3 py-1 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/50 h-[34px]"
+            className="flex items-center gap-2 px-3 py-1 rounded-xl border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/40 h-[34px]"
             title="Scroll to today"
           >
             <Calendar className="h-3.5 w-3.5 text-base-red shrink-0" />
@@ -2474,14 +2480,14 @@ export default function GanttView({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search tasks..."
-                  className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent w-[180px] h-[34px] font-medium"
+                  className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent w-[180px] h-[34px] font-medium"
                 />
               </div>
               
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text"
+                className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text"
               >
                 <option value="all">All Status</option>
                 <option value="on-track">On Track</option>
@@ -2496,7 +2502,7 @@ export default function GanttView({
                     setSearchQuery('');
                     setStatusFilter('all');
                   }}
-                  className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-lg h-[34px] cursor-pointer font-bold gap-1 text-base-muted2"
+                  className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-xl h-[34px] cursor-pointer font-bold gap-1 text-base-muted2"
                   title="Clear filters"
                 >
                   ✕ Clear
@@ -2521,240 +2527,252 @@ export default function GanttView({
             </div>
           </div>
 
-          {/* Zoom Level Toggle Buttons */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-lg p-1">
-            <button 
-              onClick={() => setZoomMode('day')} 
-              className={`px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer ${
-                zoomMode === 'day' ? 'bg-base-accent text-white font-extrabold' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              Day
-            </button>
-            <button 
-              onClick={() => setZoomMode('week')} 
-              className={`px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer ${
-                zoomMode === 'week' ? 'bg-base-accent text-white font-extrabold' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              Week
-            </button>
-            <button 
-              onClick={() => setZoomMode('month')} 
-              className={`px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer ${
-                zoomMode === 'month' ? 'bg-base-accent text-white font-extrabold' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              Month
-            </button>
-            <button 
-              onClick={() => setZoomMode('quarter')} 
-              className={`px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer ${
-                zoomMode === 'quarter' ? 'bg-base-accent text-white font-extrabold' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              Quarter
-            </button>
+          {/* Zoom Level Toggle Buttons with layoutId */}
+          <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-xl p-0.5 h-[34px]">
+            {['day', 'week', 'month', 'quarter'].map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setZoomMode(mode as any)}
+                className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer ${
+                  zoomMode === mode ? 'text-white' : 'text-base-muted hover:text-base-text'
+                }`}
+              >
+                {zoomMode === mode && (
+                  <motion.div
+                    layoutId="ganttZoomPill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                {mode}
+              </button>
+            ))}
           </div>
 
           <div className="w-[1px] h-4 bg-base-border" />
 
           {/* Expand/Collapse All Buttons */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-lg p-1">
+          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px]">
             <button 
               onClick={expandAllAssemblies} 
-              className="px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer text-xs text-base-muted hover:text-base-text flex items-center gap-1.5"
+              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1"
               title="Expand All Assemblies"
             >
-              <Maximize2 className="h-3.5 w-3.5 text-current" />
-              <span>Expand All</span>
+              <Maximize2 className="h-3 w-3 text-current shrink-0" />
+              <span>Expand</span>
             </button>
             <div className="w-[1px] h-3 bg-base-border mx-1" />
             <button 
               onClick={collapseAllAssemblies} 
-              className="px-2.5 py-1 rounded font-condensed font-bold uppercase transition-all cursor-pointer text-xs text-base-muted hover:text-base-text flex items-center gap-1.5"
+              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1"
               title="Collapse All Assemblies"
             >
-              <Minimize2 className="h-3.5 w-3.5 text-current" />
-              <span>Collapse All</span>
+              <Minimize2 className="h-3 w-3 text-current shrink-0" />
+              <span>Collapse</span>
             </button>
           </div>
 
           <div className="w-[1px] h-4 bg-base-border" />
 
-          {/* AUTO-SCHEDULE FEATURE */}
-          <button
-            onClick={() => setAutoSchedule(prev => !prev)}
-            title={autoSchedule 
-              ? "Auto-Schedule ON — successors cascade automatically. Click to turn OFF." 
-              : "Auto-Schedule OFF — only dragged task moves. Click to turn ON."}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border 
-                        font-condensed font-bold uppercase tracking-wider text-[10px] 
-                        h-[34px] cursor-pointer transition-all select-none
-                        ${autoSchedule
-                          ? 'bg-base-accent-dim border-base-accent text-base-accent hover:bg-base-accent hover:text-white'
-                          : 'bg-base-surface border-base-border text-base-muted hover:text-base-text hover:border-base-muted'
-                        }`}
-          >
-            <svg 
-              width="12" height="12" viewBox="0 0 24 24" 
-              fill={autoSchedule ? 'currentColor' : 'none'} 
-              stroke="currentColor" strokeWidth="2"
-              strokeLinecap="round" strokeLinejoin="round"
-              aria-hidden="true"
+          {/* Display Settings Dropdown */}
+          <div className="relative" ref={prefsDropdownRef}>
+            <button
+              onClick={() => setIsPrefsDropdownOpen(!isPrefsDropdownOpen)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px]"
+              title="Configure chart visibility preferences"
             >
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-            </svg>
-            <span>Auto-Schedule</span>
-            <span className={`text-[9px] px-1 py-0.5 rounded font-black leading-none
-                              ${autoSchedule 
-                                ? 'bg-base-accent text-white' 
-                                : 'bg-base-surface3 text-base-muted border border-base-border'}`}>
-              {autoSchedule ? 'ON' : 'OFF'}
-            </span>
-          </button>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+                <line x1="4" y1="21" x2="4" y2="14" />
+                <line x1="4" y1="10" x2="4" y2="3" />
+                <line x1="12" y1="21" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12" y2="3" />
+                <line x1="20" y1="21" x2="20" y2="16" />
+                <line x1="20" y1="12" x2="20" y2="3" />
+                <line x1="1" y1="14" x2="7" y2="14" />
+                <line x1="9" y1="8" x2="15" y2="8" />
+                <line x1="17" y1="16" x2="23" y2="16" />
+              </svg>
+              <span>Gantt Settings</span>
+              <ChevronDown className="h-3 w-3 ml-0.5 shrink-0" />
+            </button>
+            {isPrefsDropdownOpen && (
+              <div className="absolute right-0 mt-1.5 w-52 bg-base-surface border border-base-border rounded-xl shadow-xl p-3.5 z-[150] space-y-3 font-sans">
+                <div className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted mb-2 pb-1 border-b border-base-border/50">
+                  Toggle Layer Views
+                </div>
+                
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Arrows</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showArrows} 
+                    onChange={e => setShowArrows(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Progress</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showProgress} 
+                    onChange={e => setShowProgress(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Critical Path</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showCriticalPath} 
+                    onChange={e => setShowCriticalPath(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Baseline</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showBaseline} 
+                    onChange={e => setShowBaseline(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">S-Curve Overlay</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showSCurve} 
+                    onChange={e => setShowSCurve(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
+              </div>
+            )}
+          </div>
 
           <div className="w-[1px] h-4 bg-base-border" />
 
-          {/* Toggle Switches */}
-          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
-            <input 
-              type="checkbox" 
-              checked={showArrows} 
-              onChange={e => setShowArrows(e.target.checked)}
-              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
-            />
-            <span>Show Arrows</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
-            <input 
-              type="checkbox" 
-              checked={showProgress} 
-              onChange={e => setShowProgress(e.target.checked)}
-              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
-            />
-            <span>Show Progress</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
-            <input 
-              type="checkbox" 
-              checked={showCriticalPath} 
-              onChange={e => setShowCriticalPath(e.target.checked)}
-              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
-            />
-            <span>Show Critical Path</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
-            <input 
-              type="checkbox" 
-              checked={showBaseline} 
-              onChange={e => setShowBaseline(e.target.checked)}
-              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
-            />
-            <span>Show Baseline</span>
-          </label>
-
-          <label className="flex items-center gap-1.5 cursor-pointer select-none font-medium text-base-muted2 hover:text-base-text transition-colors">
-            <input
-              type="checkbox"
-              checked={showSCurve}
-              onChange={e => setShowSCurve(e.target.checked)}
-              className="h-3.5 w-3.5 accent-base-accent border-base-border rounded"
-            />
-            <span>S-Curve</span>
-          </label>
-
+          {/* Scheduling & Interactivity Actions Group */}
           {onUpdateProject !== undefined && (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px]">
+              {/* Auto Schedule switch */}
               <button
-                onClick={handleSetBaseline}
-                className="flex items-center gap-1 px-2.5 py-1 rounded border border-base-border hover:bg-base-accent/10 hover:text-base-accent transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 bg-base-surface"
-                title="Set current schedule as baseline"
+                onClick={() => setAutoSchedule(prev => !prev)}
+                title={autoSchedule 
+                  ? "Auto-Schedule ON — successors cascade automatically. Click to turn OFF." 
+                  : "Auto-Schedule OFF — only dragged task moves. Click to turn ON."}
+                className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] cursor-pointer transition-colors duration-200 ${
+                  autoSchedule
+                    ? 'text-white font-extrabold'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
               >
-                <Bookmark className="h-3.5 w-3.5 shrink-0 text-base-accent" />
-                <span>Set Baseline</span>
+                {autoSchedule && (
+                  <motion.div
+                    layoutId="ganttAutoSchedulePill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <span>Auto-Shift</span>
               </button>
 
+              <div className="w-[1px] h-3 bg-base-border mx-1" />
+
+              {/* Set Baseline */}
+              <button
+                onClick={handleSetBaseline}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-accent transition-colors cursor-pointer"
+                title="Set current schedule as baseline"
+              >
+                <Bookmark className="h-3 w-3 text-base-accent shrink-0" />
+                <span>Baseline</span>
+              </button>
+
+              <div className="w-[1px] h-3 bg-base-border mx-1" />
+
+              {/* Draw Link */}
               <button
                 onClick={() => {
                   setConnectMode(!connectMode);
                   if (depPanelOpen) setDepPanelOpen(false);
                 }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed h-[34px] border ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed ${
                   connectMode 
-                    ? 'bg-green-600 hover:bg-green-700 text-white border-green-600 shadow-sm' 
-                    : 'border-base-border hover:bg-green-500/10 hover:text-green-600 text-base-muted2 bg-base-surface'
+                    ? 'bg-emerald-600 text-white shadow-xs font-black' 
+                    : 'text-base-muted hover:text-emerald-500'
                 }`}
-                title="Toggle Draw-to-Connect Mode (click and drag from a task bar's green dot to link a predecessor)"
+                title="Toggle Draw-to-Connect Mode"
               >
-                <Link className="h-3.5 w-3.5 shrink-0" />
-                <span>Draw Link</span>
+                <Link className="h-3 w-3 shrink-0" />
+                <span>{connectMode ? 'Drawing...' : 'Draw Link'}</span>
               </button>
             </div>
           )}
 
           <div className="w-[1px] h-4 bg-base-border" />
 
-          {/* Fullscreen Button */}
-          <button 
-            onClick={() => setIsFullscreen(!isFullscreen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text"
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize2 className="h-3.5 w-3.5" />
-                <span>Exit Fullscreen</span>
-              </>
-            ) : (
-              <>
-                <Maximize2 className="h-3.5 w-3.5" />
-                <span>Fullscreen</span>
-              </>
-            )}
-          </button>
-
-          {/* Export Dropdown */}
-          <div className="relative" ref={exportDropdownRef}>
-            <button
-              onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
-              disabled={isExporting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px]"
-            >
-              <Download className="h-3.5 w-3.5" />
-              <span>{isExporting ? 'Exporting...' : 'Export'}</span>
-              <ChevronDown className="h-3.5 w-3.5 ml-0.5" />
-            </button>
-            {isExportDropdownOpen && (
-              <div className="absolute right-0 mt-1.5 w-36 bg-base-surface border border-base-border rounded-lg shadow-xl py-1 z-[150]">
-                <button
-                  onClick={handleExportPNG}
-                  className="w-full text-left px-3 py-2 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
-                >
-                  Export PNG
-                </button>
-                <button
-                  onClick={handleExportPDF}
-                  className="w-full text-left px-3 py-2 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
-                >
-                  Export PDF
-                </button>
-              </div>
-            )}
-          </div>
-
-          {onClose && (
+          {/* Layout & File Export Actions */}
+          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px]">
+            {/* Fullscreen */}
             <button 
-              onClick={onClose} 
-              className="px-3 py-1.5 border border-base-border hover:bg-base-red/10 hover:text-base-red hover:border-base-red/20 transition-all font-bold uppercase tracking-wider text-[10px] font-condensed rounded-lg cursor-pointer"
+              onClick={() => setIsFullscreen(!isFullscreen)}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer"
+              title="Toggle Fullscreen view"
             >
-              Close
+              {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              <span>{isFullscreen ? 'Exit' : 'Full'}</span>
             </button>
-          )}
+
+            <div className="w-[1px] h-3 bg-base-border mx-1" />
+
+            {/* Export */}
+            <div className="relative" ref={exportDropdownRef}>
+              <button
+                onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                disabled={isExporting}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer bg-transparent h-auto"
+              >
+                <Download className="h-3 w-3" />
+                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
+                <ChevronDown className="h-2.5 w-2.5 ml-0.5" />
+              </button>
+              {isExportDropdownOpen && (
+                <div className="absolute right-0 mt-1.5 w-32 bg-base-surface border border-base-border rounded-lg shadow-xl py-1 z-[150]">
+                  <button
+                    onClick={handleExportPNG}
+                    className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
+                  >
+                    Export PNG
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
+                  >
+                    Export PDF
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {onClose && (
+              <>
+                <div className="w-[1px] h-3 bg-base-border mx-1" />
+                <button 
+                  onClick={onClose} 
+                  className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer"
+                >
+                  Close
+                </button>
+              </>
+            )}
         </div>
       </div>
+    </div>
 
       {/* Critical Path Summary Mini-Panel */}
       {showCriticalPath && (

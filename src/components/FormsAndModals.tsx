@@ -6,7 +6,7 @@ import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
-import { MaterialConsumptionLog } from '../types';
+import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
 
 const SpotlightModal = lazy(() => import('./SpotlightModal'));
 
@@ -20,6 +20,9 @@ interface FormsAndModalsProps {
   timesheets: any[];
   wireLogs: any[];
   consumptionLogs?: MaterialConsumptionLog[];
+  onAddMaterialProcessing?: (projectId: string, item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onUpdateProcessingStage?: (projectId: string, mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
+  onDeleteMaterialProcessing?: (projectId: string, id: string) => void;
   setProjects: React.Dispatch<React.SetStateAction<any[]>>;
   verifyMarkChanged: () => void;
   logActivity: any;
@@ -36,6 +39,9 @@ export function FormsAndModals({
   timesheets,
   wireLogs,
   consumptionLogs = [],
+  onAddMaterialProcessing,
+  onUpdateProcessingStage,
+  onDeleteMaterialProcessing,
   setProjects,
   verifyMarkChanged,
   logActivity,
@@ -540,6 +546,9 @@ export function FormsAndModals({
             currentUser={currentUser}
             canEditProjectParams={can('editProjectParams')}
             onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
+            onAddMaterialProcessing={onAddMaterialProcessing}
+            onUpdateProcessingStage={onUpdateProcessingStage}
+            onDeleteMaterialProcessing={onDeleteMaterialProcessing}
           />
         </ErrorBoundary>
       </Suspense>

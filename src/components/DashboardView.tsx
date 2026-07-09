@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest } from '../types';
+import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing } from '../types';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -42,6 +42,10 @@ export default function DashboardView({
   materials = [],
   materialRequests = [],
 }: DashboardViewProps) {
+  const materialProcessings = useMemo(() => {
+    return projects.flatMap(p => p.materialProcessing || []);
+  }, [projects]);
+
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
   const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
@@ -514,6 +518,27 @@ export default function DashboardView({
   const completedCount = filteredProjects.filter(p => p.status === 'completed').length;
   const overdueCount = filteredProjects.filter(p => p.due && p.due < todayStr && p.status !== 'completed').length;
 
+  // Material processing calculations
+  const filteredProcessings = materialProcessings.filter(mp => {
+    if (dashLoc === 'all') return true;
+    const targetProj = projects.find(p => p.id === mp.projectId);
+    return targetProj?.location === dashLoc;
+  });
+  const totalProc = filteredProcessings.length;
+  const completedProc = filteredProcessings.filter(mp => mp.isCompleted).length;
+  const activeProc = filteredProcessings.filter(mp => !mp.isCompleted).length;
+  const overdueProc = filteredProcessings.filter(mp => {
+    if (mp.isCompleted) return false;
+    const hasInProgress = mp.activeStages.some(
+      k => mp.stages[k]?.status === 'in-progress'
+    );
+    if (!hasInProgress) return false;
+    const updated = new Date(mp.updatedAt || mp.createdAt);
+    const diffTime = Math.abs(Date.now() - updated.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    return diffDays > 7;
+  }).length;
+
   // Attendance metrics based on today's logs
   const todayTimesheets = timesheets.filter(ts => ts.date === todayStr);
   const presentCount = todayTimesheets.filter(ts => ts.status === 'present' || ts.status === 'late').length;
@@ -874,8 +899,8 @@ export default function DashboardView({
           </div>
         </div>
 
-        {/* Second row - attendance + manhours */}
-        <div className="grid grid-cols-3 gap-3 mt-3">
+        {/* Second row - attendance + manhours + material processing */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
           {/* Card 5 - Man Hours */}
           <div 
             onClick={() => setActiveModal('man-hours')}
@@ -952,6 +977,38 @@ export default function DashboardView({
               <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
+          </div>
+
+          {/* Card 8 - Material Processing Shop-Floor */}
+          <div 
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group transition-all hover:shadow-lg"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
+              <div className="flex items-center gap-1.5">
+                <Layers className="h-4.5 w-4.5 text-base-accent" />
+                Mat. Processing
+              </div>
+              <svg className="w-10 h-3 text-base-accent/35" viewBox="0 0 50 10">
+                <path d="M 2,3 L 12,6 L 22,4 L 32,7 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="2" cy="3" r="1" fill="currentColor" />
+                <circle cx="12" cy="6" r="1" fill="currentColor" />
+                <circle cx="22" cy="4" r="1" fill="currentColor" />
+                <circle cx="32" cy="7" r="1" fill="currentColor" />
+                <circle cx="42" cy="5" r="1" fill="currentColor" />
+              </svg>
+            </div>
+            <div className="flex items-end justify-between">
+              <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">
+                {completedProc}/{totalProc}
+              </div>
+              {overdueProc > 0 && (
+                <span className="text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
+                  ⚠ {overdueProc} Delayed
+                </span>
+              )}
+            </div>
+            <p className="text-xs text-base-muted2 mt-1">active: {activeProc} items in stages</p>
           </div>
         </div>
       </div>

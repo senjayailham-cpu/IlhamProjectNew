@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog } from './types';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
@@ -39,11 +39,12 @@ const UsersAccessView = lazy(() => import('./components/UsersAccessView'));
 const DailyReportView = lazy(() => import('./components/DailyReportView'));
 const EmployeesView = lazy(() => import('./components/EmployeesView'));
 const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m.GanttPage })));
+const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers
 } from 'lucide-react';
 
 const activeTabsList = [
@@ -58,6 +59,7 @@ const activeTabsList = [
   { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
   { id: 'wire', label: 'Wire Consumable', icon: 'Flame', access: 'all' },
   { id: 'materials', label: 'Materials', icon: 'Package', access: 'all' },
+  { id: 'matprocessing', label: 'Mat. Processing', icon: 'Layers', access: 'all' },
   { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
   { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
@@ -77,7 +79,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Users,
   ShieldCheck,
   BarChart2,
-  Package
+  Package,
+  Layers
 };
 
 const sectionGroups = [
@@ -91,7 +94,7 @@ const sectionGroups = [
   },
   {
     title: 'Operations',
-    items: ['inspections', 'wire', 'materials', 'dailyreport']
+    items: ['inspections', 'wire', 'materials', 'matprocessing', 'dailyreport']
   },
   {
     title: 'Management',
@@ -713,6 +716,195 @@ function AppContent() {
     await saveItem('consumptionLogs', newLog);
   };
 
+  const handleAddMaterialProcessing = async (
+    projectId: string,
+    item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>
+  ) => {
+    const now = new Date().toISOString();
+    const newItem: MaterialProcessing = {
+      ...item,
+      id: 'mp_' + uid(),
+      createdAt: now,
+      updatedAt: now,
+    };
+    
+    // Check if the added item is already completed / 100% and not yet stocked
+    if ((newItem.overallPct === 100 || newItem.isCompleted) && !newItem.isStocked) {
+      const existingMat = materials.find(
+        m => m.name.trim().toLowerCase() === newItem.materialName.trim().toLowerCase()
+      );
+
+      if (existingMat) {
+        const newStock = existingMat.currentStock + newItem.qty;
+        setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
+        await saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
+        logActivity('material_edit' as any, `Added ${newItem.qty} ${newItem.unit || 'pcs'} of ${newItem.materialName} to stock (Material Processing Completed)`);
+      } else {
+        const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
+        const unitLower = (newItem.unit || 'pcs').toLowerCase() as any;
+        const unit: MaterialUnit = units.includes(unitLower) ? unitLower : 'pcs';
+
+        const newMat: MaterialItem = {
+          id: 'mat_' + uid(),
+          name: newItem.materialName.trim(),
+          category: 'Raw Material',
+          unit,
+          currentStock: newItem.qty,
+          minStock: 0,
+          createdAt: now,
+          updatedAt: now
+        };
+
+        setMaterials(prev => [newMat, ...prev]);
+        await saveItem('materials', newMat);
+        logActivity('material_add' as any, `Created new stock item ${newItem.materialName} with ${newItem.qty} ${unit} (Material Processing Completed)`);
+      }
+      newItem.isStocked = true;
+    }
+
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const currentList = proj.materialProcessing || [];
+    const updatedMPs = [newItem, ...currentList];
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, materialProcessing: updatedMPs } : p));
+    verifyMarkChanged();
+
+    try {
+      await saveItem('projects', { id: projectId, materialProcessing: updatedMPs });
+      logActivity('task_add' as any,
+        `Added processing: ${newItem.materialName} → ${newItem.projectName}`);
+    } catch (err) {
+      console.error("Error adding material processing:", err);
+      handleFirestoreError(err, OperationType.WRITE, 'projects');
+    }
+  };
+
+  const handleUpdateProcessingStage = async (
+    projectId: string,
+    mpId: string,
+    stageKey: ProcessingStageKey,
+    stageData: Partial<ProcessingStage>
+  ) => {
+    const now = new Date().toISOString();
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const currentList = proj.materialProcessing || [];
+
+    let updatedMpName = '';
+    let updatedItem: MaterialProcessing | null = null;
+
+    const updatedMPs = currentList.map(mp => {
+      if (mp.id !== mpId) return mp;
+      updatedMpName = mp.materialName;
+      const updatedStages = {
+        ...mp.stages,
+        [stageKey]: { ...(mp.stages[stageKey] || {}), ...stageData }
+      };
+      // Recompute overallPct
+      const activePcts = mp.activeStages.map(k =>
+        updatedStages[k]?.pct ?? 0
+      );
+      const overallPct = activePcts.length > 0
+        ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length)
+        : 0;
+      const isCompleted = mp.activeStages.every(
+        k => updatedStages[k]?.status === 'done'
+      );
+      const itemAfterStage = { ...mp, stages: updatedStages, overallPct, isCompleted, updatedAt: now };
+      updatedItem = itemAfterStage;
+      return itemAfterStage;
+    });
+
+    // Check if the updated item just completed (overallPct === 100 or isCompleted === true) and is not already stocked
+    if (updatedItem && (updatedItem.overallPct === 100 || updatedItem.isCompleted) && !updatedItem.isStocked) {
+      const existingMat = materials.find(
+        m => m.name.trim().toLowerCase() === updatedItem!.materialName.trim().toLowerCase()
+      );
+
+      if (existingMat) {
+        // Increment stock
+        const newStock = existingMat.currentStock + updatedItem.qty;
+        // Update locally
+        setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
+        // Save to DB
+        await saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
+        logActivity('material_edit' as any, `Added ${updatedItem.qty} ${updatedItem.unit || 'pcs'} of ${updatedItem.materialName} to stock (Material Processing Completed)`);
+      } else {
+        // Create new MaterialItem
+        const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
+        const unitLower = (updatedItem.unit || 'pcs').toLowerCase() as any;
+        const unit: MaterialUnit = units.includes(unitLower) ? unitLower : 'pcs';
+
+        const newMat: MaterialItem = {
+          id: 'mat_' + uid(),
+          name: updatedItem.materialName.trim(),
+          category: 'Raw Material',
+          unit,
+          currentStock: updatedItem.qty,
+          minStock: 0,
+          createdAt: now,
+          updatedAt: now
+        };
+
+        // Add locally
+        setMaterials(prev => [newMat, ...prev]);
+        // Save to DB
+        await saveItem('materials', newMat);
+        logActivity('material_add' as any, `Created new stock item ${updatedItem.materialName} with ${updatedItem.qty} ${unit} (Material Processing Completed)`);
+      }
+
+      // Mark the material processing as stocked!
+      updatedItem.isStocked = true;
+      updatedItem.updatedAt = now;
+      
+      // Update in updatedMPs array
+      const finalMPs = updatedMPs.map(mp => mp.id === mpId ? updatedItem! : mp);
+
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, materialProcessing: finalMPs } : p));
+      verifyMarkChanged();
+
+      try {
+        await saveItem('projects', { id: projectId, materialProcessing: finalMPs });
+        logActivity('task_progress' as any,
+          `Completed Material Processing & Stocked: ${updatedMpName}`);
+      } catch (err) {
+        console.error("Error saving project material processing complete:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'projects');
+      }
+    } else {
+      // Regular stage update
+      setProjects(prev => prev.map(p => p.id === projectId ? { ...p, materialProcessing: updatedMPs } : p));
+      verifyMarkChanged();
+
+      try {
+        await saveItem('projects', { id: projectId, materialProcessing: updatedMPs });
+        logActivity('task_progress' as any,
+          `Updated ${stageKey}: ${stageData.pct ?? ''}% — ${updatedMpName}`);
+      } catch (err) {
+        console.error("Error updating processing stage:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'projects');
+      }
+    }
+  };
+
+  const handleDeleteMaterialProcessing = async (projectId: string, id: string) => {
+    const proj = projects.find(p => p.id === projectId);
+    if (!proj) return;
+    const currentList = proj.materialProcessing || [];
+    const updatedMPs = currentList.filter(m => m.id !== id);
+
+    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, materialProcessing: updatedMPs } : p));
+    verifyMarkChanged();
+
+    try {
+      await saveItem('projects', { id: projectId, materialProcessing: updatedMPs });
+    } catch (err) {
+      console.error("Error deleting material processing:", err);
+      handleFirestoreError(err, OperationType.WRITE, 'projects');
+    }
+  };
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-base-bg flex flex-col items-center justify-center p-6 space-y-4">
@@ -918,6 +1110,20 @@ function AppContent() {
                 />
               )}
 
+              {activeTab === 'matprocessing' && (
+                <ErrorBoundary key="matprocessing">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <MaterialProcessingView
+                      projects={projects}
+                      currentUser={currentUser!}
+                      onAdd={handleAddMaterialProcessing}
+                      onUpdateStage={handleUpdateProcessingStage}
+                      onDelete={handleDeleteMaterialProcessing}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+
               {activeTab === 'dailyreport' && (
                 <DailyReportView
                   projects={projects}
@@ -1049,6 +1255,9 @@ function AppContent() {
         timesheets={timesheets}
         wireLogs={wireLogs}
         consumptionLogs={consumptionLogs}
+        onAddMaterialProcessing={handleAddMaterialProcessing}
+        onUpdateProcessingStage={handleUpdateProcessingStage}
+        onDeleteMaterialProcessing={handleDeleteMaterialProcessing}
         setProjects={setProjects}
         verifyMarkChanged={verifyMarkChanged}
         logActivity={logActivity}

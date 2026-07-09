@@ -38,7 +38,7 @@ service cloud.firestore {
     function getUserRole() {
       return !isSignedIn() ? 'viewer' :
         exists(/databases/$(database)/documents/users/$(request.auth.uid))
-          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role :
+          ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'viewer') :
         (request.auth.token.email != null && request.auth.token.email.matches('^(admin|ilhamsenjaya|irwanr)@(.*\\.)?austinbatam\\.xyz$')) ? 'admin' :
         (request.auth.token.email != null && request.auth.token.email.matches('^(rizki|hasrad)@(.*\\.)?austinbatam\\.xyz$')) ? 'manager' :
         (request.auth.token.email != null && request.auth.token.email.matches('^(andreas)@(.*\\.)?austinbatam\\.xyz$')) ? 'coordinator' :
@@ -57,25 +57,24 @@ service cloud.firestore {
       return isSignedIn() && (
         isAdmin() ||
         (
-          exists(/databases/$(database)/documents/users/$(request.auth.uid)) && (
-            get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('allowedPermissions', {}).get(perm, null) != null
-              ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allowedPermissions[perm] == true
-              : (
-                (perm == 'addProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
-                (perm == 'editProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
-                (perm == 'deleteProject' && (getUserRole() == 'admin')) ||
-                (perm == 'addAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
-                (perm == 'deleteAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
-                (perm == 'addTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
-                (perm == 'deleteTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator')) ||
-                (perm == 'updateTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'facility maintanance' || getUserRole() == 'quality control' || getUserRole() == 'safety' || getUserRole() == 'project control')) ||
-                (perm == 'addDifficulty' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
-                (perm == 'addTaskInline' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
-                (perm == 'manageUsers' && (getUserRole() == 'admin')) ||
-                (perm == 'exportData' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
-                (perm == 'importData' && (getUserRole() == 'admin'))
-              )
-          )
+          exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('allowedPermissions', {}).get(perm, null) != null
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allowedPermissions[perm] == true
+            : (
+              (perm == 'addProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+              (perm == 'editProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+              (perm == 'deleteProject' && (getUserRole() == 'admin')) ||
+              (perm == 'addAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+              (perm == 'deleteAssembly' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+              (perm == 'addTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+              (perm == 'deleteTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator')) ||
+              (perm == 'updateTask' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'facility maintanance' || getUserRole() == 'quality control' || getUserRole() == 'safety' || getUserRole() == 'project control')) ||
+              (perm == 'addDifficulty' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+              (perm == 'addTaskInline' && (getUserRole() == 'admin' || getUserRole() == 'manager' || getUserRole() == 'coordinator' || getUserRole() == 'project control')) ||
+              (perm == 'manageUsers' && (getUserRole() == 'admin')) ||
+              (perm == 'exportData' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
+              (perm == 'importData' && (getUserRole() == 'admin'))
+            )
         )
       );
     }

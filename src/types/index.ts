@@ -155,6 +155,7 @@ export interface Project {
   baselineStart?: string;
   baselineDue?: string;
   baselineSetAt?: string;     // timestamp kapan baseline di-set
+  materialProcessing?: MaterialProcessing[];
 }
 
 export interface Employee {
@@ -369,4 +370,65 @@ export interface MaterialConsumptionLog {
   mrNo?: string;
   notes?: string;
 }
+
+// ─── MATERIAL PROCESSING ──────────────────────────────────────────────────
+
+export type ProcessingStageKey = 'nesting' | 'cnc' | 'bending' | 'machining';
+
+export type ProcessingStatus = 'pending' | 'in-progress' | 'done' | 'skipped';
+
+export interface ProcessingStage {
+  pct:        number;           // 0–100
+  status:     ProcessingStatus;
+  startDate?: string;           // ISO "YYYY-MM-DD"
+  doneDate?:  string;
+  operator?:  string;           // name of person doing this stage
+  notes?:     string;
+}
+
+export interface MaterialProcessing {
+  id:          string;          // 'mp_' + uid()
+  projectId:   string;
+  projectName: string;
+  workOrder:   string;          // = project.client
+
+  // Material identification
+  materialName: string;         // e.g. "Plate SS304 6mm"
+  partNo?:      string;         // drawing part number
+  description?: string;
+  thickness?:   string;         // e.g. "6mm", "10mm"
+  material?:    string;         // e.g. "SS304", "CS A36", "Aluminium"
+  qty:          number;         // quantity of pieces/sheets
+  unit:         string;         // "pcs", "sheet", "kg"
+
+  // Which stages are applicable for this material
+  // (not all materials need all stages)
+  activeStages: ProcessingStageKey[];
+
+  // Stage data
+  stages: Partial<Record<ProcessingStageKey, ProcessingStage>>;
+
+  // Computed / meta
+  overallPct:   number;         // avg of active stages pct
+  createdAt:    string;
+  updatedAt:    string;
+  createdBy:    string;
+  assemblyId?:  string;         // optional link to assembly
+  assemblyName?: string;
+  isCompleted:  boolean;        // true when all active stages = done
+  isStocked?:   boolean;        // true when quantity has been sent/synced to stock
+}
+
+// Helper: stage display config
+export const PROCESSING_STAGES: Record<ProcessingStageKey, {
+  label: string;
+  color: string;      // CSS variable name
+  icon:  string;      // emoji fallback
+  order: number;
+}> = {
+  nesting:  { label: 'Nesting',   color: 'var(--green)',  icon: '📐', order: 1 },
+  cnc:      { label: 'CNC',       color: 'var(--accent)', icon: '⚙️',  order: 2 },
+  bending:  { label: 'Bending',   color: 'var(--blue)',   icon: '🔧', order: 3 },
+  machining:{ label: 'Machining', color: 'var(--purple)', icon: '🔩', order: 4 },
+};
 

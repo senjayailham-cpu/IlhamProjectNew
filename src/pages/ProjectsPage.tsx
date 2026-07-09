@@ -1,4 +1,5 @@
 import React from 'react';
+import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog } from '../types';
 import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar } from 'lucide-react';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
@@ -568,29 +569,43 @@ export function ProjectsPage({
             </h2>
 
             {/* Interactive View Toggle: List vs Timeline Gantt */}
-            <div className="flex bg-base-surface2 border border-base-border rounded-lg p-0.5 shadow-xs">
+            <div className="relative flex bg-base-surface2 border border-base-border/70 rounded-xl p-1 shadow-xs select-none">
               <button
                 onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'list'
-                    ? 'bg-base-accent text-white shadow-xs'
+                    ? 'text-white font-extrabold'
                     : 'text-base-muted hover:text-base-text'
                 }`}
                 title="Standard List View"
               >
-                <List className="h-3 w-3" />
+                {viewMode === 'list' && (
+                  <motion.div
+                    layoutId="activeTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <List className="h-3.5 w-3.5" />
                 <span>List</span>
               </button>
               <button
                 onClick={() => setViewMode('timeline')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[10px] font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer ${
+                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'timeline'
-                    ? 'bg-base-accent text-white shadow-xs'
+                    ? 'text-white font-extrabold'
                     : 'text-base-muted hover:text-base-text'
                 }`}
                 title="Interactive Timeline Gantt View"
               >
-                <Calendar className="h-3 w-3" />
+                {viewMode === 'timeline' && (
+                  <motion.div
+                    layoutId="activeTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <Calendar className="h-3.5 w-3.5" />
                 <span>Timeline</span>
               </button>
             </div>

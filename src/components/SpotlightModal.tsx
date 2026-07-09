@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { User, Project, Assembly, Task, MaterialConsumptionLog } from '../types';
+import { User, Project, Assembly, Task, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers } from 'lucide-react';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import GanttView from './GanttView';
 
@@ -9,6 +9,7 @@ import GanttView from './GanttView';
 import { AddTaskModal } from './spotlight/AddTaskModal';
 import { DeleteConfirmModal } from './spotlight/DeleteConfirmModal';
 import { SpotlightOverviewTab } from './spotlight/SpotlightOverviewTab';
+import { SpotlightProcessingTab } from './spotlight/SpotlightProcessingTab';
 
 interface SpotlightModalProps {
   isOpen: boolean;
@@ -18,6 +19,9 @@ interface SpotlightModalProps {
   timesheets: any[];
   wireLogs?: any[];
   consumptionLogs?: MaterialConsumptionLog[];
+  onAddMaterialProcessing?: (projectId: string, item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>) => void;
+  onUpdateProcessingStage?: (projectId: string, mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
+  onDeleteMaterialProcessing?: (projectId: string, id: string) => void;
   onEdit: (pid: string) => void;
   onEditAssembly?: (pid: string, aid: string) => void;
   onUpdateProject?: (
@@ -57,6 +61,9 @@ export default function SpotlightModal({
   timesheets,
   wireLogs = [],
   consumptionLogs = [],
+  onAddMaterialProcessing,
+  onUpdateProcessingStage,
+  onDeleteMaterialProcessing,
   onEdit,
   onEditAssembly,
   onUpdateProject,
@@ -70,6 +77,7 @@ export default function SpotlightModal({
   onOpenDepModal
 }: SpotlightModalProps) {
   const isAdmin = currentUser?.role === 'admin';
+  const [activeTab, setActiveTab] = useState<'overview' | 'gantt' | 'processing'>('overview');
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
   const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
@@ -264,40 +272,108 @@ export default function SpotlightModal({
           </div>
         </div>
 
+        {/* Spotlight Navigation Tabs */}
+        <div className="flex bg-base-surface border-b border-base-border px-4 py-2 gap-1 flex-shrink-0 select-none">
+          <button
+            onClick={() => setActiveTab('overview')}
+            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition cursor-pointer ${
+              activeTab === 'overview'
+                ? 'bg-base-accent text-black font-extrabold'
+                : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
+            }`}
+          >
+            Overview
+          </button>
+          <button
+            onClick={() => setActiveTab('gantt')}
+            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition cursor-pointer ${
+              activeTab === 'gantt'
+                ? 'bg-base-accent text-black font-extrabold'
+                : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
+            }`}
+          >
+            Gantt Chart
+          </button>
+          <button
+            onClick={() => setActiveTab('processing')}
+            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition flex items-center gap-1 cursor-pointer ${
+              activeTab === 'processing'
+                ? 'bg-base-accent text-black font-extrabold'
+                : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
+            }`}
+          >
+            <Layers className="h-3.5 w-3.5" />
+            <span>Processing</span>
+          </button>
+        </div>
+
         {/* Center body columns */}
-        <SpotlightOverviewTab
-          project={p}
-          asms={asms}
-          modalTimesheets={modalTimesheets}
-          wireLogs={wireLogs}
-          collapsedAsms={collapsedAsms}
-          toggleAsm={toggleAsm}
-          canAddTaskInline={canAddTaskInline}
-          canAddDifficulty={canAddDifficulty}
-          canDeleteTask={canDeleteTask}
-          canUpdateTask={canUpdateTask}
-          isAdmin={isAdmin}
-          isOverdue={isOverdue}
-          onUpdateProject={onUpdateProject}
-          onEditAssembly={onEditAssembly}
-          setActiveTargetAssembly={setActiveTargetAssembly}
-          setTaskName={setTaskName}
-          setTaskDifficulty={setTaskDifficulty}
-          setTaskStart={setTaskStart}
-          setTaskFinish={setTaskFinish}
-          setIsTaskModalOpen={setIsTaskModalOpen}
-          setDeleteConfirm={setDeleteConfirm}
-          quickTaskNames={quickTaskNames}
-          setQuickTaskNames={setQuickTaskNames}
-          quickTaskDifficulty={quickTaskDifficulty}
-          setQuickTaskDifficulty={setQuickTaskDifficulty}
-          quickTaskDates={quickTaskDates}
-          setQuickTaskDates={setQuickTaskDates}
-          quickTaskFinishDates={quickTaskFinishDates}
-          setQuickTaskFinishDates={setQuickTaskFinishDates}
-          handleQuickAddTask={handleQuickAddTask}
-          onOpenDepModal={onOpenDepModal}
-        />
+        {activeTab === 'overview' && (
+          <SpotlightOverviewTab
+            project={p}
+            asms={asms}
+            modalTimesheets={modalTimesheets}
+            wireLogs={wireLogs}
+            collapsedAsms={collapsedAsms}
+            toggleAsm={toggleAsm}
+            canAddTaskInline={canAddTaskInline}
+            canAddDifficulty={canAddDifficulty}
+            canDeleteTask={canDeleteTask}
+            canUpdateTask={canUpdateTask}
+            isAdmin={isAdmin}
+            isOverdue={isOverdue}
+            onUpdateProject={onUpdateProject}
+            onEditAssembly={onEditAssembly}
+            setActiveTargetAssembly={setActiveTargetAssembly}
+            setTaskName={setTaskName}
+            setTaskDifficulty={setTaskDifficulty}
+            setTaskStart={setTaskStart}
+            setTaskFinish={setTaskFinish}
+            setIsTaskModalOpen={setIsTaskModalOpen}
+            setDeleteConfirm={setDeleteConfirm}
+            quickTaskNames={quickTaskNames}
+            setQuickTaskNames={setQuickTaskNames}
+            quickTaskDifficulty={quickTaskDifficulty}
+            setQuickTaskDifficulty={setQuickTaskDifficulty}
+            quickTaskDates={quickTaskDates}
+            setQuickTaskDates={setQuickTaskDates}
+            quickTaskFinishDates={quickTaskFinishDates}
+            setQuickTaskFinishDates={setQuickTaskFinishDates}
+            handleQuickAddTask={handleQuickAddTask}
+            onOpenDepModal={onOpenDepModal}
+          />
+        )}
+
+        {activeTab === 'gantt' && (
+          <div className="flex-1 overflow-y-auto p-5 relative">
+            <GanttView
+              projects={[p]}
+              onUpdateProject={(updatedProj) => {
+                if (onUpdateProject) {
+                  onUpdateProject(updatedProj, {
+                    type: 'project_edit',
+                    action: 'Updated task schedules via Spotlight Gantt'
+                  });
+                }
+              }}
+              onOpenDepModal={onOpenDepModal}
+              depModalOpen={false}
+              depModalRowKey={undefined}
+              onCloseDepModal={() => {}}
+            />
+          </div>
+        )}
+
+        {activeTab === 'processing' && (
+          <SpotlightProcessingTab
+            project={p}
+            materialProcessings={p.materialProcessing || []}
+            currentUser={currentUser}
+            onAdd={(item) => onAddMaterialProcessing!(p.id, item)}
+            onUpdateStage={(mpId, stageKey, stageData) => onUpdateProcessingStage!(p.id, mpId, stageKey, stageData)}
+            onDelete={(mpId) => onDeleteMaterialProcessing!(p.id, mpId)}
+          />
+        )}
 
       {/* Global properties edit button */}
         <div className="px-5 py-3 border-t border-base-border flex items-center justify-between flex-shrink-0 bg-base-surface2 text-xs">
