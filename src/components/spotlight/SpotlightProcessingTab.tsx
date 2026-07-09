@@ -27,6 +27,7 @@ interface SpotlightProcessingTabProps {
   onAdd: (item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateStage: (mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
   onDelete: (id: string) => void;
+  setDeleteConfirm?: (state: any) => void;
 }
 
 export function SpotlightProcessingTab({
@@ -35,7 +36,8 @@ export function SpotlightProcessingTab({
   currentUser,
   onAdd,
   onUpdateStage,
-  onDelete
+  onDelete,
+  setDeleteConfirm
 }: SpotlightProcessingTabProps) {
   // Filters and Add State
   const [showQuickAdd, setShowQuickAdd] = useState(false);
@@ -165,7 +167,7 @@ export function SpotlightProcessingTab({
     const today = new Date().toISOString().slice(0, 10);
     if (status === 'in-progress' && !stageStartDate) {
       setStageStartDate(today);
-    } else if (status === 'done') {
+    } else if (status === 'done' || status === 'skipped') {
       if (!stageStartDate) setStageStartDate(today);
       if (!stageDoneDate) setStageDoneDate(today);
       setStagePct(100);
@@ -538,7 +540,17 @@ export function SpotlightProcessingTab({
                       <td className="px-3 py-3 text-center">
                         <button
                           onClick={() => {
-                            if (confirm('Remove material processing tracker for this item?')) {
+                            if (setDeleteConfirm) {
+                              setDeleteConfirm({
+                                isOpen: true,
+                                title: 'Remove Tracking',
+                                message: `Are you sure you want to remove material processing tracking for "${mp.materialName}"?`,
+                                onConfirm: () => {
+                                  onDelete(mp.id);
+                                  setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                }
+                              });
+                            } else if (confirm('Remove material processing tracker for this item?')) {
                               onDelete(mp.id);
                             }
                           }}

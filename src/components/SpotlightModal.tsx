@@ -372,6 +372,7 @@ export default function SpotlightModal({
             onAdd={(item) => onAddMaterialProcessing!(p.id, item)}
             onUpdateStage={(mpId, stageKey, stageData) => onUpdateProcessingStage!(p.id, mpId, stageKey, stageData)}
             onDelete={(mpId) => onDeleteMaterialProcessing!(p.id, mpId)}
+            setDeleteConfirm={setDeleteConfirm}
           />
         )}
 

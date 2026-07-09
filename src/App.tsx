@@ -803,13 +803,13 @@ function AppContent() {
       };
       // Recompute overallPct
       const activePcts = mp.activeStages.map(k =>
-        updatedStages[k]?.pct ?? 0
+        updatedStages[k]?.status === 'skipped' ? 100 : (updatedStages[k]?.pct ?? 0)
       );
       const overallPct = activePcts.length > 0
         ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length)
         : 0;
       const isCompleted = mp.activeStages.every(
-        k => updatedStages[k]?.status === 'done'
+        k => updatedStages[k]?.status === 'done' || updatedStages[k]?.status === 'skipped'
       );
       const itemAfterStage = { ...mp, stages: updatedStages, overallPct, isCompleted, updatedAt: now };
       updatedItem = itemAfterStage;
@@ -1119,6 +1119,7 @@ function AppContent() {
                       onAdd={handleAddMaterialProcessing}
                       onUpdateStage={handleUpdateProcessingStage}
                       onDelete={handleDeleteMaterialProcessing}
+                      setDeleteConfirm={setDeleteConfirm}
                     />
                   </Suspense>
                 </ErrorBoundary>

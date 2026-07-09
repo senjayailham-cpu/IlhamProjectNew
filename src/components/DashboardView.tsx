@@ -520,9 +520,7 @@ export default function DashboardView({
 
   // Material processing calculations
   const filteredProcessings = materialProcessings.filter(mp => {
-    if (dashLoc === 'all') return true;
-    const targetProj = projects.find(p => p.id === mp.projectId);
-    return targetProj?.location === dashLoc;
+    return filteredProjects.some(p => p.id === mp.projectId);
   });
   const totalProc = filteredProcessings.length;
   const completedProc = filteredProcessings.filter(mp => mp.isCompleted).length;

@@ -1607,8 +1607,11 @@ export default function GanttView({
 
   // Direct predecessors list saving (bypasses string parsing and uses scheduling cascade/propagation if onSaveDependencies prop is available)
   const savePredecessorsDirect = (rowId: string, deps: Dependency[]) => {
+    const parts = rowId.split(':');
+    const actualRowId = parts[parts.length - 1];
+
     let rowKey = '';
-    const targetRow = rows.find(r => r.id === rowId);
+    const targetRow = rows.find(r => r.id === actualRowId);
     if (targetRow) {
       const pId = getProjectIdOfRow(targetRow);
       if (targetRow.level === 0) rowKey = `p:${pId}`;
@@ -1622,19 +1625,19 @@ export default function GanttView({
     }
 
     if (!onUpdateProject) return;
-    const res = findAndCloneProject(rowId);
+    const res = findAndCloneProject(actualRowId);
     if (!res) return;
     const updated = res.cloned;
 
-    if (rowId === updated.id) {
+    if (actualRowId === updated.id) {
       updated.predecessors = deps;
     } else {
-      const asm = updated.assemblies?.find(a => a.id === rowId);
+      const asm = updated.assemblies?.find(a => a.id === actualRowId);
       if (asm) {
         asm.predecessors = deps;
       } else {
         for (const a of updated.assemblies || []) {
-          const t = a.tasks?.find(t => t.id === rowId);
+          const t = a.tasks?.find(t => t.id === actualRowId);
           if (t) {
             t.predecessors = deps;
             break;
@@ -1647,7 +1650,9 @@ export default function GanttView({
 
   const handleAddPredecessor = (predId: string) => {
     if (!depPanelRowId) return;
-    const targetRow = rows.find(r => r.id === depPanelRowId);
+    const parts = depPanelRowId.split(':');
+    const actualRowId = parts[parts.length - 1];
+    const targetRow = rows.find(r => r.id === actualRowId);
     if (!targetRow) return;
     const currentDeps = targetRow.predecessors || [];
     const parsedLag = parseInt(depPanelLag.replace('d', ''), 10);
@@ -1673,7 +1678,9 @@ export default function GanttView({
 
   const handleDeletePredecessor = (predId: string) => {
     if (!depPanelRowId) return;
-    const targetRow = rows.find(r => r.id === depPanelRowId);
+    const parts = depPanelRowId.split(':');
+    const actualRowId = parts[parts.length - 1];
+    const targetRow = rows.find(r => r.id === actualRowId);
     if (!targetRow) return;
     const currentDeps = targetRow.predecessors || [];
     const nextDeps = currentDeps.filter(d => d.key !== predId);

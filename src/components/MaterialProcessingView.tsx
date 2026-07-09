@@ -32,6 +32,7 @@ interface MaterialProcessingViewProps {
   onAdd: (projectId: string, item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateStage: (projectId: string, mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
   onDelete: (projectId: string, id: string) => void;
+  setDeleteConfirm?: (state: any) => void;
 }
 
 export default function MaterialProcessingView({
@@ -39,7 +40,8 @@ export default function MaterialProcessingView({
   currentUser,
   onAdd,
   onUpdateStage,
-  onDelete
+  onDelete,
+  setDeleteConfirm
 }: MaterialProcessingViewProps) {
   // Derive materialProcessings from projects nested array
   const materialProcessings = useMemo(() => {
@@ -51,6 +53,21 @@ export default function MaterialProcessingView({
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>(''); // empty means "All Months"
+
+  // Extract unique target months from projects
+  const uniqueTargetMonths = useMemo(() => {
+    const months = projects
+      .map(p => p.targetMonth)
+      .filter((m): m is string => !!m);
+    return Array.from(new Set(months)).sort();
+  }, [projects]);
+
+  // Filter projects for the dropdown selector depending on selected month
+  const filteredProjectsForDropdown = useMemo(() => {
+    if (!selectedMonthFilter) return projects;
+    return projects.filter(p => p.targetMonth === selectedMonthFilter);
+  }, [projects, selectedMonthFilter]);
 
   // Expandable projects state for "By Project" tab
   const [expandedProjects, setExpandedProjects] = useState<Record<string, boolean>>({});
@@ -100,24 +117,45 @@ export default function MaterialProcessingView({
         (mp.partNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (mp.description || '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
-      return matchSearch && matchProject;
+      
+      let matchMonth = true;
+      if (selectedMonthFilter) {
+        const proj = projects.find(p => p.id === mp.projectId);
+        matchMonth = proj ? proj.targetMonth === selectedMonthFilter : false;
+      }
+      
+      return matchSearch && matchProject && matchMonth;
     });
-  }, [materialProcessings, searchQuery, selectedProjectId]);
+  }, [materialProcessings, searchQuery, selectedProjectId, selectedMonthFilter, projects]);
+
+  // Month & project filtered materials for KPIs
+  const monthAndProjFilteredProcessings = useMemo(() => {
+    return materialProcessings.filter(mp => {
+      const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
+      let matchMonth = true;
+      if (selectedMonthFilter) {
+        const proj = projects.find(p => p.id === mp.projectId);
+        matchMonth = proj ? proj.targetMonth === selectedMonthFilter : false;
+      }
+      return matchProject && matchMonth;
+    });
+  }, [materialProcessings, selectedProjectId, selectedMonthFilter, projects]);
 
   // KPI Calculations
   const kpis = useMemo(() => {
-    const total = materialProcessings.length;
-    const inProgress = materialProcessings.filter(
+    const items = monthAndProjFilteredProcessings;
+    const total = items.length;
+    const inProgress = items.filter(
       mp => !mp.isCompleted && mp.overallPct > 0
     ).length;
-    const completed = materialProcessings.filter(mp => mp.isCompleted).length;
+    const completed = items.filter(mp => mp.isCompleted).length;
     const avgProgress =
       total > 0
-        ? Math.round(materialProcessings.reduce((sum, mp) => sum + mp.overallPct, 0) / total)
+        ? Math.round(items.reduce((sum, mp) => sum + mp.overallPct, 0) / total)
         : 0;
 
     return { total, inProgress, completed, avgProgress };
-  }, [materialProcessings]);
+  }, [monthAndProjFilteredProcessings]);
 
   // Check if a row has overdue stages (in progress & no update in 7 days)
   const isOverdue = (mp: MaterialProcessing) => {
@@ -165,7 +203,11 @@ export default function MaterialProcessingView({
   // Open add material processing modal
   const handleOpenAddModal = () => {
     if (projects.length > 0) {
-      const activeProj = projects.find(p => p.status === 'active') || projects[0];
+      // Prioritize projects that match the currently selected month filter!
+      const activeProj =
+        (selectedMonthFilter ? projects.find(p => p.targetMonth === selectedMonthFilter) : null) ||
+        projects.find(p => p.status === 'active') ||
+        projects[0];
       setFormProjectId(activeProj.id);
       const assemblies = activeProj.assemblies || [];
       setFormAssemblyId(assemblies.length > 0 ? assemblies[0].id : '');
@@ -269,7 +311,7 @@ export default function MaterialProcessingView({
     const today = new Date().toISOString().slice(0, 10);
     if (status === 'in-progress' && !stageStartDate) {
       setStageStartDate(today);
-    } else if (status === 'done') {
+    } else if (status === 'done' || status === 'skipped') {
       if (!stageStartDate) setStageStartDate(today);
       if (!stageDoneDate) setStageDoneDate(today);
       setStagePct(100);
@@ -317,7 +359,13 @@ export default function MaterialProcessingView({
     > = {};
 
     projects.forEach(p => {
-      const items = materialProcessings.filter(mp => mp.projectId === p.id);
+      // Filter projects by target month
+      if (selectedMonthFilter && p.targetMonth !== selectedMonthFilter) return;
+
+      // Filter projects by selected project
+      if (selectedProjectId && p.id !== selectedProjectId) return;
+
+      const items = filteredProcessings.filter(mp => mp.projectId === p.id);
       if (items.length === 0) return;
 
       const avgOverall = Math.round(
@@ -341,7 +389,7 @@ export default function MaterialProcessingView({
     });
 
     return map;
-  }, [materialProcessings, projects]);
+  }, [filteredProcessings, projects, selectedMonthFilter, selectedProjectId]);
 
   // Overall Ring color helper
   const getOverallColor = (pct: number) => {
@@ -472,9 +520,9 @@ export default function MaterialProcessingView({
             </button>
           </div>
 
-          {/* Search and Project Filter */}
+          {/* Search, Target Month and Project Filters */}
           <div className="flex flex-wrap items-center gap-3">
-            <div className="relative flex-1 min-w-[200px]">
+            <div className="relative flex-1 min-w-[180px]">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-base-muted" />
               <input
                 type="text"
@@ -485,15 +533,43 @@ export default function MaterialProcessingView({
               />
             </div>
 
+            {/* Target Month Selector */}
+            <div className="flex items-center gap-1.5 bg-base-surface2 border border-base-border rounded-lg px-3 py-1.5 text-sm text-base-text font-condensed">
+              <Calendar className="h-4 w-4 text-base-muted" />
+              <select
+                value={selectedMonthFilter}
+                onChange={e => {
+                  setSelectedMonthFilter(e.target.value);
+                  setSelectedProjectId(''); // Reset project filter on month change
+                }}
+                className="bg-transparent border-none text-base-text focus:outline-none cursor-pointer pr-1"
+              >
+                <option value="" className="bg-base-surface text-base-text">All Months</option>
+                {uniqueTargetMonths.map(m => {
+                  let label = m;
+                  try {
+                    const [year, month] = m.split('-');
+                    const date = new Date(Number(year), Number(month) - 1, 1);
+                    label = date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+                  } catch (_) {}
+                  return (
+                    <option key={m} value={m} className="bg-base-surface text-base-text">
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+
             <select
               value={selectedProjectId}
               onChange={e => setSelectedProjectId(e.target.value)}
-              className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent font-condensed"
+              className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent font-condensed cursor-pointer"
             >
               <option value="">All Projects</option>
-              {projects.map(p => (
+              {filteredProjectsForDropdown.map(p => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name} {p.targetMonth ? `(${p.targetMonth})` : ''}
                 </option>
               ))}
             </select>
@@ -575,8 +651,19 @@ export default function MaterialProcessingView({
                           <div className="font-medium text-sm text-base-text">
                             {mp.projectName}
                           </div>
-                          <div className="text-xs text-base-muted font-mono mt-0.5">
-                            WO: {mp.workOrder}
+                          <div className="text-xs text-base-muted font-mono mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            <span>WO: {mp.workOrder}</span>
+                            {(() => {
+                              const proj = projects.find(p => p.id === mp.projectId);
+                              if (proj?.targetMonth) {
+                                return (
+                                  <span className="text-[10px] text-base-accent font-sans bg-base-accent/5 px-1 rounded border border-base-accent/10 font-bold uppercase">
+                                    Month: {proj.targetMonth}
+                                  </span>
+                                );
+                              }
+                              return null;
+                            })()}
                           </div>
                         </td>
                         <td className="px-4 py-4 text-center font-bold text-sm text-base-text font-mono">
@@ -698,7 +785,17 @@ export default function MaterialProcessingView({
                           <td className="px-4 py-4 text-center">
                             <button
                               onClick={() => {
-                                if (confirm('Are you sure you want to delete this material processing tracking?')) {
+                                if (setDeleteConfirm) {
+                                  setDeleteConfirm({
+                                    isOpen: true,
+                                    title: 'Delete Material Processing',
+                                    message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
+                                    onConfirm: () => {
+                                      onDelete(mp.projectId, mp.id);
+                                      setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                    }
+                                  });
+                                } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
                                   onDelete(mp.projectId, mp.id);
                                 }
                               }}
@@ -752,8 +849,18 @@ export default function MaterialProcessingView({
                           <h3 className="font-bold text-base-text text-base">
                             {group.project.name}
                           </h3>
-                          <span className="text-xs text-base-muted font-condensed uppercase tracking-wider block mt-0.5">
-                            WO: {group.project.client} · {group.items.length} items tracked
+                          <span className="text-xs text-base-muted font-condensed uppercase tracking-wider flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                            <span>WO: {group.project.client}</span>
+                            <span>·</span>
+                            <span>{group.items.length} items tracked</span>
+                            {group.project.targetMonth && (
+                              <>
+                                <span>·</span>
+                                <span className="px-1.5 py-0.5 bg-base-accent/10 text-base-accent rounded font-sans text-[10px] font-bold">
+                                  Target Month: {group.project.targetMonth}
+                                </span>
+                              </>
+                            )}
                           </span>
                         </div>
                       </div>
@@ -847,6 +954,7 @@ export default function MaterialProcessingView({
                                   );
                                 })}
                                 <th className="px-4 py-2 text-center w-24">Overall</th>
+                                {!isReadOnly && <th className="px-4 py-2 text-center w-16">Actions</th>}
                               </tr>
                             </thead>
                             <tbody className="divide-y divide-base-border text-sm">
@@ -916,6 +1024,32 @@ export default function MaterialProcessingView({
                                   <td className="px-4 py-3 text-center font-bold font-mono text-base-text">
                                     {mp.overallPct}%
                                   </td>
+                                  {!isReadOnly && (
+                                    <td className="px-4 py-3 text-center">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          if (setDeleteConfirm) {
+                                            setDeleteConfirm({
+                                              isOpen: true,
+                                              title: 'Delete Material Processing',
+                                              message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
+                                              onConfirm: () => {
+                                                onDelete(mp.projectId, mp.id);
+                                                setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                              }
+                                            });
+                                          } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
+                                            onDelete(mp.projectId, mp.id);
+                                          }
+                                        }}
+                                        className="p-1.5 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded-lg transition"
+                                        title="Delete Material"
+                                      >
+                                        <Trash2 className="h-4 w-4" />
+                                      </button>
+                                    </td>
+                                  )}
                                 </tr>
                               ))}
                             </tbody>
@@ -968,7 +1102,7 @@ export default function MaterialProcessingView({
                     </option>
                     {projects.map(p => (
                       <option key={p.id} value={p.id}>
-                        {p.name}
+                        {p.name} {p.targetMonth ? `(Target Month: ${p.targetMonth})` : ''}
                       </option>
                     ))}
                   </select>
