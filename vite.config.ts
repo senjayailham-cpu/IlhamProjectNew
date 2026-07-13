@@ -18,7 +18,9 @@ export default defineConfig(() => {
           manualChunks: {
             'vendor-react': ['react', 'react-dom'],
             'vendor-utils': ['xlsx', 'jspdf'],
-            'vendor-charts': ['recharts']
+            'vendor-charts': ['recharts'],
+            'vendor-lucide':   ['lucide-react'],
+            'vendor-firebase': ['firebase/app', 'firebase/firestore', 'firebase/auth'],
           }
         }
       }

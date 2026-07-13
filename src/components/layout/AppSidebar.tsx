@@ -132,10 +132,13 @@ export function AppSidebar({
                     onClick={() => setActiveTab(t.id)}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-xs font-bold transition-all group relative cursor-pointer ${
                       isTabActive
-                        ? 'bg-base-accent-dim/15 text-base-accent border-l-2 border-base-accent font-extrabold pl-2.5'
+                        ? 'bg-base-accent/10 text-base-accent font-extrabold'
                         : 'text-base-muted hover:text-base-text hover:bg-base-surface2'
                     }`}
                   >
+                    {isTabActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-base-accent rounded-r-full" />
+                    )}
                     <div className="relative flex items-center">
                       <IconComponent className="h-4 w-4 shrink-0" />
                       {sidebarCollapsed && badgeCount > 0 && (

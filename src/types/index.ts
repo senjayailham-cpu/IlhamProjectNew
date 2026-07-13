@@ -429,6 +429,6 @@ export const PROCESSING_STAGES: Record<ProcessingStageKey, {
   nesting:  { label: 'Nesting',   color: 'var(--green)',  icon: '📐', order: 1 },
   cnc:      { label: 'CNC',       color: 'var(--accent)', icon: '⚙️',  order: 2 },
   bending:  { label: 'Bending',   color: 'var(--blue)',   icon: '🔧', order: 3 },
-  machining:{ label: 'Machining', color: 'var(--purple)', icon: '🔩', order: 4 },
+  machining:{ label: 'Machining', color: 'var(--muted)', icon: '🔩', order: 4 },
 };
 

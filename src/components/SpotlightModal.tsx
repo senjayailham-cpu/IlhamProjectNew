@@ -214,24 +214,24 @@ export default function SpotlightModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs select-none">
-      <div className="bg-base-bg border border-base-border2 rounded-xl shadow-modal w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 ease-out duration-150">
+      <div className="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-0 sm:p-4 bg-black/60 backdrop-blur-xs select-none">
+      <div className="bg-base-bg border border-base-border2 rounded-none sm:rounded-xl shadow-modal w-full max-w-5xl max-h-screen sm:max-h-[90vh] flex flex-col overflow-hidden animate-in zoom-in-95 ease-out duration-150">
         
         {/* Header Band */}
-        <div className="px-5 py-4 border-b border-base-border flex items-start gap-3 bg-linear-to-b from-base-accent-dim/20 to-transparent relative">
-          <div className="h-11 w-11 rounded-lg bg-base-accent-dim border border-base-accent/25 flex items-center justify-center flex-shrink-0 shadow-xs">
-            <ClipboardList className="h-5.5 w-5.5 text-base-accent" />
+        <div className="px-3 py-3 sm:px-5 sm:py-4 border-b border-base-border flex items-start gap-3 bg-linear-to-b from-base-accent-dim/20 to-transparent relative">
+          <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-lg bg-base-accent-dim border border-base-accent/25 flex items-center justify-center flex-shrink-0 shadow-xs">
+            <ClipboardList className="h-4.5 w-4.5 sm:h-5.5 sm:w-5.5 text-base-accent" />
           </div>
           <div className="flex-1 min-w-0 pr-6">
             <h3 className="font-condensed font-extrabold text-xl text-base-text leading-tight truncate">{p.name}</h3>
             <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-              <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider border ${STATUS_COLORS[p.status]}`}>
+              <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[9px] sm:text-[10px] uppercase tracking-wider border ${STATUS_COLORS[p.status]}`}>
                 {p.status}
               </span>
-              <span className="px-2 py-0.5 text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-blue-dim text-base-blue border border-base-blue/20">
+              <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-blue-dim text-base-blue border border-base-blue/20">
                 {p.category === 'tray' ? 'Tray' : 'Non-Tray'}
               </span>
-              <span className="px-2 py-0.5 text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-green-dim text-base-green border border-base-green/20">
+              <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-green-dim text-base-green border border-base-green/20">
                 {p.location === 'workshop1' ? 'WS 1' : 'WS 2'}
               </span>
             </div>
@@ -240,21 +240,21 @@ export default function SpotlightModal({
         </div>
 
         {/* Stats segment grid */}
-        <div className="grid grid-cols-4 divide-x divide-base-border border-b border-base-border text-center bg-base-surface">
+        <div className="grid grid-cols-2 sm:grid-cols-4 divide-x divide-y sm:divide-y-0 divide-base-border border-b border-base-border text-center bg-base-surface">
           <div className="py-3">
-            <div className="text-2xl font-condensed font-extrabold text-base-accent">{pct}%</div>
+            <div className="text-lg sm:text-2xl font-condensed font-extrabold text-base-accent">{pct}%</div>
             <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-0.5">Overall Progress</div>
           </div>
           <div className="py-3">
-            <div className="text-2xl font-condensed font-extrabold text-base-text">{doneTasks}/{totalTasks}</div>
+            <div className="text-lg sm:text-2xl font-condensed font-extrabold text-base-text">{doneTasks}/{totalTasks}</div>
             <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-0.5">Tasks complete</div>
           </div>
           <div className="py-3">
-            <div className="text-2xl font-condensed font-extrabold text-base-text">{asms.length}</div>
+            <div className="text-lg sm:text-2xl font-condensed font-extrabold text-base-text">{asms.length}</div>
             <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-0.5">Assemblies</div>
           </div>
           <div className="py-3">
-            <div className={`text-2.5xl font-condensed font-extrabold ${isOverdue ? 'text-base-red' : 'text-base-text'}`}>
+            <div className={`text-lg sm:text-2.5xl font-condensed font-extrabold ${isOverdue ? 'text-base-red' : 'text-base-text'}`}>
               {p.due ? p.due.slice(5) : '—'}
             </div>
             <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-0.5">Due date</div>
@@ -273,10 +273,10 @@ export default function SpotlightModal({
         </div>
 
         {/* Spotlight Navigation Tabs */}
-        <div className="flex bg-base-surface border-b border-base-border px-4 py-2 gap-1 flex-shrink-0 select-none">
+        <div className="flex overflow-x-auto bg-base-surface border-b border-base-border px-4 py-2 gap-1 flex-shrink-0 select-none">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition cursor-pointer ${
+            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 cursor-pointer ${
               activeTab === 'overview'
                 ? 'bg-base-accent text-black font-extrabold'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
@@ -286,7 +286,7 @@ export default function SpotlightModal({
           </button>
           <button
             onClick={() => setActiveTab('gantt')}
-            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition cursor-pointer ${
+            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 cursor-pointer ${
               activeTab === 'gantt'
                 ? 'bg-base-accent text-black font-extrabold'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
@@ -296,7 +296,7 @@ export default function SpotlightModal({
           </button>
           <button
             onClick={() => setActiveTab('processing')}
-            className={`px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition flex items-center gap-1 cursor-pointer ${
+            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 flex items-center gap-1 cursor-pointer ${
               activeTab === 'processing'
                 ? 'bg-base-accent text-black font-extrabold'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
@@ -345,7 +345,7 @@ export default function SpotlightModal({
         )}
 
         {activeTab === 'gantt' && (
-          <div className="flex-1 overflow-y-auto p-5 relative">
+          <div className="flex-1 overflow-y-auto overflow-x-auto p-5 relative">
             <GanttView
               projects={[p]}
               onUpdateProject={(updatedProj) => {

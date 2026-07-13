@@ -22,8 +22,8 @@ import {
   X,
   Sliders,
   CheckCircle,
-  HelpCircle,
-  AlertCircle
+  LayoutGrid,
+  Table
 } from 'lucide-react';
 
 interface MaterialProcessingViewProps {
@@ -47,8 +47,11 @@ export default function MaterialProcessingView({
   const materialProcessings = useMemo(() => {
     return projects.flatMap(p => p.materialProcessing || []);
   }, [projects]);
-  // Navigation tabs
-  const [activeTab, setActiveTab] = useState<'all' | 'byProject'>('all');
+  // View mode for grouped cards vs spreadsheet table
+  const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+    const saved = localStorage.getItem('matProcessingViewMode');
+    return (saved === 'card' || saved === 'table') ? saved : 'table';
+  });
 
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
@@ -496,28 +499,9 @@ export default function MaterialProcessingView({
       {/* FILTER & TABS SECTION */}
       <div className="bg-base-surface border border-base-border rounded-xl p-4 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          {/* Tabs */}
-          <div className="flex gap-1 bg-base-surface2 p-1 rounded-lg self-start">
-            <button
-              onClick={() => setActiveTab('all')}
-              className={`px-4 py-1.5 rounded-md font-condensed font-bold uppercase text-xs tracking-wider transition ${
-                activeTab === 'all'
-                  ? 'bg-base-accent text-black'
-                  : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              All Materials
-            </button>
-            <button
-              onClick={() => setActiveTab('byProject')}
-              className={`px-4 py-1.5 rounded-md font-condensed font-bold uppercase text-xs tracking-wider transition ${
-                activeTab === 'byProject'
-                  ? 'bg-base-accent text-black'
-                  : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              By Project
-            </button>
+          <div className="text-base-text font-bold font-sans text-sm uppercase tracking-wider flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-base-accent" />
+            Active Trackings
           </div>
 
           {/* Search, Target Month and Project Filters */}
@@ -573,254 +557,209 @@ export default function MaterialProcessingView({
                 </option>
               ))}
             </select>
+
+            {/* View Mode Toggle Switch */}
+            <div className="flex bg-base-surface2 p-1 rounded-lg border border-base-border gap-0.5 ml-auto sm:ml-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('card');
+                  localStorage.setItem('matProcessingViewMode', 'card');
+                }}
+                className={`p-1.5 rounded-md transition duration-150 cursor-pointer ${
+                  viewMode === 'card'
+                    ? 'bg-base-accent text-black font-bold'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Card Group View"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setViewMode('table');
+                  localStorage.setItem('matProcessingViewMode', 'table');
+                }}
+                className={`p-1.5 rounded-md transition duration-150 cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-base-accent text-black font-bold'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Spreadsheet Table View"
+              >
+                <Table className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
 
-        {/* --- ALL MATERIALS TAB CONTENT --- */}
-        {activeTab === 'all' && (
-          <div className="overflow-x-auto rounded-lg border border-base-border bg-base-surface">
-            <table className="w-full text-left border-collapse min-w-[1000px]">
-              <thead>
-                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold text-xs uppercase tracking-wider border-b border-base-border">
-                  <th className="px-4 py-3 text-center w-12">#</th>
-                  <th className="px-4 py-3">Material Identification</th>
-                  <th className="px-4 py-3">Project (WO)</th>
-                  <th className="px-4 py-3 text-center">Qty</th>
-                  {/* Processing Stage Headers */}
-                  {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
-                    const st = PROCESSING_STAGES[stageKey as ProcessingStageKey];
-                    return (
-                      <th key={stageKey} className="px-4 py-3 text-center w-40">
-                        <div className="flex items-center justify-center gap-1">
-                          <span>{st.icon}</span>
-                          <span>{st.label}</span>
-                        </div>
-                      </th>
-                    );
-                  })}
-                  <th className="px-4 py-3 text-center w-24">Overall</th>
-                  {!isReadOnly && <th className="px-4 py-3 text-center w-20">Actions</th>}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-base-border">
-                {filteredProcessings.length === 0 ? (
-                  <tr>
-                    <td colSpan={11} className="px-4 py-12 text-center text-base-muted">
-                      No material processings tracked. Click &quot;Add Material&quot; to begin.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredProcessings.map((mp, index) => {
-                    const compl = mp.isCompleted;
-                    const overdue = isOverdue(mp);
-
-                    let rowBg = 'hover:bg-base-surface3/50';
-                    if (compl) {
-                      rowBg = 'bg-emerald-950/10 hover:bg-emerald-950/20';
-                    } else if (overdue) {
-                      rowBg = 'bg-red-950/10 hover:bg-red-950/20';
-                    }
-
-                    return (
-                      <tr key={mp.id} className={`transition ${rowBg}`}>
-                        <td className="px-4 py-4 text-center text-sm font-semibold text-base-muted">
-                          {index + 1}
-                        </td>
-                        <td className="px-4 py-4">
-                          <div>
-                            <div className="font-semibold text-sm text-base-text">
-                              {mp.materialName}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-base-muted mt-1">
-                              {mp.partNo && (
-                                <span className="bg-base-surface2 px-1.5 py-0.5 rounded border border-base-border font-mono">
-                                  Part: {mp.partNo}
-                                </span>
-                              )}
-                              {mp.thickness && <span>Thk: {mp.thickness}</span>}
-                              {mp.material && <span>Mat: {mp.material}</span>}
-                              {mp.assemblyName && (
-                                <span className="text-base-accent">
-                                  Assembly: {mp.assemblyName}
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </td>
-                        <td className="px-4 py-4">
-                          <div className="font-medium text-sm text-base-text">
-                            {mp.projectName}
-                          </div>
-                          <div className="text-xs text-base-muted font-mono mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                            <span>WO: {mp.workOrder}</span>
-                            {(() => {
-                              const proj = projects.find(p => p.id === mp.projectId);
-                              if (proj?.targetMonth) {
-                                return (
-                                  <span className="text-[10px] text-base-accent font-sans bg-base-accent/5 px-1 rounded border border-base-accent/10 font-bold uppercase">
-                                    Month: {proj.targetMonth}
-                                  </span>
-                                );
-                              }
-                              return null;
-                            })()}
-                          </div>
-                        </td>
-                        <td className="px-4 py-4 text-center font-bold text-sm text-base-text font-mono">
-                          {mp.qty} <span className="text-xs font-normal text-base-muted">{mp.unit}</span>
-                        </td>
-
-                        {/* Rendering each stage cell */}
-                        {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(
-                          stageKey => {
-                            const isApplicable = mp.activeStages.includes(stageKey);
-                            const stData = mp.stages[stageKey];
-
-                            if (!isApplicable) {
-                              return (
-                                <td
-                                  key={stageKey}
-                                  className="px-4 py-4 text-center text-base-muted bg-base-surface2/30 select-none text-xs"
-                                >
-                                  —
-                                </td>
-                              );
-                            }
-
-                            const pct = stData?.pct ?? 0;
-                            const status = stData?.status ?? 'pending';
-
-                            // Badges classes
-                            let badgeStyle = 'bg-base-surface3 text-base-muted';
-                            let statusText = 'Pending';
-
-                            if (status === 'in-progress') {
-                              badgeStyle = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
-                              statusText = 'In Progress';
-                            } else if (status === 'done') {
-                              badgeStyle = 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20';
-                              statusText = 'Done ✓';
-                            } else if (status === 'skipped') {
-                              badgeStyle = 'bg-base-surface3 text-base-muted line-through';
-                              statusText = 'Skip';
-                            }
-
-                            return (
-                              <td
-                                key={stageKey}
-                                onClick={() => handleOpenUpdateStage(mp, stageKey)}
-                                className={`px-4 py-4 text-center ${
-                                  isReadOnly
-                                    ? 'cursor-default'
-                                    : 'cursor-pointer hover:bg-base-surface3/40 transition-colors'
-                                }`}
-                                title={isReadOnly ? undefined : 'Click to update stage info'}
-                              >
-                                <div className="space-y-1.5 max-w-[120px] mx-auto">
-                                  <div className="flex items-center justify-between text-[11px] font-mono">
-                                    <span className="font-bold text-base-text">{pct}%</span>
-                                    <span className={`px-1 py-0.5 rounded text-[10px] font-condensed font-bold uppercase ${badgeStyle}`}>
-                                      {statusText}
-                                    </span>
-                                  </div>
-                                  <div className="w-full bg-base-surface3 rounded-full h-1.5 overflow-hidden">
-                                    <div
-                                      className={`h-full rounded-full transition-all duration-300 ${
-                                        status === 'done'
-                                          ? 'bg-emerald-500'
-                                          : status === 'in-progress'
-                                          ? 'bg-amber-500'
-                                          : status === 'skipped'
-                                          ? 'bg-neutral-600'
-                                          : 'bg-base-border'
-                                      }`}
-                                      style={{ width: `${pct}%` }}
-                                    />
-                                  </div>
-                                </div>
-                              </td>
-                            );
-                          }
-                        )}
-
-                        {/* Overall percentage progress ring */}
-                        <td className="px-4 py-4 text-center">
-                          <div className="inline-flex items-center justify-center relative">
-                            <svg className="w-11 h-11 transform -rotate-90">
-                              <circle
-                                cx="22"
-                                cy="22"
-                                r="17"
-                                stroke="var(--bg-base-surface3, #222)"
-                                strokeWidth="3"
-                                fill="transparent"
-                              />
-                              <circle
-                                cx="22"
-                                cy="22"
-                                r="17"
-                                stroke="currentColor"
-                                strokeWidth="3"
-                                fill="transparent"
-                                strokeDasharray={2 * Math.PI * 17}
-                                strokeDashoffset={
-                                  2 * Math.PI * 17 * (1 - mp.overallPct / 100)
-                                }
-                                className={`${getOverallColor(mp.overallPct)} transition-all duration-500`}
-                              />
-                            </svg>
-                            <span className="absolute text-xs font-bold font-mono text-base-text">
-                              {mp.overallPct}%
-                            </span>
-                          </div>
-                          {overdue && (
-                            <span className="block text-[10px] text-red-500 font-condensed font-bold uppercase mt-1 flex items-center justify-center gap-0.5">
-                              <AlertCircle className="h-3 w-3" /> Overdue
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Delete Action button */}
-                        {!isReadOnly && (
-                          <td className="px-4 py-4 text-center">
-                            <button
-                              onClick={() => {
-                                if (setDeleteConfirm) {
-                                  setDeleteConfirm({
-                                    isOpen: true,
-                                    title: 'Delete Material Processing',
-                                    message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
-                                    onConfirm: () => {
-                                      onDelete(mp.projectId, mp.id);
-                                      setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
-                                    }
-                                  });
-                                } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
-                                  onDelete(mp.projectId, mp.id);
-                                }
-                              }}
-                              className="p-1.5 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded-lg transition"
-                              title="Delete Material"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* --- BY PROJECT TAB CONTENT --- */}
-        {activeTab === 'byProject' && (
           <div className="space-y-4">
             {Object.keys(groupedData).length === 0 ? (
               <div className="p-8 text-center text-base-muted bg-base-surface rounded-lg">
                 No active material processings tracked.
+              </div>
+            ) : viewMode === 'table' ? (
+              <div className="overflow-x-auto max-h-[70vh] overflow-y-auto rounded-lg border border-base-border bg-base-surface shadow-sm">
+                <table className="w-full border-collapse text-left min-w-[1000px]">
+                  <thead>
+                    <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
+                      <th className="py-2.5 px-3 min-w-[150px]">Project</th>
+                      <th className="py-2.5 px-3 min-w-[180px]">Material Name & Part No</th>
+                      <th className="py-2.5 px-3 text-center w-24">Qty</th>
+                      {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
+                        const st = PROCESSING_STAGES[stageKey as ProcessingStageKey];
+                        return (
+                          <th key={stageKey} className="py-2.5 px-3 text-center w-28">
+                            <div className="flex items-center justify-center gap-1">
+                              <span>{st.icon}</span>
+                              <span>{st.label}</span>
+                            </div>
+                          </th>
+                        );
+                      })}
+                      <th className="py-2.5 px-3 text-center w-28">Overall %</th>
+                      {!isReadOnly && <th className="py-2.5 px-3 text-center w-12">Action</th>}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-base-border/40 text-xs">
+                    {filteredProcessings.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="py-12 text-center text-base-muted">
+                          No materials found matching filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredProcessings.map((mp) => {
+                        return (
+                          <tr key={mp.id} className="hover:bg-base-surface2/25 transition-colors h-[38px]">
+                            {/* Project Column */}
+                            <td className="py-1 px-3 max-w-[150px] truncate" title={mp.projectName}>
+                              <div className="font-semibold text-base-text truncate">
+                                {mp.projectName}
+                              </div>
+                              <div className="text-[10px] text-base-muted font-mono truncate">
+                                WO: {mp.workOrder}
+                              </div>
+                            </td>
+
+                            {/* Material Name + Part No Column */}
+                            <td className="py-1 px-3">
+                              <div className="font-bold text-base-text truncate" title={mp.materialName}>
+                                {mp.materialName}
+                              </div>
+                              <div className="text-[10px] text-base-muted font-mono truncate">
+                                {mp.partNo ? `Part: ${mp.partNo}` : 'No Part No'}
+                              </div>
+                            </td>
+
+                            {/* Qty Column */}
+                            <td className="py-1 px-3 text-center font-bold text-base-text font-mono">
+                              {mp.qty} <span className="text-[10px] font-normal text-base-muted">{mp.unit}</span>
+                            </td>
+
+                            {/* Stage Columns */}
+                            {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(stageKey => {
+                              const isApp = mp.activeStages.includes(stageKey);
+                              const sd = mp.stages[stageKey];
+                              if (!isApp) {
+                                return (
+                                  <td
+                                    key={stageKey}
+                                    className="py-1 px-3 text-center text-base-muted bg-base-surface2/20 text-xs select-none"
+                                  >
+                                    —
+                                  </td>
+                                );
+                              }
+
+                              const pct = sd?.pct ?? 0;
+                              const status = sd?.status ?? 'pending';
+
+                              let cellBgClass = "";
+                              if (status === 'done') {
+                                cellBgClass = "bg-emerald-500/10 text-emerald-500";
+                              } else if (status === 'in-progress') {
+                                cellBgClass = "bg-amber-500/10 text-amber-500";
+                              } else if (status === 'skipped') {
+                                cellBgClass = "bg-neutral-800/10 text-base-muted";
+                              }
+
+                              return (
+                                <td key={stageKey} className={`py-1 px-3 text-center transition-colors ${cellBgClass}`}>
+                                  <div className="flex items-center justify-center gap-1">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      value={pct}
+                                      disabled={isReadOnly}
+                                      onChange={(e) => {
+                                        const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                        let nextStatus: ProcessingStatus = 'in-progress';
+                                        if (val === 100) nextStatus = 'done';
+                                        else if (val === 0) nextStatus = 'pending';
+                                        
+                                        onUpdateStage(mp.projectId, mp.id, stageKey, {
+                                          pct: val,
+                                          status: nextStatus,
+                                          operator: sd?.operator || currentUser.name
+                                        });
+                                      }}
+                                      className="w-14 px-1 py-0.5 bg-base-bg text-base-text border border-base-border hover:border-base-border2 rounded text-xs font-semibold text-center focus:border-base-accent focus:outline-none"
+                                    />
+                                    <span className="text-[10px] text-base-muted font-bold">%</span>
+                                  </div>
+                                </td>
+                              );
+                            })}
+
+                            {/* Overall % Column */}
+                            <td className="py-1 px-3">
+                              <div className="text-center font-bold font-mono text-base-text text-xs">
+                                {mp.overallPct}%
+                              </div>
+                              <div className="w-full bg-base-surface3 rounded-full h-1 overflow-hidden mt-1">
+                                <div
+                                  className="h-full bg-base-accent rounded-full transition-all duration-300"
+                                  style={{ width: `${mp.overallPct}%` }}
+                                />
+                              </div>
+                            </td>
+
+                            {/* Action Column */}
+                            {!isReadOnly && (
+                              <td className="py-1 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (setDeleteConfirm) {
+                                      setDeleteConfirm({
+                                        isOpen: true,
+                                        title: 'Delete Material Processing',
+                                        message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
+                                        onConfirm: () => {
+                                          onDelete(mp.projectId, mp.id);
+                                          setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                        }
+                                      });
+                                    } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
+                                      onDelete(mp.projectId, mp.id);
+                                    }
+                                  }}
+                                  className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition cursor-pointer"
+                                  title="Delete Material"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
               </div>
             ) : (
               Object.keys(groupedData).map(projId => {
@@ -1062,7 +1001,6 @@ export default function MaterialProcessingView({
               })
             )}
           </div>
-        )}
       </div>
 
       {/* ================= ADD MATERIAL MODAL ================= */}

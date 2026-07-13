@@ -787,6 +787,8 @@ export default function EmployeesView({
                   </button>
                 </div>
 
+
+
                 <button
                   type="button"
                   id="bulk-select-all-btn"
@@ -963,20 +965,45 @@ export default function EmployeesView({
                     </div>
 
                     {!isColl && (
-                      <div className="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {list.map(emp => {
-                          const col = getEmpColor(emp.name);
-                          const initials = getInitials(emp.name);
-                          const isCurrentlyMarkingEx = markingExId === emp.id;
-
-                          return (
-                            <div key={emp.id} className="border border-base-border/70 rounded-xl bg-base-bg/30 p-4 flex flex-col justify-between space-y-3 hover:border-base-border transition-all">
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="flex items-center gap-3">
-                                  <div className="flex items-center gap-2">
+                      <div className="p-4 overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[850px]">
+                          <thead>
+                            <tr className="bg-base-surface2 text-base-muted font-condensed font-bold text-xs uppercase tracking-wider border-b border-base-border">
+                              <th className="px-3 py-2 text-center w-12">
+                                <input
+                                  type="checkbox"
+                                  checked={list.length > 0 && list.every(emp => selectedEmpIds.includes(emp.id))}
+                                  onChange={(e) => {
+                                    const checked = e.target.checked;
+                                    const groupEmpIds = list.map(emp => emp.id);
+                                    if (checked) {
+                                      setSelectedEmpIds(prev => [
+                                        ...prev,
+                                        ...groupEmpIds.filter(id => !prev.includes(id))
+                                      ]);
+                                    } else {
+                                      setSelectedEmpIds(prev => prev.filter(id => !groupEmpIds.includes(id)));
+                                    }
+                                  }}
+                                  className="h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent bg-base-surface cursor-pointer"
+                                />
+                              </th>
+                              <th className="px-3 py-2">Nama</th>
+                              <th className="px-3 py-2">Position</th>
+                              <th className="px-3 py-2">Site Location</th>
+                              <th className="px-3 py-2">Join Date</th>
+                              <th className="px-3 py-2">EOC</th>
+                              <th className="px-3 py-2">Status</th>
+                              <th className="px-3 py-2 text-center w-24">Aksi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-base-border text-xs">
+                            {list.map(emp => {
+                              return (
+                                <tr key={emp.id} className="hover:bg-base-surface3/30 transition duration-150 h-[38px]">
+                                  <td className="px-3 py-1.5 text-center">
                                     <input
                                       type="checkbox"
-                                      id={`emp-select-${emp.id}`}
                                       checked={selectedEmpIds.includes(emp.id)}
                                       onChange={(e) => {
                                         const checked = e.target.checked;
@@ -988,159 +1015,71 @@ export default function EmployeesView({
                                       }}
                                       className="h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent bg-base-surface cursor-pointer"
                                     />
-                                    <div
-                                      className="h-10 w-10 rounded-full flex items-center justify-center font-condensed font-black text-xs shrink-0"
-                                      style={{ backgroundColor: `${col}15`, color: col }}
-                                    >
-                                      {initials}
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    <div>
+                                      <div className="font-semibold text-sm text-base-text">
+                                        {emp.name}
+                                      </div>
+                                      <div className="text-[10px] text-base-muted font-mono mt-0.5">
+                                        {emp.empNo ? `ID: ${emp.empNo}` : '—'}
+                                      </div>
                                     </div>
-                                  </div>
-                                  <div>
-                                    <h4 className="font-bold text-sm text-base-text leading-tight">{emp.name}</h4>
-                                    <span className="text-[10px] text-base-muted2 font-mono block mt-0.5">
-                                      {emp.empNo ? `ID: ${emp.empNo}` : 'No Employee ID'}
-                                    </span>
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center gap-1 shrink-0">
-                                  <button
-                                    onClick={() => openEditEmployee(emp.id)}
-                                    className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface transition-all cursor-pointer"
-                                    title="Edit employee details"
-                                  >
-                                    <Edit className="h-3.5 w-3.5" />
-                                  </button>
-                                  <button
-                                    onClick={() => deleteEmployee(emp.id)}
-                                    className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer"
-                                    title="Delete employee record"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                </div>
-                              </div>
-
-                              {/* Card metadata / fields */}
-                              <div className="grid grid-cols-2 gap-2 text-[10px] font-semibold text-base-muted2 pt-2 border-t border-base-border/50">
-                                <div>
-                                  <span className="block text-[8px] uppercase font-condensed font-bold tracking-wider text-base-muted">Position</span>
-                                  <span className="text-base-text font-medium truncate block">{emp.position || '—'}</span>
-                                </div>
-                                <div>
-                                  <span className="block text-[8px] uppercase font-condensed font-bold tracking-wider text-base-muted">Site Location</span>
-                                  <span className="text-base-text font-medium truncate block">{emp.location || '—'}</span>
-                                </div>
-                                <div className="col-span-2">
-                                  <span className="block text-[8px] uppercase font-condensed font-bold tracking-wider text-base-muted font-mono">Join & Contract Period</span>
-                                  <span className="text-base-text font-medium text-[9px] block">
-                                    Join: {formatDateStr(emp.joinDate)} <span className="text-base-muted/50 mx-1">·</span> EOC: {formatDateStr(emp.eoc)}
-                                  </span>
-                                </div>
-                              </div>
-
-                              {/* Mini Attendance summary */}
-                              {employeeAttendanceStats[emp.id] && (
-                                <div className="pt-2 border-t border-base-border/40 space-y-1 bg-base-surface/40 p-2 rounded-lg">
-                                  <span className="block text-[8px] uppercase font-condensed font-bold tracking-wider text-base-muted">Attendance Summary</span>
-                                  <div className="flex gap-2.5 text-[10px] font-mono font-bold flex-wrap">
-                                    <span className="text-green-400" title="Present">P: {employeeAttendanceStats[emp.id].present}</span>
-                                    <span className="text-amber-400" title="Late">L: {employeeAttendanceStats[emp.id].late}</span>
-                                    <span className="text-red-400" title="Absent">A: {employeeAttendanceStats[emp.id].absent}</span>
-                                    <span className="text-blue-400" title="Leave">LV: {employeeAttendanceStats[emp.id].leave}</span>
-                                    <span className="text-base-muted2 ml-auto text-[9px] font-sans font-semibold">Total: {employeeAttendanceStats[emp.id].total}d</span>
-                                  </div>
-                                </div>
-                              )}
-
-                              {/* Badges and actions */}
-                              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-base-border/40">
-                                <div className="flex flex-wrap gap-1">
-                                  {emp.shift === 'NIGHT SHIFT' ? (
-                                    <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                                      Night Shift
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                                      Day Shift
-                                    </span>
-                                  )}
-
-                                  {emp.employmentStatus === 'Contract' ? (
-                                    <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
-                                      Contract
-                                    </span>
-                                  ) : emp.employmentStatus === 'Finish Contract' ? (
-                                    <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
-                                      Finish Contract
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/20">
-                                      Permanent
-                                    </span>
-                                  )}
-                                </div>
-
-                                {isAdminOrManager && !isCurrentlyMarkingEx && (
-                                  <button
-                                    onClick={() => {
-                                      setMarkingExId(emp.id);
-                                      setResignDate(new Date().toISOString().slice(0, 10));
-                                      setResignReason('');
-                                    }}
-                                    className="px-2 py-1 rounded bg-base-surface border border-base-border text-base-muted hover:text-base-red hover:border-base-red/50 text-[9px] font-condensed font-extrabold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all"
-                                  >
-                                    <UserMinus className="h-3 w-3 text-base-red" />
-                                    <span>Release</span>
-                                  </button>
-                                )}
-                              </div>
-
-                              {/* Inline Resignation form inside the card */}
-                              {isCurrentlyMarkingEx && (
-                                <div className="mt-3 p-3 bg-base-surface/60 border border-base-red/30 rounded-lg space-y-3 animate-in fade-in zoom-in-95 duration-100">
-                                  <div className="flex items-center gap-1 text-base-red text-[9px] font-bold uppercase font-condensed tracking-wider">
-                                    <Info className="h-3.5 w-3.5" />
-                                    <span>Mark as Ex-Employee</span>
-                                  </div>
-                                  <div className="space-y-1.5 text-[10px]">
-                                    <label className="block font-bold text-base-muted font-condensed uppercase tracking-wider">Resignation Date</label>
-                                    <input
-                                      type="date"
-                                      value={resignDate}
-                                      onChange={(e) => setResignDate(e.target.value)}
-                                      className="w-full px-2 py-1 bg-base-bg border border-base-border rounded outline-none text-base-text font-mono text-xs"
-                                    />
-                                  </div>
-                                  <div className="space-y-1.5 text-[10px]">
-                                    <label className="block font-bold text-base-muted font-condensed uppercase tracking-wider">Reason for Release</label>
-                                    <textarea
-                                      rows={2}
-                                      value={resignReason}
-                                      onChange={(e) => setResignReason(e.target.value)}
-                                      placeholder="Free text reason..."
-                                      className="w-full px-2 py-1 bg-base-bg border border-base-border rounded outline-none text-base-text text-xs"
-                                    />
-                                  </div>
-                                  <div className="flex justify-end gap-1.5">
-                                    <button
-                                      onClick={() => setMarkingExId(null)}
-                                      className="px-2 py-1 border border-base-border text-base-muted hover:text-base-text text-[9px] font-condensed font-bold uppercase tracking-wider rounded cursor-pointer"
-                                    >
-                                      Cancel
-                                    </button>
-                                    <button
-                                      onClick={() => handleMarkExSubmit(emp.id)}
-                                      className="px-2.5 py-1 bg-base-red hover:bg-base-red-dark text-white text-[9px] font-condensed font-bold uppercase tracking-wider rounded cursor-pointer"
-                                    >
-                                      Confirm Release
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
+                                  </td>
+                                  <td className="px-3 py-1.5 font-medium text-base-text">
+                                    {emp.position || '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 font-medium text-base-text">
+                                    {emp.location || '—'}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-base-muted font-mono">
+                                    {formatDateStr(emp.joinDate)}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-base-muted font-mono">
+                                    {formatDateStr(emp.eoc)}
+                                  </td>
+                                  <td className="px-3 py-1.5">
+                                    {emp.isExEmployee ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-neutral-500/10 text-neutral-400 border border-neutral-500/20">
+                                        Ex-Employee
+                                      </span>
+                                    ) : emp.employmentStatus === 'Contract' ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                                        Contract
+                                      </span>
+                                    ) : emp.employmentStatus === 'Finish Contract' ? (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-400 border border-red-500/20">
+                                        Finish Contract
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/20">
+                                        Permanent
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-center">
+                                    <div className="flex items-center justify-center gap-1">
+                                      <button
+                                        onClick={() => openEditEmployee(emp.id)}
+                                        className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer"
+                                        title="Edit employee details"
+                                      >
+                                        <Edit className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => deleteEmployee(emp.id)}
+                                        className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer"
+                                        title="Delete employee record"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
                       </div>
                     )}
                   </div>

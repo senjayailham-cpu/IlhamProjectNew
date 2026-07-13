@@ -767,9 +767,9 @@ export default function WireConsumableView({
             </div>
 
             {/* List Table of Logs */}
-            <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface">
+            <div className="overflow-x-auto overflow-y-auto max-h-[65vh] rounded-xl border border-base-border bg-base-surface">
               <table className="w-full text-left border-collapse text-xs">
-                <thead>
+                <thead className="sticky top-0 z-10 bg-base-surface2">
                   <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
                     <th className="px-4 py-2.5">Date</th>
                     <th className="px-4 py-2.5">Welder</th>
@@ -790,30 +790,30 @@ export default function WireConsumableView({
                     filteredLogs.map(log => (
                       <tr key={log.id} className="hover:bg-base-surface2/40 transition-colors">
                         {/* Date column */}
-                        <td className="px-4 py-3 font-mono text-base-muted whitespace-nowrap">
+                        <td className="px-4 py-1.5 font-mono text-base-muted whitespace-nowrap">
                           {log.date}
                         </td>
                         {/* Welder Name column */}
-                        <td className="px-4 py-3 text-base-text font-extrabold whitespace-nowrap">
+                        <td className="px-4 py-1.5 text-base-text font-extrabold whitespace-nowrap">
                           {log.welderName}
                         </td>
                         {/* Connected Sub-Assembly column */}
-                        <td className="px-4 py-3 space-y-0.5">
+                        <td className="px-4 py-1.5 space-y-0.5">
                           <span className="block font-bold text-base-text">{log.assemblyName}</span>
                           <span className="block text-[10px] text-base-muted font-medium truncate max-w-[200px]" title={log.projectName}>
                             {log.projectName}
                           </span>
                         </td>
                         {/* Amount in kg column */}
-                        <td className="px-4 py-3 text-right font-mono font-black text-base-accent whitespace-nowrap">
+                        <td className="px-4 py-1.5 text-right font-mono font-black text-base-accent whitespace-nowrap">
                           {log.amountKg.toFixed(2)} kg
                         </td>
                         {/* Remarks column */}
-                        <td className="px-4 py-3 max-w-[140px] truncate text-base-muted font-normal italic" title={log.notes || 'No remarks'}>
+                        <td className="px-4 py-1.5 max-w-[140px] truncate text-base-muted font-normal italic" title={log.notes || 'No remarks'}>
                           {log.notes || '-'}
                         </td>
                         {/* Action delete column */}
-                        <td className="px-4 py-3 text-center">
+                        <td className="px-4 py-1.5 text-center">
                           <button
                             onClick={() => onDeleteWireLog(log.id)}
                             className="p-1 px-1.5 rounded bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all cursor-pointer inline-flex items-center"

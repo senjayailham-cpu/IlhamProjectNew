@@ -40,6 +40,7 @@ const DailyReportView = lazy(() => import('./components/DailyReportView'));
 const EmployeesView = lazy(() => import('./components/EmployeesView'));
 const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m.GanttPage })));
 const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
+const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
 
 // Lucide Icons
 import {
@@ -63,6 +64,7 @@ const activeTabsList = [
   { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
   { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
+  { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
   { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] }
 ];
 
@@ -94,11 +96,11 @@ const sectionGroups = [
   },
   {
     title: 'Operations',
-    items: ['inspections', 'wire', 'materials', 'matprocessing', 'dailyreport']
+    items: ['timesheet', 'manpower', 'inspections', 'wire', 'materials', 'matprocessing', 'dailyreport']
   },
   {
     title: 'Management',
-    items: ['employees', 'timesheet', 'users']
+    items: ['employees', 'users']
   }
 ];
 
@@ -992,7 +994,7 @@ function AppContent() {
         />
 
         {/* Core Screen Viewport */}
-        <main className="flex-1 w-full max-w-7xl mx-auto px-4 sm:px-6 py-6 pb-24">
+        <main className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 ${activeTab === 'gantt' ? 'max-w-none' : 'max-w-[1600px]'}`}>
           <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
             <Suspense fallback={<PageLoadingFallback />}>
               {activeTab === 'dash' && (
@@ -1197,6 +1199,19 @@ function AppContent() {
                     projectsHook.setSpotlightOpen(true);
                   }}
                 />
+              )}
+
+              {activeTab === 'manpower' && (
+                <ErrorBoundary key="manpower">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <ManpowerBoardView
+                      timesheets={timesheets}
+                      employees={employees}
+                      projects={projects}
+                      initialDate={timesheetsHook.timesheetDate}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
               )}
 
               {activeTab === 'users' && (
