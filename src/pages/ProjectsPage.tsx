@@ -10,6 +10,97 @@ import * as XLSX from 'xlsx';
 import { uid } from '../utils';
 import GanttView from '../components/GanttView';
 
+function getProjectCriticalPath(p: Project, allProjects: Project[]) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let hasOverdueTasks = false;
+  let overdueTasksCount = 0;
+  let overduePredecessorsCount = 0;
+  let missingPredecessorsCount = 0;
+  let isOverdueProject = false;
+  const issues: string[] = [];
+
+  // 1. Is the project itself overdue?
+  if (p.status !== 'completed' && p.due && p.due < todayStr) {
+    isOverdueProject = true;
+    issues.push(`Project is past due date (${p.due})`);
+  }
+
+  // 2. Are there overdue tasks in this project?
+  (p.assemblies || []).forEach(a => {
+    (a.tasks || []).forEach(t => {
+      if (t.pct < 100 && !t.done && t.finishDate && t.finishDate < todayStr) {
+        hasOverdueTasks = true;
+        overdueTasksCount++;
+      }
+    });
+  });
+  if (overdueTasksCount > 0) {
+    issues.push(`${overdueTasksCount} task(s) overdue`);
+  }
+
+  // 3. Are there missing or overdue critical dependencies?
+  (p.predecessors || []).forEach(dep => {
+    if (dep.key.startsWith('p:')) {
+      const targetProjId = dep.key.substring(2);
+      const targetProj = allProjects.find(ap => ap.id === targetProjId);
+      if (!targetProj) {
+        missingPredecessorsCount++;
+      } else if (targetProj.status !== 'completed' && targetProj.due && targetProj.due < todayStr) {
+        overduePredecessorsCount++;
+      }
+    }
+  });
+
+  (p.assemblies || []).forEach(a => {
+    const isAsmComplete = (a.tasks || []).length > 0 && (a.tasks || []).every(t => t.pct >= 100 || t.done);
+    if (!isAsmComplete) {
+      (a.predecessors || []).forEach(dep => {
+        if (dep.key.startsWith('a:')) {
+          const parts = dep.key.split(':');
+          if (parts.length >= 3) {
+            const targetAsmId = parts[2];
+            let foundAsm = null;
+            for (const ap of allProjects) {
+              const match = (ap.assemblies || []).find(x => x.id === targetAsmId);
+              if (match) {
+                foundAsm = match;
+                break;
+              }
+            }
+            if (!foundAsm) {
+              missingPredecessorsCount++;
+            } else {
+              const targetAsmComplete = (foundAsm.tasks || []).length > 0 && (foundAsm.tasks || []).every(t => t.pct >= 100 || t.done);
+              if (!targetAsmComplete && foundAsm.finish && foundAsm.finish < todayStr) {
+                overduePredecessorsCount++;
+              }
+            }
+          }
+        }
+      });
+    }
+  });
+
+  if (missingPredecessorsCount > 0) {
+    issues.push(`${missingPredecessorsCount} missing dependency reference(s)`);
+  }
+  if (overduePredecessorsCount > 0) {
+    issues.push(`${overduePredecessorsCount} overdue dependency predecessor(s)`);
+  }
+
+  const isCritical = isOverdueProject || hasOverdueTasks || missingPredecessorsCount > 0 || overduePredecessorsCount > 0;
+
+  return {
+    isCritical,
+    isOverdueProject,
+    hasOverdueTasks,
+    overdueTasksCount,
+    overduePredecessorsCount,
+    missingPredecessorsCount,
+    issues
+  };
+}
+
 interface ProjectsPageProps {
   activeTab: 'current' | 'completed' | 'tray' | 'nontray' | 'archive';
   projects: Project[];
@@ -77,11 +168,25 @@ export function ProjectsPage({
     }
   });
 
+  const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'priority' | 'alphabetical'>(() => {
+    try {
+      return (localStorage.getItem('gantt_projects_sortBy') as 'deadline' | 'priority' | 'alphabetical') || 'deadline';
+    } catch (_) {
+      return 'deadline';
+    }
+  });
+
   React.useEffect(() => {
     try {
       localStorage.setItem('gantt_projects_viewMode', viewMode);
     } catch (_) {}
   }, [viewMode]);
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('gantt_projects_sortBy', projectSortBy);
+    } catch (_) {}
+  }, [projectSortBy]);
 
   const scopedTimesheetsForPage = currentTabMonthFilter
     ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === currentTabMonthFilter)
@@ -535,7 +640,7 @@ export function ProjectsPage({
     });
     const sortedMonthFilterKeys = Object.keys(monthOptionsMap).sort();
 
-    const filteredProjects = activePendingProjects
+    const rawFilteredProjects = activePendingProjects
       .filter(p => {
         if (currentTabMonthFilter) {
           const startStr = p.start || '';
@@ -559,6 +664,30 @@ export function ProjectsPage({
           p.client.toLowerCase().includes(q)
         );
       });
+
+    const filteredProjects = [...rawFilteredProjects].sort((a, b) => {
+      if (projectSortBy === 'deadline') {
+        const dateA = a.due || '9999-12-31';
+        const dateB = b.due || '9999-12-31';
+        return dateA.localeCompare(dateB);
+      }
+      if (projectSortBy === 'priority') {
+        const priorityWeight = { high: 3, medium: 2, low: 1 };
+        const weightA = priorityWeight[a.priority as keyof typeof priorityWeight] || 2;
+        const weightB = priorityWeight[b.priority as keyof typeof priorityWeight] || 2;
+        if (weightA !== weightB) {
+          return weightB - weightA; // High priority first
+        }
+        // Secondary sort by deadline
+        const dateA = a.due || '9999-12-31';
+        const dateB = b.due || '9999-12-31';
+        return dateA.localeCompare(dateB);
+      }
+      if (projectSortBy === 'alphabetical') {
+        return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
+      }
+      return 0;
+    });
 
     return (
       <div className="space-y-4">
@@ -652,6 +781,21 @@ export function ProjectsPage({
                 ))}
               </select>
             </div>
+
+            {/* Sort Drop-down Filter */}
+            <div className="relative flex items-center gap-1">
+              <select
+                id="current-projects-sort-select"
+                value={projectSortBy}
+                onChange={(e: any) => setProjectSortBy(e.target.value)}
+                className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
+                title="Sort projects by"
+              >
+                <option value="deadline">📅 Sort: Deadline</option>
+                <option value="priority">⚠️ Sort: Priority</option>
+                <option value="alphabetical">🔤 Sort: Alphabetical</option>
+              </select>
+            </div>
           </div>
 
           {can('addProject') && (
@@ -720,207 +864,244 @@ export function ProjectsPage({
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {filteredProjects.length === 0 ? (
-              <div className="col-span-full py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
-                <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
-                <div className="flex gap-2 justify-center">
-                  {projectSearchQuery && (
-                    <button
-                      id="current-projects-no-results-clear-btn"
-                      onClick={() => setProjectSearchQuery('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear search filter
-                    </button>
-                  )}
-                  {currentTabMonthFilter && (
-                    <button
-                      id="current-projects-no-results-clear-month-btn"
-                      onClick={() => setCurrentTabMonthFilter('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear month filter
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              filteredProjects.map(p => {
-                const pct = calcPct(p);
-                const hasActiveSearch = projectSearchQuery.trim() !== '';
-
-                return (
-                  <div
-                    key={p.id}
-                    className={`py-1.5 px-3 rounded-lg relative overflow-hidden group transition-all duration-200 border flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 ${
-                      hasActiveSearch
-                        ? 'bg-base-surface border-2 border-base-accent animate-pulse-highlight'
-                        : 'bg-base-surface border-base-border shadow-xs hover:border-base-border2'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
-                      <div className="min-w-0 pr-2">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <h3
-                            onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                            className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors leading-tight truncate"
-                          >
-                            {highlightText(p.name, projectSearchQuery)}
-                          </h3>
-                          {hasActiveSearch && (
-                            <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider">
-                              MATCH
-                            </span>
+          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
+                  <th className="px-4 py-3">Project</th>
+                  <th className="px-4 py-3">Schedule</th>
+                  <th className="px-4 py-3 text-center">Location</th>
+                  <th className="px-4 py-3 text-center">Priority</th>
+                  <th className="px-4 py-3">Flags</th>
+                  <th className="px-4 py-3 text-right">Usage</th>
+                  <th className="px-4 py-3 text-center">Assemblies</th>
+                  <th className="px-4 py-3">Progress</th>
+                  <th className="px-4 py-3 text-center">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
+                {filteredProjects.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-6 py-12 text-center text-base-muted italic">
+                      <div className="flex flex-col items-center gap-3">
+                        <span>No current schedules match your filters.</span>
+                        <div className="flex gap-2 justify-center not-italic">
+                          {projectSearchQuery && (
+                            <button
+                              onClick={() => setProjectSearchQuery('')}
+                              className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                            >
+                              Clear search filter
+                            </button>
+                          )}
+                          {currentTabMonthFilter && (
+                            <button
+                              onClick={() => setCurrentTabMonthFilter('')}
+                              className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                            >
+                              Clear month filter
+                            </button>
                           )}
                         </div>
-                        <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono">
-                          {highlightText(p.client, projectSearchQuery)}
-                        </p>
                       </div>
-                    </div>
+                    </td>
+                  </tr>
+                ) : (
+                  filteredProjects.map(p => {
+                    const pct = calcPct(p);
+                    const hasActiveSearch = projectSearchQuery.trim() !== '';
+                    const cp = getProjectCriticalPath(p, projects);
+                    const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
+                    const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
+                    const isOverBudget = hasBudget && usedHours >= p.budgetHours;
+                    const totalWire = (wireLogs || [])
+                      .filter(wl => wl.projectId === p.id)
+                      .reduce((sum, wl) => sum + wl.amountKg, 0);
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
-                      {(p.start || p.due) && (
-                        <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
-                          📅 {p.start ? p.start : '??'} → {p.due ? p.due : '??'}
-                        </span>
-                      )}
-                      {p.targetMonth && (
-                        <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
-                          🎯 Target: {p.targetMonth}
-                        </span>
-                      )}
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
-                        {p.location === 'workshop1' ? 'W1' : 'W2'}
-                      </span>
+                    return (
+                      <tr
+                        key={p.id}
+                        className={`hover:bg-base-surface2/30 transition-colors ${
+                          hasActiveSearch ? 'bg-base-accent/5' : ''
+                        }`}
+                      >
+                        {/* Kolom 1: Project name + client + status dot */}
+                        <td className="px-4 py-3.5 max-w-[220px]">
+                          <div className="flex items-center gap-2">
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span
+                                  onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                                  className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors truncate block"
+                                >
+                                  {highlightText(p.name, projectSearchQuery)}
+                                </span>
+                                {hasActiveSearch && (
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider shrink-0">
+                                    MATCH
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono truncate">
+                                {highlightText(p.client, projectSearchQuery)}
+                              </p>
+                            </div>
+                          </div>
+                        </td>
 
-                      {(() => {
-                        const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
-                        const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
-                        const isOverBudget = hasBudget && usedHours >= p.budgetHours;
-                        return (
-                          <span
-                            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border transition-all ${
-                              isOverBudget
-                                ? 'bg-red-500/10 text-red-500 border-red-500/30'
-                                : hasBudget
-                                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
-                                  : 'bg-base-accent-dim/20 text-base-accent border-transparent'
-                            }`}
-                          >
-                            <Clock className="h-2.5 w-2.5" />
-                            <span>
-                              {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
+                        {/* Kolom 2: Schedule dates + target month */}
+                        <td className="px-4 py-3.5 text-base-muted2">
+                          {(p.start || p.due) && (
+                            <div className="whitespace-nowrap font-mono text-[10px]">
+                              {p.start || '??'} → {p.due || '??'}
+                            </div>
+                          )}
+                          {p.targetMonth && (
+                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[9px] font-condensed font-extrabold uppercase tracking-wide">
+                              🎯 {p.targetMonth}
                             </span>
+                          )}
+                        </td>
+
+                        {/* Kolom 3: Location */}
+                        <td className="px-4 py-3.5 text-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                            {p.location === 'workshop1' ? 'W1' : 'W2'}
                           </span>
-                        );
-                      })()}
+                        </td>
 
-                      {(() => {
-                        const totalWire = (wireLogs || [])
-                          .filter(wl => wl.projectId === p.id)
-                          .reduce((sum, wl) => sum + wl.amountKg, 0);
-                        if (totalWire === 0) return null;
-                        return (
-                          <span
-                            className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
-                            title="Total wire consumables logged"
-                          >
-                            <Flame className="h-2.5 w-2.5 animate-pulse" />
-                            <span>{totalWire.toFixed(1)} kg</span>
-                          </span>
-                        );
-                      })()}
-                    </div>
+                        {/* Kolom 4: Priority */}
+                        <td className="px-4 py-3.5 text-center">
+                          {p.priority ? (
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border whitespace-nowrap ${
+                              p.priority === 'high'
+                                ? 'bg-red-500/10 text-red-500 border-red-500/20'
+                                : p.priority === 'low'
+                                  ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                                  : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                            }`}>
+                              {p.priority === 'high' ? '🔴 High' : p.priority === 'low' ? '🟢 Low' : '🟡 Med'}
+                            </span>
+                          ) : (
+                            <span className="text-base-muted">—</span>
+                          )}
+                        </td>
 
-                    <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
-                      <div className="flex items-center gap-3">
-                        <div className="text-[11px] text-base-muted font-bold font-condensed uppercase tracking-wider hidden sm:block">
-                          {p.assemblies ? p.assemblies.length : 0} subassemblies
-                        </div>
+                        {/* Kolom 5: Flags (Critical Path) */}
+                        <td className="px-4 py-3.5">
+                          {cp.isCritical ? (
+                            <div
+                              className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help whitespace-nowrap"
+                              title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
+                            >
+                              <span className="relative flex h-1.5 w-1.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                              </span>
+                              <span>Critical</span>
+                            </div>
+                          ) : (
+                            <span className="text-base-muted">—</span>
+                          )}
+                        </td>
 
-                        <div className="space-y-0.5 w-20">
-                          <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
-                            <span>Progress</span>
-                            <span>{pct}%</span>
+                        {/* Kolom 6: Usage (hours + wire) */}
+                        <td className="px-4 py-3.5 text-right">
+                          <div className={`inline-flex items-center gap-1 font-mono text-[10px] font-bold whitespace-nowrap ${
+                            isOverBudget ? 'text-red-500' : hasBudget ? 'text-emerald-500' : 'text-base-accent'
+                          }`}>
+                            <Clock className="h-2.5 w-2.5" />
+                            {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
                           </div>
-                          <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-20">
-                            <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
+                          {totalWire > 0 && (
+                            <div className="flex items-center justify-end gap-1 text-amber-500 font-mono text-[10px] font-bold mt-0.5">
+                              <Flame className="h-2.5 w-2.5" />
+                              {totalWire.toFixed(1)} kg
+                            </div>
+                          )}
+                        </td>
+
+                        {/* Kolom 7: Assemblies count */}
+                        <td className="px-4 py-3.5 text-center font-mono font-bold text-base-muted2">
+                          {p.assemblies ? p.assemblies.length : 0}
+                        </td>
+
+                        {/* Kolom 8: Progress */}
+                        <td className="px-4 py-3.5">
+                          <div className="space-y-0.5 w-24">
+                            <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
+                              <span>{pct}%</span>
+                            </div>
+                            <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-24">
+                              <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
+                            </div>
                           </div>
-                        </div>
-                      </div>
+                        </td>
 
-                      <div className="flex items-center gap-1">
-                        {can('addAssembly') && (
-                          <button
-                            onClick={() => openAssemblyAddForm(p.id)}
-                            className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors"
-                          >
-                            + Assy
-                          </button>
-                        )}
-
-                        {p.status === 'completed' && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
-                            }}
-                            className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md"
-                            title="Download completion PDF report"
-                          >
-                            <Download className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-
-                        <button
-                          onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                          className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md"
-                          title="Open spotlight inspector"
-                        >
-                          <BookOpen className="h-3.5 w-3.5" />
-                        </button>
-
-                        {can('editProject') && (
-                          <button
-                            onClick={() => openEditProjectForm(p.id)}
-                            className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
-                            title="Edit parameters"
-                          >
-                            <Edit className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-
-                        {can('editProject') && (
-                          <button
-                            onClick={() => openCopyModalLauncher(p.id)}
-                            className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md"
-                            title="Clone project"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-
-                        {can('deleteProject') && deleteProjectDetails && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteProjectDetails(p.id);
-                            }}
-                            className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors"
-                            title="Delete project permanently"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
+                        {/* Kolom 9: Actions */}
+                        <td className="px-4 py-3.5">
+                          <div className="flex items-center justify-center gap-0.5">
+                            {can('addAssembly') && (
+                              <button
+                                onClick={() => openAssemblyAddForm(p.id)}
+                                className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors whitespace-nowrap"
+                                title="Add assembly"
+                              >
+                                + Assy
+                              </button>
+                            )}
+                            {p.status === 'completed' && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs); }}
+                                className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md cursor-pointer"
+                                title="Download completion PDF report"
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <button
+                              onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                              className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md cursor-pointer"
+                              title="Open spotlight inspector"
+                            >
+                              <BookOpen className="h-3.5 w-3.5" />
+                            </button>
+                            {can('editProject') && (
+                              <button
+                                onClick={() => openEditProjectForm(p.id)}
+                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md cursor-pointer"
+                                title="Edit parameters"
+                              >
+                                <Edit className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {can('editProject') && (
+                              <button
+                                onClick={() => openCopyModalLauncher(p.id)}
+                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md cursor-pointer"
+                                title="Clone project"
+                              >
+                                <Copy className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {can('deleteProject') && deleteProjectDetails && (
+                              <button
+                                onClick={(e) => { e.stopPropagation(); deleteProjectDetails(p.id); }}
+                                className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
+                                title="Delete project permanently"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         )}
       </div>
@@ -982,6 +1163,34 @@ export function ProjectsPage({
                   <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
                     {p.location === 'workshop1' ? 'W1' : 'W2'}
                   </span>
+                  {p.priority && (
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border ${
+                      p.priority === 'high' 
+                        ? 'bg-red-500/10 text-red-500 border-red-500/20' 
+                        : p.priority === 'low'
+                          ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/20'
+                          : 'bg-amber-500/10 text-amber-500 border-amber-500/20'
+                    }`}>
+                      {p.priority === 'high' ? '🔴 High' : p.priority === 'low' ? '🟢 Low' : '🟡 Medium'}
+                    </span>
+                  )}
+                  
+                  {(() => {
+                    const cp = getProjectCriticalPath(p, projects);
+                    if (!cp.isCritical) return null;
+                    return (
+                      <div 
+                        className="flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help" 
+                        title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
+                      >
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                        </span>
+                        <span>Critical Path</span>
+                      </div>
+                    );
+                  })()}
                   {(() => {
                     const usedHours = getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
                     const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;

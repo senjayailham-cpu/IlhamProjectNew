@@ -2,7 +2,7 @@ import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2 
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers 
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -17,7 +17,9 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   FileText,
   Users,
   ShieldCheck,
-  BarChart2
+  BarChart2,
+  Package,
+  Layers
 };
 
 interface AppSidebarProps {
@@ -84,7 +86,7 @@ export function AppSidebar({
       </div>
 
       {/* Scrollable Nav Items list grouped inside Sections */}
-      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-5 scrollbar-none">
+      <div className="flex-1 overflow-y-auto py-4 px-3 space-y-3 scrollbar-none">
         {sectionGroups.map((group, grpIdx) => {
           const groupTabs = allowedTabs.filter(t => group.items.includes(t.id));
           if (groupTabs.length === 0) return null;

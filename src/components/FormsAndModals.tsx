@@ -1,4 +1,4 @@
-import React, { lazy, Suspense } from 'react';
+import React from 'react';
 import { BookOpen, LogOut, Save, Trash2, Key } from 'lucide-react';
 import TimesheetModal from './TimesheetModal';
 import DepModal from './DepModal';
@@ -7,8 +7,7 @@ import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
 import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
-
-const SpotlightModal = lazy(() => import('./SpotlightModal'));
+import SpotlightModal from './SpotlightModal';
 
 interface FormsAndModalsProps {
   authHook: ReturnType<typeof import('../hooks/useAuth').useAuth>;
@@ -55,42 +54,42 @@ export function FormsAndModals({
     <>
       {/* Project Form Modal */}
       {projectsHook.projectFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150 relative">
-            <h3 className="font-condensed font-extrabold uppercase text-base text-base-text border-b border-base-border pb-2">
+        <div className="modal-overlay">
+          <div className="modal-panel space-y-4">
+            <h3 className="modal-title">
               {projectsHook.editingProjectId ? 'Modify Project' : 'Configure Project'}
             </h3>
             
             <div className="space-y-4 text-xs font-semibold">
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Project Name</label>
+                <label className="field-label">Project Name</label>
                 <input
                   type="text"
                   value={projectsHook.pName}
                   onChange={(e) => projectsHook.setPName(e.target.value)}
                   placeholder=""
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none"
+                  className="input-field"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Work Order Code</label>
+                <label className="field-label">Work Order Code</label>
                 <input
                   type="text"
                   value={projectsHook.pWorkOrder}
                   onChange={(e) => projectsHook.setPWorkOrder(e.target.value)}
                   placeholder=""
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none uppercase font-mono font-bold tracking-wide"
+                  className="input-field uppercase font-mono font-bold tracking-wide"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Status</label>
+                  <label className="field-label">Status</label>
                   <select
                     value={projectsHook.pStatus}
                     onChange={(e: any) => projectsHook.setPStatus(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-base-bg border border-base-border rounded outline-none font-bold"
+                    className="select-field"
                   >
                     <option value="active">Active</option>
                     <option value="pending">Pending</option>
@@ -99,11 +98,11 @@ export function FormsAndModals({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Category</label>
+                  <label className="field-label">Category</label>
                   <select
                     value={projectsHook.pCat}
                     onChange={(e: any) => projectsHook.setPCat(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-base-bg border border-base-border rounded outline-none font-bold"
+                    className="select-field"
                   >
                     <option value="tray">Tray</option>
                     <option value="nontray">Non-Tray</option>
@@ -113,39 +112,39 @@ export function FormsAndModals({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Start Date</label>
+                  <label className="field-label">Start Date</label>
                   <input
                     type="date"
                     value={projectsHook.pStart}
                     onChange={(e) => projectsHook.setPStart(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none"
+                    className="input-field"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Due Date</label>
+                  <label className="field-label">Due Date</label>
                   <input
                     type="date"
                     value={projectsHook.pDue}
                     onChange={(e) => projectsHook.setPDue(e.target.value)}
-                    className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none"
+                    className="input-field"
                   />
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Location Workshop</label>
+                  <label className="field-label">Location Workshop</label>
                   <select
                     value={projectsHook.pLoc}
                     onChange={(e: any) => projectsHook.setPLoc(e.target.value)}
-                    className="w-full px-2.5 py-2 bg-base-bg border border-base-border rounded outline-none font-bold"
+                    className="select-field"
                   >
                     <option value="workshop1">Workshop 1</option>
                     <option value="workshop2">Workshop 2</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Budget Hours</label>
+                  <label className="field-label">Budget Hours</label>
                   <input
                     type="number"
                     value={projectsHook.pBudgetHours}
@@ -153,43 +152,57 @@ export function FormsAndModals({
                     placeholder="None"
                     min="0"
                     step="any"
-                    className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold"
+                    className="input-field"
                   />
                 </div>
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Target Month</label>
-                <input
-                  type="month"
-                  value={projectsHook.pTargetMonth}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    projectsHook.setPTargetMonth(val);
-                    // Proactively auto-suggest project start date to be the month before the target month if start date is currently empty
-                    if (val && !projectsHook.pStart) {
-                      const [year, month] = val.split('-').map(Number);
-                      const targetDateObj = new Date(year, month - 1, 1);
-                      // Subtract one month
-                      targetDateObj.setMonth(targetDateObj.getMonth() - 1);
-                      const suggestedYStr = targetDateObj.getFullYear();
-                      const suggestedMStr = String(targetDateObj.getMonth() + 1).padStart(2, '0');
-                      projectsHook.setPStart(`${suggestedYStr}-${suggestedMStr}-01`);
-                    }
-                  }}
-                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none font-bold text-base-text"
-                />
-                <p className="text-[9px] text-base-muted font-normal leading-tight">
-                  Reference month for Dashboard. Start date defaults to the month prior if blank.
-                </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="field-label">Target Month</label>
+                  <input
+                    type="month"
+                    value={projectsHook.pTargetMonth}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      projectsHook.setPTargetMonth(val);
+                      // Proactively auto-suggest project start date to be the month before the target month if start date is currently empty
+                      if (val && !projectsHook.pStart) {
+                        const [year, month] = val.split('-').map(Number);
+                        const targetDateObj = new Date(year, month - 1, 1);
+                        // Subtract one month
+                        targetDateObj.setMonth(targetDateObj.getMonth() - 1);
+                        const suggestedYStr = targetDateObj.getFullYear();
+                        const suggestedMStr = String(targetDateObj.getMonth() + 1).padStart(2, '0');
+                        projectsHook.setPStart(`${suggestedYStr}-${suggestedMStr}-01`);
+                      }
+                    }}
+                    className="input-field"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="field-label">Priority Level</label>
+                  <select
+                    value={projectsHook.pPriority || 'medium'}
+                    onChange={(e: any) => projectsHook.setPPriority(e.target.value)}
+                    className="select-field"
+                  >
+                    <option value="low">🟢 Low</option>
+                    <option value="medium">🟡 Medium</option>
+                    <option value="high">🔴 High</option>
+                  </select>
+                </div>
               </div>
+              <p className="field-hint -mt-2">
+                Reference month for Dashboard. Start date defaults to the month prior if blank.
+              </p>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Scope Notes</label>
+                <label className="field-label">Scope Notes</label>
                 <textarea
                   value={projectsHook.pNotes}
                   onChange={(e) => projectsHook.setPNotes(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded outline-none h-16 resize-none"
+                  className="textarea-field h-16"
                 />
               </div>
             </div>
@@ -199,14 +212,14 @@ export function FormsAndModals({
                 <button
                   type="button"
                   onClick={() => projectsHook.deleteProjectDetails(projectsHook.editingProjectId!)}
-                  className="px-2.5 py-1.5 bg-base-red-dim border border-base-red/30 text-base-red hover:bg-base-red font-condensed font-bold text-xs uppercase tracking-wider rounded-lg hover:text-white"
+                  className="btn btn-danger btn-sm"
                 >
                   Delete
                 </button>
               ) : <div />}
               <div className="flex gap-2 text-xs">
-                <button type="button" onClick={() => projectsHook.setProjectFormOpen(false)} className="px-3 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
-                <button type="button" onClick={projectsHook.saveProjectForm} className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Save</button>
+                <button type="button" onClick={() => projectsHook.setProjectFormOpen(false)} className="btn btn-secondary btn-sm">Cancel</button>
+                <button type="button" onClick={projectsHook.saveProjectForm} className="btn btn-primary btn-sm">Save</button>
               </div>
             </div>
           </div>
@@ -377,22 +390,22 @@ export function FormsAndModals({
 
       {/* Copy Modal */}
       {projectsHook.copyModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-sm max-h-[90vh] overflow-y-auto p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150 relative">
-            <h3 className="font-condensed font-extrabold uppercase text-base text-base-text border-b border-base-border pb-2">Cloning project metadata</h3>
+        <div className="modal-overlay">
+          <div className="modal-panel space-y-4">
+            <h3 className="modal-title">Cloning project metadata</h3>
             <div className="space-y-4 text-xs font-semibold">
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">New Name</label>
-                <input type="text" value={projectsHook.copyName} onChange={(e) => projectsHook.setCopyName(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                <label className="field-label">New Name</label>
+                <input type="text" value={projectsHook.copyName} onChange={(e) => projectsHook.setCopyName(e.target.value)} className="input-field" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">New Start</label>
-                  <input type="date" value={projectsHook.copyStart} onChange={(e) => projectsHook.setCopyStart(e.target.value)} className="w-full px-3 py-1.5 bg-base-bg border-base-border border rounded outline-none" />
+                  <label className="field-label">New Start</label>
+                  <input type="date" value={projectsHook.copyStart} onChange={(e) => projectsHook.setCopyStart(e.target.value)} className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">New Due</label>
-                  <input type="date" value={projectsHook.copyDue} onChange={(e) => projectsHook.setCopyDue(e.target.value)} className="w-full px-3 py-1.5 bg-base-bg border-base-border border rounded outline-none" />
+                  <label className="field-label">New Due</label>
+                  <input type="date" value={projectsHook.copyDue} onChange={(e) => projectsHook.setCopyDue(e.target.value)} className="input-field" />
                 </div>
               </div>
               <div className="bg-base-surface2 border border-base-border p-3.5 rounded-lg space-y-2">
@@ -408,8 +421,8 @@ export function FormsAndModals({
               </div>
             </div>
             <div className="flex gap-2 justify-end text-xs pt-2">
-              <button type="button" onClick={() => projectsHook.setCopyModalOpen(false)} className="px-3 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
-              <button type="button" onClick={projectsHook.confirmCopyMultiplier} className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Clone</button>
+              <button type="button" onClick={() => projectsHook.setCopyModalOpen(false)} className="btn btn-secondary btn-sm">Cancel</button>
+              <button type="button" onClick={projectsHook.confirmCopyMultiplier} className="btn btn-primary btn-sm">Clone</button>
             </div>
           </div>
         </div>
@@ -417,51 +430,51 @@ export function FormsAndModals({
 
       {/* Employee Modal Form Dialog */}
       {employeesHook.empModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
-          <div className="bg-base-surface border border-base-border2 rounded-xl shadow-modal w-full max-w-md p-6 space-y-4 animate-in zoom-in-95 ease-out duration-150">
-            <h3 className="font-condensed font-extrabold uppercase text-base text-base-text border-b border-base-border pb-2">
+        <div className="modal-overlay">
+          <div className="modal-panel space-y-4 max-w-md">
+            <h3 className="modal-title">
               {employeesHook.editingEmpId ? 'Modify Personnel' : 'Add Personnel'}
             </h3>
             <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-xs font-semibold">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1 col-span-2">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Full Name</label>
-                  <input type="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                  <label className="field-label">Full Name</label>
+                  <input type="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Employee No</label>
-                  <input type="text" value={employeesHook.empNo} onChange={(e) => employeesHook.setEmpNo(e.target.value)} placeholder="e.g. 2110051" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                  <label className="field-label">Employee No</label>
+                  <input type="text" value={employeesHook.empNo} onChange={(e) => employeesHook.setEmpNo(e.target.value)} placeholder="e.g. 2110051" className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Shift</label>
-                  <select value={employeesHook.shift} onChange={(e) => employeesHook.setShift(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text">
+                  <label className="field-label">Shift</label>
+                  <select value={employeesHook.shift} onChange={(e) => employeesHook.setShift(e.target.value)} className="select-field">
                     <option value="DAY SHIFT">DAY SHIFT</option>
                     <option value="NIGHT SHIFT">NIGHT SHIFT</option>
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Position Role</label>
-                  <input type="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                  <label className="field-label">Position Role</label>
+                  <input type="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Site Location</label>
-                  <input type="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                  <label className="field-label">Site Location</label>
+                  <input type="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="input-field" />
                 </div>
                 <div className="space-y-1 col-span-2">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Coordinator PPC</label>
-                  <input type="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none" />
+                  <label className="field-label">Coordinator PPC</label>
+                  <input type="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Join Date</label>
-                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text" />
+                  <label className="field-label">Join Date</label>
+                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="input-field" />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">End of Contract (EOC)</label>
-                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text" />
+                  <label className="field-label">End of Contract (EOC)</label>
+                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="input-field" />
                 </div>
                 <div className="space-y-1 col-span-2">
-                  <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Employment Status</label>
-                  <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="w-full px-3 py-2 bg-base-bg border border-base-border rounded outline-none text-base-text">
+                  <label className="field-label">Employment Status</label>
+                  <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="select-field">
                     <option value="Permanent">Permanent</option>
                     <option value="Contract">Contract</option>
                     <option value="Finish Contract">Finish Contract</option>
@@ -470,8 +483,8 @@ export function FormsAndModals({
               </div>
             </div>
             <div className="flex gap-2 justify-end text-xs pt-2">
-              <button type="button" onClick={() => employeesHook.setEmpModalOpen(false)} className="px-3 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Cancel</button>
-              <button type="button" onClick={employeesHook.saveEmployeeForm} className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer">Save</button>
+              <button type="button" onClick={() => employeesHook.setEmpModalOpen(false)} className="btn btn-secondary btn-sm">Cancel</button>
+              <button type="button" onClick={employeesHook.saveEmployeeForm} className="btn btn-primary btn-sm">Save</button>
             </div>
           </div>
         </div>
@@ -491,67 +504,65 @@ export function FormsAndModals({
       />
 
       {/* Project Spotlight Inspector */}
-      <Suspense fallback={null}>
-        <ErrorBoundary fallback={
-          <div className="p-8 text-base-red text-red-500 font-bold">
-            Failed to load project details. Please close and try again.
-          </div>
-        }>
-          <SpotlightModal
-            isOpen={projectsHook.spotlightOpen}
-            onClose={() => projectsHook.setSpotlightOpen(false)}
-            projectId={projectsHook.spotlightProjectId}
-            projects={projectsHook.projects}
-            timesheets={timesheets}
-            wireLogs={wireLogs}
-            consumptionLogs={consumptionLogs}
-            selectedMonth={selectedMonth}
-            onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
-            onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
-            onUpdateProject={(updatedProj, logParams) => {
-              let nextProj = updatedProj;
-              if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
-                nextProj = {
-                  ...updatedProj,
-                  status: 'completed' as any,
-                  completedDate: new Date().toISOString().slice(0, 10)
-                };
-              } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
-                nextProj = {
-                  ...updatedProj,
-                  status: 'active' as any,
-                  completedDate: null
-                };
-              }
-              setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
-              saveItem('projects', nextProj);
-              verifyMarkChanged();
-              if (logParams) {
-                logActivity(
-                  logParams.type,
-                  logParams.action,
-                  nextProj.id,
-                  nextProj.name,
-                  logParams.asmName,
-                  logParams.task,
-                  logParams.oldP,
-                  logParams.newP
-                );
-              }
-            }}
-            canUpdateTask={can('updateTask')}
-            canAddTaskInline={can('addTaskInline')}
-            canAddDifficulty={can('addDifficulty')}
-            canDeleteTask={can('deleteTask')}
-            currentUser={currentUser}
-            canEditProjectParams={can('editProjectParams')}
-            onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
-            onAddMaterialProcessing={onAddMaterialProcessing}
-            onUpdateProcessingStage={onUpdateProcessingStage}
-            onDeleteMaterialProcessing={onDeleteMaterialProcessing}
-          />
-        </ErrorBoundary>
-      </Suspense>
+      <ErrorBoundary fallback={
+        <div className="p-8 text-base-red text-red-500 font-bold">
+          Failed to load project details. Please close and try again.
+        </div>
+      }>
+        <SpotlightModal
+          isOpen={projectsHook.spotlightOpen}
+          onClose={() => projectsHook.setSpotlightOpen(false)}
+          projectId={projectsHook.spotlightProjectId}
+          projects={projectsHook.projects}
+          timesheets={timesheets}
+          wireLogs={wireLogs}
+          consumptionLogs={consumptionLogs}
+          selectedMonth={selectedMonth}
+          onEdit={(pid) => { projectsHook.setSpotlightOpen(false); projectsHook.openEditProjectForm(pid); }}
+          onEditAssembly={(pid, aid) => { projectsHook.setSpotlightOpen(false); projectsHook.openAssemblyEditForm(pid, aid); }}
+          onUpdateProject={(updatedProj, logParams) => {
+            let nextProj = updatedProj;
+            if (updatedProj.status !== 'completed' && calcPct(updatedProj) === 100) {
+              nextProj = {
+                ...updatedProj,
+                status: 'completed' as any,
+                completedDate: new Date().toISOString().slice(0, 10)
+              };
+            } else if (updatedProj.status === 'completed' && calcPct(updatedProj) < 100) {
+              nextProj = {
+                ...updatedProj,
+                status: 'active' as any,
+                completedDate: null
+              };
+            }
+            setProjects(prev => prev.map(p => p.id === nextProj.id ? nextProj : p));
+            saveItem('projects', nextProj);
+            verifyMarkChanged();
+            if (logParams) {
+              logActivity(
+                logParams.type,
+                logParams.action,
+                nextProj.id,
+                nextProj.name,
+                logParams.asmName,
+                logParams.task,
+                logParams.oldP,
+                logParams.newP
+              );
+            }
+          }}
+          canUpdateTask={can('updateTask')}
+          canAddTaskInline={can('addTaskInline')}
+          canAddDifficulty={can('addDifficulty')}
+          canDeleteTask={can('deleteTask')}
+          currentUser={currentUser}
+          canEditProjectParams={can('editProjectParams')}
+          onOpenDepModal={(key) => { projectsHook.setDepModalRowKey(key); projectsHook.setDepModalOpen(true); }}
+          onAddMaterialProcessing={onAddMaterialProcessing}
+          onUpdateProcessingStage={onUpdateProcessingStage}
+          onDeleteMaterialProcessing={onDeleteMaterialProcessing}
+        />
+      </ErrorBoundary>
 
       {/* Dependency Link Editor Modal */}
       <DepModal
@@ -628,38 +639,38 @@ export function FormsAndModals({
 
             <form onSubmit={(e) => authHook.handleChangePasswordSubmit(e, logActivity)} className="space-y-3.5">
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Current Password</label>
+                <label className="field-label">Current Password</label>
                 <input
                   type="password"
                   value={authHook.currentPasswordInput}
                   onChange={(e) => authHook.setCurrentPasswordInput(e.target.value)}
                   placeholder="Enter current password..."
                   required
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                  className="input-field"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">New Password</label>
+                <label className="field-label">New Password</label>
                 <input
                   type="password"
                   value={authHook.newPasswordInput}
                   onChange={(e) => authHook.setNewPasswordInput(e.target.value)}
                   placeholder="At least 4 characters..."
                   required
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                  className="input-field"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Confirm New Password</label>
+                <label className="field-label">Confirm New Password</label>
                 <input
                   type="password"
                   value={authHook.confirmPasswordInput}
                   onChange={(e) => authHook.setConfirmPasswordInput(e.target.value)}
                   placeholder="Re-type new password..."
                   required
-                  className="w-full px-3 py-2 bg-base-bg border border-base-border rounded text-xs focus:border-base-accent outline-none text-base-text font-medium"
+                  className="input-field"
                 />
               </div>
 
@@ -674,13 +685,13 @@ export function FormsAndModals({
                     authHook.setChangePasswordError('');
                     authHook.setChangePasswordSuccess('');
                   }}
-                  className="px-4 py-2 border border-base-border text-base-muted font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface2 hover:text-base-text transition-all cursor-pointer"
+                  className="btn btn-secondary btn-sm"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm flex items-center gap-1.5"
+                  className="btn btn-primary btn-sm flex items-center gap-1.5"
                 >
                   <Save className="h-3.5 w-3.5" />
                   <span>Update Password</span>

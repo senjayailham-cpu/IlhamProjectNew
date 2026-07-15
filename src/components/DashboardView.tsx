@@ -32,6 +32,18 @@ const STATUS_COLORS = {
   'on-hold': '#7a7870'
 };
 
+const getOverdueTasksCount = (p: Project, todayStr: string): number => {
+  let count = 0;
+  (p.assemblies || []).forEach(asm => {
+    (asm.tasks || []).forEach(t => {
+      if (!t.done && t.pct < 100 && t.finishDate && t.finishDate < todayStr) {
+        count++;
+      }
+    });
+  });
+  return count;
+};
+
 export default function DashboardView({
   projects,
   timesheets,
@@ -49,6 +61,7 @@ export default function DashboardView({
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
   const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
+  const [sCurveView, setSCurveView] = useState<'month' | 'quarter'>('month');
 
   // Custom component for styling Recharts Tooltips with Tailwind theme variables.
   const CustomChartTooltip = ({ active, payload, label }: any) => {
@@ -72,26 +85,53 @@ export default function DashboardView({
   };
 
   // --------------------------------------------------------------------------
-  // DYNAMIC CUMULATIVE TREND DATA (S-CURVE) CALCULATION
+  // DYNAMIC CUMULATIVE TREND DATA (S-CURVE) & ANALYTICS CALCULATION
   // --------------------------------------------------------------------------
-  const trendData = (() => {
-    // Determine target month & length
+  const { 
+    trendData, 
+    targetProjs, 
+    variance, 
+    dailyRate, 
+    remainingPct, 
+    forecastDateStr 
+  } = useMemo(() => {
     const parts = selectedMonth.split('-');
     const yearStr = parts[0] || '2026';
     const monthStr = parts[1] || '06';
     const yr = parseInt(yearStr, 10);
     const mo = parseInt(monthStr, 10);
-    const totalDays = new Date(yr, mo, 0).getDate();
 
-    // Use current real date as boundaries
-    const today = new Date();
+    const targetMonths: string[] = [];
+    if (sCurveView === 'quarter') {
+      const quarter = Math.ceil(mo / 3);
+      targetMonths.push(
+        `${yearStr}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}`,
+        `${yearStr}-${String((quarter - 1) * 3 + 2).padStart(2, '0')}`,
+        `${yearStr}-${String((quarter - 1) * 3 + 3).padStart(2, '0')}`
+      );
+    } else {
+      targetMonths.push(selectedMonth);
+    }
+
     const todayStr = new Date().toISOString().slice(0, 10);
 
-    const list: Array<{
-      day: string;
-      actual: number | null;
-      planned: number;
-    }> = [];
+    // Filter projects matching current dashboard scope and selected period
+    const targetProjsList = projects.filter(p => {
+      if (dashLoc !== 'all' && p.location !== dashLoc) return false;
+      
+      return targetMonths.some(m => {
+        if (p.targetMonth) {
+          return p.targetMonth === m;
+        }
+
+        const pStart = p.start || '';
+        const pDue = p.due || '';
+        const startM = pStart.slice(0, 7);
+        const dueM = pDue.slice(0, 7);
+
+        return startM === m || dueM === m || (pStart && pDue && pStart <= `${m}-31` && pDue >= `${m}-01`);
+      });
+    });
 
     const getInterpolatedPct = (
       dateStr: string,
@@ -110,120 +150,171 @@ export default function DashboardView({
       return startPct + ratio * (endPct - startPct);
     };
 
-    // Filter projects matching current dashboard scope
-    const targetProjs = projects.filter(p => {
-      if (dashLoc !== 'all' && p.location !== dashLoc) return false;
-      if (!selectedMonth) return true;
-
-      // If target month is set, strictly match it
-      if (p.targetMonth) {
-        return p.targetMonth === selectedMonth;
+    const datesList: Array<{ dateStr: string; label: string }> = [];
+    targetMonths.forEach(m => {
+      const [y, moStr] = m.split('-');
+      const yrVal = parseInt(y, 10);
+      const moVal = parseInt(moStr, 10);
+      const totalDaysInMonth = new Date(yrVal, moVal, 0).getDate();
+      for (let d = 1; d <= totalDaysInMonth; d++) {
+        const dayPad = String(d).padStart(2, '0');
+        datesList.push({
+          dateStr: `${y}-${moStr}-${dayPad}`,
+          label: `${dayPad} ${moStr}`
+        });
       }
-
-      const pStart = p.start || '';
-      const pDue = p.due || '';
-      const startM = pStart.slice(0, 7);
-      const dueM = pDue.slice(0, 7);
-
-      return startM === selectedMonth || dueM === selectedMonth || (pStart && pDue && pStart <= `${selectedMonth}-31` && pDue >= `${selectedMonth}-01`);
     });
 
-    if (targetProjs.length === 0) {
+    const list: Array<{
+      day: string;
+      actual: number | null;
+      planned: number;
+    }> = [];
+
+    if (targetProjsList.length === 0) {
       // Return beautiful fallback placeholder slope if there are no registered projects
-      for (let d = 1; d <= totalDays; d++) {
-        const dayPad = String(d).padStart(2, '0');
-        const defaultVal = Math.round((d / totalDays) * 100);
+      datesList.forEach((item, index) => {
+        const defaultVal = Math.round(((index + 1) / datesList.length) * 100);
+        const isFuture = item.dateStr > todayStr;
         list.push({
-          day: `${dayPad} ${monthStr}`,
-          actual: d <= 15 ? Math.round(defaultVal * 0.9) : null,
+          day: item.label,
+          actual: isFuture ? null : Math.round(defaultVal * 0.9),
           planned: defaultVal
         });
-      }
-      return list;
-    }
+      });
+    } else {
+      datesList.forEach((item) => {
+        const dateStr = item.dateStr;
+        let totalActual = 0;
+        let totalPlanned = 0;
+        const isFuture = dateStr > todayStr;
 
-    for (let d = 1; d <= totalDays; d++) {
-      const dayPad = String(d).padStart(2, '0');
-      const dateStr = `${yearStr}-${monthStr}-${dayPad}`;
-      
-      let totalActual = 0;
-      let totalPlanned = 0;
-      const isFuture = dateStr > todayStr;
-
-      targetProjs.forEach(p => {
-        const hasBaseline = !!p.baselineSetAt;
-        const pStart = (hasBaseline ? p.baselineStart : p.start) || p.start || `${yearStr}-${monthStr}-01`;
-        const pDue = (hasBaseline ? p.baselineDue : p.due) || p.due || `${yearStr}-${monthStr}-${totalDays}`;
-        
-        // Flatten all tasks across all assemblies for the project
-        const projectTasks: any[] = [];
-        (p.assemblies || []).forEach(asm => {
-          (asm.tasks || []).forEach(t => {
-            projectTasks.push(t);
+        targetProjsList.forEach(p => {
+          const hasBaseline = !!p.baselineSetAt;
+          const pStart = (hasBaseline ? p.baselineStart : p.start) || p.start || `${targetMonths[0]}-01`;
+          const pDue = (hasBaseline ? p.baselineDue : p.due) || p.due || `${targetMonths[targetMonths.length - 1]}-28`;
+          
+          // Flatten all tasks across all assemblies for the project
+          const projectTasks: any[] = [];
+          (p.assemblies || []).forEach(asm => {
+            (asm.tasks || []).forEach(t => {
+              projectTasks.push(t);
+            });
           });
+
+          let plannedValue = 0;
+
+          // HARD GUARD: a project cannot have any planned progress before its own
+          // start date, and must be considered 100% planned once past its due date.
+          // This ensures the Planned Baseline line always starts exactly at 0% on
+          // the project's start date, regardless of any inconsistent task-level data.
+          if (dateStr < pStart) {
+            plannedValue = 0;
+          } else if (dateStr >= pDue) {
+            plannedValue = 100;
+          } else if (projectTasks.length === 0) {
+            plannedValue = getInterpolatedPct(dateStr, pStart, pDue, 0, 100);
+          } else {
+            let totalProjDifficulty = 0;
+            let weightedPlannedSum = 0;
+
+            projectTasks.forEach(t => {
+              const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+              totalProjDifficulty += difficulty;
+
+              // Clamp task dates to stay within the project's own baseline/schedule window,
+              // so a task's individual date data can never push progress outside the
+              // project's own [pStart, pDue] boundaries.
+              let tStart = (hasBaseline ? t.baselineDate : t.date) || t.date || pStart;
+              let tFinish = (hasBaseline ? t.baselineFinish : t.finishDate) || t.finishDate || tStart;
+              if (tStart < pStart) tStart = pStart;
+              if (tFinish > pDue) tFinish = pDue;
+              if (tFinish < tStart) tFinish = tStart;
+
+              if (dateStr >= tFinish) {
+                weightedPlannedSum += 100 * difficulty;
+              } else if (dateStr < tStart) {
+                weightedPlannedSum += 0 * difficulty;
+              } else {
+                const taskPct = getInterpolatedPct(dateStr, tStart, tFinish, 0, 100);
+                weightedPlannedSum += taskPct * difficulty;
+              }
+            });
+
+            plannedValue = totalProjDifficulty > 0 ? (weightedPlannedSum / totalProjDifficulty) : 0;
+          }
+          totalPlanned += plannedValue;
+
+          // Actual trajectory curve based on historic milestones or progress interpolation up to today
+          let actualValue = 0;
+          const currentPct = calcPct(p);
+          const actualStart = p.start || `${targetMonths[0]}-01`;
+
+          if (p.status === 'completed' && p.completedDate) {
+            if (dateStr >= p.completedDate) {
+              actualValue = 100;
+            } else {
+              actualValue = getInterpolatedPct(dateStr, actualStart, p.completedDate, 0, 100);
+            }
+          } else {
+            if (dateStr >= todayStr) {
+              actualValue = currentPct;
+            } else {
+              actualValue = getInterpolatedPct(dateStr, actualStart, todayStr, 0, currentPct);
+            }
+          }
+          totalActual += actualValue;
         });
 
-        let plannedValue = 0;
-        if (projectTasks.length === 0) {
-          plannedValue = getInterpolatedPct(dateStr, pStart, pDue, 0, 100);
-        } else {
-          let totalProjDifficulty = 0;
-          let weightedPlannedSum = 0;
+        const avgPlanned = Math.round(totalPlanned / targetProjsList.length);
+        const avgActual = isFuture ? null : Math.round(totalActual / targetProjsList.length);
 
-          projectTasks.forEach(t => {
-            const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
-            totalProjDifficulty += difficulty;
-
-            const tStart = (hasBaseline ? t.baselineDate : t.date) || t.date || pStart;
-            const tFinish = (hasBaseline ? t.baselineFinish : t.finishDate) || t.finishDate || tStart;
-
-            if (dateStr >= tFinish) {
-              weightedPlannedSum += 100 * difficulty;
-            } else if (dateStr < tStart) {
-              weightedPlannedSum += 0 * difficulty;
-            } else {
-              const taskPct = getInterpolatedPct(dateStr, tStart, tFinish, 0, 100);
-              weightedPlannedSum += taskPct * difficulty;
-            }
-          });
-
-          plannedValue = totalProjDifficulty > 0 ? (weightedPlannedSum / totalProjDifficulty) : 0;
-        }
-        totalPlanned += plannedValue;
-
-        // Actual trajectory curve based on historic milestones or progress interpolation up to today
-        let actualValue = 0;
-        const currentPct = calcPct(p);
-        const actualStart = p.start || `${yearStr}-${monthStr}-01`;
-
-        if (p.status === 'completed' && p.completedDate) {
-          if (dateStr >= p.completedDate) {
-            actualValue = 100;
-          } else {
-            actualValue = getInterpolatedPct(dateStr, actualStart, p.completedDate, 0, 100);
-          }
-        } else {
-          if (dateStr >= todayStr) {
-            actualValue = currentPct;
-          } else {
-            actualValue = getInterpolatedPct(dateStr, actualStart, todayStr, 0, currentPct);
-          }
-        }
-        totalActual += actualValue;
-      });
-
-      const avgPlanned = Math.round(totalPlanned / targetProjs.length);
-      const avgActual = isFuture ? null : Math.round(totalActual / targetProjs.length);
-
-      list.push({
-        day: `${dayPad} ${monthStr}`,
-        actual: avgActual,
-        planned: avgPlanned
+        list.push({
+          day: item.label,
+          actual: avgActual,
+          planned: avgPlanned
+        });
       });
     }
 
-    return list;
-  })();
+    // Analytics calculations
+    const latestActualEntry = [...list].reverse().find(d => d.actual !== null);
+    const actualVal = latestActualEntry ? latestActualEntry.actual ?? 0 : 0;
+    const plannedVal = latestActualEntry ? latestActualEntry.planned ?? 0 : 0;
+    const varianceVal = actualVal - plannedVal;
+
+    // Elapsed days from the start of the period to the last recorded actual progress day
+    const firstDateStr = datesList[0]?.dateStr;
+    const lastActualDateStr = latestActualEntry ? datesList[list.indexOf(latestActualEntry)]?.dateStr : todayStr;
+    
+    let elapsedDays = 1;
+    if (firstDateStr && lastActualDateStr) {
+      const fDate = new Date(firstDateStr);
+      const lDate = new Date(lastActualDateStr);
+      const elapsedMs = lDate.getTime() - fDate.getTime();
+      elapsedDays = Math.max(1, Math.ceil(elapsedMs / (1000 * 60 * 60 * 24)));
+    }
+
+    const dailyRateVal = elapsedDays > 0 ? actualVal / elapsedDays : 0;
+    const remainingPctVal = Math.max(0, 100 - actualVal);
+    const remainingDaysVal = dailyRateVal > 0 ? Math.ceil(remainingPctVal / dailyRateVal) : null;
+    
+    let forecastDateStrVal = 'N/A';
+    if (remainingDaysVal !== null && remainingDaysVal !== Infinity && remainingDaysVal >= 0) {
+      const forecastDate = new Date();
+      forecastDate.setDate(forecastDate.getDate() + remainingDaysVal);
+      forecastDateStrVal = forecastDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+
+    return {
+      trendData: list,
+      targetProjs: targetProjsList,
+      variance: varianceVal,
+      dailyRate: dailyRateVal,
+      remainingPct: remainingPctVal,
+      forecastDateStr: forecastDateStrVal
+    };
+  }, [projects, selectedMonth, dashLoc, sCurveView]);
 
   // --------------------------------------------------------------------------
   // DYNAMIC OVERDUE BLOCKER & DEPENDENCY ALERT CALCULATIONS
@@ -1029,14 +1120,41 @@ export default function DashboardView({
                   Comparison of actual cumulative completion percentage against planned trajectory for the selected period.
                 </p>
               </div>
-              <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 self-start sm:self-auto select-none">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3.5 h-0.75 bg-base-accent rounded-full" />
-                  <span className="text-base-text">Actual Completion</span>
+              <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+                {/* Month/Quarter Toggle */}
+                <div className="flex items-center bg-base-bg/70 border border-base-border rounded-lg p-0.5 text-xs font-condensed font-bold uppercase tracking-wider select-none shrink-0">
+                  <button
+                    onClick={() => setSCurveView('month')}
+                    className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                      sCurveView === 'month'
+                        ? 'bg-base-accent text-white shadow-sm'
+                        : 'text-base-muted2 hover:text-base-text hover:bg-base-surface3'
+                    }`}
+                  >
+                    Month
+                  </button>
+                  <button
+                    onClick={() => setSCurveView('quarter')}
+                    className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                      sCurveView === 'quarter'
+                        ? 'bg-base-accent text-white shadow-sm'
+                        : 'text-base-muted2 hover:text-base-text hover:bg-base-surface3'
+                    }`}
+                  >
+                    Quarter
+                  </button>
                 </div>
-                <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
-                  <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-blue" />
-                  <span className="text-base-muted2">Planned Baseline</span>
+
+                {/* Legend */}
+                <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 select-none">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-3.5 h-0.75 bg-base-accent rounded-full" />
+                    <span className="text-base-text">Actual Completion</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
+                    <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-blue" />
+                    <span className="text-base-muted2">Planned Baseline</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1089,48 +1207,146 @@ export default function DashboardView({
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          </div>
 
-          {/* Project Progress List — keep existing code, add subtle improvement */}
-          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
-            <div className="px-5 py-4 border-b border-base-border flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <line x1="18" y1="20" x2="18" y2="10" />
-                  <line x1="12" y1="20" x2="12" y2="4" />
-                  <line x1="6" y1="20" x2="6" y2="14" />
-                </svg>
-                <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Project Progress</h3>
-              </div>
-              {/* Add project count badge */}
-              <span className="text-xs font-condensed font-bold bg-base-accent/10 text-base-accent px-2 py-0.5 rounded-full">
-                {filteredProjects.length} projects
-              </span>
-            </div>
-            <div className="p-5 divide-y divide-base-border/50">
-              {filteredProjects.length === 0 ? (
-                <div className="text-base-muted text-xs py-4 text-center">No projects assigned during this period.</div>
-              ) : (
-                filteredProjects.map((p, i) => {
-                  const pct = calcPct(p);
-                  const col = BAR_COLORS[i % BAR_COLORS.length];
-                  return (
-                    <div
-                      key={p.id}
-                      onClick={() => openSpotlight(p.id)}
-                      className="py-3 flex items-center gap-4 cursor-pointer hover:bg-base-surface2/30 px-2 rounded-lg transition-colors group"
-                    >
-                      <span className="text-sm font-semibold flex-1 min-width-0 overflow-hidden text-ellipsis whitespace-nowrap text-base-text group-hover:text-base-accent transition-colors">
-                        {p.name}
-                      </span>
-                      <div className="flex-1 max-w-[124px] sm:max-w-[200px] h-2 bg-base-border/20 rounded-full overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-500 ease-out" style={{ width: `${pct}%`, backgroundColor: col }} />
+            {/* S-Curve Additional Insights Section */}
+            <div className="border-t border-base-border/50 pt-5 space-y-5">
+              {/* Variance & Forecast Row */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* A. Variance Indicator */}
+                <div className="bg-base-surface2/40 border border-base-border rounded-xl p-4 flex items-center justify-between">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted">Schedule Variance</span>
+                    <h4 className="text-sm font-semibold text-base-text">Vs. Planned Baseline</h4>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {variance >= 0 ? (
+                      <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20">
+                        <TrendingUp className="h-4.5 w-4.5" />
+                        <span className="font-condensed font-extrabold text-sm select-none">+{variance.toFixed(0)}% AHEAD</span>
                       </div>
-                      <span className="font-condensed font-bold text-sm text-base-muted min-width-[36px] text-right">{pct}%</span>
+                    ) : (
+                      <div className="flex items-center gap-1.5 bg-rose-500/10 text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20">
+                        <AlertTriangle className="h-4.5 w-4.5 animate-pulse" />
+                        <span className="font-condensed font-extrabold text-sm select-none">{variance.toFixed(0)}% BEHIND</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* D. Completion Forecast */}
+                <div className="bg-base-surface2/40 border border-base-border rounded-xl p-4 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted">Completion Forecast</span>
+                    <span className="text-[10px] font-mono font-bold text-base-accent">Based on {dailyRate.toFixed(2)}%/day rate</span>
+                  </div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="bg-base-bg border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-text">
+                      Daily Rate: <span className="font-mono text-base-accent">{dailyRate.toFixed(2)}%</span>
                     </div>
-                  );
-                })
-              )}
+                    <div className="bg-base-bg border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-text">
+                      Remaining: <span className="font-mono text-base-blue">{remainingPct.toFixed(0)}%</span>
+                    </div>
+                    {(() => {
+                      const remainingDays = dailyRate > 0 ? Math.ceil(remainingPct / dailyRate) : null;
+                      return remainingDays !== null && remainingDays !== Infinity && remainingDays >= 0 ? (
+                        <div className="bg-base-accent/10 border border-base-accent/20 px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-accent flex items-center gap-1">
+                          <span>Est. Finish:</span>
+                          <span className="font-mono uppercase">{forecastDateStr}</span>
+                        </div>
+                      ) : (
+                        <div className="bg-base-border/30 border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-muted2">
+                          No active progress trend
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* B. Project Breakdown Table */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-muted flex items-center gap-1.5">
+                    <Folder className="h-4 w-4 text-base-accent" />
+                    Project Scope Breakdown & Performance
+                  </h4>
+                  <span className="text-[10px] font-condensed font-bold text-base-muted">
+                    {targetProjs.length} active in this period
+                  </span>
+                </div>
+                
+                <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface3/25">
+                  <div className="overflow-x-auto text-base-text">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-base-surface2/70 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
+                          <th className="px-4 py-2.5">Project Name</th>
+                          <th className="px-4 py-2.5">Client / Code</th>
+                          <th className="px-4 py-2.5 text-center">Status</th>
+                          <th className="px-4 py-2.5 text-center">Overdue Tasks</th>
+                          <th className="px-4 py-2.5 w-44">Overall Progress</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-base-border/50 text-base-text font-medium">
+                        {targetProjs.map(p => {
+                          const pct = calcPct(p);
+                          const todayStr = new Date().toISOString().slice(0, 10);
+                          const overdueTasks = getOverdueTasksCount(p, todayStr);
+                          const isProjOverdue = p.due && p.due < todayStr && p.status !== 'completed';
+                          return (
+                            <tr key={p.id} className="hover:bg-base-surface2/30 transition-colors">
+                              <td className="px-4 py-3 font-semibold">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="text-base-text truncate max-w-[180px]">{p.name}</span>
+                                  {isProjOverdue && (
+                                    <span className="px-1.5 py-0.5 text-[8px] font-condensed font-bold bg-rose-500/10 text-rose-500 border border-rose-500/25 rounded uppercase">
+                                      Overdue Proj
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-3 text-base-muted2 font-mono text-[11px]">{p.client || 'N/A'}</td>
+                              <td className="px-4 py-3 text-center">
+                                <span className={`inline-block px-2 py-0.5 text-[9px] font-condensed font-bold uppercase rounded-full`}
+                                      style={{
+                                        backgroundColor: `${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}15`,
+                                        color: STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870',
+                                        border: `1px solid ${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}25`
+                                      }}>
+                                  {p.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-3 text-center">
+                                {overdueTasks > 0 ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-lg">
+                                    {overdueTasks} overdue
+                                  </span>
+                                ) : (
+                                  <span className="text-base-muted2 font-mono">-</span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex-1 h-2 bg-base-border/35 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full rounded-full transition-all duration-500" 
+                                      style={{ 
+                                        width: `${pct}%`,
+                                        backgroundColor: pct >= 100 ? '#4caf7d' : 'var(--accent)'
+                                      }}
+                                    />
+                                  </div>
+                                  <span className="font-mono font-bold text-xs text-base-text shrink-0">{pct}%</span>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1226,192 +1442,89 @@ export default function DashboardView({
             );
           })()}
 
-          {/* WIDGET 3 — Status Donut (keep existing donut, re-wrap) */}
-          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
-            <div className="px-5 py-4 border-b border-base-border flex items-center gap-2">
-              <svg viewBox="0 0 24 24" className="h-4.5 w-4.5 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="10" />
-                <polyline points="12 6 12 12 16 14" />
-              </svg>
-              <h3 className="font-condensed font-extrabold uppercase text-base tracking-wider text-base-text">Status Breakdown</h3>
-            </div>
-            <div className="p-5 flex flex-col sm:flex-row xl:flex-col items-center justify-around gap-4">
-              <div className="relative h-[120px] w-[120px]">
-                <svg className="h-[120px] w-[120px]" viewBox="0 0 120 120">
-                  <circle cx="60" cy="60" r={radius} fill="none" stroke="rgba(0,0,0,0.04)" strokeWidth="14" />
-                  {donutCircles}
+          {/* WIDGET — Status Breakdown Donut (upgraded) */}
+          <div className="card-panel relative overflow-hidden">
+            <div className="card-panel-header">
+              <h3 className="card-panel-title">
+                <svg viewBox="0 0 24 24" className="h-4 w-4 text-base-accent" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="10" />
+                  <polyline points="12 6 12 12 16 14" />
                 </svg>
-              </div>
+                Status Breakdown
+              </h3>
+              <span className="text-[10px] font-condensed font-bold text-base-muted bg-base-surface3 px-2 py-0.5 rounded-full">
+                {filteredProjects.length} total
+              </span>
+            </div>
 
-              <div className="space-y-2 flex-1 max-w-[200px] w-full">
-                {statusKeys.map(s => (
-                  <div key={s} className="flex items-center justify-between text-xs py-1 border-b border-base-border/30 last:border-none">
-                    <div className="flex items-center gap-2">
-                      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: STATUS_COLORS[s] }} />
-                      <span className="text-base-muted2 font-medium capitalize">{s}</span>
-                    </div>
-                    <span className="font-condensed font-bold text-sm" style={{ color: STATUS_COLORS[s] }}>
-                      {statusCounts[s]}
+            <div className="card-panel-body">
+              <div className="flex flex-col items-center gap-5">
+
+                {/* Donut with center total count */}
+                <div className="relative h-[140px] w-[140px] shrink-0">
+                  <svg className="h-[140px] w-[140px] -rotate-90" viewBox="0 0 120 120">
+                    <circle cx="60" cy="60" r={radius} fill="none" stroke="var(--border)" strokeWidth="14" opacity="0.35" />
+                    {donutCircles}
+                  </svg>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-2xl font-condensed font-extrabold text-base-text leading-none">
+                      {filteredProjects.length}
+                    </span>
+                    <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted mt-0.5">
+                      Projects
                     </span>
                   </div>
-                ))}
+                </div>
+
+                {/* Legend with progress bars per status */}
+                <div className="w-full space-y-2.5">
+                  {statusKeys.map(s => {
+                    const count = statusCounts[s];
+                    const pct = filteredProjects.length > 0 ? Math.round((count / filteredProjects.length) * 100) : 0;
+                    return (
+                      <div key={s} className="group">
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className="h-2.5 w-2.5 rounded-full shrink-0 ring-2 ring-offset-1 ring-offset-base-surface transition-all group-hover:scale-110"
+                              style={{ backgroundColor: STATUS_COLORS[s], ['--tw-ring-color' as any]: `${STATUS_COLORS[s]}30` }}
+                            />
+                            <span className="text-base-muted2 font-semibold capitalize">{s.replace('-', ' ')}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-condensed font-extrabold text-sm" style={{ color: STATUS_COLORS[s] }}>
+                              {count}
+                            </span>
+                            <span className="text-[10px] text-base-muted font-mono">
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                        <div className="h-1.5 bg-base-surface3 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-700 ease-out"
+                            style={{ width: `${pct}%`, backgroundColor: STATUS_COLORS[s] }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
               </div>
             </div>
+
+            {/* Subtle decorative corner accent */}
+            <div
+              className="absolute -top-8 -right-8 w-24 h-24 rounded-full opacity-[0.06] pointer-events-none"
+              style={{ background: `radial-gradient(circle, var(--accent), transparent 70%)` }}
+            />
           </div>
 
         </div>
       </div>
 
-      {/* SECTION 4 — Critical Path Blockers (keep existing, visual upgrade only) */}
-      <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-5 space-y-6 relative overflow-hidden">
-        {/* Top visual accents */}
-        <div className="absolute top-0 inset-x-0 h-1.5 bg-linear-to-r from-base-red via-base-accent to-base-blue opacity-90" />
-        
-        {/* Subtle background pattern */}
-        <div className="absolute inset-0 opacity-[0.015] pointer-events-none"
-          style={{ backgroundImage: 'radial-gradient(var(--text) 1px, transparent 1px)', backgroundSize: '20px 20px' }}
-        />
 
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1">
-            <h2 className="font-condensed font-extrabold text-xl uppercase tracking-wider text-base-text flex items-center gap-2">
-              <ShieldAlert className="h-5.5 w-5.5 text-base-red" />
-              Critical Path Blockers & Dependency Safety Checks
-            </h2>
-            <p className="text-xs text-base-muted2">
-              Dynamic detection of sequence-interrupted schedules, overdue predecessor assemblies, and craftsman attendance shortfalls.
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-2 flex-shrink-0">
-            <span className={`px-2.5 py-1 text-xs rounded-full font-condensed font-bold uppercase tracking-wider ${
-              overdueBlockers.length > 0
-                ? 'bg-base-red-dim text-base-red border border-base-red/20'
-                : 'bg-base-green-dim text-base-green border border-base-green/20'
-            }`}>
-              {overdueBlockers.length} Active Blockers
-            </span>
-            <span className={`px-2.5 py-1 text-xs rounded-full font-condensed font-bold uppercase tracking-wider ${
-              dependencyAlerts.length > 0
-                ? 'bg-base-accent-dim text-base-accent border border-base-accent/20'
-                : 'bg-base-green-dim text-base-green border border-base-green/20'
-            }`}>
-              {dependencyAlerts.length} Risks Detected
-            </span>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 pt-2 relative z-10">
-          {/* Column 1: Overdue Blockers list */}
-          <div className="space-y-3">
-            <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted flex items-center gap-1.5 border-b border-base-border pb-2">
-              <AlertTriangle className="h-4 w-4 text-base-red" />
-              Overdue Blockers (Work Order Bottlenecks)
-            </h3>
-            
-            {overdueBlockers.length === 0 ? (
-              <div className="p-8 text-center bg-base-surface2 border border-base-border border-dashed rounded-xl flex flex-col items-center justify-center space-y-2">
-                <CheckCircle className="h-8 w-8 text-base-green/85" />
-                <p className="text-xs font-semibold text-base-text">No active bottlenecks</p>
-                <p className="text-[11px] text-base-muted max-w-[280px]">
-                  All current active successors are unblocked or have completed predecessor phases. Great job!
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                {overdueBlockers.map(item => (
-                  <div 
-                    key={item.id}
-                    onClick={() => openSpotlight(item.blockedProjectId)}
-                    className="p-3.5 bg-[#fcf2f2]/60 dark:bg-[#251b1c]/50 hover:bg-[#faebee] dark:hover:bg-[#2e1d1f] border border-base-red/20 hover:border-base-red/40 rounded-xl transition-all cursor-pointer flex items-start gap-3 relative group"
-                  >
-                    <div className="p-1 px-1.5 mt-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider bg-base-red-dim text-base-red border border-base-red/10 flex-shrink-0">
-                      {item.type}
-                    </div>
-                    
-                    <div className="flex-1 min-w-0 space-y-1.5">
-                      <div className="flex items-center justify-between gap-1.5 flex-wrap">
-                        <span className="font-semibold text-xs text-base-text truncate">
-                          {item.blockedName}
-                        </span>
-                        <span className="font-mono text-[9px] font-bold text-base-blue uppercase bg-base-blue-dim px-1.5 rounded">
-                          {item.blockedClient}
-                        </span>
-                      </div>
-                      
-                      <div className="text-[11px] text-base-muted2 leading-normal flex items-center gap-1 flex-wrap">
-                        <span>Blocked by:</span>
-                        <strong className="text-base-text font-bold">{item.blockingName}</strong>
-                      </div>
-                      
-                      <div className="flex items-center justify-between text-[11px] pt-1">
-                        <span className="text-base-red font-medium flex items-center gap-1 font-condensed font-bold uppercase tracking-wider">
-                          <Clock className="h-3.5 w-3.5" />
-                          Overdue by {item.daysOverdue} days (Finished {item.blockingDue})
-                        </span>
-                        <span className="font-condensed font-extrabold text-[10px] uppercase text-base-muted">
-                          Predecessor: {item.progress}%
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-base-muted">
-                      <ExternalLink className="h-4 w-4 text-base-red" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Column 2: Dependency Alerts list */}
-          <div className="space-y-3">
-            <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted flex items-center gap-1.5 border-b border-base-border pb-2">
-              <AlertCircle className="h-4 w-4 text-base-accent" />
-              Schedule & Resource Safety Warnings
-            </h3>
-            
-            {dependencyAlerts.length === 0 ? (
-              <div className="p-8 text-center bg-base-surface2 border border-base-border border-dashed rounded-xl flex flex-col items-center justify-center space-y-2">
-                <CheckCircle className="h-8 w-8 text-base-green/85" />
-                <p className="text-xs font-semibold text-base-text">No timeline warnings</p>
-                <p className="text-[11px] text-base-muted max-w-[280px]">
-                  All scheduled start dates align with sequence requirements and no coordinators are overdue/absent today.
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1">
-                {dependencyAlerts.map(alert => (
-                  <div 
-                    key={alert.id}
-                    onClick={() => openSpotlight(alert.targetId)}
-                    className="p-3.5 bg-[#fbf9f4]/60 dark:bg-[#25221b]/50 hover:bg-[#faf5ea]/80 dark:hover:bg-[#2f2a1d] border border-base-accent/25 hover:border-base-accent/50 rounded-xl transition-all cursor-pointer flex items-start gap-3 relative group"
-                  >
-                    <div className="p-1 px-1.5 mt-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider bg-base-accent-dim text-base-accent border border-base-accent/10 flex-shrink-0">
-                      {alert.badgeText}
-                    </div>
-                    
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <p className="text-xs text-base-text leading-relaxed pr-6">
-                        {alert.message}
-                      </p>
-                      
-                      <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted flex items-center gap-1 hover:text-base-accent transition-colors">
-                        <span>Click to investigate sheet</span>
-                        <ArrowRight className="h-3 w-3" />
-                      </div>
-                    </div>
-
-                    <div className="absolute right-3.5 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-base-muted">
-                      <ExternalLink className="h-4 w-4 text-base-accent" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
 
       {/* Interactive Detail Modal Popups */}
       {activeModal && (

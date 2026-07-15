@@ -3,7 +3,7 @@ import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import ThemeToggle from '../ThemeToggle';
 import { 
   Menu, X, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2 
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers 
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -18,7 +18,9 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   FileText,
   Users,
   ShieldCheck,
-  BarChart2
+  BarChart2,
+  Package,
+  Layers
 };
 
 interface AppMobileMenuProps {
@@ -98,7 +100,7 @@ export function AppMobileMenu({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-4">
+            <div className="flex-1 overflow-y-auto py-4 px-3 space-y-3">
               {sectionGroups.map((group, grpIdx) => {
                 const groupTabs = allowedTabs.filter(t => group.items.includes(t.id));
                 if (groupTabs.length === 0) return null;

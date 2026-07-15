@@ -156,6 +156,7 @@ export interface Project {
   baselineDue?: string;
   baselineSetAt?: string;     // timestamp kapan baseline di-set
   materialProcessing?: MaterialProcessing[];
+  priority?: 'low' | 'medium' | 'high';
 }
 
 export interface Employee {

@@ -41,17 +41,19 @@ const EmployeesView = lazy(() => import('./components/EmployeesView'));
 const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m.GanttPage })));
 const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
 const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
+const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks
 } from 'lucide-react';
 
 const activeTabsList = [
   { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
   { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
   { id: 'gantt', label: 'Gantt', icon: 'BarChart2', access: 'all' },
+  { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
   { id: 'current', label: 'Current Projects', icon: 'Folder', access: 'all' },
   { id: 'completed', label: 'Project Complete', icon: 'CheckCircle', access: 'all' },
   { id: 'archive', label: 'Archive', icon: 'Archive', access: 'all' },
@@ -82,13 +84,14 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   ShieldCheck,
   BarChart2,
   Package,
-  Layers
+  Layers,
+  ListChecks
 };
 
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'focus24', 'gantt']
+    items: ['dash', 'focus24', 'gantt', 'progress']
   },
   {
     title: 'Projects',
@@ -994,7 +997,7 @@ function AppContent() {
         />
 
         {/* Core Screen Viewport */}
-        <main className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 ${activeTab === 'gantt' ? 'max-w-none' : 'max-w-[1600px]'}`}>
+        <main key={activeTab} className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 page-enter ${activeTab === 'gantt' ? 'max-w-none' : 'max-w-[1600px]'}`}>
           <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
             <Suspense fallback={<PageLoadingFallback />}>
               {activeTab === 'dash' && (
@@ -1163,6 +1166,23 @@ function AppContent() {
                   depModalOpen={projectsHook.depModalOpen}
                   externalRowKey={projectsHook.depModalRowKey}
                   onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
+                />
+              )}
+
+              {activeTab === 'progress' && (
+                <ProgressUpdateView
+                  projects={projects}
+                  onUpdateProject={(updatedProj) => {
+                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                    saveItem('projects', updatedProj);
+                    verifyMarkChanged();
+                    logActivity(
+                      'project_edit',
+                      'Updated task progress via Update Progress page',
+                      updatedProj.id,
+                      updatedProj.name
+                    );
+                  }}
                 />
               )}
 
