@@ -12,6 +12,7 @@ import {
   Assembly
 } from '../types';
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
+import { ProjectSearchSelector } from './ProjectSearchSelector';
 import { CopyBomModal } from './CopyBomModal';
 import {
   Plus,
@@ -28,7 +29,9 @@ import {
   CheckCircle,
   LayoutGrid,
   Table,
-  Link2
+  Link2,
+  Folder,
+  FileText
 } from 'lucide-react';
 
 interface MaterialProcessingViewProps {
@@ -77,30 +80,6 @@ export default function MaterialProcessingView({
       setSelectedProjectId(initialProjectId);
     }
   }, [initialProjectId]);
-
-  // Auto-select a project that has matching GA candidates but currently has no materials and/or assemblies
-  React.useEffect(() => {
-    if (!selectedProjectId) {
-      const autoSelectProject = projects.find(p => {
-        if (!p.gaNumber) return false;
-        const hasNoMaterials = (p.materialProcessing?.length || 0) === 0;
-        const hasNoAssemblies = (p.assemblies?.length || 0) === 0;
-        if (!hasNoMaterials && !hasNoAssemblies) return false;
-
-        const hasCandidate = projects.some(other =>
-          other.id !== p.id &&
-          other.gaNumber &&
-          other.gaNumber.trim().toUpperCase() === p.gaNumber!.trim().toUpperCase() &&
-          ((other.materialProcessing?.length || 0) > 0 || (other.assemblies?.length || 0) > 0)
-        );
-        return hasCandidate;
-      });
-
-      if (autoSelectProject) {
-        setSelectedProjectId(autoSelectProject.id);
-      }
-    }
-  }, [projects, selectedProjectId]);
 
   // Extract unique target months from projects
   const uniqueTargetMonths = useMemo(() => {
@@ -159,12 +138,13 @@ export default function MaterialProcessingView({
 
   // Filtered materials
   const filteredProcessings = useMemo(() => {
+    if (!selectedProjectId) return [];
     return materialProcessings.filter(mp => {
       const matchSearch =
         mp.materialName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (mp.partNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (mp.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-      const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
+      const matchProject = mp.projectId === selectedProjectId;
       
       let matchMonth = true;
       if (selectedMonthFilter) {
@@ -200,8 +180,9 @@ export default function MaterialProcessingView({
 
   // Month & project filtered materials for KPIs
   const monthAndProjFilteredProcessings = useMemo(() => {
+    if (!selectedProjectId) return [];
     return materialProcessings.filter(mp => {
-      const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
+      const matchProject = mp.projectId === selectedProjectId;
       let matchMonth = true;
       if (selectedMonthFilter) {
         const proj = projects.find(p => p.id === mp.projectId);
@@ -272,19 +253,9 @@ export default function MaterialProcessingView({
 
   // Open add material processing modal
   const handleOpenAddModal = () => {
-    if (projects.length > 0) {
-      // Prioritize projects that match the currently selected month filter!
-      const activeProj =
-        (selectedMonthFilter ? projects.find(p => p.targetMonth === selectedMonthFilter) : null) ||
-        projects.find(p => p.status === 'active') ||
-        projects[0];
-      setFormProjectId(activeProj.id);
-      const assemblies = activeProj.assemblies || [];
-      setFormAssemblyId(assemblies.length > 0 ? assemblies[0].id : '');
-      setFormGaNumber(activeProj.gaNumber || '');
-    } else {
-      setFormGaNumber('');
-    }
+    setFormProjectId('');
+    setFormAssemblyId('');
+    setFormGaNumber('');
     setFormMaterialName('');
     setFormPartNo('');
     setFormDescription('');
@@ -514,6 +485,82 @@ export default function MaterialProcessingView({
         </div>
       </div>
 
+      {/* PROJECT FILTER WORKSPACE SELECTOR */}
+      <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-sm">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-base-accent/10 rounded-lg text-base-accent">
+              <Folder className="h-5 w-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-base-text font-sans flex items-center gap-2">
+                Project Workspace Selector
+              </h2>
+              <p className="text-xs text-base-muted mt-0.5">
+                Filter the entire tracking board and KPIs specifically by a single chosen project to declutter your view.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-condensed font-bold uppercase tracking-wider text-base-muted whitespace-nowrap">
+                Choose Project:
+              </span>
+              <ProjectSearchSelector
+                projects={filteredProjectsForDropdown}
+                selectedId={selectedProjectId}
+                onChange={setSelectedProjectId}
+                placeholder=""
+                showAllProjectsOption={false}
+                className="w-full sm:w-80"
+              />
+            </div>
+
+            {selectedProjectId && (
+              <button
+                onClick={() => setSelectedProjectId('')}
+                className="px-3 py-1.5 bg-base-surface2 hover:bg-base-surface3 text-base-text text-xs font-sans rounded-md border border-base-border transition cursor-pointer flex items-center gap-1"
+              >
+                <X className="h-3 w-3" /> Clear Filter
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Selected Project Quick-Details bar */}
+        {currentProject && (
+          <div className="mt-4 pt-4 border-t border-base-border/50 flex flex-wrap gap-y-2 gap-x-6 text-xs text-base-muted font-sans items-center">
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-base-text">Client:</span>
+              <span>{currentProject.client || '—'}</span>
+            </div>
+            {currentProject.gaNumber && (
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-base-text">GA Number:</span>
+                <span className="px-1.5 py-0.5 font-mono text-[10px] font-bold bg-base-surface3 border border-base-border text-base-accent rounded">
+                  {currentProject.gaNumber}
+                </span>
+              </div>
+            )}
+            {currentProject.targetMonth && (
+              <div className="flex items-center gap-1.5">
+                <span className="font-semibold text-base-text">Target Month:</span>
+                <span className="px-1.5 py-0.5 bg-base-accent/10 text-base-accent rounded text-[10px] font-bold">
+                  {currentProject.targetMonth}
+                </span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <span className="font-semibold text-base-text">Status:</span>
+              <span className={`capitalize font-bold ${currentProject.status === 'active' ? 'text-emerald-500' : 'text-base-muted'}`}>
+                {currentProject.status}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* KPI GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
@@ -657,62 +704,22 @@ export default function MaterialProcessingView({
                 })}
               </select>
             </div>
-
-            <select
-              value={selectedProjectId}
-              onChange={e => setSelectedProjectId(e.target.value)}
-              className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent font-condensed cursor-pointer"
-            >
-              <option value="">All Projects</option>
-              {filteredProjectsForDropdown.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name} {p.targetMonth ? `(${p.targetMonth})` : ''}
-                </option>
-              ))}
-            </select>
-
-            {/* View Mode Toggle Switch */}
-            <div className="flex bg-base-surface2 p-1 rounded-lg border border-base-border gap-0.5 ml-auto sm:ml-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('card');
-                  localStorage.setItem('matProcessingViewMode', 'card');
-                }}
-                className={`p-1.5 rounded-md transition duration-150 cursor-pointer ${
-                  viewMode === 'card'
-                    ? 'bg-base-accent text-black font-bold'
-                    : 'text-base-muted hover:text-base-text'
-                }`}
-                title="Card Group View"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setViewMode('table');
-                  localStorage.setItem('matProcessingViewMode', 'table');
-                }}
-                className={`p-1.5 rounded-md transition duration-150 cursor-pointer ${
-                  viewMode === 'table'
-                    ? 'bg-base-accent text-black font-bold'
-                    : 'text-base-muted hover:text-base-text'
-                }`}
-                title="Spreadsheet Table View"
-              >
-                <Table className="h-4 w-4" />
-              </button>
-            </div>
           </div>
         </div>
+      </div>
 
-          <div className="space-y-4">
-            {Object.keys(groupedData).length === 0 ? (
-              <div className="p-8 text-center text-base-muted bg-base-surface rounded-lg">
-                No active material processings tracked.
+      <div className="space-y-4">
+        {!selectedProjectId ? (
+              <div className="p-12 text-center text-base-muted bg-base-surface border border-base-border rounded-xl shadow-sm max-w-xl mx-auto flex flex-col items-center gap-3">
+                <div className="p-3 bg-base-accent/5 text-base-accent rounded-full border border-base-accent/10">
+                  <Search className="h-6 w-6" />
+                </div>
+                <h3 className="font-bold text-sm text-base-text">No Project Selected</h3>
+                <p className="text-xs text-base-muted max-w-md">
+                  Please search or select a project in the <strong>Project Workspace Selector</strong> above to display and track its materials.
+                </p>
               </div>
-            ) : viewMode === 'table' ? (
+            ) : (
               <div className="overflow-x-auto max-h-[70vh] overflow-y-auto rounded-lg border border-base-border bg-base-surface shadow-sm">
                 <table className="w-full border-collapse text-left min-w-[1000px]">
                   <thead>
@@ -825,9 +832,18 @@ export default function MaterialProcessingView({
                                           operator: sd?.operator || currentUser.name
                                         });
                                       }}
-                                      className="w-14 px-1 py-0.5 bg-base-bg text-base-text border border-base-border hover:border-base-border2 rounded text-xs font-semibold text-center focus:border-base-accent focus:outline-none"
+                                      className="w-12 px-1 py-0.5 bg-base-bg text-base-text border border-base-border hover:border-base-border2 rounded text-xs font-semibold text-center focus:border-base-accent focus:outline-none"
                                     />
-                                    <span className="text-[10px] text-base-muted font-bold">%</span>
+                                    <span className="text-[10px] text-base-muted font-bold mr-1">%</span>
+                                    
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenUpdateStage(mp, stageKey)}
+                                      className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded transition cursor-pointer"
+                                      title="Edit Operator, Dates & Remarks"
+                                    >
+                                      <FileText className="h-3.5 w-3.5" />
+                                    </button>
                                   </div>
                                 </td>
                               );
@@ -874,264 +890,14 @@ export default function MaterialProcessingView({
                               </td>
                             )}
                           </tr>
-                        );
-                      })
-                    )}
+                         );
+                       })
+                     )}
                   </tbody>
                 </table>
               </div>
-            ) : (
-              Object.keys(groupedData).map(projId => {
-                const group = groupedData[projId];
-                const isExpanded = !!expandedProjects[projId];
-
-                return (
-                  <div
-                    key={projId}
-                    className="border border-base-border bg-base-surface rounded-xl overflow-hidden shadow-sm"
-                  >
-                    {/* Collapsible Header */}
-                    <div
-                      onClick={() => toggleProjectExpand(projId)}
-                      className="p-4 bg-base-surface2 hover:bg-base-surface3/40 transition cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-4 select-none"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="p-1 rounded-lg bg-base-surface3 border border-base-border text-base-muted">
-                          {isExpanded ? (
-                            <ChevronDown className="h-5 w-5" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5" />
-                          )}
-                        </div>
-                        <div>
-                          <h3 className="font-bold text-base-text text-base flex items-center flex-wrap gap-2">
-                            <span>{group.project.name}</span>
-                            {group.project.gaNumber && (
-                              <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-base-surface3 border border-base-border text-base-accent rounded-md">
-                                GA: {group.project.gaNumber}
-                              </span>
-                            )}
-                          </h3>
-                          <span className="text-xs text-base-muted font-condensed uppercase tracking-wider flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                            <span>WO: {group.project.client}</span>
-                            {group.project.gaNumber && (
-                              <>
-                                <span>·</span>
-                                <span className="font-mono text-[10px] font-bold text-base-muted">GA: {group.project.gaNumber}</span>
-                              </>
-                            )}
-                            <span>·</span>
-                            <span>{group.items.length} items tracked</span>
-                            {group.project.targetMonth && (
-                              <>
-                                <span>·</span>
-                                <span className="px-1.5 py-0.5 bg-base-accent/10 text-base-accent rounded font-sans text-[10px] font-bold">
-                                  Target Month: {group.project.targetMonth}
-                                </span>
-                              </>
-                            )}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-6">
-                        {/* Mini 4-Bar averages */}
-                        <div className="flex items-end gap-2 px-4 py-1.5 bg-base-surface/50 border border-base-border rounded-lg">
-                          {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(
-                            stageKey => {
-                              const avg = group.stageAverages[stageKey];
-                              const stage = PROCESSING_STAGES[stageKey];
-                              return (
-                                <div
-                                  key={stageKey}
-                                  className="flex flex-col items-center gap-1"
-                                  title={`${stage.label} average: ${avg}%`}
-                                >
-                                  <div className="w-3.5 bg-base-surface3 h-10 rounded-full overflow-hidden flex flex-col justify-end">
-                                    <div
-                                      className="w-full rounded-full transition-all duration-500"
-                                      style={{
-                                        height: `${avg}%`,
-                                        backgroundColor: stage.color
-                                      }}
-                                    />
-                                  </div>
-                                  <span className="text-[10px] leading-none font-sans select-none">
-                                    {stage.icon}
-                                  </span>
-                                </div>
-                              );
-                            }
-                          )}
-                        </div>
-
-                        {/* Large Overall Circle */}
-                        <div className="flex items-center gap-3">
-                          <div className="text-right">
-                            <span className="text-[10px] text-base-muted font-condensed uppercase tracking-wider block">
-                              Project Total Progress
-                            </span>
-                            <span className="text-lg font-bold font-mono text-base-text">
-                              {group.overallPct}%
-                            </span>
-                          </div>
-                          <div className="inline-flex items-center justify-center relative">
-                            <svg className="w-12 h-12 transform -rotate-90">
-                              <circle
-                                cx="24"
-                                cy="24"
-                                r="19"
-                                stroke="var(--bg-base-surface3, #222)"
-                                strokeWidth="3"
-                                fill="transparent"
-                              />
-                              <circle
-                                cx="24"
-                                cy="24"
-                                r="19"
-                                stroke="currentColor"
-                                strokeWidth="3"
-                                fill="transparent"
-                                strokeDasharray={2 * Math.PI * 19}
-                                strokeDashoffset={
-                                  2 * Math.PI * 19 * (1 - group.overallPct / 100)
-                                }
-                                className={`${getOverallColor(group.overallPct)} transition-all duration-500`}
-                              />
-                            </svg>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Collapsible Material Table */}
-                    {isExpanded && (
-                      <div className="border-t border-base-border p-3 bg-base-surface">
-                        <div className="overflow-x-auto rounded-lg border border-base-border">
-                          <table className="w-full text-left border-collapse min-w-[800px]">
-                            <thead>
-                              <tr className="bg-base-surface2 text-base-muted font-condensed font-bold text-xs uppercase border-b border-base-border">
-                                <th className="px-4 py-2 text-center w-10">#</th>
-                                <th className="px-4 py-2">Material</th>
-                                <th className="px-4 py-2 text-center w-20">Qty</th>
-                                {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
-                                  const st = PROCESSING_STAGES[stageKey as ProcessingStageKey];
-                                  return (
-                                    <th key={stageKey} className="px-4 py-2 text-center w-36">
-                                      {st.label}
-                                    </th>
-                                  );
-                                })}
-                                <th className="px-4 py-2 text-center w-24">Overall</th>
-                                {!isReadOnly && <th className="px-4 py-2 text-center w-16">Actions</th>}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-base-border text-sm">
-                              {group.items.map((mp, subIdx) => (
-                                <tr
-                                  key={mp.id}
-                                  className={`hover:bg-base-surface2/40 transition ${
-                                    mp.isCompleted ? 'bg-emerald-950/5' : ''
-                                  }`}
-                                >
-                                  <td className="px-4 py-3 text-center font-semibold text-base-muted">
-                                    {subIdx + 1}
-                                  </td>
-                                  <td className="px-4 py-3">
-                                    <div className="font-semibold text-base-text">
-                                      {mp.materialName}
-                                    </div>
-                                    {mp.partNo && (
-                                      <div className="text-xs text-base-muted font-mono mt-0.5">
-                                        Part No: {mp.partNo}
-                                      </div>
-                                    )}
-                                  </td>
-                                  <td className="px-4 py-3 text-center font-bold text-base-text font-mono">
-                                    {mp.qty} <span className="text-xs font-normal text-base-muted">{mp.unit}</span>
-                                  </td>
-
-                                  {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(
-                                    stageKey => {
-                                      const isApp = mp.activeStages.includes(stageKey);
-                                      const sd = mp.stages[stageKey];
-                                      if (!isApp) {
-                                        return (
-                                          <td
-                                            key={stageKey}
-                                            className="px-4 py-3 text-center text-base-muted bg-base-surface2/20 text-xs"
-                                          >
-                                            —
-                                          </td>
-                                        );
-                                      }
-
-                                      const pct = sd?.pct ?? 0;
-                                      const status = sd?.status ?? 'pending';
-
-                                      return (
-                                        <td
-                                          key={stageKey}
-                                          onClick={() => handleOpenUpdateStage(mp, stageKey)}
-                                          className={`px-4 py-3 text-center ${
-                                            isReadOnly
-                                              ? 'cursor-default'
-                                              : 'cursor-pointer hover:bg-base-surface2 transition-colors'
-                                          }`}
-                                        >
-                                          <div className="flex items-center justify-center gap-1.5">
-                                            <div className="w-1.5 h-1.5 rounded-full bg-base-muted" style={{
-                                              backgroundColor: status === 'done' ? 'var(--bg-base-green, #10b981)' : status === 'in-progress' ? 'var(--text-base-accent, #f59e0b)' : 'transparent'
-                                            }} />
-                                            <span className="font-semibold font-mono text-xs">{pct}%</span>
-                                          </div>
-                                        </td>
-                                      );
-                                    }
-                                  )}
-
-                                  <td className="px-4 py-3 text-center font-bold font-mono text-base-text">
-                                    {mp.overallPct}%
-                                  </td>
-                                  {!isReadOnly && (
-                                    <td className="px-4 py-3 text-center">
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (setDeleteConfirm) {
-                                            setDeleteConfirm({
-                                              isOpen: true,
-                                              title: 'Delete Material Processing',
-                                              message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
-                                              onConfirm: () => {
-                                                onDelete(mp.projectId, mp.id);
-                                                setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
-                                              }
-                                            });
-                                          } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
-                                            onDelete(mp.projectId, mp.id);
-                                          }
-                                        }}
-                                        className="p-1.5 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded-lg transition"
-                                        title="Delete Material"
-                                      >
-                                        <Trash2 className="h-4 w-4" />
-                                      </button>
-                                    </td>
-                                  )}
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
             )}
           </div>
-      </div>
 
       {/* ================= ADD MATERIAL MODAL ================= */}
       {isAddModalOpen && (
@@ -1159,21 +925,14 @@ export default function MaterialProcessingView({
                   <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider">
                     Project *
                   </label>
-                  <select
-                    value={formProjectId}
-                    onChange={e => handleFormProjectChange(e.target.value)}
-                    required
-                    className="w-full bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent font-sans"
-                  >
-                    <option value="" disabled>
-                      Select active project
-                    </option>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.name} {p.targetMonth ? `(Target Month: ${p.targetMonth})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <ProjectSearchSelector
+                    projects={projects}
+                    selectedId={formProjectId}
+                    onChange={handleFormProjectChange}
+                    placeholder=""
+                    required={true}
+                    showAllProjectsOption={false}
+                  />
                 </div>
 
                 {/* Assembly Link */}
