@@ -332,6 +332,7 @@ export function ProjectsPage({
           location: 'workshop1' | 'workshop2';
           budgetHours?: number;
           targetMonth?: string;
+          gaNumber?: string;
           assembliesMap: Record<string, {
             name: string;
             budgetHours?: number;
@@ -396,6 +397,7 @@ export function ProjectsPage({
 
           const difficultyRaw = parseInt(cellVal(16), 10); // geser dari 14 -> 16
           const difficulty = isNaN(difficultyRaw) || difficultyRaw <= 0 ? 1 : difficultyRaw;
+          const gaNumber = cellVal(17).toUpperCase(); // Kolom baru paling akhir — GA Number
 
           const pKey = pName.toLowerCase() + '||' + pWorkOrder.toLowerCase();
 
@@ -409,11 +411,13 @@ export function ProjectsPage({
               location,
               budgetHours,
               targetMonth,
+              gaNumber: gaNumber || undefined,
               assembliesMap: {}
             };
           }
 
           const pGroup = importMap[pKey];
+          if (gaNumber && !pGroup.gaNumber) pGroup.gaNumber = gaNumber;
           if (pStart && !pGroup.start) pGroup.start = pStart;
           if (pDue && !pGroup.due) pGroup.due = pDue;
           if (budgetHours && !pGroup.budgetHours) pGroup.budgetHours = budgetHours;
@@ -474,6 +478,7 @@ export function ProjectsPage({
             id: uid(),
             name: p.name,
             client: p.workOrder,
+            gaNumber: p.gaNumber || '',
             start: p.start,
             due: p.due,
             status: 'active',
@@ -511,7 +516,7 @@ export function ProjectsPage({
         'Project Name', 'Work Order', 'Start Date', 'Due Date', 'Category',
         'Location', 'Budget Hours', 'Target Month', 'Assembly Name',
         'Assembly Budget Hours', 'Assembly Start', 'Assembly Finish',
-        'Task Name', 'Is Milestone', 'Task Start', 'Task Finish', 'Difficulty'
+        'Task Name', 'Is Milestone', 'Task Start', 'Task Finish', 'Difficulty', 'GA Number'
       ];
 
       const sampleRows = [
@@ -519,19 +524,19 @@ export function ProjectsPage({
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Design Structural Framing', 'No', '2026-07-02', '2026-07-08', '2'
+          'Design Structural Framing', 'No', '2026-07-02', '2026-07-08', '2', 'GA17733'
         ],
         [
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Material Procurement', 'No', '2026-07-09', '2026-07-14', '1'
+          'Material Procurement', 'No', '2026-07-09', '2026-07-14', '1', 'GA17733'
         ],
         [
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Alpha Phase Milestone', 'Yes', '2026-07-15', '2026-07-15', '1'
+          'Alpha Phase Milestone', 'Yes', '2026-07-15', '2026-07-15', '1', 'GA17733'
         ]
       ];
 
@@ -552,7 +557,8 @@ export function ProjectsPage({
         { wch: 12 }, // Is Milestone
         { wch: 12 }, // Task Start
         { wch: 12 }, // Task Finish
-        { wch: 10 }  // Difficulty
+        { wch: 10 }, // Difficulty
+        { wch: 14 }  // GA Number
       ];
 
       const guideHeaders = ['Nama Kolom', 'Wajib', 'Format/Tipe', 'Keterangan'];
@@ -573,7 +579,8 @@ export function ProjectsPage({
         ['Is Milestone', 'Tidak', 'Yes / No', 'Apakah task ini berupa milestone (Yes jika ya, default No)'],
         ['Task Start', 'Ya', 'YYYY-MM-DD', 'Tanggal mulai task'],
         ['Task Finish', 'Ya', 'YYYY-MM-DD', 'Tanggal selesai task'],
-        ['Difficulty', 'Tidak', 'Angka', 'Bobot tingkat kesulitan task (default: 1)']
+        ['Difficulty', 'Tidak', 'Angka', 'Bobot tingkat kesulitan task (default: 1)'],
+        ['GA Number', 'Tidak', 'Teks', 'Nomor identitas jenis produk/desain. Project dengan GA Number sama dianggap produk sejenis dengan material yang sama, walau nama project & client berbeda (misal: GA17733)']
       ];
 
       const wb = XLSX.utils.book_new();

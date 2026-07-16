@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Project } from '../types';
+import { Project, User } from '../types';
 import GanttView from '../components/GanttView';
 import { Briefcase, Calendar, AlertCircle, FileText, BarChart2 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ interface GanttPageProps {
   depModalOpen?: boolean;
   externalRowKey?: string | null;
   onCloseDepModal?: () => void;
+  currentUser: User | null;
 }
 
 export function GanttPage({ 
@@ -18,7 +19,8 @@ export function GanttPage({
   onOpenDepModal,
   depModalOpen,
   externalRowKey,
-  onCloseDepModal
+  onCloseDepModal,
+  currentUser
 }: GanttPageProps) {
   // Collect all available target months from projects
   const availableMonths = useMemo(() => {
@@ -133,6 +135,7 @@ export function GanttPage({
             depModalOpen={depModalOpen}
             depModalRowKey={externalRowKey || undefined}
             onCloseDepModal={onCloseDepModal}
+            currentUser={currentUser}
           />
         </div>
       ) : (

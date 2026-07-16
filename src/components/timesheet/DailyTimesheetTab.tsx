@@ -1,5 +1,6 @@
 import React from 'react';
-import { TimesheetEntry, Employee, Project } from '../../types';
+import { TimesheetEntry, Employee, Project, User } from '../../types';
+import { can } from '../../utils/permissions';
 import { fmtHrs } from '../../utils/projectUtils';
 import { 
   Clock, 
@@ -56,6 +57,7 @@ export interface DailyTimesheetTabProps {
   setProjectFilter: (filter: string) => void;
   employeeFilter: string;
   setEmployeeFilter: (filter: string) => void;
+  currentUser: User | null;
 }
 
 export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
@@ -92,8 +94,11 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   projectFilter,
   setProjectFilter,
   employeeFilter,
-  setEmployeeFilter
+  setEmployeeFilter,
+  currentUser
 }) => {
+  const canManageTimesheet = can(currentUser as any, 'manageTimesheet');
+  const canDeleteTimesheet = can(currentUser as any, 'deleteTimesheet');
   return (
     <>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
@@ -187,13 +192,15 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
             <ClipboardList className="h-4 w-4 text-base-blue animate-pulse" />
             <span>Export Daily</span>
           </button>
-          <button
-            onClick={openAddTimesheet}
-            className="btn btn-accent btn-sm flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
-          >
-            <Clock className="h-4 w-4" />
-            <span>Add Entry</span>
-          </button>
+          {canManageTimesheet && (
+            <button
+              onClick={openAddTimesheet}
+              className="btn btn-accent btn-sm flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+            >
+              <Clock className="h-4 w-4" />
+              <span>Add Entry</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -354,12 +361,14 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
           <div className="bg-base-surface border border-base-border rounded-xl p-12 text-center text-base-muted flex flex-col items-center justify-center shadow-card">
             <Calendar className="h-10 w-10 text-base-border/80 mb-3" />
             <p className="text-sm font-semibold">No timesheet records submitted for this date.</p>
-            <button
-              onClick={openAddTimesheet}
-              className="mt-4 px-4 py-2 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer"
-            >
-              Log hours now
-            </button>
+            {canManageTimesheet && (
+              <button
+                onClick={openAddTimesheet}
+                className="mt-4 px-4 py-2 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer"
+              >
+                Log hours now
+              </button>
+            )}
           </div>
         ) : (
           coordNames.map(coord => {
@@ -457,18 +466,22 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                 </span>
                               </td>
                               <td className="py-3 px-4 text-right whitespace-nowrap">
-                                <button
-                                  onClick={() => openEditTimesheet(e.id)}
-                                  className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer inline-flex items-center justify-center mr-1"
-                                >
-                                  <Edit className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  onClick={() => deleteTsEntry(e.id)}
-                                  className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer inline-flex items-center justify-center"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
+                                {canManageTimesheet && (
+                                  <button
+                                    onClick={() => openEditTimesheet(e.id)}
+                                    className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer inline-flex items-center justify-center mr-1"
+                                  >
+                                    <Edit className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {canDeleteTimesheet && (
+                                  <button
+                                    onClick={() => deleteTsEntry(e.id)}
+                                    className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer inline-flex items-center justify-center"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           );

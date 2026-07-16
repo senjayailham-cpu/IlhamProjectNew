@@ -1,10 +1,12 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { Project, Task } from '../types';
+import { Project, Task, User } from '../types';
 import { Search, ChevronDown, ChevronRight, CheckCircle2, Layers } from 'lucide-react';
+import { can } from '../utils/permissions';
 
 interface ProgressUpdateViewProps {
   projects: Project[];
   onUpdateProject: (project: Project) => void;
+  currentUser: User | null;
 }
 
 function saveProgress(
@@ -34,7 +36,8 @@ function saveProgress(
   onUpdateProject(updated);
 }
 
-export default function ProgressUpdateView({ projects, onUpdateProject }: ProgressUpdateViewProps) {
+export default function ProgressUpdateView({ projects, onUpdateProject, currentUser }: ProgressUpdateViewProps) {
+  const canUpdateTask = can(currentUser, 'updateTask');
   const [searchQuery, setSearchQuery] = useState('');
   const [hideCompleted, setHideCompleted] = useState(true);
   const [collapsedProjects, setCollapsedProjects] = useState<Record<string, boolean>>({});
@@ -245,7 +248,7 @@ export default function ProgressUpdateView({ projects, onUpdateProject }: Progre
                         <th className="px-2 sm:px-4 py-2">Assembly</th>
                         <th className="px-2 sm:px-4 py-2">Task</th>
                         <th className="px-2 sm:px-4 py-2 text-center w-20 sm:w-24">Progress</th>
-                        <th className="px-2 sm:px-4 py-2 text-center w-48 sm:w-64">Quick Update</th>
+                        {canUpdateTask && <th className="px-2 sm:px-4 py-2 text-center w-48 sm:w-64">Quick Update</th>}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-base-border text-base-text">
@@ -264,7 +267,7 @@ export default function ProgressUpdateView({ projects, onUpdateProject }: Progre
                               )}
                             </td>
                             <td className="px-2 sm:px-4 py-2 sm:py-2.5 text-center">
-                              {isEditing ? (
+                              {isEditing && canUpdateTask ? (
                                 <input
                                   type="number"
                                   min={0}
@@ -286,7 +289,7 @@ export default function ProgressUpdateView({ projects, onUpdateProject }: Progre
                                   className="w-14 sm:w-16 px-1.5 py-1 bg-base-bg text-center font-mono text-xs font-extrabold border border-base-accent rounded outline-none text-base-text"
                                   id={`task-input-${t.id}`}
                                 />
-                              ) : (
+                              ) : canUpdateTask ? (
                                 <button
                                   onClick={() => setEditingTaskId(t.id)}
                                   className={`w-14 sm:w-16 px-1.5 py-1 font-mono text-xs font-extrabold border rounded cursor-pointer transition-colors ${
@@ -298,37 +301,49 @@ export default function ProgressUpdateView({ projects, onUpdateProject }: Progre
                                 >
                                   {t.pct}%
                                 </button>
+                              ) : (
+                                <span
+                                  className={`inline-block w-14 sm:w-16 px-1.5 py-1 font-mono text-xs font-extrabold border rounded select-none ${
+                                    t.pct >= 100 ? 'text-emerald-500 border-emerald-500/25 bg-emerald-500/5' :
+                                    t.pct > 50 ? 'text-base-accent border-base-accent/25' :
+                                    'text-base-blue border-base-border'
+                                  }`}
+                                >
+                                  {t.pct}%
+                                </span>
                               )}
                             </td>
-                            <td className="px-2 sm:px-4 py-2 sm:py-2.5">
-                              <div className="flex items-center justify-center gap-1 sm:gap-1.5">
-                                <button
-                                  onClick={() => quickUpdate(project.id, t.id, t.pct, 10)}
-                                  disabled={t.pct >= 100}
-                                  className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-base-surface2 border border-base-border rounded hover:bg-base-accent hover:text-white hover:border-base-accent transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-base-text"
-                                  id={`task-add10-btn-${t.id}`}
-                                >
-                                  +10%
-                                </button>
-                                <button
-                                  onClick={() => quickUpdate(project.id, t.id, t.pct, 25)}
-                                  disabled={t.pct >= 100}
-                                  className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-base-surface2 border border-base-border rounded hover:bg-base-accent hover:text-white hover:border-base-accent transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-base-text"
-                                  id={`task-add25-btn-${t.id}`}
-                                >
-                                  +25%
-                                </button>
-                                <button
-                                  onClick={() => quickUpdate(project.id, t.id, t.pct, 'done')}
-                                  disabled={t.pct >= 100}
-                                  className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded hover:bg-emerald-500 hover:text-white transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
-                                  id={`task-done-btn-${t.id}`}
-                                >
-                                  <CheckCircle2 className="h-3 w-3 shrink-0" />
-                                  Done
-                                </button>
-                              </div>
-                            </td>
+                            {canUpdateTask && (
+                              <td className="px-2 sm:px-4 py-2 sm:py-2.5">
+                                <div className="flex items-center justify-center gap-1 sm:gap-1.5">
+                                  <button
+                                    onClick={() => quickUpdate(project.id, t.id, t.pct, 10)}
+                                    disabled={t.pct >= 100}
+                                    className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-base-surface2 border border-base-border rounded hover:bg-base-accent hover:text-white hover:border-base-accent transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-base-text"
+                                    id={`task-add10-btn-${t.id}`}
+                                  >
+                                    +10%
+                                  </button>
+                                  <button
+                                    onClick={() => quickUpdate(project.id, t.id, t.pct, 25)}
+                                    disabled={t.pct >= 100}
+                                    className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-base-surface2 border border-base-border rounded hover:bg-base-accent hover:text-white hover:border-base-accent transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed text-base-text"
+                                    id={`task-add25-btn-${t.id}`}
+                                  >
+                                    +25%
+                                  </button>
+                                  <button
+                                    onClick={() => quickUpdate(project.id, t.id, t.pct, 'done')}
+                                    disabled={t.pct >= 100}
+                                    className="px-1.5 sm:px-2 py-1 text-[9px] sm:text-[10px] font-condensed font-extrabold bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded hover:bg-emerald-500 hover:text-white transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1"
+                                    id={`task-done-btn-${t.id}`}
+                                  >
+                                    <CheckCircle2 className="h-3 w-3 shrink-0" />
+                                    Done
+                                  </button>
+                                </div>
+                              </td>
+                            )}
                           </tr>
                         );
                       })}

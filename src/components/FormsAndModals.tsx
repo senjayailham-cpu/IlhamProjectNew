@@ -6,7 +6,8 @@ import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
-import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
+import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry } from '../types';
+import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import SpotlightModal from './SpotlightModal';
 
 interface FormsAndModalsProps {
@@ -26,6 +27,12 @@ interface FormsAndModalsProps {
   verifyMarkChanged: () => void;
   logActivity: any;
   selectedMonth?: string;
+  masterDataEntries: MasterDataEntry[];
+  onEnsureMasterData: (
+    category: 'material' | 'partNo' | 'client' | 'subAssembly' | 'gaNumber',
+    value: string,
+    gaNumber?: string
+  ) => Promise<void>;
 }
 
 export function FormsAndModals({
@@ -45,6 +52,8 @@ export function FormsAndModals({
   verifyMarkChanged,
   logActivity,
   selectedMonth,
+  masterDataEntries,
+  onEnsureMasterData,
 }: FormsAndModalsProps) {
   const { currentUser } = authHook;
   const can = (perm: any) => canUtil(currentUser, perm);
@@ -81,6 +90,21 @@ export function FormsAndModals({
                   placeholder=""
                   className="input-field uppercase font-mono font-bold tracking-wide"
                 />
+              </div>
+
+              <div className="space-y-1">
+                <label className="field-label">GA Number</label>
+                <MasterDataAutocomplete
+                  category="gaNumber"
+                  value={projectsHook.pGaNumber}
+                  onChange={(val) => projectsHook.setPGaNumber(val.toUpperCase())}
+                  placeholder="e.g. GA17733"
+                  entries={masterDataEntries}
+                  className="input-field uppercase font-mono font-bold tracking-wide"
+                />
+                <p className="text-[10px] text-base-muted italic font-normal">
+                  Nomor identitas jenis produk. Project dengan GA Number sama = desain & material sama, walau nama project berbeda. Ketik untuk cari GA Number yang sudah pernah dipakai.
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -128,6 +152,9 @@ export function FormsAndModals({
                     onChange={(e) => projectsHook.setPDue(e.target.value)}
                     className="input-field"
                   />
+                  <p className="text-[10px] text-base-muted italic">
+                    Jika GA Number ditemukan sama dengan project lain, tanggal ini akan otomatis dihitung ulang berdasarkan durasi struktur yang disalin.
+                  </p>
                 </div>
               </div>
 

@@ -138,6 +138,7 @@ export interface Project {
   id: string;
   name: string;
   client: string;
+  gaNumber?: string;
   start?: string;
   due?: string;
   status: ProjectStatusType;
@@ -392,6 +393,7 @@ export interface MaterialProcessing {
   projectId:   string;
   projectName: string;
   workOrder:   string;          // = project.client
+  gaNumber?:   string;          // auto-copy from project.gaNumber, untuk grouping produk sejenis lintas project
 
   // Material identification
   materialName: string;         // e.g. "Plate SS304 6mm"
@@ -432,4 +434,16 @@ export const PROCESSING_STAGES: Record<ProcessingStageKey, {
   bending:  { label: 'Bending',   color: 'var(--blue)',   icon: '🔧', order: 3 },
   machining:{ label: 'Machining', color: 'var(--muted)', icon: '🔩', order: 4 },
 };
+
+export interface MasterDataEntry {
+  id: string;                    // 'md_' + uid()
+  category: 'material' | 'partNo' | 'client' | 'subAssembly' | 'gaNumber';
+  value: string;                 // nilai asli, contoh: "Plate SS304 6mm"
+  normalizedValue: string;       // value.trim().toLowerCase(), untuk deteksi duplikat
+  gaNumber?: string;             // opsional, kalau entry ini terkait GA Number tertentu (khusus category material)
+  usageCount: number;            // berapa kali dipakai
+  lastUsedAt: string;            // ISO date
+  createdAt: string;             // ISO date
+  createdBy?: string;            // nama/id user yang pertama input
+}
 

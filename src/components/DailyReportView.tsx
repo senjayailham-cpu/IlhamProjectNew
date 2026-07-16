@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { ActivityLog, Project, TimesheetEntry } from '../types';
+import React, { useState, useEffect } from 'react';
+import { ActivityLog, Project, TimesheetEntry, InspectionRequest, ProblemReport } from '../types';
 import { calcPct, esc } from '../utils/projectUtils';
-import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2 } from 'lucide-react';
+import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2, FileCheck, AlertTriangle } from 'lucide-react';
+import { db } from '../services/firebase';
+import { collection, onSnapshot } from 'firebase/firestore';
 import {
   ResponsiveContainer,
   LineChart,
@@ -48,6 +50,32 @@ export default function DailyReportView({
   const [userCollapsed, setUserCollapsed] = useState<Record<string, boolean>>({});
   const [trendPeriod, setTrendPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [attendanceMetric, setAttendanceMetric] = useState<'hours' | 'headcount'>('hours');
+
+  const [inspections, setInspections] = useState<InspectionRequest[]>([]);
+  const [problemReports, setProblemReports] = useState<ProblemReport[]>([]);
+
+  useEffect(() => {
+    const unsubInspections = onSnapshot(collection(db, 'inspections'), (snapshot) => {
+      const list: InspectionRequest[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as InspectionRequest);
+      });
+      setInspections(list);
+    });
+
+    const unsubProblems = onSnapshot(collection(db, 'problemReports'), (snapshot) => {
+      const list: ProblemReport[] = [];
+      snapshot.forEach((doc) => {
+        list.push({ id: doc.id, ...doc.data() } as ProblemReport);
+      });
+      setProblemReports(list);
+    });
+
+    return () => {
+      unsubInspections();
+      unsubProblems();
+    };
+  }, []);
 
   const shiftDate = (d: number) => {
     const dt = new Date(reportDate + 'T12:00:00');
@@ -508,40 +536,48 @@ export default function DailyReportView({
         </div>
       ) : (
         <>
-          {/* KPI Widget Row */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-accent">
-              <div className="text-[28px] font-condensed font-extrabold text-base-accent leading-none">{dayLogs.length}</div>
-              <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Total updates</div>
+          {/* SECTION A — EXECUTIVE SUMMARY & PORTFOLIO KPIS */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 px-1">
+              <BarChart2 className="h-4 w-4 text-base-accent" />
+              <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">
+                Section A — Executive Summary & Portfolio KPIs
+              </h3>
             </div>
-            <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-blue">
-              <div className="text-[28px] font-condensed font-extrabold text-base-blue leading-none">{uniqueActiveUsers}</div>
-              <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Active users</div>
-            </div>
-            <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-green">
-              <div className="text-[28px] font-condensed font-extrabold text-base-green leading-none">{progressUpdatesCount}</div>
-              <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Progress updates</div>
-            </div>
-            <div className={`bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 ${
-              overallImpactScore > 0 ? 'border-b-base-green' : overallImpactScore < 0 ? 'border-b-base-red' : 'border-b-base-border'
-            }`}>
-              <div className={`text-[28px] font-condensed font-extrabold leading-none ${
-                overallImpactScore > 0 ? 'text-base-green' : overallImpactScore < 0 ? 'text-base-red' : 'text-base-muted2'
-              }`}>
-                {overallImpactScore > 0 ? `+${overallImpactScore}` : overallImpactScore}%
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-accent">
+                <div className="text-[28px] font-condensed font-extrabold text-base-accent leading-none">{dayLogs.length}</div>
+                <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Total updates</div>
               </div>
-              <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Portfolio Impact</div>
+              <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-blue">
+                <div className="text-[28px] font-condensed font-extrabold text-base-blue leading-none">{uniqueActiveUsers}</div>
+                <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Active users</div>
+              </div>
+              <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-green">
+                <div className="text-[28px] font-condensed font-extrabold text-base-green leading-none">{progressUpdatesCount}</div>
+                <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Progress updates</div>
+              </div>
+              <div className={`bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 ${
+                overallImpactScore > 0 ? 'border-b-base-green' : overallImpactScore < 0 ? 'border-b-base-red' : 'border-b-base-border'
+              }`}>
+                <div className={`text-[28px] font-condensed font-extrabold leading-none ${
+                  overallImpactScore > 0 ? 'text-base-green' : overallImpactScore < 0 ? 'text-base-red' : 'text-base-muted2'
+                }`}>
+                  {overallImpactScore > 0 ? `+${overallImpactScore}` : overallImpactScore}%
+                </div>
+                <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Portfolio Impact</div>
+              </div>
             </div>
           </div>
 
-          {/* 📊 WORKFORCE ATTENDANCE & PRODUCTIVITY CORRELATION CHART */}
+          {/* SECTION B — WORKFORCE ALLOCATION & PRODUCTIVITY TREND */}
           <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5 space-y-4">
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-base-border/50 pb-4">
               <div>
                 <div className="flex items-center gap-2">
                   <TrendingUp className="h-4 w-4 text-base-accent" />
                   <h3 className="font-condensed font-extrabold uppercase text-sm tracking-wider text-base-text">
-                    Attendance & Productivity Correlation
+                    Section B — Workforce Allocation & Productivity Trend
                   </h3>
                 </div>
                 <p className="text-[11px] text-base-muted mt-1 leading-relaxed">
@@ -705,13 +741,15 @@ export default function DailyReportView({
             </div>
           </div>
 
-          {/* Touched Project Progress Section */}
-          {Object.keys(projectsSnapshot).length > 0 && (
-            <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
-              <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center gap-2">
-                <Activity className="h-4 w-4 text-base-accent" />
-                <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Projects touched today</h3>
-              </div>
+          {/* SECTION C — PROGRESSIVE PROJECT TRACKING */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+            <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center gap-2">
+              <Activity className="h-4 w-4 text-base-accent" />
+              <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">
+                Section C — Progressive Project Tracking
+              </h3>
+            </div>
+            {Object.keys(projectsSnapshot).length > 0 ? (
               <div className="divide-y divide-base-border/40">
                 {Object.entries(projectsSnapshot).map(([pid, info], i) => {
                   const proj = projects.find(x => x.id === pid);
@@ -755,13 +793,22 @@ export default function DailyReportView({
                   );
                 })}
               </div>
-            </div>
-          )}
+            ) : (
+              <div className="p-6 text-center text-xs text-base-muted italic">
+                No project progress logged on this date.
+              </div>
+            )}
+          </div>
 
-          {/* Activity by User */}
+          {/* SECTION D — PERSONNEL UPDATES & ACTIVITY LOGS */}
           <div className="space-y-4">
             <div className="flex justify-between items-center px-1">
-              <h3 className="font-condensed font-bold uppercase text-xs tracking-widest text-base-muted">Activity by user</h3>
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-base-accent" />
+                <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">
+                  Section D — Personnel Updates & Activity Logs
+                </h3>
+              </div>
               <div className="flex gap-2">
                 <button onClick={collapseAll} className="px-2.5 py-1 text-[10px] uppercase font-condensed font-extrabold border border-base-border hover:bg-base-surface3 rounded-lg text-base-muted2 cursor-pointer flex items-center gap-1">
                   <ArrowUp className="h-3 w-3" /> Collapse All
@@ -840,7 +887,7 @@ export default function DailyReportView({
                                 </div>
                                 <div className={`font-condensed font-extrabold text-sm px-2 py-1 rounded shrink-0 ${
                                   pInfo.delta > 0 ? 'bg-base-green-dim text-base-green' : 'bg-base-red-dim text-base-red'
-                                }`}>
+                                }}`}>
                                   {pInfo.delta > 0 ? `+${pInfo.delta}` : pInfo.delta}%
                                 </div>
                               </div>
@@ -892,6 +939,188 @@ export default function DailyReportView({
                 </div>
               );
             })}
+          </div>
+
+          {/* SECTION E — QUALITY CONTROL & NDT INSPECTIONS */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+            <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileCheck className="h-4 w-4 text-base-accent" />
+                <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">
+                  Section E — Quality Control & NDT Inspections
+                </h3>
+              </div>
+              <span className="text-[10px] bg-base-accent-dim/10 text-base-accent px-2 py-0.5 rounded font-bold font-mono">
+                {inspections.filter(ins => ins.requestedDate === reportDate || ins.inspectedDate === reportDate || ins.targetDate === reportDate).length} RFI(s)
+              </span>
+            </div>
+            
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] text-base-muted leading-relaxed">
+                Quality inspections, NDT verifications, fit-up, and dimensional checks requested or performed on this date.
+              </p>
+              
+              {(() => {
+                const dayInspections = inspections.filter(ins => 
+                  ins.requestedDate === reportDate || 
+                  ins.inspectedDate === reportDate || 
+                  ins.targetDate === reportDate
+                );
+
+                if (dayInspections.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-xs text-base-muted italic">
+                      No quality inspections or RFIs recorded for this date.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {dayInspections.map(ins => {
+                      let statusColor = "bg-zinc-500/10 text-zinc-400 border-zinc-500/20";
+                      if (ins.status === 'Approved') statusColor = "bg-emerald-500/10 text-emerald-500 border-emerald-500/20";
+                      else if (ins.status === 'Requested') statusColor = "bg-blue-500/10 text-blue-500 border-blue-500/20";
+                      else if (ins.status === 'Rejected / Punchlist') statusColor = "bg-red-500/10 text-red-500 border-red-500/20";
+
+                      return (
+                        <div key={ins.id} className="border border-base-border/50 rounded-lg p-3 bg-base-surface2/30 space-y-2 text-xs">
+                          <div className="flex justify-between items-start gap-2">
+                            <div>
+                              <span className="text-[10px] font-mono font-bold text-base-accent uppercase tracking-wider">{ins.rfiNo || 'NO RFI NO'}</span>
+                              <h4 className="font-bold text-base-text mt-0.5">{ins.projectName}</h4>
+                              {ins.assemblyName && <p className="text-[10px] text-base-muted">Assembly: {ins.assemblyName}</p>}
+                            </div>
+                            <span className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider ${statusColor}`}>
+                              {ins.status}
+                            </span>
+                          </div>
+                          
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-base-border/30 text-[10px]">
+                            <div>
+                              <span className="text-base-muted block uppercase font-condensed font-bold tracking-wider">Type</span>
+                              <span className="text-base-text font-semibold">{ins.inspectionType}</span>
+                            </div>
+                            <div>
+                              <span className="text-base-muted block uppercase font-condensed font-bold tracking-wider">Target Date</span>
+                              <span className="text-base-text font-mono">{ins.targetDate || '—'}</span>
+                            </div>
+                          </div>
+
+                          {ins.comments && (
+                            <div className="bg-base-surface border border-base-border/40 rounded p-1.5 text-[10px] italic text-base-muted mt-1">
+                              "{ins.comments}"
+                            </div>
+                          )}
+                          {ins.punchList && ins.status === 'Rejected / Punchlist' && (
+                            <div className="bg-red-500/5 border border-red-500/10 text-red-400 rounded p-1.5 text-[10px] mt-1">
+                              <strong>Punch List:</strong> {ins.punchList}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+
+          {/* SECTION F — SAFETY, MATERIALS & FACILITY ISSUES */}
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+            <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-base-accent" />
+                <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">
+                  Section F — Safety, Materials & Facility Issues
+                </h3>
+              </div>
+              <span className="text-[10px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded font-bold font-mono">
+                {problemReports.filter(prob => prob.date === reportDate || (prob.resolvedAt && prob.resolvedAt.slice(0, 10) === reportDate)).length} Alert(s)
+              </span>
+            </div>
+            
+            <div className="p-4 space-y-3">
+              <p className="text-[11px] text-base-muted leading-relaxed">
+                Unplanned incidents, material shortages, drawing errors, or safety observations recorded today.
+              </p>
+              
+              {(() => {
+                const dayProblems = problemReports.filter(prob => 
+                  prob.date === reportDate || 
+                  (prob.resolvedAt && prob.resolvedAt.slice(0, 10) === reportDate)
+                );
+
+                if (dayProblems.length === 0) {
+                  return (
+                    <div className="text-center py-6 text-xs text-base-muted italic">
+                      No safety, material, or facility issues reported on this date.
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {dayProblems.map(prob => {
+                      const isResolved = prob.status === 'Resolved';
+                      const catColors: Record<string, string> = {
+                        'Facility Issue': 'bg-amber-500/10 text-amber-500 border-amber-500/20',
+                        'Drawing Issue': 'bg-blue-500/10 text-blue-500 border-blue-500/20',
+                        'Safety Issue': 'bg-red-500/10 text-red-500 border-red-500/20',
+                        'Material Issue': 'bg-orange-500/10 text-orange-500 border-orange-500/20',
+                        'Equipment Issue': 'bg-purple-500/10 text-purple-500 border-purple-500/20',
+                        'Other': 'bg-zinc-500/10 text-zinc-400 border-zinc-500/20'
+                      };
+                      const badgeColor = catColors[prob.category] || catColors['Other'];
+
+                      return (
+                        <div key={prob.id} className="border border-base-border/50 rounded-lg p-3 bg-base-surface2/30 space-y-2 text-xs">
+                          <div className="flex justify-between items-start gap-2">
+                            <span className={`px-2 py-0.5 rounded border text-[9px] font-bold uppercase tracking-wider ${badgeColor}`}>
+                              {prob.category}
+                            </span>
+                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                              isResolved 
+                                ? 'bg-emerald-500/10 text-emerald-500' 
+                                : 'bg-red-500/10 text-red-500 animate-pulse'
+                            }`}>
+                              {isResolved ? '✓ Resolved' : '● Open'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            {prob.projectName && (
+                              <div className="text-[10px] text-base-accent font-bold uppercase font-condensed tracking-wider">
+                                {prob.projectName}
+                              </div>
+                            )}
+                            <p className="text-base-text leading-relaxed">{prob.description}</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 pt-2 border-t border-base-border/30 text-[10px]">
+                            <div>
+                              <span className="text-base-muted block uppercase font-condensed font-bold tracking-wider">Reported By</span>
+                              <span className="text-base-text font-semibold">{prob.reportedBy}</span>
+                            </div>
+                            <div>
+                              <span className="text-base-muted block uppercase font-condensed font-bold tracking-wider">Assigned to</span>
+                              <span className="text-base-text font-mono">{prob.assignedPosition || '—'}</span>
+                            </div>
+                          </div>
+
+                          {isResolved && prob.resolutionNote && (
+                            <div className="bg-emerald-500/5 border border-emerald-500/10 text-emerald-400 rounded p-1.5 text-[10px] mt-2">
+                              <strong>Resolution Note:</strong> {prob.resolutionNote}
+                              {prob.resolvedBy && <span className="block text-[9px] text-base-muted2 mt-0.5">Resolved by: {prob.resolvedBy}</span>}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         </>
       )}

@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { WireLog, Employee, Project, Assembly, User } from '../types';
 import { Flame, Trash2, Search, Plus, Calendar, UserCheck, Folder, AlertCircle, TrendingUp, Sparkles, Filter, Download, Wrench } from 'lucide-react';
+import { can } from '../utils/permissions';
 
 interface WireConsumableViewProps {
   wireLogs: WireLog[];
@@ -19,6 +20,9 @@ export default function WireConsumableView({
   onAddWireLog,
   onDeleteWireLog
 }: WireConsumableViewProps) {
+  const canManageWireLog = can(currentUser, 'manageWireLog');
+  const canDeleteWireLog = can(currentUser, 'deleteWireLog');
+
   // Local active states
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
@@ -281,254 +285,256 @@ export default function WireConsumableView({
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
         {/* Column 1: Entry Form */}
-        <div className="lg:col-span-1 space-y-6">
-          <div className="bg-base-surface border border-base-border p-5 rounded-2xl shadow-card space-y-4">
-            <div className="flex items-center gap-2 border-b border-base-border pb-3">
-              <Plus className="h-4 w-4 text-amber-500" />
-              <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Key In Daily Wire Taken</span>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium">
-              
-              {/* DATE */}
-              <div className="space-y-1.5">
-                <label className="text-base-muted2 flex items-center gap-1.5">
-                  <Calendar className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Date Taken</span>
-                </label>
-                <input
-                  type="date"
-                  value={dateStr}
-                  onChange={(e) => setDateStr(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold"
-                  required
-                />
+        {canManageWireLog && (
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-base-surface border border-base-border p-5 rounded-2xl shadow-card space-y-4">
+              <div className="flex items-center gap-2 border-b border-base-border pb-3">
+                <Plus className="h-4 w-4 text-amber-500" />
+                <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Key In Daily Wire Taken</span>
               </div>
 
-              {/* WELDER DROPDOWN */}
-              <div className="space-y-1.5 relative">
-                <label className="text-base-muted2 flex items-center gap-1.5">
-                  <UserCheck className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Welder / Fitter (Type to search)</span>
-                </label>
-                <div className="relative">
+              <form onSubmit={handleSubmit} className="space-y-4 text-xs font-medium">
+                
+                {/* DATE */}
+                <div className="space-y-1.5">
+                  <label className="text-base-muted2 flex items-center gap-1.5">
+                    <Calendar className="h-3.5 w-3.5 text-base-muted" />
+                    <span>Date Taken</span>
+                  </label>
                   <input
-                    type="text"
-                    placeholder="Type name or position to search..."
-                    value={isWelderFocused ? welderSearch : (selectedWelderObj ? `${selectedWelderObj.name} ${selectedWelderObj.position ? `(${selectedWelderObj.position})` : ''}` : '')}
-                    onChange={(e) => {
-                      setWelderSearch(e.target.value);
-                      if (!e.target.value.trim()) {
-                        setSelectedEmployeeId('');
-                      }
-                    }}
-                    onFocus={() => {
-                      setIsWelderFocused(true);
-                      setWelderSearch('');
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setIsWelderFocused(false);
-                      }, 250);
-                    }}
-                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
+                    type="date"
+                    value={dateStr}
+                    onChange={(e) => setDateStr(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold"
                     required
                   />
-                  {selectedEmployeeId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedEmployeeId('');
+                </div>
+
+                {/* WELDER DROPDOWN */}
+                <div className="space-y-1.5 relative">
+                  <label className="text-base-muted2 flex items-center gap-1.5">
+                    <UserCheck className="h-3.5 w-3.5 text-base-muted" />
+                    <span>Welder / Fitter (Type to search)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Type name or position to search..."
+                      value={isWelderFocused ? welderSearch : (selectedWelderObj ? `${selectedWelderObj.name} ${selectedWelderObj.position ? `(${selectedWelderObj.position})` : ''}` : '')}
+                      onChange={(e) => {
+                        setWelderSearch(e.target.value);
+                        if (!e.target.value.trim()) {
+                          setSelectedEmployeeId('');
+                        }
+                      }}
+                      onFocus={() => {
+                        setIsWelderFocused(true);
                         setWelderSearch('');
                       }}
-                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
-                    >
-                      Clear
-                    </button>
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setIsWelderFocused(false);
+                        }, 250);
+                      }}
+                      className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
+                      required
+                    />
+                    {selectedEmployeeId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedEmployeeId('');
+                          setWelderSearch('');
+                        }}
+                        className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {isWelderFocused && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                      {filteredWelders.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-base-muted italic">No matching personnel found</div>
+                      ) : (
+                        filteredWelders.map(emp => (
+                          <button
+                            key={emp.id}
+                            type="button"
+                            onMouseDown={() => {
+                              setSelectedEmployeeId(emp.id);
+                              setWelderSearch(emp.name);
+                              setIsWelderFocused(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                          >
+                            <span className="font-bold">{emp.name}</span>
+                            {emp.position && <span className="text-[10px] opacity-85">{emp.position} {emp.location ? `• ${emp.location}` : ''}</span>}
+                          </button>
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {isWelderFocused && (
-                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
-                    {filteredWelders.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching personnel found</div>
-                    ) : (
-                      filteredWelders.map(emp => (
-                        <button
-                          key={emp.id}
-                          type="button"
-                          onMouseDown={() => {
-                            setSelectedEmployeeId(emp.id);
-                            setWelderSearch(emp.name);
-                            setIsWelderFocused(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
-                        >
-                          <span className="font-bold">{emp.name}</span>
-                          {emp.position && <span className="text-[10px] opacity-85">{emp.position} {emp.location ? `• ${emp.location}` : ''}</span>}
-                        </button>
-                      ))
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* PROJECT DROPDOWN */}
-              <div className="space-y-1.5 relative">
-                <label className="text-base-muted2 flex items-center gap-1.5">
-                  <Folder className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Project (Type to search)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="text"
-                    placeholder="Type client or project name..."
-                    value={isProjectFocused ? projectSearch : (selectedProjectObj ? `[${selectedProjectObj.client}] ${selectedProjectObj.name}` : '')}
-                    onChange={(e) => {
-                      setProjectSearch(e.target.value);
-                      if (!e.target.value.trim()) {
-                        setSelectedProjectId('');
-                        setSelectedAssemblyId('');
-                      }
-                    }}
-                    onFocus={() => {
-                      setIsProjectFocused(true);
-                      setProjectSearch('');
-                    }}
-                    onBlur={() => {
-                      setTimeout(() => {
-                        setIsProjectFocused(false);
-                      }, 250);
-                    }}
-                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
-                    required
-                  />
-                  {selectedProjectId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedProjectId('');
-                        setSelectedAssemblyId('');
+                {/* PROJECT DROPDOWN */}
+                <div className="space-y-1.5 relative">
+                  <label className="text-base-muted2 flex items-center gap-1.5">
+                    <Folder className="h-3.5 w-3.5 text-base-muted" />
+                    <span>Project (Type to search)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder="Type client or project name..."
+                      value={isProjectFocused ? projectSearch : (selectedProjectObj ? `[${selectedProjectObj.client}] ${selectedProjectObj.name}` : '')}
+                      onChange={(e) => {
+                        setProjectSearch(e.target.value);
+                        if (!e.target.value.trim()) {
+                          setSelectedProjectId('');
+                          setSelectedAssemblyId('');
+                        }
+                      }}
+                      onFocus={() => {
+                        setIsProjectFocused(true);
                         setProjectSearch('');
                       }}
-                      className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
-                    >
-                      Clear
-                    </button>
+                      onBlur={() => {
+                        setTimeout(() => {
+                          setIsProjectFocused(false);
+                        }, 250);
+                      }}
+                      className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all font-semibold text-xs"
+                      required
+                    />
+                    {selectedProjectId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProjectId('');
+                          setSelectedAssemblyId('');
+                          setProjectSearch('');
+                        }}
+                        className="absolute right-2.5 top-2 text-[10px] bg-base-surface3 hover:bg-red-500/10 hover:text-red-500 px-1.5 py-0.5 rounded border border-base-border text-base-muted font-bold transition-all"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+
+                  {isProjectFocused && (
+                    <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
+                      {filteredProjectsForSelect.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-base-muted italic">No matching projects found</div>
+                      ) : (
+                        filteredProjectsForSelect.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onMouseDown={() => {
+                              setSelectedProjectId(p.id);
+                              setSelectedAssemblyId(''); // Reset sub-assembly
+                              setProjectSearch(`[${p.client}] ${p.name}`);
+                              setIsProjectFocused(false);
+                            }}
+                            className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
+                          >
+                            <span className="font-bold">{p.name}</span>
+                            <span className="text-[10px] opacity-85">Client: {p.client}</span>
+                          </button>
+                        ))
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {isProjectFocused && (
-                  <div className="absolute left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-xl z-30 divide-y divide-base-border">
-                    {filteredProjectsForSelect.length === 0 ? (
-                      <div className="px-3 py-2 text-xs text-base-muted italic">No matching projects found</div>
-                    ) : (
-                      filteredProjectsForSelect.map(p => (
-                        <button
-                          key={p.id}
-                          type="button"
-                          onMouseDown={() => {
-                            setSelectedProjectId(p.id);
-                            setSelectedAssemblyId(''); // Reset sub-assembly
-                            setProjectSearch(`[${p.client}] ${p.name}`);
-                            setIsProjectFocused(false);
-                          }}
-                          className="w-full text-left px-3 py-2 text-xs hover:bg-amber-500 hover:text-slate-950 transition-colors flex flex-col"
-                        >
-                          <span className="font-bold">{p.name}</span>
-                          <span className="text-[10px] opacity-85">Client: {p.client}</span>
-                        </button>
-                      ))
-                    )}
+                {/* SUB-ASSEMBLY DROPDOWN (CONNECTED TO THE PROJECT) */}
+                <div className="space-y-1.5">
+                  <label className="text-base-muted2 flex items-center gap-1.5">
+                    <Wrench className="h-3.5 w-3.5 text-base-muted" />
+                    <span>Sub-Assembly</span>
+                  </label>
+                  <select
+                    value={selectedAssemblyId}
+                    onChange={(e) => setSelectedAssemblyId(e.target.value)}
+                    disabled={!selectedProjectId}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
+                  >
+                    <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Connected Sub-Assembly --</option>
+                    {selectedProjectObj?.assemblies.map(asm => (
+                      <option key={asm.id} value={asm.id} className="bg-base-surface2 text-base-text font-sans">
+                        {asm.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!selectedProjectId && (
+                    <span className="text-[10px] text-base-muted italic block mt-0.5">Select a project first to load connected sub-assemblies.</span>
+                  )}
+                </div>
+
+                {/* AMOUNT IN KILOGRAMS */}
+                <div className="space-y-1.5">
+                  <label className="text-base-muted2 flex items-center gap-1.5">
+                    <TrendingUp className="h-3.5 w-3.5 text-base-muted" />
+                    <span>Amount Taken (in kg)</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.05"
+                      placeholder="e.g. 5.5"
+                      value={amountInputStr}
+                      onChange={(e) => setAmountInputStr(e.target.value)}
+                      className="w-full pl-3.5 pr-10 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none font-mono font-black focus:ring-1 focus:ring-amber-500 text-sm"
+                      required
+                    />
+                    <div className="absolute right-3.5 top-2 text-xs font-bold text-base-muted uppercase select-none">kg</div>
+                  </div>
+                </div>
+
+                {/* REMARKS */}
+                <div className="space-y-1.5">
+                  <label className="text-base-muted2">Remarks / Wire Type (Optional)</label>
+                  <textarea
+                    value={remarks}
+                    onChange={(e) => setRemarks(e.target.value)}
+                    placeholder="e.g. AWS A5.18 ER70S-6 spool, joint reinforcement..."
+                    rows={2}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all text-xs"
+                  />
+                </div>
+
+                {/* ERRORS / SUCCESS */}
+                {formError && (
+                  <div className="flex items-start gap-2 text-red-500 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span className="text-[11px] leading-relaxed font-semibold">{formError}</span>
                   </div>
                 )}
-              </div>
 
-              {/* SUB-ASSEMBLY DROPDOWN (CONNECTED TO THE PROJECT) */}
-              <div className="space-y-1.5">
-                <label className="text-base-muted2 flex items-center gap-1.5">
-                  <Wrench className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Sub-Assembly</span>
-                </label>
-                <select
-                  value={selectedAssemblyId}
-                  onChange={(e) => setSelectedAssemblyId(e.target.value)}
-                  disabled={!selectedProjectId}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed font-semibold"
-                >
-                  <option value="" className="bg-base-surface2 text-base-text font-sans">-- Select Connected Sub-Assembly --</option>
-                  {selectedProjectObj?.assemblies.map(asm => (
-                    <option key={asm.id} value={asm.id} className="bg-base-surface2 text-base-text font-sans">
-                      {asm.name}
-                    </option>
-                  ))}
-                </select>
-                {!selectedProjectId && (
-                  <span className="text-[10px] text-base-muted italic block mt-0.5">Select a project first to load connected sub-assemblies.</span>
+                {formSuccess && (
+                  <div className="flex items-start gap-2 text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg animate-fade-in">
+                    <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span className="text-[11px] leading-relaxed font-semibold">{formSuccess}</span>
+                  </div>
                 )}
-              </div>
 
-              {/* AMOUNT IN KILOGRAMS */}
-              <div className="space-y-1.5">
-                <label className="text-base-muted2 flex items-center gap-1.5">
-                  <TrendingUp className="h-3.5 w-3.5 text-base-muted" />
-                  <span>Amount Taken (in kg)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0.05"
-                    placeholder="e.g. 5.5"
-                    value={amountInputStr}
-                    onChange={(e) => setAmountInputStr(e.target.value)}
-                    className="w-full pl-3.5 pr-10 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none font-mono font-black focus:ring-1 focus:ring-amber-500 text-sm"
-                    required
-                  />
-                  <div className="absolute right-3.5 top-2 text-xs font-bold text-base-muted uppercase select-none">kg</div>
-                </div>
-              </div>
-
-              {/* REMARKS */}
-              <div className="space-y-1.5">
-                <label className="text-base-muted2">Remarks / Wire Type (Optional)</label>
-                <textarea
-                  value={remarks}
-                  onChange={(e) => setRemarks(e.target.value)}
-                  placeholder="e.g. AWS A5.18 ER70S-6 spool, joint reinforcement..."
-                  rows={2}
-                  className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-base-text outline-none focus:ring-1 focus:ring-amber-500 transition-all text-xs"
-                />
-              </div>
-
-              {/* ERRORS / SUCCESS */}
-              {formError && (
-                <div className="flex items-start gap-2 text-red-500 bg-red-500/10 border border-red-500/20 p-3 rounded-lg">
-                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span className="text-[11px] leading-relaxed font-semibold">{formError}</span>
-                </div>
-              )}
-
-              {formSuccess && (
-                <div className="flex items-start gap-2 text-emerald-500 bg-emerald-500/10 border border-emerald-500/20 p-3 rounded-lg animate-fade-in">
-                  <Sparkles className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span className="text-[11px] leading-relaxed font-semibold">{formSuccess}</span>
-                </div>
-              )}
-
-              {/* SUBMIT BUTTON */}
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-amber-500 dark:bg-amber-500 hover:bg-amber-600 dark:hover:bg-amber-400 text-slate-950 font-condensed font-black text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm hover:shadow-md"
-              >
-                Submit Wire Log
-              </button>
-            </form>
+                {/* SUBMIT BUTTON */}
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-amber-500 dark:bg-amber-500 hover:bg-amber-600 dark:hover:bg-amber-400 text-slate-950 font-condensed font-black text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-sm hover:shadow-md"
+                >
+                  Submit Wire Log
+                </button>
+              </form>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Column 2 & 3: History & Aggregated Analysis */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className={`${canManageWireLog ? 'lg:col-span-2' : 'lg:col-span-3'} space-y-6`}>
 
           {/* Aggregated Insights Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -814,13 +820,15 @@ export default function WireConsumableView({
                         </td>
                         {/* Action delete column */}
                         <td className="px-4 py-1.5 text-center">
-                          <button
-                            onClick={() => onDeleteWireLog(log.id)}
-                            className="p-1 px-1.5 rounded bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all cursor-pointer inline-flex items-center"
-                            title="Delete wire consumable entry"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
+                          {canDeleteWireLog && (
+                            <button
+                              onClick={() => onDeleteWireLog(log.id)}
+                              className="p-1 px-1.5 rounded bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-all cursor-pointer inline-flex items-center"
+                              title="Delete wire consumable entry"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))

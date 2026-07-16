@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Employee, TimesheetEntry, WireLog, UserRoleType } from '../types';
+import { can } from '../utils/permissions';
 import {
   Search,
   UserPlus,
@@ -207,7 +208,8 @@ export default function EmployeesView({
   // States for Attendance tab
   const [selectedAttendanceMonth, setSelectedAttendanceMonth] = useState<string>('2026-07');
 
-  const isAdminOrManager = currentUser?.role === 'admin' || currentUser?.role === 'manager';
+  const canManageEmployees = can(currentUser as any, 'manageEmployees');
+  const canDeleteEmployee = can(currentUser as any, 'deleteEmployee');
 
   const toggleGroup = (coord: string) => {
     setCollapsedGroups(prev => ({ ...prev, [coord]: !prev[coord] }));
@@ -829,28 +831,32 @@ export default function EmployeesView({
                   </button>
                 </div>
 
-                <input
-                  type="file"
-                  id="emp-excel-input-file"
-                  accept=".xlsx,.xls"
-                  onChange={handleFileChange}
-                  className="hidden"
-                />
-                <button
-                  onClick={triggerExcelUpload}
-                  className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer shadow-sm"
-                >
-                  <Upload className="h-4 w-4 text-base-blue" />
-                  <span>Import</span>
-                </button>
-                <button
-                  onClick={openAddEmployee}
-                  className="btn btn-accent btn-sm flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-sm"
-                >
-                  <UserPlus className="h-4 w-4" />
-                  <span>Add Employee</span>
-                </button>
-                {isAdminOrManager && onClearAllEmployees && (
+                {canManageEmployees && (
+                  <>
+                    <input
+                      type="file"
+                      id="emp-excel-input-file"
+                      accept=".xlsx,.xls"
+                      onChange={handleFileChange}
+                      className="hidden"
+                    />
+                    <button
+                      onClick={triggerExcelUpload}
+                      className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer shadow-sm"
+                    >
+                      <Upload className="h-4 w-4 text-base-blue" />
+                      <span>Import</span>
+                    </button>
+                    <button
+                      onClick={openAddEmployee}
+                      className="btn btn-accent btn-sm flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-sm"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                      <span>Add Employee</span>
+                    </button>
+                  </>
+                )}
+                {canDeleteEmployee && onClearAllEmployees && (
                   <button
                     onClick={onClearAllEmployees}
                     className="btn btn-sm bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-sm"
@@ -1059,20 +1065,24 @@ export default function EmployeesView({
                                   </td>
                                   <td className="px-3 py-1.5 text-center">
                                     <div className="flex items-center justify-center gap-1">
-                                      <button
-                                        onClick={() => openEditEmployee(emp.id)}
-                                        className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer"
-                                        title="Edit employee details"
-                                      >
-                                        <Edit className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        onClick={() => deleteEmployee(emp.id)}
-                                        className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer"
-                                        title="Delete employee record"
-                                      >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
+                                      {canManageEmployees && (
+                                        <button
+                                          onClick={() => openEditEmployee(emp.id)}
+                                          className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer"
+                                          title="Edit employee details"
+                                        >
+                                          <Edit className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
+                                      {canDeleteEmployee && (
+                                        <button
+                                          onClick={() => deleteEmployee(emp.id)}
+                                          className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer"
+                                          title="Delete employee record"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      )}
                                     </div>
                                   </td>
                                 </tr>
@@ -1431,7 +1441,7 @@ export default function EmployeesView({
                         <span>View KPI History</span>
                       </button>
 
-                      {isAdminOrManager && (
+                      {canManageEmployees && (
                         <button
                           onClick={() => onReinstateEmployee(emp.id)}
                           className="px-3 py-1.5 rounded bg-green-500 text-white hover:bg-green-600 text-[9px] font-condensed font-bold uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all shadow-sm"

@@ -2,7 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Project, Assembly, Task, Dependency } from '../types';
+import { Project, Assembly, Task, Dependency, User } from '../types';
+import { can } from '../utils/permissions';
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -181,6 +182,7 @@ interface GanttViewProps {
   setDepModalOpen?: (open: boolean) => void;
   onSaveDependencies?: (targetKey: string, preds: Dependency[], succs: Dependency[]) => void;
   onCloseDepModal?: () => void;
+  currentUser?: User | null;
 }
 
 interface GanttRow {
@@ -624,14 +626,18 @@ export default function GanttView({
   project, 
   projects, 
   onClose, 
-  onUpdateProject, 
+  onUpdateProject: onUpdateProjectRaw, 
   onOpenDepModal,
   depModalOpen,
   depModalRowKey,
   setDepModalOpen,
   onSaveDependencies,
-  onCloseDepModal
+  onCloseDepModal,
+  currentUser
 }: GanttViewProps) {
+  const allowedToEdit = can(currentUser, 'editGanttSchedule');
+  const onUpdateProject = allowedToEdit ? onUpdateProjectRaw : undefined;
+
   const projectsList = useMemo(() => {
     let list: Project[] = [];
     if (projects && projects.length > 0) {

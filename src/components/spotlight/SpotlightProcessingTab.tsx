@@ -112,6 +112,7 @@ export function SpotlightProcessingTab({
       projectId: project.id,
       projectName: project.name,
       workOrder: project.client || '',
+      gaNumber: project.gaNumber || undefined,
       materialName: formMaterialName.trim(),
       partNo: formPartNo.trim() || undefined,
       description: formDescription.trim() || undefined,

@@ -10,21 +10,26 @@ import {
   Filter
 } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
-import { TimesheetEntry, Employee, Project } from '../types/index';
+import { TimesheetEntry, Employee, Project, User } from '../types/index';
+import { can } from '../utils/permissions';
 
 interface ManpowerBoardViewProps {
   timesheets: TimesheetEntry[];
   employees:  Employee[];
   projects:   Project[];
   initialDate?: string;
+  currentUser: User | null;
 }
 
 export default function ManpowerBoardView({
   timesheets,
   employees,
   projects,
-  initialDate
+  initialDate,
+  currentUser
 }: ManpowerBoardViewProps) {
+  const canManageManpowerBoard = can(currentUser, 'manageManpowerBoard');
+
   const [selectedDate, setSelectedDate] = useState(
     initialDate || new Date().toISOString().slice(0, 10)
   );

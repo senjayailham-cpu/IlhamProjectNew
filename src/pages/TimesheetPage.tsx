@@ -1,6 +1,6 @@
 import React from 'react';
 import TimesheetView from '../components/TimesheetView';
-import { TimesheetEntry, Employee, Project } from '../types';
+import { TimesheetEntry, Employee, Project, User } from '../types';
 
 interface TimesheetPageProps {
   timesheets: TimesheetEntry[];
@@ -13,6 +13,7 @@ interface TimesheetPageProps {
   removeTimesheetEntry: (id: string) => void;
   exportTimesheetExcel: () => void;
   openSpotlight?: (pid: string) => void;
+  currentUser: User | null;
 }
 
 export function TimesheetPage({
@@ -25,7 +26,8 @@ export function TimesheetPage({
   openEditTimesheet,
   removeTimesheetEntry,
   exportTimesheetExcel,
-  openSpotlight
+  openSpotlight,
+  currentUser
 }: TimesheetPageProps) {
   return (
     <TimesheetView
@@ -39,6 +41,7 @@ export function TimesheetPage({
       deleteTsEntry={removeTimesheetEntry}
       exportTimesheetDaily={exportTimesheetExcel}
       openSpotlight={openSpotlight}
+      currentUser={currentUser}
     />
   );
 }

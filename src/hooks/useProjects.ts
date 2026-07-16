@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Project, Assembly, Task } from '../types';
+import { Project, Assembly, Task, MaterialProcessing } from '../types';
 import { uid, calcPct } from '../utils';
+import { buildCopiedStructure } from '../utils/copyStructureUtils';
 import { useFirestore } from './useFirestore';
 import { propagateAllSchedules } from '../utils/projectUtils';
 
 export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
   verifyMarkChanged: () => void,
-  setDeleteConfirm: (confirm: any) => void
+  setDeleteConfirm: (confirm: any) => void,
+  onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>
 ) {
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -28,9 +30,15 @@ export function useProjects(
   const [depModalOpen, setDepModalOpen] = useState<boolean>(false);
   const [depModalRowKey, setDepModalRowKey] = useState<string | null>(null);
 
+  // GA Match auto-flow states
+  const [gaMatchModalOpen, setGaMatchModalOpen] = useState<boolean>(false);
+  const [gaMatchCandidates, setGaMatchCandidates] = useState<Project[]>([]);
+  const [pendingNewProjectData, setPendingNewProjectData] = useState<any>(null);
+
   // Form fields
   const [pName, setPName] = useState<string>('');
   const [pWorkOrder, setPWorkOrder] = useState<string>('');
+  const [pGaNumber, setPGaNumber] = useState<string>('');
   const [pStatus, setPStatus] = useState<'active' | 'pending' | 'completed' | 'on-hold'>('active');
   const [pStart, setPStart] = useState<string>('');
   const [pDue, setPDue] = useState<string>('');
@@ -62,6 +70,7 @@ export function useProjects(
     setEditingProjectId(null);
     setPName('');
     setPWorkOrder('');
+    setPGaNumber('');
     setPStatus('active');
     setPStart('');
     setPDue('');
@@ -80,6 +89,7 @@ export function useProjects(
     setEditingProjectId(pid);
     setPName(p.name);
     setPWorkOrder(p.client);
+    setPGaNumber(p.gaNumber || '');
     setPStatus(p.status as any);
     setPStart(p.start || '');
     setPDue(p.due || '');
@@ -90,6 +100,118 @@ export function useProjects(
     setPTargetMonth(p.targetMonth || '');
     setPPriority(p.priority || 'medium');
     setProjectFormOpen(true);
+  };
+
+  const createProjectNow = (
+    baseData: any,
+    copiedAssemblies: Assembly[],
+    copiedMaterials: MaterialProcessing[] = []
+  ) => {
+    const addedProj: Project = {
+      id: uid(),
+      ...baseData,
+      created: new Date().toISOString().slice(0, 10),
+      assemblies: copiedAssemblies,
+      materialProcessing: copiedMaterials,
+      completedDate: baseData.status === 'completed'
+        ? new Date().toISOString().slice(0, 10) : null,
+    };
+    setProjects(prev => [...prev, addedProj]);
+    saveItem('projects', addedProj);
+    setSpotlightProjectId(addedProj.id);
+
+    // Register GA Number to Master Data for future autocomplete
+    if (addedProj.gaNumber && onEnsureMasterData) {
+      onEnsureMasterData('gaNumber', addedProj.gaNumber).catch(err =>
+        console.error('Failed to register GA Number to master data:', err)
+      );
+    }
+    logActivity('project_add',
+      copiedAssemblies.length > 0
+        ? `Added new project (copied structure from GA match)`
+        : 'Added new project',
+      addedProj.id, addedProj.name, undefined, undefined, undefined, undefined,
+      `Loc: ${addedProj.location}, Budget: ${baseData.budgetHours ?? 'N/A'}`
+    );
+    setProjectFormOpen(false);
+    // Reset individual form fields:
+    setPName('');
+    setPWorkOrder('');
+    setPGaNumber('');
+    setPStatus('active');
+    setPStart('');
+    setPDue('');
+    setPCat('tray');
+    setPLoc('workshop1');
+    setPNotes('');
+    setPBudgetHours('');
+    setPTargetMonth('');
+    setPPriority('medium');
+    verifyMarkChanged();
+    return addedProj;
+  };
+
+  const handleGaConfirmCopy = (sourceProject: Project, calculatedFinish: string) => {
+    if (!pendingNewProjectData) return;
+
+    // Override the due date with the auto-calculated finish
+    const finalProjectData = {
+      ...pendingNewProjectData,
+      due: calculatedFinish,
+    };
+
+    // Build a temp target for date-offset calculation
+    const tempTarget = { ...finalProjectData, id: 'temp', assemblies: [] } as Project;
+    const copiedAssemblies = buildCopiedStructure(sourceProject, tempTarget);
+
+    // Copy material processing items (reset stage progress)
+    const copiedMaterials: MaterialProcessing[] = (sourceProject.materialProcessing || [])
+      .map(item => {
+        const resetStages: any = {};
+        (item.activeStages || []).forEach(key => {
+          resetStages[key] = { pct: 0, status: 'pending', operator: '', notes: '' };
+        });
+        return {
+          ...item,
+          id: 'mp_' + uid(),
+          stages: resetStages,
+          overallPct: 0,
+          isCompleted: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+      });
+
+    const newProj = createProjectNow(finalProjectData, copiedAssemblies, copiedMaterials);
+    // Fix projectId/projectName/workOrder references in copied materials
+    if (newProj) {
+      const fixedMaterials = copiedMaterials.map(m => ({
+        ...m, projectId: newProj.id, projectName: newProj.name, workOrder: newProj.client,
+      }));
+      setProjects(prev => prev.map(p =>
+        p.id === newProj.id ? { ...p, materialProcessing: fixedMaterials } : p
+      ));
+      saveItem('projects', { id: newProj.id, materialProcessing: fixedMaterials });
+    }
+
+    setGaMatchModalOpen(false);
+    setGaMatchCandidates([]);
+    setPendingNewProjectData(null);
+  };
+
+  const handleGaCreateEmpty = () => {
+    if (!pendingNewProjectData) return;
+    createProjectNow(pendingNewProjectData, []);
+    setGaMatchModalOpen(false);
+    setGaMatchCandidates([]);
+    setPendingNewProjectData(null);
+  };
+
+  const handleGaCancel = () => {
+    setGaMatchModalOpen(false);
+    setGaMatchCandidates([]);
+    setPendingNewProjectData(null);
+    // Keep form open so user can edit GA number or cancel manually
   };
 
   const saveProjectForm = () => {
@@ -106,6 +228,7 @@ export function useProjects(
           ...p,
           name: pName.trim(),
           client: wo,
+          gaNumber: pGaNumber.trim().toUpperCase() || undefined,
           status: pStatus,
           start: pStart,
           due: pDue,
@@ -119,34 +242,46 @@ export function useProjects(
         };
         setProjects(prev => prev.map(item => item.id === editingProjectId ? updatedProj : item));
         saveItem('projects', updatedProj);
+
+        // Register GA Number to Master Data for future autocomplete
+        if (updatedProj.gaNumber && onEnsureMasterData) {
+          onEnsureMasterData('gaNumber', updatedProj.gaNumber).catch(err =>
+            console.error('Failed to register GA Number to master data:', err)
+          );
+        }
       }
       logActivity('project_edit', 'Edited project details', editingProjectId, pName.trim(), undefined, undefined, undefined, undefined, `Budget Hours: ${parsedBudget ?? 'N/A'}`);
-    } else {
-      const addedProj: Project = {
-        id: uid(),
-        name: pName.trim(),
-        client: wo,
-        status: pStatus,
-        start: pStart,
-        due: pDue,
-        category: pCat,
-        location: pLoc,
-        created: new Date().toISOString().slice(0, 10),
-        assemblies: [],
-        notes: pNotes.trim(),
-        budgetHours: parsedBudget,
-        completedDate: pStatus === 'completed' ? new Date().toISOString().slice(0, 10) : null,
-        targetMonth: pTargetMonth || '',
-        priority: pPriority
-      };
-
-      setProjects(prev => [...prev, addedProj]);
-      saveItem('projects', addedProj);
-      logActivity('project_add', 'Added new project', addedProj.id, addedProj.name, undefined, undefined, undefined, undefined, `Loc: ${addedProj.location}, Budget: ${parsedBudget ?? 'N/A'}`);
+      setProjectFormOpen(false);
+      verifyMarkChanged();
+      return;
     }
 
-    setProjectFormOpen(false);
-    verifyMarkChanged();
+    // NEW project — check GA Number match first
+    const normalizedGa = pGaNumber.trim().toUpperCase();
+    const baseProjectData = {
+      name: pName.trim(), client: wo,
+      gaNumber: normalizedGa || undefined,
+      status: pStatus, start: pStart, due: pDue,
+      category: pCat, location: pLoc,
+      notes: pNotes.trim(), budgetHours: parsedBudget,
+      targetMonth: pTargetMonth || '', priority: pPriority,
+    };
+
+    if (normalizedGa) {
+      const matches = projects.filter(p =>
+        p.gaNumber && p.gaNumber.trim().toUpperCase() === normalizedGa
+      );
+      if (matches.length > 0) {
+        // Show modal instead of creating immediately
+        setGaMatchCandidates(matches);
+        setPendingNewProjectData(baseProjectData);
+        setGaMatchModalOpen(true);
+        return; // STOP — wait for user decision
+      }
+    }
+
+    // No GA match — create immediately
+    createProjectNow(baseProjectData, []);
   };
 
   const deleteProjectDetails = (pid: string) => {
@@ -625,6 +760,8 @@ export function useProjects(
     setPName,
     pWorkOrder,
     setPWorkOrder,
+    pGaNumber,
+    setPGaNumber,
     pStatus,
     setPStatus,
     pStart,
@@ -688,7 +825,13 @@ export function useProjects(
     removeTaskNode,
     openCopyModalLauncher,
     confirmCopyMultiplier,
-    importProjectsExcel
+    importProjectsExcel,
+    gaMatchModalOpen,
+    gaMatchCandidates,
+    pendingNewProjectData,
+    handleGaConfirmCopy,
+    handleGaCreateEmpty,
+    handleGaCancel
   };
 }
 export default useProjects;

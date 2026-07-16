@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { can } from '../utils/permissions';
 import {
@@ -87,6 +87,9 @@ export default function MaterialsView({
   onDeleteMaterialRequest,
   onAddConsumptionLog
 }: MaterialsViewProps) {
+  const isSubmittingRef = useRef<boolean>(false);
+  const [isBusy, setIsBusy] = useState(false);
+
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'stock' | 'requests' | 'logs'>('stock');
 
@@ -370,6 +373,8 @@ export default function MaterialsView({
 
   // Form handlers
   const handleCreateMaterialSubmit = () => {
+    if (isSubmittingRef.current) return;
+
     if (!newMatName.trim()) {
       setAddMaterialError('Material Name is required');
       return;
@@ -384,6 +389,9 @@ export default function MaterialsView({
       setAddMaterialError('Minimum Stock must be a non-negative number');
       return;
     }
+
+    isSubmittingRef.current = true;
+    setIsBusy(true);
 
     onAddMaterial({
       name: newMatName.trim(),
@@ -405,6 +413,11 @@ export default function MaterialsView({
     setNewMatNotes('');
     setAddMaterialError('');
     setIsAddingMaterial(false);
+
+    setTimeout(() => {
+      isSubmittingRef.current = false;
+      setIsBusy(false);
+    }, 800);
   };
 
   const handleEditStockSave = (id: string) => {
@@ -419,6 +432,8 @@ export default function MaterialsView({
   };
 
   const handleCreateMRSubmit = () => {
+    if (isSubmittingRef.current) return;
+
     if (!mrProjectId) {
       setMrError('Please select a project');
       return;
@@ -456,6 +471,9 @@ export default function MaterialsView({
     const proj = projects.find(p => p.id === mrProjectId);
     const assem = proj?.assemblies.find(a => a.id === mrAssemblyId);
 
+    isSubmittingRef.current = true;
+    setIsBusy(true);
+
     onAddMaterialRequest({
       projectId: mrProjectId,
       projectName: proj?.name || 'Unknown Project',
@@ -478,9 +496,16 @@ export default function MaterialsView({
     setMrLines([]);
     setMrError('');
     setIsCreatingRequest(false);
+
+    setTimeout(() => {
+      isSubmittingRef.current = false;
+      setIsBusy(false);
+    }, 800);
   };
 
   const handleManualLogSubmit = () => {
+    if (isSubmittingRef.current) return;
+
     if (!logDate) {
       setLogError('Date is required');
       return;
@@ -513,6 +538,9 @@ export default function MaterialsView({
     // If stockWarningPending is true, user already confirmed — proceed normally
     setStockWarning(null);
     setStockWarningPending(false);
+
+    isSubmittingRef.current = true;
+    setIsBusy(true);
 
     // Optional stock warning - proceed directly, append to notes if warning applies
     let finalNotes = logNotes.trim();
@@ -548,6 +576,11 @@ export default function MaterialsView({
     setStockWarning(null);
     setStockWarningPending(false);
     setIsAddingLog(false);
+
+    setTimeout(() => {
+      isSubmittingRef.current = false;
+      setIsBusy(false);
+    }, 800);
   };
 
   const handleApproveMR = (mrId: string) => {
@@ -898,6 +931,7 @@ export default function MaterialsView({
                   </button>
                   <button
                     onClick={handleCreateMaterialSubmit}
+                    disabled={isBusy}
                     className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1"
                   >
                     <Check className="h-4 w-4" />
@@ -1304,6 +1338,7 @@ export default function MaterialsView({
                   </button>
                   <button
                     onClick={handleCreateMRSubmit}
+                    disabled={isBusy}
                     className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
                   >
                     <Send className="h-3.5 w-3.5" />
@@ -1385,40 +1420,70 @@ export default function MaterialsView({
                 No material requests matched current filter criteria.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredRequests.map(mr => {
-                  const isNormal = mr.urgency === 'Normal';
-                  const isUrgent = mr.urgency === 'Urgent';
-                  const isCritical = mr.urgency === 'Critical';
+              <div className="overflow-x-auto overflow-y-auto max-h-[65vh] rounded-xl border border-base-border bg-base-surface shadow-xs">
+                <table className="w-full border-collapse text-left text-xs min-w-[1100px]">
+                  <thead>
+                    <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
+                      <th className="py-2.5 px-4">MR No</th>
+                      <th className="py-2.5 px-4">Tanggal</th>
+                      <th className="py-2.5 px-4">WO No</th>
+                      <th className="py-2.5 px-4">Project & Assembly</th>
+                      <th className="py-2.5 px-4">Requested Materials</th>
+                      <th className="py-2.5 px-4">Requestor</th>
+                      <th className="py-2.5 px-4 text-center">Urgency</th>
+                      <th className="py-2.5 px-4 text-center">Status</th>
+                      <th className="py-2.5 px-4 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-base-border text-base-text bg-base-surface">
+                    {filteredRequests.map(mr => {
+                      const isNormal = mr.urgency === 'Normal';
+                      const isUrgent = mr.urgency === 'Urgent';
+                      const isCritical = mr.urgency === 'Critical';
+                      const matchingProject = projects.find(p => p.id === mr.projectId);
+                      const workOrderNo = matchingProject?.client || '—';
 
-                  return (
-                    <div
-                      key={mr.id}
-                      className="bg-base-surface border border-base-border rounded-xl p-4.5 shadow-xs flex flex-col justify-between hover:shadow-md transition-all relative overflow-hidden"
-                    >
-                      {/* Priority Strip Indicator */}
-                      <div
-                        className={`absolute left-0 top-0 bottom-0 w-1 ${
-                          isCritical ? 'bg-red-500' : isUrgent ? 'bg-amber-500' : 'bg-base-muted'
-                        }`}
-                      />
-
-                      <div className="pl-2 space-y-3">
-                        {/* Title Bar */}
-                        <div className="flex items-center justify-between gap-2 border-b border-base-border pb-2.5">
-                          <div>
-                            <span className="text-xs font-mono font-black text-base-accent block">
-                              {mr.mrNo}
-                            </span>
-                            <span className="text-[10px] text-base-muted font-mono block mt-0.5">
-                              {mr.requestedDate}
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-1.5">
-                            {/* Urgency Badge */}
+                      return (
+                        <tr key={mr.id} className="hover:bg-base-surface2/40 transition-colors">
+                          <td className="py-1.5 px-4 font-mono font-black text-base-accent">
+                            {mr.mrNo}
+                          </td>
+                          <td className="py-1.5 px-4 font-mono text-base-muted">
+                            {mr.requestedDate}
+                          </td>
+                          <td className="py-1.5 px-4 font-mono font-bold text-base-text">
+                            {workOrderNo}
+                          </td>
+                          <td className="py-1.5 px-4">
+                            <div className="font-bold text-base-text truncate max-w-[200px]" title={mr.projectName}>
+                              {mr.projectName}
+                            </div>
+                            {mr.assemblyName && (
+                              <div className="text-[10px] font-bold text-base-accent truncate max-w-[200px]" title={mr.assemblyName}>
+                                {mr.assemblyName}
+                              </div>
+                            )}
+                          </td>
+                          <td className="py-1.5 px-4 min-w-[220px] max-w-[300px]">
+                            <div className="space-y-1 max-h-24 overflow-y-auto pr-1">
+                              {mr.items.map((it, idx) => (
+                                <div key={idx} className="flex justify-between items-center text-[11px] py-0.5 border-b border-base-border/30 last:border-0">
+                                  <span className="font-medium text-base-text truncate pr-2" title={it.materialName}>
+                                    {it.materialName}
+                                  </span>
+                                  <span className="font-mono font-bold text-base-accent shrink-0">
+                                    {it.qtyRequested} <span className="text-[9px] font-normal uppercase text-base-muted">{it.unit}</span>
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                          <td className="py-1.5 px-4 text-base-text font-medium">
+                            {mr.requestedBy}
+                          </td>
+                          <td className="py-1.5 px-4 text-center">
                             <span
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase font-condensed ${
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase font-condensed inline-block ${
                                 isCritical
                                   ? 'bg-red-500 text-white'
                                   : isUrgent
@@ -1428,10 +1493,10 @@ export default function MaterialsView({
                             >
                               {mr.urgency}
                             </span>
-
-                            {/* Status Badge */}
+                          </td>
+                          <td className="py-1.5 px-4 text-center">
                             <span
-                              className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
+                              className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider inline-block ${
                                 mr.status === 'Submitted'
                                   ? 'bg-blue-500/15 text-blue-500 border border-blue-500/20'
                                   : mr.status === 'Approved'
@@ -1445,128 +1510,65 @@ export default function MaterialsView({
                             >
                               {mr.status}
                             </span>
-                          </div>
-                        </div>
+                          </td>
+                          <td className="py-1.5 px-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              {canIssueMaterial && (
+                                <>
+                                  {mr.status === 'Submitted' && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleApproveMR(mr.id)}
+                                        className="py-1 px-2 bg-green-600 hover:bg-green-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                        title="Approve MR"
+                                      >
+                                        <CheckCircle2 className="h-3 w-3" />
+                                        <span>Approve</span>
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setRejectingMrId(mr.id)}
+                                        className="py-1 px-2 bg-red-500/15 hover:bg-red-500 hover:text-white text-red-500 font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                                        title="Reject MR"
+                                      >
+                                        <X className="h-3 w-3" />
+                                        <span>Reject</span>
+                                      </button>
+                                    </>
+                                  )}
 
-                        {/* Project Info */}
-                        <div className="text-[11px] space-y-1">
-                          <div className="flex items-start gap-1">
-                            <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
-                              Project:
-                            </span>
-                            <span className="text-base-text font-bold truncate">{mr.projectName}</span>
-                          </div>
-                          {mr.assemblyName && (
-                            <div className="flex items-start gap-1">
-                              <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
-                                Assembly:
-                              </span>
-                              <span className="text-base-text font-bold truncate text-base-accent">
-                                {mr.assemblyName}
-                              </span>
+                                  {mr.status === 'Approved' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleIssueMR(mr)}
+                                      className="py-1 px-2 bg-teal-600 hover:bg-teal-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-all flex items-center justify-center gap-1 cursor-pointer shadow-xs"
+                                      title="Issue MR"
+                                    >
+                                      <Layers className="h-3 w-3 animate-pulse" />
+                                      <span>Issue</span>
+                                    </button>
+                                  )}
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      onDeleteMaterialRequest(mr.id);
+                                    }}
+                                    className="p-1 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
+                                    title="Delete MR"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </>
+                              )}
                             </div>
-                          )}
-                          <div className="flex items-start gap-1">
-                            <span className="font-condensed font-black uppercase text-base-muted w-16 shrink-0 mt-0.5">
-                              Requestor:
-                            </span>
-                            <span className="text-base-text font-medium truncate">{mr.requestedBy}</span>
-                          </div>
-                        </div>
-
-                        {/* Items Requested Panel */}
-                        <div className="bg-base-surface2 rounded-lg p-2.5 border border-base-border/50 text-[11px]">
-                          <span className="block text-[9px] uppercase font-bold text-base-muted font-condensed tracking-wider mb-1.5">
-                            Requested Materials
-                          </span>
-                          <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                            {mr.items.map((it, idx) => (
-                              <div key={idx} className="flex justify-between items-center py-0.5 border-b border-base-border/30 last:border-0">
-                                <span className="font-semibold text-base-text truncate pr-2">
-                                  {it.materialName}
-                                </span>
-                                <span className="font-mono font-bold text-base-accent shrink-0">
-                                  {it.qtyRequested} <span className="text-[9px] font-normal uppercase text-base-muted">{it.unit}</span>
-                                </span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Notes / Reject Info */}
-                        {mr.notes && (
-                          <div className="text-[10px] text-base-muted italic pl-1 border-l-2 border-base-border">
-                            " {mr.notes} "
-                          </div>
-                        )}
-
-                        {mr.status === 'Rejected' && mr.rejectedReason && (
-                          <div className="text-[10px] text-red-500 bg-red-500/5 p-2 rounded-lg border border-red-500/10">
-                            <span className="font-bold">Rejection Reason:</span> {mr.rejectedReason}
-                          </div>
-                        )}
-
-                        {/* Signatures audit trails */}
-                        <div className="text-[9px] text-base-muted font-mono pt-1 flex flex-wrap gap-x-3 gap-y-1">
-                          {mr.approvedBy && (
-                            <span>Approved by: <strong className="text-base-text">{mr.approvedBy}</strong></span>
-                          )}
-                          {mr.issuedBy && (
-                            <span>Issued by: <strong className="text-base-text">{mr.issuedBy}</strong></span>
-                          )}
-                        </div>
-
-                        {/* Actions for Manager/Admin */}
-                        {canIssueMaterial && (
-                          <div className="flex gap-2 pt-2 border-t border-base-border/60">
-                            {mr.status === 'Submitted' && (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => handleApproveMR(mr.id)}
-                                  className="flex-1 py-1.5 bg-green-600 hover:bg-green-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                                >
-                                  <CheckCircle2 className="h-3.5 w-3.5" />
-                                  <span>Approve MR</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setRejectingMrId(mr.id)}
-                                  className="flex-1 py-1.5 bg-red-500/15 hover:bg-red-500 hover:text-white text-red-500 font-condensed font-black uppercase text-[10px] rounded transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                  <span>Reject MR</span>
-                                </button>
-                              </>
-                            )}
-
-                            {mr.status === 'Approved' && (
-                              <button
-                                type="button"
-                                onClick={() => handleIssueMR(mr)}
-                                className="w-full py-1.5 bg-teal-600 hover:bg-teal-700 text-white font-condensed font-black uppercase text-[10px] rounded transition-all flex items-center justify-center gap-1 cursor-pointer shadow-xs"
-                              >
-                                <Layers className="h-3.5 w-3.5 animate-pulse" />
-                                <span>Mark as Issued (Dispense Stock)</span>
-                              </button>
-                            )}
-
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDeleteMaterialRequest(mr.id);
-                              }}
-                              className="px-2 py-1.5 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
-                              title="Delete MR"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -1735,6 +1737,7 @@ export default function MaterialsView({
                         <button
                           type="button"
                           onClick={handleManualLogSubmit}
+                          disabled={isBusy}
                           className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           <Check className="h-4 w-4" />
@@ -1753,6 +1756,7 @@ export default function MaterialsView({
                         <button
                           type="button"
                           onClick={handleManualLogSubmit}
+                          disabled={isBusy}
                           className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/90 rounded-lg text-xs font-condensed font-bold uppercase transition-all cursor-pointer flex items-center gap-1.5"
                         >
                           <Check className="h-4 w-4" />
@@ -1802,9 +1806,9 @@ export default function MaterialsView({
           </div>
 
           {/* AUDITED LOG TABLE */}
-          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
+          <div className="overflow-x-auto overflow-y-auto max-h-[65vh] rounded-xl border border-base-border bg-base-surface shadow-xs">
             <table className="w-full text-left border-collapse text-xs">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-base-surface2">
                 <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Material Name</th>
@@ -1825,16 +1829,16 @@ export default function MaterialsView({
                 ) : (
                   filteredLogs.map(log => (
                     <tr key={log.id} className="hover:bg-base-surface2/30 transition-colors">
-                      <td className="px-4 py-3.5 font-mono text-base-muted whitespace-nowrap">
+                      <td className="px-4 py-1.5 font-mono text-base-muted whitespace-nowrap">
                         {log.date}
                       </td>
-                      <td className="px-4 py-3.5 font-bold text-base-text">
+                      <td className="px-4 py-1.5 font-bold text-base-text">
                         {log.materialName}
                       </td>
-                      <td className="px-4 py-3.5 text-right font-mono font-black text-amber-500 whitespace-nowrap">
+                      <td className="px-4 py-1.5 text-right font-mono font-black text-amber-500 whitespace-nowrap">
                         -{log.qtyUsed} <span className="text-[9px] font-normal uppercase text-base-muted">{log.unit}</span>
                       </td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-1.5">
                         <span className="block font-bold text-base-text">{log.projectName}</span>
                         {log.assemblyName && (
                           <span className="block text-[10px] text-base-accent font-medium">
@@ -1842,10 +1846,10 @@ export default function MaterialsView({
                           </span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 text-base-text">
+                      <td className="px-4 py-1.5 text-base-text">
                         {log.issuedBy}
                       </td>
-                      <td className="px-4 py-3.5">
+                      <td className="px-4 py-1.5">
                         {log.mrNo ? (
                           <span className="inline-flex px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-base-accent-dim text-base-accent">
                             {log.mrNo}
@@ -1854,7 +1858,7 @@ export default function MaterialsView({
                           <span className="text-base-muted italic text-[10px]">Manual Entry</span>
                         )}
                       </td>
-                      <td className="px-4 py-3.5 max-w-xs truncate text-base-muted font-normal italic" title={log.notes}>
+                      <td className="px-4 py-1.5 max-w-xs truncate text-base-muted font-normal italic" title={log.notes}>
                         {log.notes || '-'}
                       </td>
                     </tr>

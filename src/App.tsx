@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory } from './types';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory, Assembly } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
@@ -10,9 +10,10 @@ import { db, auth } from './services/firebase';
 import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 
 // Custom Hooks & Subcomponents
-import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore } from './hooks';
+import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore, useMasterData } from './hooks';
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
+import { GaAutoMatchModal } from './components/GaAutoMatchModal';
 import { ToastContainer } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -42,11 +43,12 @@ const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m
 const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
 const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
 const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'));
+const MasterDataPage = lazy(() => import('./pages/MasterDataPage').then(m => ({ default: m.MasterDataPage })));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database
 } from 'lucide-react';
 
 const activeTabsList = [
@@ -67,7 +69,8 @@ const activeTabsList = [
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
   { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
   { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
-  { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] }
+  { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
+  { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] }
 ];
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -85,7 +88,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   BarChart2,
   Package,
   Layers,
-  ListChecks
+  ListChecks,
+  Database
 };
 
 const sectionGroups = [
@@ -103,7 +107,7 @@ const sectionGroups = [
   },
   {
     title: 'Management',
-    items: ['employees', 'users']
+    items: ['employees', 'users', 'masterdata']
   }
 ];
 
@@ -262,12 +266,39 @@ function AppContent() {
     return !!PERMISSIONS[currentUser.role]?.[perm];
   };
 
+  const masterData = useMasterData();
+
   // Setup sub-hooks and project contexts
-  const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm);
+  const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm, masterData.ensureEntry);
   const { projects, setProjects } = projectsHook;
 
   const employeesHook = useEmployees(verifyMarkChanged, setDeleteConfirm);
   const { employees, setEmployees } = employeesHook;
+
+  const [gaBackfillDone, setGaBackfillDone] = useState(false);
+
+  useEffect(() => {
+    if (gaBackfillDone || projects.length === 0 || !masterData.entries) return;
+    const existingGaValues = new Set(
+      masterData.entries
+        .filter(e => e.category === 'gaNumber')
+        .map(e => e.value.toUpperCase())
+    );
+    const uniqueGaNumbers = new Set(
+      projects
+        .map(p => p.gaNumber?.trim().toUpperCase())
+        .filter((g): g is string => !!g && !existingGaValues.has(g))
+    );
+    if (uniqueGaNumbers.size > 0) {
+      Promise.all(
+        Array.from(uniqueGaNumbers).map(ga =>
+          masterData.ensureEntry('gaNumber', ga).catch(() => {})
+        )
+      ).then(() => setGaBackfillDone(true));
+    } else {
+      setGaBackfillDone(true);
+    }
+  }, [projects, masterData.entries, gaBackfillDone]);
 
   const handleMarkExEmployee = async (id: string, resignDate: string, resignReason: string) => {
     setEmployees(prev => prev.map(e => {
@@ -1125,6 +1156,20 @@ function AppContent() {
                       onUpdateStage={handleUpdateProcessingStage}
                       onDelete={handleDeleteMaterialProcessing}
                       setDeleteConfirm={setDeleteConfirm}
+                      masterDataEntries={masterData.entries}
+                      onEnsureMasterData={masterData.ensureEntry}
+                      initialProjectId={projectsHook.spotlightProjectId || undefined}
+                      onCopyStructure={async (targetProjectId: string, newAssemblies: Assembly[]) => {
+                        const proj = projects.find(p => p.id === targetProjectId);
+                        if (!proj) return;
+                        const merged = [...(proj.assemblies || []), ...newAssemblies];
+                        setProjects(prev => prev.map(p => p.id === targetProjectId ? { ...p, assemblies: merged } : p));
+                        try {
+                          await saveItem('projects', { id: targetProjectId, assemblies: merged });
+                        } catch (err) {
+                          console.error('Failed to copy structure:', err);
+                        }
+                      }}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -1166,6 +1211,7 @@ function AppContent() {
                   depModalOpen={projectsHook.depModalOpen}
                   externalRowKey={projectsHook.depModalRowKey}
                   onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
+                  currentUser={currentUser}
                 />
               )}
 
@@ -1183,6 +1229,7 @@ function AppContent() {
                       updatedProj.name
                     );
                   }}
+                  currentUser={currentUser}
                 />
               )}
 
@@ -1218,6 +1265,7 @@ function AppContent() {
                     projectsHook.setSpotlightProjectId(pid);
                     projectsHook.setSpotlightOpen(true);
                   }}
+                  currentUser={currentUser}
                 />
               )}
 
@@ -1229,6 +1277,7 @@ function AppContent() {
                       employees={employees}
                       projects={projects}
                       initialDate={timesheetsHook.timesheetDate}
+                      currentUser={currentUser}
                     />
                   </Suspense>
                 </ErrorBoundary>
@@ -1268,6 +1317,14 @@ function AppContent() {
                   sha256={sha256}
                 />
               )}
+
+              {activeTab === 'masterdata' && (
+                <ErrorBoundary key="masterdata">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <MasterDataPage currentUser={currentUser} />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
             </Suspense>
           </ErrorBoundary>
         </main>
@@ -1297,6 +1354,18 @@ function AppContent() {
         setProjects={setProjects}
         verifyMarkChanged={verifyMarkChanged}
         logActivity={logActivity}
+        masterDataEntries={masterData.entries}
+        onEnsureMasterData={masterData.ensureEntry}
+      />
+
+      <GaAutoMatchModal
+        isOpen={projectsHook.gaMatchModalOpen}
+        gaNumber={projectsHook.pGaNumber}
+        matchedProjects={projectsHook.gaMatchCandidates}
+        pendingProjectData={projectsHook.pendingNewProjectData}
+        onConfirmCopy={projectsHook.handleGaConfirmCopy}
+        onCreateEmpty={projectsHook.handleGaCreateEmpty}
+        onCancel={projectsHook.handleGaCancel}
       />
     </div>
   );

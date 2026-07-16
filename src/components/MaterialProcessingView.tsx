@@ -7,8 +7,12 @@ import {
   ProcessingStageKey,
   ProcessingStage,
   ProcessingStatus,
-  PROCESSING_STAGES
+  PROCESSING_STAGES,
+  MasterDataEntry,
+  Assembly
 } from '../types';
+import { MasterDataAutocomplete } from './MasterDataAutocomplete';
+import { CopyBomModal } from './CopyBomModal';
 import {
   Plus,
   Search,
@@ -23,7 +27,8 @@ import {
   Sliders,
   CheckCircle,
   LayoutGrid,
-  Table
+  Table,
+  Link2
 } from 'lucide-react';
 
 interface MaterialProcessingViewProps {
@@ -33,6 +38,10 @@ interface MaterialProcessingViewProps {
   onUpdateStage: (projectId: string, mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
   onDelete: (projectId: string, id: string) => void;
   setDeleteConfirm?: (state: any) => void;
+  masterDataEntries: MasterDataEntry[];
+  onEnsureMasterData: (category: 'material' | 'partNo' | 'client' | 'subAssembly', value: string, gaNumber?: string) => Promise<void>;
+  onCopyStructure: (targetProjectId: string, newAssemblies: Assembly[]) => Promise<void>;
+  initialProjectId?: string;
 }
 
 export default function MaterialProcessingView({
@@ -41,7 +50,11 @@ export default function MaterialProcessingView({
   onAdd,
   onUpdateStage,
   onDelete,
-  setDeleteConfirm
+  setDeleteConfirm,
+  masterDataEntries = [],
+  onEnsureMasterData,
+  onCopyStructure,
+  initialProjectId
 }: MaterialProcessingViewProps) {
   // Derive materialProcessings from projects nested array
   const materialProcessings = useMemo(() => {
@@ -55,8 +68,39 @@ export default function MaterialProcessingView({
 
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId || '');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>(''); // empty means "All Months"
+
+  // Sync with initialProjectId
+  React.useEffect(() => {
+    if (initialProjectId) {
+      setSelectedProjectId(initialProjectId);
+    }
+  }, [initialProjectId]);
+
+  // Auto-select a project that has matching GA candidates but currently has no materials and/or assemblies
+  React.useEffect(() => {
+    if (!selectedProjectId) {
+      const autoSelectProject = projects.find(p => {
+        if (!p.gaNumber) return false;
+        const hasNoMaterials = (p.materialProcessing?.length || 0) === 0;
+        const hasNoAssemblies = (p.assemblies?.length || 0) === 0;
+        if (!hasNoMaterials && !hasNoAssemblies) return false;
+
+        const hasCandidate = projects.some(other =>
+          other.id !== p.id &&
+          other.gaNumber &&
+          other.gaNumber.trim().toUpperCase() === p.gaNumber!.trim().toUpperCase() &&
+          ((other.materialProcessing?.length || 0) > 0 || (other.assemblies?.length || 0) > 0)
+        );
+        return hasCandidate;
+      });
+
+      if (autoSelectProject) {
+        setSelectedProjectId(autoSelectProject.id);
+      }
+    }
+  }, [projects, selectedProjectId]);
 
   // Extract unique target months from projects
   const uniqueTargetMonths = useMemo(() => {
@@ -92,6 +136,7 @@ export default function MaterialProcessingView({
   const [formMaterialType, setFormMaterialType] = useState('SS304');
   const [formQty, setFormQty] = useState(1);
   const [formUnit, setFormUnit] = useState('pcs');
+  const [formGaNumber, setFormGaNumber] = useState('');
   const [formActiveStages, setFormActiveStages] = useState<ProcessingStageKey[]>([
     'nesting',
     'cnc',
@@ -130,6 +175,28 @@ export default function MaterialProcessingView({
       return matchSearch && matchProject && matchMonth;
     });
   }, [materialProcessings, searchQuery, selectedProjectId, selectedMonthFilter, projects]);
+
+  // Copy BOM From Same GA Number states and logic
+  const [showCopyBomModal, setShowCopyBomModal] = useState(false);
+  const [dismissedProjects, setDismissedProjects] = useState<Record<string, boolean>>({});
+
+  const currentProject = useMemo(() => {
+    return projects.find(p => p.id === selectedProjectId);
+  }, [projects, selectedProjectId]);
+
+  const gaMatchCandidates = useMemo(() => {
+    if (!currentProject?.gaNumber) return [];
+    return projects.filter(p =>
+      p.id !== currentProject.id &&
+      p.gaNumber &&
+      p.gaNumber.trim().toUpperCase() === currentProject.gaNumber!.trim().toUpperCase() &&
+      ((p.materialProcessing?.length || 0) > 0 || (p.assemblies?.length || 0) > 0)
+    );
+  }, [projects, currentProject]);
+
+  const currentProjectHasNoMaterials = currentProject
+    ? (currentProject.materialProcessing?.length || 0) === 0 || (currentProject.assemblies?.length || 0) === 0
+    : false;
 
   // Month & project filtered materials for KPIs
   const monthAndProjFilteredProcessings = useMemo(() => {
@@ -214,6 +281,9 @@ export default function MaterialProcessingView({
       setFormProjectId(activeProj.id);
       const assemblies = activeProj.assemblies || [];
       setFormAssemblyId(assemblies.length > 0 ? assemblies[0].id : '');
+      setFormGaNumber(activeProj.gaNumber || '');
+    } else {
+      setFormGaNumber('');
     }
     setFormMaterialName('');
     setFormPartNo('');
@@ -232,6 +302,7 @@ export default function MaterialProcessingView({
     const selectedProj = projects.find(p => p.id === projId);
     const assemblies = selectedProj?.assemblies || [];
     setFormAssemblyId(assemblies.length > 0 ? assemblies[0].id : '');
+    setFormGaNumber(selectedProj?.gaNumber || '');
   };
 
   // Handle stage checkbox toggle
@@ -242,7 +313,7 @@ export default function MaterialProcessingView({
   };
 
   // Submit new material processing
-  const handleSubmitAdd = (e: React.FormEvent) => {
+  const handleSubmitAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formProjectId || !formMaterialName.trim() || formQty <= 0) {
       alert('Please fill out all required fields.');
@@ -264,10 +335,20 @@ export default function MaterialProcessingView({
       };
     });
 
+    try {
+      await onEnsureMasterData('material', formMaterialName, formGaNumber || undefined);
+      if (formPartNo.trim()) {
+        await onEnsureMasterData('partNo', formPartNo, formGaNumber || undefined);
+      }
+    } catch (err) {
+      console.error('Failed to ensure master data:', err);
+    }
+
     onAdd(formProjectId, {
       projectId: formProjectId,
       projectName: selectedProj.name,
       workOrder: selectedProj.client,
+      gaNumber: formGaNumber || undefined,
       materialName: formMaterialName.trim(),
       partNo: formPartNo.trim() || undefined,
       description: formDescription.trim() || undefined,
@@ -496,6 +577,38 @@ export default function MaterialProcessingView({
         </div>
       </div>
 
+      {/* COPY BOM BANNER */}
+      {selectedProjectId && currentProject && gaMatchCandidates.length > 0 && currentProjectHasNoMaterials && !dismissedProjects[selectedProjectId] && (
+        <div className="bg-base-accent-dim/10 border border-base-accent/30 rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-start gap-3">
+            <div className="p-2 bg-base-accent-dim/20 rounded-lg text-base-accent shrink-0 mt-0.5">
+              <Link2 className="h-5 w-5" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-base-text">Salin Struktur & BOM dari Project Lain</p>
+              <p className="text-xs text-base-muted mt-1">
+                Belum ada material untuk project ini. Anda bisa menyalin dari project dengan GA Number yang sama kapan saja.
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setShowCopyBomModal(true)}
+              className="px-3 py-1.5 bg-base-accent hover:bg-base-accent/80 text-black text-xs font-bold font-sans uppercase rounded-lg shadow transition duration-200 cursor-pointer"
+            >
+              Lihat & Salin
+            </button>
+            <button
+              onClick={() => setDismissedProjects(prev => ({ ...prev, [selectedProjectId]: true }))}
+              className="p-1.5 hover:bg-base-surface3 rounded-full text-base-muted hover:text-base-text transition-all cursor-pointer"
+              title="Sembunyikan"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* FILTER & TABS SECTION */}
       <div className="bg-base-surface border border-base-border rounded-xl p-4 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -605,6 +718,7 @@ export default function MaterialProcessingView({
                   <thead>
                     <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
                       <th className="py-2.5 px-3 min-w-[150px]">Project</th>
+                      <th className="py-2.5 px-3 min-w-[100px]">GA No</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Material Name & Part No</th>
                       <th className="py-2.5 px-3 text-center w-24">Qty</th>
                       {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
@@ -624,24 +738,29 @@ export default function MaterialProcessingView({
                   </thead>
                   <tbody className="divide-y divide-base-border/40 text-xs">
                     {filteredProcessings.length === 0 ? (
-                      <tr>
-                        <td colSpan={10} className="py-12 text-center text-base-muted">
-                          No materials found matching filters.
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredProcessings.map((mp) => {
-                        return (
-                          <tr key={mp.id} className="hover:bg-base-surface2/25 transition-colors h-[38px]">
-                            {/* Project Column */}
-                            <td className="py-1 px-3 max-w-[150px] truncate" title={mp.projectName}>
-                              <div className="font-semibold text-base-text truncate">
-                                {mp.projectName}
-                              </div>
-                              <div className="text-[10px] text-base-muted font-mono truncate">
-                                WO: {mp.workOrder}
-                              </div>
-                            </td>
+                       <tr>
+                        <td colSpan={11} className="py-12 text-center text-base-muted">
+                           No materials found matching filters.
+                         </td>
+                       </tr>
+                     ) : (
+                       filteredProcessings.map((mp) => {
+                         return (
+                           <tr key={mp.id} className="hover:bg-base-surface2/25 transition-colors h-[38px]">
+                             {/* Project Column */}
+                             <td className="py-1 px-3 max-w-[150px] truncate" title={mp.projectName}>
+                               <div className="font-semibold text-base-text truncate">
+                                 {mp.projectName}
+                               </div>
+                               <div className="text-[10px] text-base-muted font-mono truncate">
+                                 WO: {mp.workOrder}
+                               </div>
+                             </td>
+
+                             {/* GA No Column */}
+                             <td className="py-1 px-3 font-mono text-[10px] text-base-muted font-bold">
+                               {mp.gaNumber || '—'}
+                             </td>
 
                             {/* Material Name + Part No Column */}
                             <td className="py-1 px-3">
@@ -785,11 +904,22 @@ export default function MaterialProcessingView({
                           )}
                         </div>
                         <div>
-                          <h3 className="font-bold text-base-text text-base">
-                            {group.project.name}
+                          <h3 className="font-bold text-base-text text-base flex items-center flex-wrap gap-2">
+                            <span>{group.project.name}</span>
+                            {group.project.gaNumber && (
+                              <span className="px-1.5 py-0.5 text-[9px] font-mono font-bold bg-base-surface3 border border-base-border text-base-accent rounded-md">
+                                GA: {group.project.gaNumber}
+                              </span>
+                            )}
                           </h3>
                           <span className="text-xs text-base-muted font-condensed uppercase tracking-wider flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
                             <span>WO: {group.project.client}</span>
+                            {group.project.gaNumber && (
+                              <>
+                                <span>·</span>
+                                <span className="font-mono text-[10px] font-bold text-base-muted">GA: {group.project.gaNumber}</span>
+                              </>
+                            )}
                             <span>·</span>
                             <span>{group.items.length} items tracked</span>
                             {group.project.targetMonth && (
@@ -1067,16 +1197,22 @@ export default function MaterialProcessingView({
 
                 {/* Material Name */}
                 <div className="col-span-2 space-y-1">
-                  <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider">
-                    Material Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. Plate SS304 6mm"
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider">
+                      Material Name *
+                    </label>
+                    <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-base-surface3 border border-base-border text-base-text rounded-md">
+                      GA: {formGaNumber || '—'}
+                    </span>
+                  </div>
+                  <MasterDataAutocomplete
+                    category="material"
                     value={formMaterialName}
-                    onChange={e => setFormMaterialName(e.target.value)}
-                    className="w-full bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                    onChange={setFormMaterialName}
+                    placeholder="e.g. Plate SS304 6mm"
+                    entries={masterDataEntries}
+                    required
+                    className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent"
                   />
                 </div>
 
@@ -1085,12 +1221,13 @@ export default function MaterialProcessingView({
                   <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider">
                     Part / Drawing No
                   </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. DWG-002-PT4"
+                  <MasterDataAutocomplete
+                    category="partNo"
                     value={formPartNo}
-                    onChange={e => setFormPartNo(e.target.value)}
-                    className="w-full bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                    onChange={setFormPartNo}
+                    placeholder="e.g. DWG-002-PT4"
+                    entries={masterDataEntries}
+                    className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent"
                   />
                 </div>
 
@@ -1376,6 +1513,22 @@ export default function MaterialProcessingView({
             </form>
           </div>
         </div>
+      )}
+
+      {/* COPY BOM MODAL */}
+      {selectedProjectId && currentProject && (
+        <CopyBomModal
+          isOpen={showCopyBomModal}
+          onClose={() => setShowCopyBomModal(false)}
+          currentProject={currentProject}
+          gaMatchCandidates={gaMatchCandidates}
+          currentUser={currentUser}
+          onAdd={onAdd}
+          onCopyStructure={onCopyStructure}
+          onSuccess={(message) => {
+            alert(message);
+          }}
+        />
       )}
     </div>
   );

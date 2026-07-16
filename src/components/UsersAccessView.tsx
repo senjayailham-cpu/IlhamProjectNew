@@ -31,7 +31,15 @@ const permissionMeta = [
   { id: 'deleteInspection', label: 'Delete Inspection Record', desc: 'Allows permanent deletion of RFI and inspection request history' },
   { id: 'manageMaterials', label: 'Manage Material Inventory', desc: 'Allows adding stock items, importing material excel data, and modifying quantities' },
   { id: 'requestMaterial', label: 'Create Material Requests', desc: 'Allows drafting and submitting requests for project/assembly materials' },
-  { id: 'issueMaterial', label: 'Approve & Issue Materials', desc: 'Allows approving, rejecting and issuing material requests to dispense stock' }
+  { id: 'issueMaterial', label: 'Approve & Issue Materials', desc: 'Allows approving, rejecting and issuing material requests to dispense stock' },
+  { id: 'manageEmployees', label: 'Manage Employees', desc: 'Allows adding and editing employee records' },
+  { id: 'deleteEmployee', label: 'Delete Employees', desc: 'Allows permanent deletion of employee records' },
+  { id: 'manageTimesheet', label: 'Manage Timesheet', desc: 'Allows adding and editing timesheet entries' },
+  { id: 'deleteTimesheet', label: 'Delete Timesheet Entries', desc: 'Allows permanent deletion of timesheet entries' },
+  { id: 'manageWireLog', label: 'Manage Wire Consumable Log', desc: 'Allows adding new wire consumable log entries' },
+  { id: 'deleteWireLog', label: 'Delete Wire Log Entries', desc: 'Allows permanent deletion of wire consumable log entries' },
+  { id: 'editGanttSchedule', label: 'Edit Gantt Schedule', desc: 'Allows dragging, resizing, and rescheduling tasks in the Gantt chart' },
+  { id: 'manageManpowerBoard', label: 'Manage Manpower Board', desc: 'Allows assigning and reassigning employees on the Manpower Board' }
 ];
 
 export default function UsersAccessView({

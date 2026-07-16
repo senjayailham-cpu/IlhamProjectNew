@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TimesheetEntry, Employee, Project } from '../types';
+import { TimesheetEntry, Employee, Project, User } from '../types';
 import { fmtHrs, esc } from '../utils/projectUtils';
 import { 
   Clock, 
@@ -35,6 +35,7 @@ interface TimesheetViewProps {
   deleteTsEntry: (id: string) => void;
   exportTimesheetDaily: () => void;
   openSpotlight?: (pid: string) => void;
+  currentUser: User | null;
 }
 
 const STATUS_PILLS = {
@@ -54,7 +55,8 @@ export default function TimesheetView({
   openEditTimesheet,
   deleteTsEntry,
   exportTimesheetDaily,
-  openSpotlight
+  openSpotlight,
+  currentUser
 }: TimesheetViewProps) {
   // Navigation between Daily Log and Monthly/Weekly Reporting
   const [activeSegment, setActiveSegment] = useState<'daily' | 'reporting'>('daily');
@@ -573,6 +575,7 @@ export default function TimesheetView({
           setProjectFilter={setProjectFilter}
           employeeFilter={employeeFilter}
           setEmployeeFilter={setEmployeeFilter}
+          currentUser={currentUser}
         />
       ) : (
         <PerformanceReportTab

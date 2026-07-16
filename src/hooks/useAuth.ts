@@ -323,9 +323,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (authErr: any) {
         console.warn("Firebase Auth sign-in failed, checking auto-healing:", authErr.code);
         
-        // If the user doesn't exist in Firebase Auth yet, but is a valid default user, register them on the fly
+        // If the user doesn't exist in Firebase Auth yet, but their password matches
+        // a valid registered user (default OR custom user created via Users & Access),
+        // register them on the fly. This ensures ANY registered user — not just the
+        // hardcoded default accounts — gets their Firebase Auth account created
+        // automatically on their very first login attempt.
         const hash = await sha256(loginPass);
-        if (foundDef && hash === foundDef.passHash) {
+        const validUserMatch = testUser && hash === testUser.passHash;
+        if (validUserMatch) {
           if (authErr.code === 'auth/user-not-found' || authErr.code === 'auth/invalid-credential') {
             try {
               await createUserWithEmailAndPassword(auth, email, firebasePass);
