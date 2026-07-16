@@ -21,7 +21,6 @@ import {
   Sparkles,
   Award
 } from 'lucide-react';
-import { NotificationBell } from '../NotificationBell';
 
 interface AppTopBarProps {
   activeTabLabel: string;
@@ -256,13 +255,6 @@ export function AppTopBar({
         </div>
 
         <div className="flex items-center gap-3">
-          {currentUser && (
-            <NotificationBell
-              projects={projects}
-              activities={activities}
-              currentUser={currentUser}
-            />
-          )}
           <ThemeToggle />
           
           {canExport && (

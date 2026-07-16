@@ -2454,38 +2454,51 @@ export default function GanttView({
       isFullscreen ? 'fixed inset-0 z-50 p-6 flex flex-col overflow-hidden h-screen bg-base-bg' : 'w-full'
     }`}>
       {/* TOOLBAR PANEL */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-base-border mb-4">
-        {/* Title & Info */}
-        <div className="flex items-center gap-3">
-          <h2 className="font-condensed font-extrabold text-lg sm:text-xl tracking-tight flex items-center gap-2">
-            📊 Gantt Chart — <span className="text-base-accent font-black">{projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}</span>
-          </h2>
-          {projectsList.length === 1 && projectsList[0] && (
-            <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border ${getStatusColorClass(projectsList[0].status)}`}>
-              {projectsList[0].status}
-            </span>
+      <div className="flex flex-col gap-3 pb-4 border-b border-base-border mb-4 sticky top-0 bg-base-bg/95 z-30 backdrop-blur-xs">
+        {/* Row 1: Title, Info, and Close Button */}
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 min-w-0">
+            <h2 className="font-condensed font-extrabold text-lg sm:text-xl tracking-tight flex items-center gap-2 min-w-0">
+              <span className="shrink-0">📊</span>
+              <span className="truncate" title={projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}>
+                Gantt Chart — <span className="text-base-accent font-black">{projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}</span>
+              </span>
+            </h2>
+            {projectsList.length === 1 && projectsList[0] && (
+              <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border shrink-0 ${getStatusColorClass(projectsList[0].status)}`}>
+                {projectsList[0].status}
+              </span>
+            )}
+          </div>
+          {onClose && (
+            <button 
+              onClick={onClose} 
+              className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/30 h-[34px]"
+            >
+              Close
+            </button>
           )}
         </div>
 
-        {/* Action Controls */}
-        <div className="flex flex-wrap items-center gap-3 text-xs">
+        {/* Row 2: Action Controls (stable, horizontally scrollable container, never wraps) */}
+        <div className="flex items-center gap-3 text-xs overflow-x-auto scrollbar-none py-1 w-full flex-nowrap shrink-0">
           {/* Today Button */}
           <button 
             onClick={scrollToToday}
-            className="flex items-center gap-2 px-3 py-1 rounded-xl border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/40 h-[34px]"
+            className="flex items-center gap-2 px-3 py-1 rounded-xl border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/40 h-[34px] shrink-0"
             title="Scroll to today"
           >
             <Calendar className="h-3.5 w-3.5 text-base-red shrink-0" />
-            <div className="flex flex-col items-start text-left">
+            <div className="flex flex-col items-start text-left shrink-0">
               <span className="text-[9px] leading-tight font-extrabold">Today</span>
               <span className="text-[7.5px] leading-none text-base-muted font-normal lowercase tracking-wide font-mono">{todayFormattedShort}</span>
             </div>
           </button>
 
           {/* Search bar & Status Filter */}
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1 shrink-0">
             <div className="flex items-center gap-2">
-              <div className="relative flex items-center">
+              <div className="relative flex items-center shrink-0">
                 <Search className="absolute left-2.5 h-3.5 w-3.5 text-base-muted pointer-events-none" />
                 <input
                   ref={searchInputRef}
@@ -2493,14 +2506,14 @@ export default function GanttView({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search tasks..."
-                  className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent w-[180px] h-[34px] font-medium"
+                  className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent w-[150px] h-[34px] font-medium"
                 />
               </div>
               
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text"
+                className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text shrink-0"
               >
                 <option value="all">All Status</option>
                 <option value="on-track">On Track</option>
@@ -2515,38 +2528,24 @@ export default function GanttView({
                     setSearchQuery('');
                     setStatusFilter('all');
                   }}
-                  className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-xl h-[34px] cursor-pointer font-bold gap-1 text-base-muted2"
+                  className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-xl h-[34px] cursor-pointer font-bold gap-1 text-base-muted2 shrink-0"
                   title="Clear filters"
                 >
                   ✕ Clear
                 </button>
               )}
             </div>
-            <div className="flex items-center gap-2 min-h-[14px] ml-1">
-              {isFilterActive && (
-                <span className="text-[10px] text-base-muted font-mono leading-none">
-                  Showing {visibleTasksCount} of {totalTasksCountInProject} tasks
-                </span>
-              )}
-              {autoSchedule && cascadedTaskIds.size > 0 && (
-                <span className="flex items-center gap-1 text-[10px] font-condensed 
-                                 font-bold text-amber-600 animate-[fadeIn_0.2s_ease]">
-                  <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-                  </svg>
-                  {cascadedTaskIds.size} task{cascadedTaskIds.size > 1 ? 's' : ''} auto-shifted
-                </span>
-              )}
-            </div>
           </div>
 
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
           {/* Zoom Level Toggle Buttons with layoutId */}
-          <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-xl p-0.5 h-[34px]">
+          <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             {['day', 'week', 'month', 'quarter'].map((mode) => (
               <button
                 key={mode}
                 onClick={() => setZoomMode(mode as any)}
-                className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer ${
+                className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer shrink-0 ${
                   zoomMode === mode ? 'text-white' : 'text-base-muted hover:text-base-text'
                 }`}
               >
@@ -2562,22 +2561,22 @@ export default function GanttView({
             ))}
           </div>
 
-          <div className="w-[1px] h-4 bg-base-border" />
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
           {/* Expand/Collapse All Buttons */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px]">
+          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             <button 
               onClick={expandAllAssemblies} 
-              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
               title="Expand All Assemblies"
             >
               <Maximize2 className="h-3 w-3 text-current shrink-0" />
               <span>Expand</span>
             </button>
-            <div className="w-[1px] h-3 bg-base-border mx-1" />
+            <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
             <button 
               onClick={collapseAllAssemblies} 
-              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1"
+              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
               title="Collapse All Assemblies"
             >
               <Minimize2 className="h-3 w-3 text-current shrink-0" />
@@ -2585,13 +2584,13 @@ export default function GanttView({
             </button>
           </div>
 
-          <div className="w-[1px] h-4 bg-base-border" />
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
           {/* Display Settings Dropdown */}
-          <div className="relative" ref={prefsDropdownRef}>
+          <div className="relative shrink-0" ref={prefsDropdownRef}>
             <button
               onClick={() => setIsPrefsDropdownOpen(!isPrefsDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px]"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px] shrink-0"
               title="Configure chart visibility preferences"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
@@ -2667,18 +2666,18 @@ export default function GanttView({
             )}
           </div>
 
-          <div className="w-[1px] h-4 bg-base-border" />
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
           {/* Scheduling & Interactivity Actions Group */}
           {onUpdateProject !== undefined && (
-            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px]">
+            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px] shrink-0">
               {/* Auto Schedule switch */}
               <button
                 onClick={() => setAutoSchedule(prev => !prev)}
                 title={autoSchedule 
                   ? "Auto-Schedule ON — successors cascade automatically. Click to turn OFF." 
                   : "Auto-Schedule OFF — only dragged task moves. Click to turn ON."}
-                className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] cursor-pointer transition-colors duration-200 ${
+                className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] cursor-pointer transition-colors duration-200 shrink-0 ${
                   autoSchedule
                     ? 'text-white font-extrabold'
                     : 'text-base-muted hover:text-base-text'
@@ -2694,19 +2693,19 @@ export default function GanttView({
                 <span>Auto-Shift</span>
               </button>
 
-              <div className="w-[1px] h-3 bg-base-border mx-1" />
+              <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
 
               {/* Set Baseline */}
               <button
                 onClick={handleSetBaseline}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-accent transition-colors cursor-pointer"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-accent transition-colors cursor-pointer shrink-0"
                 title="Set current schedule as baseline"
               >
                 <Bookmark className="h-3 w-3 text-base-accent shrink-0" />
                 <span>Baseline</span>
               </button>
 
-              <div className="w-[1px] h-3 bg-base-border mx-1" />
+              <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
 
               {/* Draw Link */}
               <button
@@ -2714,7 +2713,7 @@ export default function GanttView({
                   setConnectMode(!connectMode);
                   if (depPanelOpen) setDepPanelOpen(false);
                 }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed ${
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
                   connectMode 
                     ? 'bg-emerald-600 text-white shadow-xs font-black' 
                     : 'text-base-muted hover:text-emerald-500'
@@ -2727,32 +2726,32 @@ export default function GanttView({
             </div>
           )}
 
-          <div className="w-[1px] h-4 bg-base-border" />
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
           {/* Layout & File Export Actions */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px]">
+          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             {/* Fullscreen */}
             <button 
               onClick={() => setIsFullscreen(!isFullscreen)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer"
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer shrink-0"
               title="Toggle Fullscreen view"
             >
-              {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              {isFullscreen ? <Minimize2 className="h-3 w-3 shrink-0" /> : <Maximize2 className="h-3 w-3 shrink-0" />}
               <span>{isFullscreen ? 'Exit' : 'Full'}</span>
             </button>
 
-            <div className="w-[1px] h-3 bg-base-border mx-1" />
+            <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
 
             {/* Export */}
-            <div className="relative" ref={exportDropdownRef}>
+            <div className="relative shrink-0" ref={exportDropdownRef}>
               <button
                 onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
                 disabled={isExporting}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer bg-transparent h-auto"
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer bg-transparent h-auto shrink-0"
               >
-                <Download className="h-3 w-3" />
+                <Download className="h-3 w-3 shrink-0" />
                 <span>{isExporting ? 'Exporting...' : 'Export'}</span>
-                <ChevronDown className="h-2.5 w-2.5 ml-0.5" />
+                <ChevronDown className="h-2.5 w-2.5 ml-0.5 shrink-0" />
               </button>
               {isExportDropdownOpen && (
                 <div className="absolute right-0 mt-1.5 w-32 bg-base-surface border border-base-border rounded-lg shadow-xl py-1 z-[150]">
@@ -2771,21 +2770,9 @@ export default function GanttView({
                 </div>
               )}
             </div>
-
-            {onClose && (
-              <>
-                <div className="w-[1px] h-3 bg-base-border mx-1" />
-                <button 
-                  onClick={onClose} 
-                  className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer"
-                >
-                  Close
-                </button>
-              </>
-            )}
+          </div>
         </div>
       </div>
-    </div>
 
       {/* Critical Path Summary Mini-Panel */}
       {showCriticalPath && (

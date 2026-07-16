@@ -47,6 +47,62 @@ interface MaterialProcessingViewProps {
   initialProjectId?: string;
 }
 
+const normalizeMonth = (m: string | undefined): string => {
+  if (!m) return '';
+  const trimmed = m.trim();
+  if (!trimmed) return '';
+
+  // Case 1: YYYY-MM or YYYY-MM-DD
+  const ymdRegex = /^(\d{4})[-/](\d{1,2})([-/]\d{1,2})?$/;
+  const match = trimmed.match(ymdRegex);
+  if (match) {
+    const year = match[1];
+    const month = match[2].padStart(2, '0');
+    return `${year}-${month}`;
+  }
+
+  // Case 2: "Month YYYY" or "Month-YY" or similar
+  const date = new Date(trimmed);
+  if (!isNaN(date.getTime())) {
+    const y = date.getFullYear();
+    const monthNum = String(date.getMonth() + 1).padStart(2, '0');
+    return `${y}-${monthNum}`;
+  }
+
+  // Fallback map for month names
+  const monthsMap: Record<string, string> = {
+    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+    january: '01', february: '02', march: '03', april: '04', june: '06',
+    july: '07', august: '08', september: '09', october: '10', november: '11', december: '12'
+  };
+
+  const parts = trimmed.toLowerCase().split(/[-/,\s]+/).filter(Boolean);
+  let parsedMonth = '';
+  let parsedYear = '';
+
+  for (const part of parts) {
+    if (monthsMap[part]) {
+      parsedMonth = monthsMap[part];
+    } else if (/^\d{4}$/.test(part)) {
+      parsedYear = part;
+    } else if (/^\d{2}$/.test(part)) {
+      const num = Number(part);
+      if (num >= 20 && num <= 99) {
+        parsedYear = `20${part}`;
+      } else {
+        parsedYear = `20${part.padStart(2, '0')}`;
+      }
+    }
+  }
+
+  if (parsedYear && parsedMonth) {
+    return `${parsedYear}-${parsedMonth}`;
+  }
+
+  return trimmed;
+};
+
 export default function MaterialProcessingView({
   projects = [],
   currentUser,
@@ -81,10 +137,30 @@ export default function MaterialProcessingView({
     }
   }, [initialProjectId]);
 
+  // Auto-select first project of selected month if none is selected, or if existing selected project doesn't belong to selected month
+  React.useEffect(() => {
+    if (!projects || projects.length === 0) return;
+    
+    if (selectedMonthFilter) {
+      const monthProjects = projects.filter(p => normalizeMonth(p.targetMonth) === selectedMonthFilter);
+      const currentProj = projects.find(p => p.id === selectedProjectId);
+      const currentBelongsToMonth = currentProj && normalizeMonth(currentProj.targetMonth) === selectedMonthFilter;
+      
+      if (!currentBelongsToMonth && monthProjects.length > 0) {
+        setSelectedProjectId(monthProjects[0].id);
+      }
+    } else if (!selectedProjectId) {
+      const activeProj = projects.find(p => p.status === 'active') || projects[0];
+      if (activeProj) {
+        setSelectedProjectId(activeProj.id);
+      }
+    }
+  }, [projects, selectedProjectId, selectedMonthFilter]);
+
   // Extract unique target months from projects
   const uniqueTargetMonths = useMemo(() => {
     const months = projects
-      .map(p => p.targetMonth)
+      .map(p => normalizeMonth(p.targetMonth))
       .filter((m): m is string => !!m);
     return Array.from(new Set(months)).sort();
   }, [projects]);
@@ -92,7 +168,7 @@ export default function MaterialProcessingView({
   // Filter projects for the dropdown selector depending on selected month
   const filteredProjectsForDropdown = useMemo(() => {
     if (!selectedMonthFilter) return projects;
-    return projects.filter(p => p.targetMonth === selectedMonthFilter);
+    return projects.filter(p => normalizeMonth(p.targetMonth) === selectedMonthFilter);
   }, [projects, selectedMonthFilter]);
 
   // Expandable projects state for "By Project" tab
@@ -149,7 +225,7 @@ export default function MaterialProcessingView({
       let matchMonth = true;
       if (selectedMonthFilter) {
         const proj = projects.find(p => p.id === mp.projectId);
-        matchMonth = proj ? proj.targetMonth === selectedMonthFilter : false;
+        matchMonth = proj ? normalizeMonth(proj.targetMonth) === selectedMonthFilter : false;
       }
       
       return matchSearch && matchProject && matchMonth;
@@ -186,7 +262,7 @@ export default function MaterialProcessingView({
       let matchMonth = true;
       if (selectedMonthFilter) {
         const proj = projects.find(p => p.id === mp.projectId);
-        matchMonth = proj ? proj.targetMonth === selectedMonthFilter : false;
+        matchMonth = proj ? normalizeMonth(proj.targetMonth) === selectedMonthFilter : false;
       }
       return matchProject && matchMonth;
     });
@@ -415,7 +491,7 @@ export default function MaterialProcessingView({
 
     projects.forEach(p => {
       // Filter projects by target month
-      if (selectedMonthFilter && p.targetMonth !== selectedMonthFilter) return;
+      if (selectedMonthFilter && normalizeMonth(p.targetMonth) !== selectedMonthFilter) return;
 
       // Filter projects by selected project
       if (selectedProjectId && p.id !== selectedProjectId) return;
@@ -683,8 +759,22 @@ export default function MaterialProcessingView({
               <select
                 value={selectedMonthFilter}
                 onChange={e => {
-                  setSelectedMonthFilter(e.target.value);
-                  setSelectedProjectId(''); // Reset project filter on month change
+                  const newMonth = e.target.value;
+                  setSelectedMonthFilter(newMonth);
+                  
+                  if (newMonth) {
+                    const monthProjects = projects.filter(p => normalizeMonth(p.targetMonth) === newMonth);
+                    const currentProj = projects.find(p => p.id === selectedProjectId);
+                    const currentBelongsToNewMonth = currentProj && normalizeMonth(currentProj.targetMonth) === newMonth;
+                    
+                    if (!currentBelongsToNewMonth) {
+                      if (monthProjects.length > 0) {
+                        setSelectedProjectId(monthProjects[0].id);
+                      } else {
+                        setSelectedProjectId('');
+                      }
+                    }
+                  }
                 }}
                 className="bg-transparent border-none text-base-text focus:outline-none cursor-pointer pr-1"
               >
