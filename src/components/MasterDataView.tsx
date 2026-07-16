@@ -16,7 +16,7 @@ const CATEGORIES: { key: MasterDataEntry['category']; label: string }[] = [
 ];
 
 export function MasterDataView({ currentUser }: MasterDataViewProps) {
-  const { entries, loading, deleteEntry, mergeEntries } = useMasterData();
+  const { entries, loading, deleteEntry, mergeEntries } = useMasterData(!!currentUser);
   const [activeTab, setActiveTab] = useState<MasterDataEntry['category']>('gaNumber');
   const [searchQuery, setSearchQuery] = useState('');
   

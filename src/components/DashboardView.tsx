@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing } from '../types';
+import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,6 +22,8 @@ interface DashboardViewProps {
   openSpotlight: (id: string) => void;
   materials?: MaterialItem[];
   materialRequests?: MaterialRequest[];
+  problemReports?: ProblemReport[];
+  inspections?: InspectionRequest[];
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -53,13 +55,15 @@ export default function DashboardView({
   openSpotlight,
   materials = [],
   materialRequests = [],
+  problemReports = [],
+  inspections = [],
 }: DashboardViewProps) {
   const materialProcessings = useMemo(() => {
     return projects.flatMap(p => p.materialProcessing || []);
   }, [projects]);
 
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
-  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | null>(null);
+  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
   const [sCurveView, setSCurveView] = useState<'month' | 'quarter'>('month');
 
@@ -691,6 +695,79 @@ export default function DashboardView({
   const absentPersonnelToday = useMemo(() => {
     return todayTimesheets.filter(ts => ts.status === 'absent' || ts.status === 'leave');
   }, [todayTimesheets]);
+
+  // Expanded sections state for Problem Center Accordion
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    outOfStock: true,
+    overdueProjects: true,
+    overdueBlockers: true,
+    lowStock: true,
+    delayedProcessing: true,
+    openProblems: true,
+    inspectionPunchlist: true,
+  });
+
+  const toggleSection = (section: string) => {
+    setExpandedSections(prev => ({ ...prev, [section]: !prev[section] }));
+  };
+
+  const lowStockItems = useMemo(() => {
+    return (materials || []).filter(m => m.currentStock > 0 && m.currentStock < m.minStock);
+  }, [materials]);
+
+  const outOfStockItems = useMemo(() => {
+    return (materials || []).filter(m => m.currentStock === 0);
+  }, [materials]);
+
+  const openProblemReports = useMemo(() => {
+    return (problemReports || []).filter(pr => pr.status === 'Open');
+  }, [problemReports]);
+
+  const punchlistInspections = useMemo(() => {
+    return (inspections || []).filter(ins => ins.status === 'Rejected / Punchlist');
+  }, [inspections]);
+
+  const scheduleSlips = useMemo(() => {
+    return filteredProjects.filter(p => {
+      return !!p.baselineDue && !!p.due && p.due > p.baselineDue && p.status !== 'completed';
+    });
+  }, [filteredProjects]);
+
+  const overdueProcList = useMemo(() => {
+    return filteredProcessings.filter(mp => {
+      if (mp.isCompleted) return false;
+      const hasInProgress = mp.activeStages?.some(
+        k => mp.stages[k]?.status === 'in-progress'
+      ) ?? false;
+      if (!hasInProgress) return false;
+      const updated = new Date(mp.updatedAt || mp.createdAt);
+      const diffTime = Math.abs(Date.now() - updated.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays > 7;
+    });
+  }, [filteredProcessings]);
+
+  const totalActiveProblems = useMemo(() => {
+    return (
+      outOfStockItems.length +
+      overdueProjectsList.length +
+      scheduleSlips.length +
+      overdueBlockers.length +
+      lowStockItems.length +
+      overdueProcList.length +
+      openProblemReports.length +
+      punchlistInspections.length
+    );
+  }, [
+    outOfStockItems.length,
+    overdueProjectsList.length,
+    scheduleSlips.length,
+    overdueBlockers.length,
+    lowStockItems.length,
+    overdueProcList.length,
+    openProblemReports.length,
+    punchlistInspections.length
+  ]);
 
   // Ring circular coordinates
   const radius = 36;
@@ -1393,8 +1470,6 @@ export default function DashboardView({
 
           {/* WIDGET 2 — Material Alerts (new) */}
           {(materials.length > 0 || materialRequests.length > 0) && (() => {
-            const lowStockItems = materials.filter(m => m.currentStock > 0 && m.currentStock < m.minStock);
-            const outOfStockItems = materials.filter(m => m.currentStock === 0);
             const pendingMRs = materialRequests.filter(mr => mr.status === 'Submitted');
             return (
               <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5">
@@ -1529,11 +1604,17 @@ export default function DashboardView({
       {/* Interactive Detail Modal Popups */}
       {activeModal && (
         <div 
-          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          className={`fixed inset-0 bg-black/70 backdrop-blur-xs z-[100] flex items-center justify-center animate-in fade-in duration-200 ${
+            activeModal === 'problem-center' ? 'p-0 sm:p-4' : 'p-4'
+          }`}
           onClick={() => setActiveModal(null)}
         >
           <div 
-            className="bg-base-surface border border-base-border rounded-2xl shadow-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className={`bg-base-surface border border-base-border shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 ${
+              activeModal === 'problem-center'
+                ? 'w-full h-[90vh] sm:h-auto sm:max-w-5xl sm:max-h-[85vh] rounded-t-2xl sm:rounded-2xl mt-auto sm:mt-0'
+                : 'w-full max-w-5xl max-h-[85vh] rounded-2xl'
+            }`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -1546,6 +1627,7 @@ export default function DashboardView({
                 {activeModal === 'man-hours' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
                 {activeModal === 'present' && <Users className="h-5.5 w-5.5 text-base-green" />}
                 {activeModal === 'absent' && <ShieldAlert className="h-5.5 w-5.5 text-base-red" />}
+                {activeModal === 'problem-center' && <Siren className={`h-5.5 w-5.5 ${totalActiveProblems > 0 ? 'text-base-red animate-pulse' : 'text-base-green'}`} />}
                 
                 <h3 className="font-condensed font-black text-xl uppercase tracking-wider text-base-text">
                   {activeModal === 'project' && 'All Projects'}
@@ -1555,6 +1637,7 @@ export default function DashboardView({
                   {activeModal === 'man-hours' && 'Man-hours Log Detail'}
                   {activeModal === 'present' && 'Present Personnel Today'}
                   {activeModal === 'absent' && 'Absent/Leave Personnel Today'}
+                  {activeModal === 'problem-center' && 'Problem Center'}
                 </h3>
                 
                 <span className="px-2 py-0.5 rounded-full bg-base-surface3 border border-base-border text-xs font-condensed font-bold text-base-muted select-none">
@@ -1565,6 +1648,7 @@ export default function DashboardView({
                   {activeModal === 'man-hours' && scopedTimesheets.length}
                   {activeModal === 'present' && presentPersonnelToday.length}
                   {activeModal === 'absent' && absentPersonnelToday.length}
+                  {activeModal === 'problem-center' && totalActiveProblems}
                 </span>
               </div>
               
@@ -1605,26 +1689,416 @@ export default function DashboardView({
 
             {/* Modal Body / Scrollable Table Content */}
             <div className="overflow-y-auto flex-1 p-6">
-              {/* Check empty states */}
-              {((activeModal === 'project' && filteredProjects.length === 0) ||
-                (activeModal === 'active' && activeCount === 0) ||
-                (activeModal === 'completed' && completedCount === 0) ||
-                (activeModal === 'overdue' && overdueTab === 'projects' && overdueProjectsList.length === 0) ||
-                (activeModal === 'overdue' && overdueTab === 'tasks' && overdueTasksList.length === 0) ||
-                (activeModal === 'man-hours' && scopedTimesheets.length === 0) ||
-                (activeModal === 'present' && presentPersonnelToday.length === 0) ||
-                (activeModal === 'absent' && absentPersonnelToday.length === 0)) ? (
-                <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
-                  <div className="w-12 h-12 rounded-full bg-base-surface2 flex items-center justify-center border border-base-border">
-                    <AlertCircle className="h-6 w-6 text-base-muted" />
-                  </div>
-                  <div className="space-y-1">
-                    <p className="font-condensed font-bold text-sm uppercase tracking-wider text-base-text">No Records Found</p>
-                    <p className="text-xs text-base-muted">There are no entries under this category for the current scope.</p>
-                  </div>
+              {activeModal === 'problem-center' ? (
+                <div className="space-y-4">
+                  {totalActiveProblems === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-16 px-4 text-center">
+                      <div className="w-16 h-16 rounded-full bg-base-green/10 border border-base-green/20 flex items-center justify-center mb-4">
+                        <CheckCircle className="h-8 w-8 text-base-green animate-bounce" style={{ animationDuration: '3s' }} />
+                      </div>
+                      <h4 className="font-condensed font-bold text-lg text-base-text mb-1">Semua Aman!</h4>
+                      <p className="text-sm text-base-muted max-w-md">Tidak ada masalah aktif atau keterlambatan sistem yang terdeteksi saat ini.</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Accordion Categories */}
+                      
+                      {/* 1) Out of Stock (paling kritis, warna merah) */}
+                      {outOfStockItems.length > 0 && (
+                        <div className="border border-base-red/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('outOfStock')}
+                            className="w-full px-4 py-3 bg-base-red/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-red border-b border-base-red/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <span className="w-2.5 h-2.5 rounded-full bg-base-red animate-ping" />
+                              <Package className="h-4.5 w-4.5 text-base-red" />
+                              Out of Stock
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-red text-white">
+                                {outOfStockItems.length}
+                              </span>
+                            </span>
+                            {expandedSections.outOfStock ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.outOfStock && (
+                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 bg-base-surface">
+                              {outOfStockItems.map(item => (
+                                <div key={item.id} className="p-3 border border-base-red/10 rounded-xl bg-base-red/4 hover:bg-base-red/8 transition-colors">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <h5 className="font-bold text-sm text-base-text">{item.name}</h5>
+                                      <p className="text-xs text-base-muted font-mono mt-0.5">
+                                        Category: {item.category} | Loc: {item.location || 'N/A'}
+                                      </p>
+                                    </div>
+                                    <span className="px-2 py-1 text-xs font-condensed font-extrabold uppercase bg-base-red text-white rounded-md select-none">
+                                      Stock: 0
+                                    </span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 2) Overdue Projects & Prediksi Meleset (merah) */}
+                      {(overdueProjectsList.length > 0 || scheduleSlips.length > 0) && (
+                        <div className="border border-base-red/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('overdueProjects')}
+                            className="w-full px-4 py-3 bg-base-red/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-red border-b border-base-red/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
+                              Overdue Projects & Schedule Slips
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-red text-white">
+                                {overdueProjectsList.length + scheduleSlips.length}
+                              </span>
+                            </span>
+                            {expandedSections.overdueProjects ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.overdueProjects && (
+                            <div className="p-4 space-y-3 bg-base-surface">
+                              {overdueProjectsList.map(p => {
+                                const daysOver = p.due ? Math.ceil((new Date(todayStr).getTime() - new Date(p.due).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                                return (
+                                  <div 
+                                    key={`overdue-p-${p.id}`}
+                                    onClick={() => { openSpotlight(p.id); setActiveModal(null); }}
+                                    className="p-3.5 border border-base-red/15 rounded-xl bg-base-red/4 hover:bg-base-red/8 cursor-pointer transition-all flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                  >
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h5 className="font-bold text-sm text-base-text hover:underline">{p.name}</h5>
+                                        <span className="text-[10px] uppercase font-condensed font-bold bg-base-red/15 text-base-red px-1.5 py-0.5 rounded">Overdue</span>
+                                      </div>
+                                      <p className="text-xs text-base-muted mt-0.5">Client: {p.client} | Start: {p.start} | Target: {p.due}</p>
+                                      <p className="text-xs text-base-red font-semibold font-condensed uppercase tracking-wider mt-1 flex items-center gap-1">
+                                        <AlertCircle className="h-3.5 w-3.5" />
+                                        Overdue by {daysOver > 0 ? daysOver : 0} days
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3 self-end md:self-center">
+                                      <div className="text-right">
+                                        <span className="font-mono text-sm font-extrabold text-base-text">{calcPct(p)}%</span>
+                                        <p className="text-[9px] text-base-muted uppercase font-bold">Progress</p>
+                                      </div>
+                                      <ArrowRight className="h-4 w-4 text-base-muted" />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              
+                              {scheduleSlips.map(p => {
+                                const slipDays = p.due && p.baselineDue ? Math.ceil((new Date(p.due).getTime() - new Date(p.baselineDue).getTime()) / (1000 * 60 * 60 * 24)) : 0;
+                                return (
+                                  <div 
+                                    key={`slip-p-${p.id}`}
+                                    onClick={() => { openSpotlight(p.id); setActiveModal(null); }}
+                                    className="p-3.5 border border-[#e8a020]/25 rounded-xl bg-[#e8a020]/4 hover:bg-[#e8a020]/8 cursor-pointer transition-all flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                  >
+                                    <div>
+                                      <div className="flex items-center gap-2">
+                                        <h5 className="font-bold text-sm text-base-text hover:underline">{p.name}</h5>
+                                        <span className="text-[10px] uppercase font-condensed font-bold bg-[#e8a020]/15 text-[#e8a020] px-1.5 py-0.5 rounded">Schedule Slip</span>
+                                      </div>
+                                      <p className="text-xs text-base-muted mt-0.5">Client: {p.client} | Baseline Target: {p.baselineDue} | New Target: {p.due}</p>
+                                      <p className="text-xs text-[#e8a020] font-semibold font-condensed uppercase tracking-wider mt-1 flex items-center gap-1">
+                                        <TrendingUp className="h-3.5 w-3.5" />
+                                        Deadline slipped by {slipDays} days
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-3 self-end md:self-center">
+                                      <div className="text-right">
+                                        <span className="font-mono text-sm font-extrabold text-base-text">{calcPct(p)}%</span>
+                                        <p className="text-[9px] text-base-muted uppercase font-bold">Progress</p>
+                                      </div>
+                                      <ArrowRight className="h-4 w-4 text-base-muted" />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 3) Overdue Blockers / dependency terhambat (oranye/accent) */}
+                      {overdueBlockers.length > 0 && (
+                        <div className="border border-base-accent/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('overdueBlockers')}
+                            className="w-full px-4 py-3 bg-base-accent/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-accent border-b border-base-accent/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Layers className="h-4.5 w-4.5 text-base-accent" />
+                              Overdue Blockers & Dependencies
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-accent text-white">
+                                {overdueBlockers.length}
+                              </span>
+                            </span>
+                            {expandedSections.overdueBlockers ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.overdueBlockers && (
+                            <div className="p-4 space-y-3 bg-base-surface">
+                              {overdueBlockers.map(b => (
+                                <div 
+                                  key={b.id}
+                                  className="p-3.5 border border-base-accent/15 rounded-xl bg-base-accent/4 flex flex-col md:flex-row md:items-center md:justify-between gap-4"
+                                >
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-[9px] font-condensed font-extrabold bg-base-accent-dim text-base-accent px-1.5 py-0.5 rounded uppercase select-none">
+                                        Blocked {b.type}
+                                      </span>
+                                      <h5 className="font-bold text-sm text-base-text">{b.blockedName}</h5>
+                                    </div>
+                                    <div className="text-xs text-base-muted">
+                                      <span className="font-medium text-base-red">Blocked by incomplete predecessor:</span>{' '}
+                                      <span className="font-semibold text-base-text">{b.blockingName}</span>{' '}
+                                      (Due: {b.blockingDue}, overdue by <span className="font-bold text-base-red">{b.daysOverdue} days</span>, currently <span className="font-mono text-base-text">{b.progress}%</span> progress)
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="flex gap-2 self-end md:self-center">
+                                    <button
+                                      onClick={() => { openSpotlight(b.blockedProjectId); setActiveModal(null); }}
+                                      className="px-2.5 py-1.5 border border-base-accent/20 hover:bg-base-accent-dim text-base-accent rounded-lg font-condensed font-bold text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                    >
+                                      Spotlight Blocked
+                                    </button>
+                                    <button
+                                      onClick={() => { openSpotlight(b.blockingProjectId); setActiveModal(null); }}
+                                      className="px-2.5 py-1.5 border border-base-border hover:bg-base-surface2 text-base-text rounded-lg font-condensed font-bold text-[10px] uppercase tracking-wider transition-colors cursor-pointer"
+                                    >
+                                      Spotlight Blocker
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 4) Low Stock (kuning/accent) */}
+                      {lowStockItems.length > 0 && (
+                        <div className="border border-[#e8a020]/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('lowStock')}
+                            className="w-full px-4 py-3 bg-[#e8a020]/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-[#e8a020] border-b border-[#e8a020]/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Package className="h-4.5 w-4.5 text-[#e8a020]" />
+                              Low Stock Items
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-[#e8a020] text-white">
+                                {lowStockItems.length}
+                              </span>
+                            </span>
+                            {expandedSections.lowStock ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.lowStock && (
+                            <div className="p-4 grid grid-cols-1 md:grid-cols-2 gap-3 bg-base-surface">
+                              {lowStockItems.map(item => (
+                                <div key={item.id} className="p-3 border border-[#e8a020]/10 rounded-xl bg-[#e8a020]/4 hover:bg-[#e8a020]/8 transition-colors">
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div>
+                                      <h5 className="font-bold text-sm text-base-text">{item.name}</h5>
+                                      <p className="text-xs text-base-muted font-mono mt-0.5">
+                                        Category: {item.category} | Loc: {item.location || 'N/A'}
+                                      </p>
+                                    </div>
+                                    <div className="text-right select-none">
+                                      <span className="px-2 py-1 text-xs font-condensed font-extrabold uppercase bg-[#e8a020] text-white rounded-md">
+                                        Stock: {item.currentStock}
+                                      </span>
+                                      <p className="text-[9px] text-base-muted uppercase font-bold mt-1">Min: {item.minStock} {item.unit}</p>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 5) Delayed Material Processing (oranye) */}
+                      {overdueProcList.length > 0 && (
+                        <div className="border border-base-accent/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('delayedProcessing')}
+                            className="w-full px-4 py-3 bg-base-accent/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-accent border-b border-base-accent/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <Clock className="h-4.5 w-4.5 text-base-accent" />
+                              Delayed Material Processing
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-accent text-white">
+                                {overdueProcList.length}
+                              </span>
+                            </span>
+                            {expandedSections.delayedProcessing ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.delayedProcessing && (
+                            <div className="p-4 space-y-3 bg-base-surface">
+                              {overdueProcList.map(mp => (
+                                <div 
+                                  key={mp.id}
+                                  onClick={() => { openSpotlight(mp.projectId); setActiveModal(null); }}
+                                  className="p-3.5 border border-base-accent/15 rounded-xl bg-base-accent/4 hover:bg-base-accent/8 cursor-pointer transition-all flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                >
+                                  <div>
+                                    <h5 className="font-bold text-sm text-base-text hover:underline">{mp.materialName} <span className="text-xs font-medium text-base-muted">({mp.qty} {mp.unit})</span></h5>
+                                    <p className="text-xs text-base-muted mt-0.5">Project: {mp.projectName} | GA: {mp.gaNumber || 'N/A'}</p>
+                                    <p className="text-[10px] text-base-red font-semibold font-condensed uppercase tracking-wider mt-1">
+                                      ⚠ No progress update for over 7 days
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-3 self-end md:self-center">
+                                    <div className="text-right">
+                                      <span className="font-mono text-sm font-extrabold text-base-text">{mp.overallPct}%</span>
+                                      <p className="text-[9px] text-base-muted uppercase font-bold">Overall</p>
+                                    </div>
+                                    <ArrowRight className="h-4 w-4 text-base-muted" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 6) Open Problem Reports (oranye) */}
+                      {openProblemReports.length > 0 && (
+                        <div className="border border-base-accent/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('openProblems')}
+                            className="w-full px-4 py-3 bg-base-accent/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-accent border-b border-base-accent/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <ShieldAlert className="h-4.5 w-4.5 text-base-accent" />
+                              Open Problem Reports
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-accent text-white">
+                                {openProblemReports.length}
+                              </span>
+                            </span>
+                            {expandedSections.openProblems ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.openProblems && (
+                            <div className="p-4 space-y-3 bg-base-surface">
+                              {openProblemReports.map(pr => (
+                                <div 
+                                  key={pr.id}
+                                  onClick={() => { if (pr.projectId) { openSpotlight(pr.projectId); setActiveModal(null); } }}
+                                  className={`p-3.5 border border-base-accent/15 rounded-xl bg-base-accent/4 transition-all flex flex-col md:flex-row md:items-center md:justify-between gap-3 ${pr.projectId ? 'cursor-pointer hover:bg-base-accent/8' : ''}`}
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-condensed font-extrabold bg-base-accent-dim text-base-accent px-1.5 py-0.5 rounded uppercase select-none">
+                                        {pr.category}
+                                      </span>
+                                      <span className="text-[10px] text-base-muted">{pr.date}</span>
+                                    </div>
+                                    <p className="font-semibold text-xs text-base-text mt-1.5 italic">"{pr.description}"</p>
+                                    <p className="text-[11px] text-base-muted mt-1">
+                                      Project: <span className="font-semibold">{pr.projectName || 'N/A'}</span> | Reported by: <span className="font-semibold">{pr.reportedBy}</span> (Assigned: <span className="font-semibold">{pr.assignedPosition}</span>)
+                                    </p>
+                                  </div>
+                                  {pr.projectId && (
+                                    <div className="self-end md:self-center">
+                                      <ArrowRight className="h-4 w-4 text-base-muted" />
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 7) Inspection Punchlist / Rejected (oranye) */}
+                      {punchlistInspections.length > 0 && (
+                        <div className="border border-base-accent/20 rounded-xl overflow-hidden bg-base-surface">
+                          <button
+                            onClick={() => toggleSection('inspectionPunchlist')}
+                            className="w-full px-4 py-3 bg-base-accent/5 flex items-center justify-between font-condensed font-bold text-sm uppercase tracking-wider text-base-accent border-b border-base-accent/10 cursor-pointer"
+                          >
+                            <span className="flex items-center gap-2">
+                              <AlertCircle className="h-4.5 w-4.5 text-base-accent" />
+                              Inspection Punchlists & Rejections
+                              <span className="ml-1 px-2 py-0.5 text-xs rounded-full bg-base-accent text-white">
+                                {punchlistInspections.length}
+                              </span>
+                            </span>
+                            {expandedSections.inspectionPunchlist ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </button>
+                          
+                          {expandedSections.inspectionPunchlist && (
+                            <div className="p-4 space-y-3 bg-base-surface">
+                              {punchlistInspections.map(ins => (
+                                <div 
+                                  key={ins.id}
+                                  onClick={() => { openSpotlight(ins.projectId); setActiveModal(null); }}
+                                  className="p-3.5 border border-base-accent/15 rounded-xl bg-base-accent/4 hover:bg-base-accent/8 cursor-pointer transition-all flex flex-col md:flex-row md:items-center md:justify-between gap-3"
+                                >
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] uppercase font-condensed font-black bg-base-red-dim text-base-red px-1.5 py-0.5 rounded">REJECTED / PUNCHLIST</span>
+                                      <span className="text-xs font-mono font-bold text-base-text">{ins.rfiNo}</span>
+                                    </div>
+                                    <p className="text-xs text-base-muted mt-1.5">
+                                      Project: <span className="font-semibold text-base-text">{ins.projectName}</span>{' '}
+                                      {ins.assemblyName && (
+                                        <> | Assembly: <span className="font-semibold text-base-text">{ins.assemblyName}</span></>
+                                      )}
+                                    </p>
+                                    <div className="p-2.5 rounded bg-base-surface border border-base-red/10 mt-2 text-xs italic text-base-red font-medium">
+                                      Punch List: {ins.punchList || 'No punchlist notes recorded.'}
+                                    </div>
+                                    <p className="text-[10px] text-base-muted mt-2 font-condensed uppercase font-bold">
+                                      Target Date: {ins.targetDate} | Requested by: {ins.requestedBy}
+                                    </p>
+                                  </div>
+                                  <div className="self-end md:self-center">
+                                    <ArrowRight className="h-4 w-4 text-base-muted" />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : (
-                <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface">
+                <>
+                  {/* Check empty states */}
+                  {((activeModal === 'project' && filteredProjects.length === 0) ||
+                    (activeModal === 'active' && activeCount === 0) ||
+                    (activeModal === 'completed' && completedCount === 0) ||
+                    (activeModal === 'overdue' && overdueTab === 'projects' && overdueProjectsList.length === 0) ||
+                    (activeModal === 'overdue' && overdueTab === 'tasks' && overdueTasksList.length === 0) ||
+                    (activeModal === 'man-hours' && scopedTimesheets.length === 0) ||
+                    (activeModal === 'present' && presentPersonnelToday.length === 0) ||
+                    (activeModal === 'absent' && absentPersonnelToday.length === 0)) ? (
+                    <div className="flex flex-col items-center justify-center py-16 gap-3 text-center">
+                      <div className="w-12 h-12 rounded-full bg-base-surface2 flex items-center justify-center border border-base-border">
+                        <AlertCircle className="h-6 w-6 text-base-muted" />
+                      </div>
+                      <div className="space-y-1">
+                        <p className="font-condensed font-bold text-sm uppercase tracking-wider text-base-text">No Records Found</p>
+                        <p className="text-xs text-base-muted">There are no entries under this category for the current scope.</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface">
                   {/* Category 1: All Projects */}
                   {activeModal === 'project' && (
                     <div className="overflow-x-auto">
@@ -2098,7 +2572,9 @@ export default function DashboardView({
                   )}
                 </div>
               )}
-            </div>
+            </>
+          )}
+        </div>
 
             {/* Modal Footer */}
             <div className="px-6 py-3.5 border-t border-base-border bg-base-surface2 flex items-center justify-between flex-shrink-0">
@@ -2115,6 +2591,27 @@ export default function DashboardView({
           </div>
         </div>
       )}
+
+      {/* Problem Center FAB Button */}
+      <div className="fixed bottom-6 right-6 z-[90]">
+        <button
+          onClick={() => setActiveModal('problem-center')}
+          className={`relative w-14 h-14 rounded-full flex items-center justify-center shadow-2xl transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer ${
+            totalActiveProblems > 0
+              ? 'bg-base-red hover:bg-base-red/90 text-white ring-4 ring-base-red/20 animate-pulse'
+              : 'bg-base-green hover:bg-base-green/90 text-white ring-4 ring-base-green/20'
+          }`}
+          title="Problem Center"
+        >
+          <Siren className="h-6 w-6" />
+          
+          {totalActiveProblems > 0 && (
+            <span className="absolute -top-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full bg-white text-[11px] font-bold text-base-red border-2 border-base-red shadow-md select-none animate-bounce" style={{ animationDuration: '3s' }}>
+              {totalActiveProblems}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 }

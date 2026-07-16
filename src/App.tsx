@@ -266,7 +266,7 @@ function AppContent() {
     return !!PERMISSIONS[currentUser.role]?.[perm];
   };
 
-  const masterData = useMasterData();
+  const masterData = useMasterData(!!fbUser && !!currentUser && !!auth.currentUser);
 
   // Setup sub-hooks and project contexts
   const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm, masterData.ensureEntry);
@@ -1040,6 +1040,8 @@ function AppContent() {
                   materialRequests={materialRequests}
                   selectedMonth={selectedMonth}
                   setSelectedMonth={setSelectedMonth}
+                  problemReports={problemReports}
+                  inspections={inspections}
                   openSpotlight={(id) => {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);

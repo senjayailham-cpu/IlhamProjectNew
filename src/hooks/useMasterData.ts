@@ -4,11 +4,17 @@ import { collection, onSnapshot, doc, setDoc, updateDoc, deleteDoc, writeBatch }
 import { MasterDataEntry } from '../types';
 import { uid } from '../utils';
 
-export function useMasterData() {
+export function useMasterData(enabled: boolean) {
   const [entries, setEntries] = useState<MasterDataEntry[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
+    if (!enabled) {
+      setEntries([]);
+      setLoading(true);
+      return;
+    }
+
     const colRef = collection(db, 'masterData');
     const unsubscribe = onSnapshot(
       colRef,
@@ -27,7 +33,7 @@ export function useMasterData() {
     );
 
     return () => unsubscribe();
-  }, []);
+  }, [enabled]);
 
   const ensureEntry = async (
     category: MasterDataEntry['category'],
