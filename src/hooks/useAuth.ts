@@ -1,11 +1,10 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User } from '../types';
 import { DEFAULT_USERS } from '../mockData';
-import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously } from '../services/firebase';
+import { db, auth, signOut, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInAnonymously, firebaseConfig } from '../services/firebase';
 import { onAuthStateChanged, updatePassword } from 'firebase/auth';
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from 'firebase/firestore';
 import { sha256, cleanFirestoreData, handleFirestoreError, OperationType } from '../utils/helpers';
-import firebaseConfig from '../../firebase-applet-config.json';
 
 interface AuthContextType {
   currentUser: User | null;
