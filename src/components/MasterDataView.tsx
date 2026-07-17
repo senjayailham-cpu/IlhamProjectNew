@@ -11,7 +11,6 @@ const CATEGORIES: { key: MasterDataEntry['category']; label: string }[] = [
   { key: 'gaNumber', label: 'GA Number' },
   { key: 'material', label: 'Material' },
   { key: 'partNo', label: 'Part No' },
-  { key: 'client', label: 'Client' },
   { key: 'subAssembly', label: 'Sub-Assembly' },
 ];
 
@@ -114,6 +113,11 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
     }
   };
 
+  // Find detailed objects for selected items for the merge selection dropdown/radio list
+  const selectedEntries = useMemo(() => {
+    return entries.filter((e) => selectedIds.includes(e.id));
+  }, [entries, selectedIds]);
+
   if (!hasAccess) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center p-12 text-center bg-base-surface border border-base-border rounded-xl my-6">
@@ -127,11 +131,6 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
       </div>
     );
   }
-
-  // Find detailed objects for selected items for the merge selection dropdown/radio list
-  const selectedEntries = useMemo(() => {
-    return entries.filter((e) => selectedIds.includes(e.id));
-  }, [entries, selectedIds]);
 
   return (
     <div id="master-data-view-root" className="space-y-6">

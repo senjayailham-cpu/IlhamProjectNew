@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { User, Project, Assembly, Task, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2 } from 'lucide-react';
+import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import GanttView from './GanttView';
 
@@ -116,6 +117,74 @@ export default function SpotlightModal({
   const pct = calcPct(p);
   const { total: totalTasks, done: doneTasks } = calcTaskCounts(p);
   const asms = p.assemblies || [];
+
+  const commandCenterData = useMemo(() => {
+    if (!p) return null;
+
+    const currentPct = calcPct(p);
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Today's manpower for this project
+    const todayEntries = timesheets.filter(t =>
+      t.date === today &&
+      (t.status === 'present' || t.status === 'late') &&
+      (t.workOrder || '').trim().toLowerCase() === (p.client || '').trim().toLowerCase()
+    );
+    const onSiteToday = new Set(todayEntries.map(t => t.empId)).size;
+
+    // Overdue tasks
+    const overdueTasks = (p.assemblies || [])
+      .flatMap(a => (a.tasks || []).map(t => ({ ...t, assemblyName: a.name })))
+      .filter(t =>
+        t.finishDate && t.finishDate < today &&
+        t.pct < 100 && !t.done && !t.isMilestone
+      )
+      .sort((a, b) => (a.finishDate || '').localeCompare(b.finishDate || ''));
+
+    // Forecast completion (simple linear projection)
+    let forecastLabel = '—';
+    if (p.start && currentPct > 0 && currentPct < 100) {
+      const startD = new Date(p.start);
+      const daysElapsed = Math.max(1, (Date.now() - startD.getTime()) / 86400000);
+      const dailyRate = currentPct / daysElapsed;
+      if (dailyRate > 0) {
+        const daysLeft = (100 - currentPct) / dailyRate;
+        const forecastD = new Date();
+        forecastD.setDate(forecastD.getDate() + Math.ceil(daysLeft));
+        forecastLabel = forecastD.toLocaleDateString('id-ID',
+          { day: 'numeric', month: 'short', year: 'numeric' });
+      }
+    } else if (currentPct >= 100) {
+      forecastLabel = 'Done';
+    }
+
+    // Assembly-level progress for mini timeline
+    const assemblyProgress = (p.assemblies || []).map(a => {
+      const tasks = a.tasks || [];
+      const avgPct = tasks.length > 0
+        ? Math.round(tasks.reduce((s, t) => s + (t.pct || 0), 0) / tasks.length)
+        : 0;
+      return { id: a.id, name: a.name, pct: avgPct };
+    });
+
+    // Material processing summary (per stage average)
+    const mpItems = p.materialProcessing || [];
+    const stageAverages: Record<string, number> = {};
+    ['nesting', 'cnc', 'bending', 'machining'].forEach(stage => {
+      const relevant = mpItems.filter(m => m.activeStages?.includes(stage as any));
+      if (relevant.length > 0) {
+        stageAverages[stage] = Math.round(
+          relevant.reduce((s, m) => s + (m.stages?.[stage as any]?.pct ?? 0), 0)
+          / relevant.length
+        );
+      }
+    });
+
+    return {
+      pct: currentPct, overdueTasks, onSiteToday, forecastLabel,
+      assemblyProgress, stageAverages, todayEntries,
+    };
+  }, [p, timesheets]);
 
   const toggleAsm = (aid: string) => {
     setCollapsedAsms(prev => ({ ...prev, [aid]: !prev[aid] }));
@@ -308,40 +377,184 @@ export default function SpotlightModal({
         </div>
 
         {/* Center body columns */}
-        {activeTab === 'overview' && (
-          <SpotlightOverviewTab
-            project={p}
-            asms={asms}
-            modalTimesheets={modalTimesheets}
-            wireLogs={wireLogs}
-            collapsedAsms={collapsedAsms}
-            toggleAsm={toggleAsm}
-            canAddTaskInline={canAddTaskInline}
-            canAddDifficulty={canAddDifficulty}
-            canDeleteTask={canDeleteTask}
-            canUpdateTask={canUpdateTask}
-            isAdmin={isAdmin}
-            isOverdue={isOverdue}
-            onUpdateProject={onUpdateProject}
-            onEditAssembly={onEditAssembly}
-            setActiveTargetAssembly={setActiveTargetAssembly}
-            setTaskName={setTaskName}
-            setTaskDifficulty={setTaskDifficulty}
-            setTaskStart={setTaskStart}
-            setTaskFinish={setTaskFinish}
-            setIsTaskModalOpen={setIsTaskModalOpen}
-            setDeleteConfirm={setDeleteConfirm}
-            quickTaskNames={quickTaskNames}
-            setQuickTaskNames={setQuickTaskNames}
-            quickTaskDifficulty={quickTaskDifficulty}
-            setQuickTaskDifficulty={setQuickTaskDifficulty}
-            quickTaskDates={quickTaskDates}
-            setQuickTaskDates={setQuickTaskDates}
-            quickTaskFinishDates={quickTaskFinishDates}
-            setQuickTaskFinishDates={setQuickTaskFinishDates}
-            handleQuickAddTask={handleQuickAddTask}
-            onOpenDepModal={onOpenDepModal}
-          />
+        {activeTab === 'overview' && commandCenterData && (
+          <div className="flex-1 overflow-y-auto space-y-2">
+            {/* KPI GRID (4 cards) */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 px-4 pt-4">
+              <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1">
+                  Progress
+                </div>
+                <div className="text-xl font-condensed font-black text-base-text">
+                  {commandCenterData.pct}%
+                </div>
+              </div>
+              <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1">
+                  On site today
+                </div>
+                <div className="text-xl font-condensed font-black text-base-text">
+                  {commandCenterData.onSiteToday}
+                </div>
+              </div>
+              <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1">
+                  Overdue tasks
+                </div>
+                <div className={`text-xl font-condensed font-black ${commandCenterData.overdueTasks.length > 0 ? 'text-base-red text-red-500' : 'text-base-text'}`}>
+                  {commandCenterData.overdueTasks.length}
+                </div>
+              </div>
+              <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1">
+                  Forecast
+                </div>
+                <div className="text-sm font-condensed font-black text-base-text mt-1.5">
+                  {commandCenterData.forecastLabel}
+                </div>
+              </div>
+            </div>
+
+            {/* TWO-COLUMN PANEL */}
+            <div className="grid grid-cols-1 md:grid-cols-[1.4fr_1fr] gap-2 px-4 pt-2 pb-4">
+              {/* LEFT: mini timeline + overdue alerts */}
+              <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                <div className="flex items-center gap-1.5 text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text mb-2">
+                  <BarChart2 className="h-3.5 w-3.5 text-base-accent animate-pulse" />
+                  <span>Mini timeline</span>
+                </div>
+                {commandCenterData.assemblyProgress.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {commandCenterData.assemblyProgress.slice(0, 6).map(a => (
+                      <div key={a.id} className="flex items-center gap-2 mb-1.5">
+                        <span className="text-[10px] text-base-muted w-24 flex-shrink-0 truncate" title={a.name}>
+                          {a.name}
+                        </span>
+                        <div className="flex-1 h-1.5 bg-base-surface3 rounded-full overflow-hidden">
+                          <div
+                            className="h-full rounded-full transition-all duration-300"
+                            style={{
+                              width: `${a.pct}%`,
+                              backgroundColor: a.pct >= 80 ? '#4caf7d' : a.pct >= 40 ? '#e8a020' : '#d65c4f'
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono text-base-text w-8 text-right font-bold">
+                          {a.pct}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-base-muted text-center py-2">
+                    No assembly progress data
+                  </div>
+                )}
+
+                {/* OVERDUE ALERTS SECTION */}
+                <div className="mt-4 pt-3 border-t border-base-border/50">
+                  <div className="flex items-center gap-1.5 text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text mb-2">
+                    <AlertTriangle className="h-3.5 w-3.5 text-base-red" />
+                    <span>Overdue Tasks ({commandCenterData.overdueTasks.length})</span>
+                  </div>
+                  {commandCenterData.overdueTasks.length > 0 ? (
+                    <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                      {commandCenterData.overdueTasks.map(t => (
+                        <div key={t.id} className="flex items-center justify-between text-[10px] bg-base-surface3/40 border border-base-border/30 rounded-lg px-2.5 py-1.5">
+                          <div className="truncate pr-2">
+                            <span className="font-extrabold text-base-text">{t.name}</span>
+                            <span className="text-base-muted mx-1">•</span>
+                            <span className="text-base-muted truncate">{t.assemblyName}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <span className="text-base-red text-red-500 font-mono font-bold">
+                              {t.finishDate ? t.finishDate.slice(5) : ''}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded-sm font-bold bg-base-red/10 text-base-red text-red-500 uppercase text-[8px] tracking-wide border border-base-red/20">
+                              Overdue
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-base-green bg-base-green/5 border border-base-green/20 rounded-lg px-3 py-2 text-center font-bold">
+                      ✓ All scheduled tasks are currently on track
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: today's manpower + material processing status */}
+              <div className="flex flex-col gap-2">
+                {/* TODAY'S MANPOWER CARD */}
+                <div className="bg-base-surface2 border border-base-border rounded-xl p-3 flex-1">
+                  <div className="flex items-center justify-between text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text mb-2.5">
+                    <div className="flex items-center gap-1.5">
+                      <Users className="h-3.5 w-3.5" />
+                      <span>Today's Manpower</span>
+                    </div>
+                    <span className="text-[10px] font-mono text-base-accent bg-base-accent/10 border border-base-accent/20 px-1.5 py-0.5 rounded-md font-bold">
+                      {commandCenterData.onSiteToday} present
+                    </span>
+                  </div>
+
+                  {commandCenterData.todayEntries.length > 0 ? (
+                    <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+                      {commandCenterData.todayEntries.map(t => (
+                        <div key={t.id} className="flex items-center justify-between text-[10px] bg-base-surface3/40 border border-base-border/30 rounded-lg px-2.5 py-1.5">
+                          <span className="font-bold text-base-text truncate">{t.empName}</span>
+                          <span className="px-2 py-0.5 rounded-md bg-base-surface font-mono text-[9px] text-base-muted2 border border-base-border/40 shrink-0">
+                            {t.totalHours} hrs
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-[10px] text-base-muted bg-base-surface border border-base-border/40 rounded-lg px-3 py-4 text-center">
+                      No manpower logs recorded for this project today
+                    </div>
+                  )}
+                </div>
+
+                {/* MATERIAL PROCESSING STATUS CARD */}
+                <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
+                  <div className="flex items-center gap-1.5 text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text mb-2.5">
+                    <Layers className="h-3.5 w-3.5" />
+                    <span>Material Processing Status</span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    {['nesting', 'cnc', 'bending', 'machining'].map(stage => {
+                      const avg = commandCenterData.stageAverages[stage];
+                      const hasData = avg !== undefined;
+                      return (
+                        <div key={stage} className="bg-base-surface border border-base-border/30 rounded-lg p-2 flex flex-col justify-between min-h-[52px]">
+                          <div className="flex items-center justify-between">
+                            <span className="capitalize font-bold text-base-muted2 font-condensed tracking-wide">
+                              {stage}
+                            </span>
+                            <span className={`font-mono font-bold ${hasData ? 'text-base-accent' : 'text-base-muted'}`}>
+                              {hasData ? `${avg}%` : '—'}
+                            </span>
+                          </div>
+                          {hasData ? (
+                            <div className="w-full h-1 bg-base-surface3 rounded-full mt-2 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-base-accent transition-all duration-300"
+                                style={{ width: `${avg}%` }}
+                              />
+                            </div>
+                          ) : (
+                            <span className="text-[8.5px] text-base-muted italic mt-1 leading-none">Inactive</span>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {activeTab === 'gantt' && (

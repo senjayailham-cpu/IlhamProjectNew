@@ -420,6 +420,9 @@ export function useProjects(
       setProjects(prev => prev.map(proj => proj.id === targetAsmProjectId ? updatedProj : proj));
       saveItem('projects', updatedProj);
       logActivity('assembly_edit', 'Edited sub-assembly characteristics', p.id, p.name, aName.trim());
+      if (onEnsureMasterData) {
+        onEnsureMasterData('subAssembly', aName.trim()).catch(() => {});
+      }
     } else {
       const createdAsm: Assembly = {
         id: uid(),
@@ -437,6 +440,9 @@ export function useProjects(
       setProjects(prev => prev.map(proj => proj.id === targetAsmProjectId ? updatedProj : proj));
       saveItem('projects', updatedProj);
       logActivity('assembly_add', 'Added new sub-assembly', p.id, p.name, aName.trim(), undefined, undefined, undefined, `${createdAsm.tasks.length} initial tasks appended`);
+      if (onEnsureMasterData) {
+        onEnsureMasterData('subAssembly', aName.trim()).catch(() => {});
+      }
     }
 
     setAssemblyFormOpen(false);

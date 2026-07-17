@@ -272,11 +272,12 @@ export function FormsAndModals({
             <div className="space-y-5 text-sm font-semibold">
               <div className="space-y-1.5">
                 <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-accent block">Assembly Name</label>
-                <input
-                  type="text"
+                <MasterDataAutocomplete
+                  category="subAssembly"
                   value={projectsHook.aName}
-                  onChange={(e) => projectsHook.setAName(e.target.value)}
+                  onChange={(val) => projectsHook.setAName(val)}
                   placeholder="e.g. Electrical Panels wiring, framing structural..."
+                  entries={masterDataEntries}
                   className="w-full px-4 py-2.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
                 />
               </div>

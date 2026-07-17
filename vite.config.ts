@@ -16,14 +16,16 @@ export default defineConfig(() => {
       rollupOptions: {
         output: {
           manualChunks: {
-            'vendor-react': ['react', 'react-dom'],
-            'vendor-utils': ['xlsx', 'jspdf'],
-            'vendor-charts': ['recharts'],
+            'vendor-react':    ['react', 'react-dom'],
+            'vendor-firebase': ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
             'vendor-lucide':   ['lucide-react'],
-            'vendor-firebase': ['firebase/app', 'firebase/firestore', 'firebase/auth'],
+            'vendor-charts':   ['recharts'],
+            'vendor-xlsx':     ['xlsx'],
+            'vendor-pdf':      ['jspdf', 'html2canvas'],
           }
         }
-      }
+      },
+      chunkSizeWarningLimit: 600,
     },
     test: {
       globals: true,
