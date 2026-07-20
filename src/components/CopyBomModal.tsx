@@ -27,8 +27,10 @@ export function CopyBomModal({
   const [step, setStep] = useState<1 | 2>(1);
   const [selectedSourceProject, setSelectedSourceProject] = useState<Project | null>(null);
   
+  const hasTargetAssemblies = (currentProject.assemblies?.length || 0) > 0;
+  
   // Checklist and Copy configurations
-  const [copyStructureChecked, setCopyStructureChecked] = useState(true);
+  const [copyStructureChecked, setCopyStructureChecked] = useState(!hasTargetAssemblies);
   const [copyMaterialChecked, setCopyMaterialChecked] = useState(true);
   const [expandedAssemblyIds, setExpandedAssemblyIds] = useState<Record<string, boolean>>({});
 
@@ -42,16 +44,16 @@ export function CopyBomModal({
       setSelectedSourceProject(null);
       setCheckedItemIds([]);
       setEditedQtys({});
-      setCopyStructureChecked(true);
+      setCopyStructureChecked(!hasTargetAssemblies);
       setCopyMaterialChecked(true);
       setExpandedAssemblyIds({});
     }
-  }, [isOpen]);
+  }, [isOpen, hasTargetAssemblies]);
 
   // When source project is selected, initialize the checklist and quantities
   const handleSelectSource = (proj: Project) => {
     setSelectedSourceProject(proj);
-    setCopyStructureChecked(true);
+    setCopyStructureChecked(!hasTargetAssemblies);
     setCopyMaterialChecked(true);
     
     const items = proj.materialProcessing || [];
@@ -106,7 +108,7 @@ export function CopyBomModal({
     let copiedMaterialsCount = 0;
 
     // 1. Copy Structure
-    if (copyStructureChecked) {
+    if (copyStructureChecked && !hasTargetAssemblies) {
       try {
         const assembliesToCopy = buildCopiedStructure(selectedSourceProject, currentProject);
         await onCopyStructure(currentProject.id, assembliesToCopy);
@@ -274,14 +276,22 @@ export function CopyBomModal({
 
               {/* Toggles */}
               <div className="flex flex-col sm:flex-row gap-4 p-3 bg-base-surface2 rounded-lg border border-base-border">
-                <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-base-text select-none">
+                <label className={`flex items-center gap-2 text-xs font-bold text-base-text select-none ${hasTargetAssemblies ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}>
                   <input
                     type="checkbox"
-                    checked={copyStructureChecked}
+                    checked={hasTargetAssemblies ? false : copyStructureChecked}
+                    disabled={hasTargetAssemblies}
                     onChange={(e) => setCopyStructureChecked(e.target.checked)}
-                    className="h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent cursor-pointer"
+                    className="h-4 w-4 rounded border-base-border text-base-accent focus:ring-base-accent cursor-pointer disabled:cursor-not-allowed"
                   />
-                  <span>Salin Struktur Sub-Assembly & Task</span>
+                  <span className="flex flex-col">
+                    <span>Salin Struktur Sub-Assembly & Task</span>
+                    {hasTargetAssemblies && (
+                      <span className="text-[10px] text-red-500 font-normal">
+                        (Project target sudah memiliki sub-assembly)
+                      </span>
+                    )}
+                  </span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-base-text select-none">
                   <input

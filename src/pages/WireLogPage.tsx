@@ -1,5 +1,5 @@
 import React from 'react';
-import WireConsumableView from '../components/WireConsumableView';
+import ConsumableView from '../components/ConsumableView';
 import { WireLog, Project, Employee, User } from '../types';
 
 interface WireLogPageProps {
@@ -16,16 +16,16 @@ export function WireLogPage({
   projects,
   employees,
   currentUser,
-  onAddWireLog,
   onDeleteWireLog
-}: WireLogPageProps) {
+}: Omit<WireLogPageProps, 'onAddWireLog'>) {
   return (
-    <WireConsumableView
+    <ConsumableView
       wireLogs={wireLogs}
+      consumptionLogs={[]}
+      materials={[]}
       projects={projects}
       employees={employees}
-      currentUser={currentUser ? currentUser : undefined}
-      onAddWireLog={onAddWireLog}
+      currentUser={currentUser || { id: 'dummy', name: 'Dummy', role: 'viewer' }}
       onDeleteWireLog={onDeleteWireLog}
     />
   );

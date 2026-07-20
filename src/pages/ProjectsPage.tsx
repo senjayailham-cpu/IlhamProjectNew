@@ -102,7 +102,6 @@ function getProjectCriticalPath(p: Project, allProjects: Project[]) {
 }
 
 interface ProjectsPageProps {
-  activeTab: 'current' | 'completed' | 'tray' | 'nontray' | 'archive';
   projects: Project[];
   timesheets: TimesheetEntry[];
   wireLogs: WireLog[];
@@ -131,7 +130,6 @@ interface ProjectsPageProps {
 }
 
 export function ProjectsPage({
-  activeTab,
   projects,
   timesheets,
   wireLogs,
@@ -159,6 +157,20 @@ export function ProjectsPage({
 }: ProjectsPageProps) {
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
+
+  const [projectFilterTab, setProjectFilterTab] = React.useState<'current' | 'completed' | 'tray' | 'nontray' | 'archive'>(() => {
+    try {
+      return (localStorage.getItem('projectsFilterTab') as any) || 'current';
+    } catch (_) {
+      return 'current';
+    }
+  });
+
+  React.useEffect(() => {
+    try {
+      localStorage.setItem('projectsFilterTab', projectFilterTab);
+    } catch (_) {}
+  }, [projectFilterTab]);
 
   const [viewMode, setViewMode] = React.useState<'list' | 'timeline'>(() => {
     try {
@@ -625,7 +637,93 @@ export function ProjectsPage({
     );
   };
 
-  if (activeTab === 'current') {
+  const countCurrent = projects.filter(p => !p.isArchived && (p.status === 'active' || p.status === 'pending' || p.status === 'on-hold')).length;
+  const countCompleted = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
+  const countTray = projects.filter(p => p.category === 'tray' && p.status !== 'completed' && !p.isArchived).length;
+  const countNontray = projects.filter(p => p.category === 'nontray' && p.status !== 'completed' && !p.isArchived).length;
+  const countArchive = projects.filter(p => p.isArchived === true).length;
+
+  const renderTabPills = () => (
+    <div className="flex flex-wrap bg-base-surface2 border border-base-border p-1 rounded-xl shadow-xs self-start gap-1">
+      <button
+        onClick={() => setProjectFilterTab('current')}
+        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+          projectFilterTab === 'current'
+            ? 'bg-base-accent text-white shadow-xs'
+            : 'text-base-muted hover:text-base-text'
+        }`}
+      >
+        <span>Current</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          projectFilterTab === 'current' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        }`}>
+          {countCurrent}
+        </span>
+      </button>
+      <button
+        onClick={() => setProjectFilterTab('completed')}
+        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+          projectFilterTab === 'completed'
+            ? 'bg-base-accent text-white shadow-xs'
+            : 'text-base-muted hover:text-base-text'
+        }`}
+      >
+        <span>Completed</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          projectFilterTab === 'completed' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        }`}>
+          {countCompleted}
+        </span>
+      </button>
+      <button
+        onClick={() => setProjectFilterTab('tray')}
+        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+          projectFilterTab === 'tray'
+            ? 'bg-base-accent text-white shadow-xs'
+            : 'text-base-muted hover:text-base-text'
+        }`}
+      >
+        <span>Tray</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          projectFilterTab === 'tray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        }`}>
+          {countTray}
+        </span>
+      </button>
+      <button
+        onClick={() => setProjectFilterTab('nontray')}
+        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+          projectFilterTab === 'nontray'
+            ? 'bg-base-accent text-white shadow-xs'
+            : 'text-base-muted hover:text-base-text'
+        }`}
+      >
+        <span>Non-Tray</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          projectFilterTab === 'nontray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        }`}>
+          {countNontray}
+        </span>
+      </button>
+      <button
+        onClick={() => setProjectFilterTab('archive')}
+        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+          projectFilterTab === 'archive'
+            ? 'bg-base-accent text-white shadow-xs'
+            : 'text-base-muted hover:text-base-text'
+        }`}
+      >
+        <span>Archive</span>
+        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+          projectFilterTab === 'archive' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        }`}>
+          {countArchive}
+        </span>
+      </button>
+    </div>
+  );
+
+  if (projectFilterTab === 'current') {
     const activePendingProjects = projects.filter(p => !p.isArchived && (p.status === 'active' || p.status === 'pending' || p.status === 'on-hold'));
 
     const monthOptionsMap: Record<string, string> = {};
@@ -697,7 +795,8 @@ export function ProjectsPage({
     });
 
     return (
-      <div className="space-y-4">
+      <div className="space-y-4 animate-fade-in">
+        {renderTabPills()}
         <div className="flex justify-between items-center flex-wrap gap-4">
           <div className="flex items-center gap-4 flex-wrap flex-1 min-w-[280px]">
             <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
@@ -1117,21 +1216,22 @@ export function ProjectsPage({
 
   // Handle completed, tray, nontray, archive tabs
   const matchedProjects = projects.filter(p => {
-    if (activeTab === 'completed') return p.status === 'completed' && !p.isArchived;
-    if (activeTab === 'tray') return p.category === 'tray' && p.status !== 'completed' && !p.isArchived;
-    if (activeTab === 'nontray') return p.category === 'nontray' && p.status !== 'completed' && !p.isArchived;
-    if (activeTab === 'archive') return p.isArchived === true;
+    if (projectFilterTab === 'completed') return p.status === 'completed' && !p.isArchived;
+    if (projectFilterTab === 'tray') return p.category === 'tray' && p.status !== 'completed' && !p.isArchived;
+    if (projectFilterTab === 'nontray') return p.category === 'nontray' && p.status !== 'completed' && !p.isArchived;
+    if (projectFilterTab === 'archive') return p.isArchived === true;
     return false;
   });
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-fade-in">
+      {renderTabPills()}
       <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
-        {activeTab === 'completed'
+        {projectFilterTab === 'completed'
           ? 'Completed Log'
-          : activeTab === 'tray'
+          : projectFilterTab === 'tray'
             ? 'Tray Sub-directory'
-            : activeTab === 'nontray'
+            : projectFilterTab === 'nontray'
               ? 'Non-Tray Sub-directory'
               : 'Historical Archive'}
       </h2>

@@ -3,7 +3,7 @@ import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import ThemeToggle from '../ThemeToggle';
 import { 
   Menu, X, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, Database
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -21,7 +21,9 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   BarChart2,
   Package,
   Layers,
-  Database
+  Database,
+  Trophy,
+  Calendar
 };
 
 interface AppMobileMenuProps {

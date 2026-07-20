@@ -34,7 +34,7 @@ const Focus24View = lazy(() => import('./components/Focus24View'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
 const TimesheetView = lazy(() => import('./components/TimesheetView'));
 const InspectionView = lazy(() => import('./components/InspectionView'));
-const WireConsumableView = lazy(() => import('./components/WireConsumableView'));
+const ConsumableView = lazy(() => import('./components/ConsumableView'));
 const MaterialsView = lazy(() => import('./components/MaterialsView'));
 const UsersAccessView = lazy(() => import('./components/UsersAccessView'));
 const DailyReportView = lazy(() => import('./components/DailyReportView'));
@@ -44,26 +44,26 @@ const MaterialProcessingView = lazy(() => import('./components/MaterialProcessin
 const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
 const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'));
 const MasterDataPage = lazy(() => import('./pages/MasterDataPage').then(m => ({ default: m.MasterDataPage })));
+const KPIView = lazy(() => import('./components/KPIView'));
+const ProjectTimelineView = lazy(() => import('./components/ProjectTimelineView'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar
 } from 'lucide-react';
 
 const activeTabsList = [
   { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
   { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
   { id: 'gantt', label: 'Gantt', icon: 'BarChart2', access: 'all' },
+  { id: 'timeline', label: 'Timeline', icon: 'Calendar', access: 'all' },
   { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
-  { id: 'current', label: 'Current Projects', icon: 'Folder', access: 'all' },
-  { id: 'completed', label: 'Project Complete', icon: 'CheckCircle', access: 'all' },
-  { id: 'archive', label: 'Archive', icon: 'Archive', access: 'all' },
-  { id: 'tray', label: 'Project Tray', icon: 'Folder', access: 'all' },
-  { id: 'nontray', label: 'Project Non-Tray', icon: 'Folder', access: 'all' },
+  { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
   { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
-  { id: 'wire', label: 'Wire Consumable', icon: 'Flame', access: 'all' },
-  { id: 'materials', label: 'Materials', icon: 'Package', access: 'all' },
+  { id: 'consumable', label: 'Consumable', icon: 'Flame', access: 'all' },
+  { id: 'kpi', label: 'KPI Dashboard', icon: 'Trophy', access: 'all' },
+  { id: 'materials', label: 'Materials & Stock', icon: 'Package', access: 'all' },
   { id: 'matprocessing', label: 'Mat. Processing', icon: 'Layers', access: 'all' },
   { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
@@ -89,21 +89,23 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Package,
   Layers,
   ListChecks,
-  Database
+  Database,
+  Trophy,
+  Calendar
 };
 
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'focus24', 'gantt', 'progress']
+    items: ['dash', 'focus24', 'gantt', 'timeline', 'progress']
   },
   {
     title: 'Projects',
-    items: ['current', 'completed', 'archive', 'tray', 'nontray']
+    items: ['projects']
   },
   {
     title: 'Operations',
-    items: ['timesheet', 'manpower', 'inspections', 'wire', 'materials', 'matprocessing', 'dailyreport']
+    items: ['timesheet', 'manpower', 'inspections', 'consumable', 'kpi', 'materials', 'matprocessing', 'dailyreport']
   },
   {
     title: 'Management',
@@ -645,10 +647,14 @@ function AppContent() {
   };
 
   const handleUpdateMaterialStock = async (id: string, newStock: number) => {
+    await handleUpdateMaterial(id, { currentStock: newStock });
+  };
+
+  const handleUpdateMaterial = async (id: string, updates: Partial<MaterialItem>) => {
     const now = new Date().toISOString();
-    setMaterials(prev => prev.map(m => m.id === id ? { ...m, currentStock: newStock, updatedAt: now } : m));
+    setMaterials(prev => prev.map(m => m.id === id ? { ...m, ...updates, updatedAt: now } : m));
     verifyMarkChanged();
-    await saveItem('materials', { id, currentStock: newStock, updatedAt: now });
+    await saveItem('materials', { id, ...updates, updatedAt: now });
   };
 
   const handleDeleteMaterial = async (id: string) => {
@@ -691,25 +697,51 @@ function AppContent() {
       if (mr) {
         for (const item of mr.items) {
           // Reduce stock
-          const mat = materials.find(m => m.id === item.materialId);
-          if (mat) {
-            const qtyToIssue = item.qtyIssued ?? item.qtyRequested;
-            const newStock = Math.max(0, mat.currentStock - qtyToIssue);
-            handleUpdateMaterialStock(mat.id, newStock);
+          if (item.materialId && item.materialId !== 'wire') {
+            const mat = materials.find(m => m.id === item.materialId);
+            if (mat) {
+              const qtyToIssue = item.qtyIssued ?? item.qtyRequested;
+              const newStock = Math.max(0, mat.currentStock - qtyToIssue);
+              handleUpdateMaterialStock(mat.id, newStock);
+            }
+          }
 
-            // Create consumption log entry automatically
+          if (item.isWire === true || item.materialId === 'wire') {
+            // FOR WIRE ITEMS (item.isWire === true): create a WireLog
+            const newWireLog: WireLog = {
+              id: 'wl_' + uid(),
+              date: now,
+              welderId: mr.forEmployeeId || mr.requestedById,
+              welderName: mr.forEmployeeName || mr.requestedBy,
+              welderPosition: mr.forEmployeePosition,
+              projectId: mr.projectId,
+              projectName: mr.projectName,
+              assemblyId: mr.assemblyId || '',
+              assemblyName: mr.assemblyName || '',
+              amountKg: item.qtyIssued ?? item.qtyRequested,
+              notes: `Issued from ${mr.mrNo}`,
+            };
+            setWireLogs(prev => [newWireLog, ...prev]);
+            await saveItem('wireLogs', newWireLog);
+          } else {
+            // FOR PPE AND WELDING CONSUMABLE ITEMS (item.isWire !== true): create a consumptionLog WITH employee fields
+            const mat = materials.find(m => m.id === item.materialId);
             const newLog: MaterialConsumptionLog = {
               id: 'cl_' + uid(),
               date: now,
               materialId: item.materialId,
               materialName: item.materialName,
               unit: item.unit,
-              qtyUsed: qtyToIssue,
+              qtyUsed: item.qtyIssued ?? item.qtyRequested,
               projectId: mr.projectId,
               projectName: mr.projectName,
-              assemblyId: mr.assemblyId,
-              assemblyName: mr.assemblyName,
-              issuedBy: extra?.issuedBy || 'System',
+              assemblyId: mr.assemblyId || '',
+              assemblyName: mr.assemblyName || '',
+              employeeId: mr.forEmployeeId || mr.requestedById,
+              employeeName: mr.forEmployeeName || mr.requestedBy,
+              employeePosition: mr.forEmployeePosition,
+              category: (item as any).category || mat?.category || 'Welding Consumable',
+              issuedBy: extra?.issuedBy || currentUser?.name || 'System',
               mrId: mr.id,
               mrNo: mr.mrNo,
               notes: `Auto-issued from MR: ${mr.mrNo}`,
@@ -752,6 +784,15 @@ function AppContent() {
     await saveItem('consumptionLogs', newLog);
   };
 
+  const handleDeleteConsumptionLog = async (id: string) => {
+    const target = consumptionLogs.find(l => l.id === id);
+    if (!target) return;
+    setConsumptionLogs(prev => prev.filter(l => l.id !== id));
+    verifyMarkChanged();
+    logActivity('assembly_progress' as any, `Deleted consumption log entry: ${target.qtyUsed} ${target.unit} of ${target.materialName}`, target.projectId, target.projectName, target.assemblyName, undefined, undefined, undefined, `Logs historical revision by user: ${currentUser?.name || 'Authorized user'}`);
+    await removeItem('consumptionLogs', id);
+  };
+
   const handleAddMaterialProcessing = async (
     projectId: string,
     item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>
@@ -783,7 +824,7 @@ function AppContent() {
         const newMat: MaterialItem = {
           id: 'mat_' + uid(),
           name: newItem.materialName.trim(),
-          category: 'Raw Material',
+          category: 'Other',
           unit,
           currentStock: newItem.qty,
           minStock: 0,
@@ -875,7 +916,7 @@ function AppContent() {
         const newMat: MaterialItem = {
           id: 'mat_' + uid(),
           name: updatedItem.materialName.trim(),
-          category: 'Raw Material',
+          category: 'Other',
           unit,
           currentStock: updatedItem.qty,
           minStock: 0,
@@ -1065,9 +1106,8 @@ function AppContent() {
                 />
               )}
 
-              {['current', 'completed', 'tray', 'nontray', 'archive'].includes(activeTab) && (
+              {activeTab === 'projects' && (
                 <ProjectsPage
-                  activeTab={activeTab as any}
                   projects={projects}
                   timesheets={timesheets}
                   wireLogs={wireLogs}
@@ -1120,14 +1160,34 @@ function AppContent() {
                 />
               )}
 
-              {activeTab === 'wire' && (
-                <WireConsumableView
+              {activeTab === 'consumable' && (
+                <ConsumableView
                   wireLogs={wireLogs}
+                  consumptionLogs={consumptionLogs}
+                  materials={materials}
                   projects={projects}
                   employees={employees}
                   currentUser={currentUser}
-                  onAddWireLog={handleAddWireLog}
+                  materialRequests={materialRequests}
                   onDeleteWireLog={handleDeleteWireLog}
+                  onAddMaterialRequest={handleAddMaterialRequest}
+                  onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
+                  onNavigateToKPI={() => setActiveTab('kpi')}
+                  onNavigateToMaterials={() => setActiveTab('materials')}
+                  onAddMaterial={handleAddMaterial}
+                  onUpdateMaterial={handleUpdateMaterial}
+                  onDeleteMaterial={handleDeleteMaterial}
+                />
+              )}
+
+              {activeTab === 'kpi' && (
+                <KPIView
+                  wireLogs={wireLogs}
+                  consumptionLogs={consumptionLogs}
+                  projects={projects}
+                  employees={employees}
+                  currentUser={currentUser}
+                  timesheets={timesheets}
                 />
               )}
 
@@ -1135,16 +1195,15 @@ function AppContent() {
                 <MaterialsView
                   materials={materials}
                   materialRequests={materialRequests}
-                  consumptionLogs={consumptionLogs}
                   projects={projects}
                   currentUser={currentUser}
                   onAddMaterial={handleAddMaterial}
                   onUpdateMaterialStock={handleUpdateMaterialStock}
+                  onUpdateMaterial={handleUpdateMaterial}
                   onDeleteMaterial={handleDeleteMaterial}
                   onAddMaterialRequest={handleAddMaterialRequest}
                   onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
                   onDeleteMaterialRequest={handleDeleteMaterialRequest}
-                  onAddConsumptionLog={handleAddConsumptionLog}
                 />
               )}
 
@@ -1214,6 +1273,12 @@ function AppContent() {
                   externalRowKey={projectsHook.depModalRowKey}
                   onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
                   currentUser={currentUser}
+                />
+              )}
+
+              {activeTab === 'timeline' && (
+                <ProjectTimelineView
+                  projects={projects}
                 />
               )}
 

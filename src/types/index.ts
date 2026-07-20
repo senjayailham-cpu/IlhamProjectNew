@@ -276,6 +276,7 @@ export interface WireLog {
   date: string;
   welderId: string;
   welderName: string;
+  welderPosition?: string; // position of the person e.g. 'WELDER'
   projectId: string;
   projectName: string;
   assemblyId: string;
@@ -290,10 +291,10 @@ export interface WireLog {
 
 export type MaterialCategory =
   | 'Welding Consumable'
-  | 'Raw Material'
   | 'PPE'
   | 'Tools & Equipment'
   | 'Paint & Chemical'
+  | 'Wire'
   | 'Other';
 
 export type MaterialUnit =
@@ -333,6 +334,8 @@ export interface MaterialRequestLine {
   unit: MaterialUnit;
   qtyRequested: number;
   qtyIssued?: number;
+  isWire?: boolean;   // true if this line is for welding wire
+  amountKg?: number;  // wire-specific: kg amount (same as qtyRequested but semantic)
 }
 
 export interface MaterialRequest {
@@ -354,6 +357,9 @@ export interface MaterialRequest {
   rejectedReason?: string;
   issuedBy?: string;
   issuedDate?: string;
+  forEmployeeId?: string;    // who this consumable is for
+  forEmployeeName?: string;  // name of the receiver
+  forEmployeePosition?: string; // their position
 }
 
 export interface MaterialConsumptionLog {
@@ -371,6 +377,10 @@ export interface MaterialConsumptionLog {
   mrId?: string;
   mrNo?: string;
   notes?: string;
+  employeeId?: string;     // id of employee who used it
+  employeeName?: string;   // name of employee who used it
+  employeePosition?: string; // 'WELDER'|'FITTER'|'GRINDER'|'COORDINATOR'|etc
+  category?: MaterialCategory; // which category of consumable
 }
 
 // ─── MATERIAL PROCESSING ──────────────────────────────────────────────────
@@ -403,6 +413,10 @@ export interface MaterialProcessing {
   material?:    string;         // e.g. "SS304", "CS A36", "Aluminium"
   qty:          number;         // quantity of pieces/sheets
   unit:         string;         // "pcs", "sheet", "kg"
+  lengthMm?:    number;          // panjang part dalam mm
+  widthMm?:     number;          // lebar part dalam mm
+  grade?:       string;          // grade material, e.g. "AMS140" (boleh kosong/"-")
+  massKg?:      number;          // berat per 1 pcs part, dalam kg
 
   // Which stages are applicable for this material
   // (not all materials need all stages)

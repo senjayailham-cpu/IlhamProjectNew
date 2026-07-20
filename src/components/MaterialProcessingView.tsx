@@ -31,7 +31,9 @@ import {
   Table,
   Link2,
   Folder,
-  FileText
+  FileText,
+  Package,
+  Clipboard
 } from 'lucide-react';
 
 interface MaterialProcessingViewProps {
@@ -115,6 +117,28 @@ export default function MaterialProcessingView({
   onCopyStructure,
   initialProjectId
 }: MaterialProcessingViewProps) {
+  // Add Form cutting list states
+  const [formLengthMm, setFormLengthMm] = useState('');
+  const [formWidthMm, setFormWidthMm] = useState('');
+  const [formGrade, setFormGrade] = useState('');
+  const [formMassKg, setFormMassKg] = useState('');
+
+  // Paste cutting list bulk import states
+  const [pasteImportOpen, setPasteImportOpen] = useState(false);
+  const [pasteRawText, setPasteRawText] = useState('');
+  const [pasteParsedRows, setPasteParsedRows] = useState<Array<{
+    partNo: string;
+    description: string;
+    lengthMm: number | undefined;
+    widthMm: number | undefined;
+    grade: string;
+    material: string;
+    massKg: number | undefined;
+    qty: number;
+    error?: string;
+  }>>([]);
+  const [pasteTargetProjectId, setPasteTargetProjectId] = useState('');
+
   // Derive materialProcessings from projects nested array
   const materialProcessings = useMemo(() => {
     return projects.flatMap(p => p.materialProcessing || []);
@@ -130,32 +154,30 @@ export default function MaterialProcessingView({
   const [selectedProjectId, setSelectedProjectId] = useState(initialProjectId || '');
   const [selectedMonthFilter, setSelectedMonthFilter] = useState<string>(''); // empty means "All Months"
 
-  // Sync with initialProjectId
+  const hasAutoSelected = React.useRef(false);
+
+  // Auto-select first active project on mount if none is specified
   React.useEffect(() => {
+    if (!projects || projects.length === 0 || hasAutoSelected.current) return;
+    
     if (initialProjectId) {
       setSelectedProjectId(initialProjectId);
-    }
-  }, [initialProjectId]);
-
-  // Auto-select first project of selected month if none is selected, or if existing selected project doesn't belong to selected month
-  React.useEffect(() => {
-    if (!projects || projects.length === 0) return;
-    
-    if (selectedMonthFilter) {
-      const monthProjects = projects.filter(p => normalizeMonth(p.targetMonth) === selectedMonthFilter);
-      const currentProj = projects.find(p => p.id === selectedProjectId);
-      const currentBelongsToMonth = currentProj && normalizeMonth(currentProj.targetMonth) === selectedMonthFilter;
-      
-      if (!currentBelongsToMonth && monthProjects.length > 0) {
-        setSelectedProjectId(monthProjects[0].id);
-      }
-    } else if (!selectedProjectId) {
+      hasAutoSelected.current = true;
+    } else {
       const activeProj = projects.find(p => p.status === 'active') || projects[0];
       if (activeProj) {
         setSelectedProjectId(activeProj.id);
+        hasAutoSelected.current = true;
       }
     }
-  }, [projects, selectedProjectId, selectedMonthFilter]);
+  }, [projects, initialProjectId]);
+
+  // Sync pasteTargetProjectId with selectedProjectId when bulk import is opened
+  React.useEffect(() => {
+    if (pasteImportOpen) {
+      setPasteTargetProjectId(selectedProjectId || projects[0]?.id || '');
+    }
+  }, [pasteImportOpen, selectedProjectId, projects]);
 
   // Extract unique target months from projects
   const uniqueTargetMonths = useMemo(() => {
@@ -214,13 +236,13 @@ export default function MaterialProcessingView({
 
   // Filtered materials
   const filteredProcessings = useMemo(() => {
-    if (!selectedProjectId) return [];
     return materialProcessings.filter(mp => {
       const matchSearch =
         mp.materialName.toLowerCase().includes(searchQuery.toLowerCase()) ||
         (mp.partNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (mp.description || '').toLowerCase().includes(searchQuery.toLowerCase());
-      const matchProject = mp.projectId === selectedProjectId;
+      
+      const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
       
       let matchMonth = true;
       if (selectedMonthFilter) {
@@ -251,14 +273,13 @@ export default function MaterialProcessingView({
   }, [projects, currentProject]);
 
   const currentProjectHasNoMaterials = currentProject
-    ? (currentProject.materialProcessing?.length || 0) === 0 || (currentProject.assemblies?.length || 0) === 0
+    ? (currentProject.materialProcessing?.length || 0) === 0 && (currentProject.assemblies?.length || 0) === 0
     : false;
 
   // Month & project filtered materials for KPIs
   const monthAndProjFilteredProcessings = useMemo(() => {
-    if (!selectedProjectId) return [];
     return materialProcessings.filter(mp => {
-      const matchProject = mp.projectId === selectedProjectId;
+      const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
       let matchMonth = true;
       if (selectedMonthFilter) {
         const proj = projects.find(p => p.id === mp.projectId);
@@ -325,6 +346,163 @@ export default function MaterialProcessingView({
     const ws = XLSX.utils.json_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, 'Processing');
     XLSX.writeFile(wb, `material-processing-${Date.now()}.xlsx`);
+  };
+
+  // Parse pasted Excel or PDF table content
+  const parseCuttingListText = (text: string) => {
+    const lines = text.split(/\r?\n/);
+    const parsed: typeof pasteParsedRows = [];
+
+    lines.forEach((line) => {
+      const trimmedLine = line.trim();
+      if (!trimmedLine) return;
+
+      // Skip headers
+      const lower = trimmedLine.toLowerCase();
+      if (
+        lower.includes('length') ||
+        lower.includes('width') ||
+        lower.includes('grade') ||
+        lower.includes('drawing') ||
+        lower.includes('mass') ||
+        trimmedLine.startsWith('---')
+      ) {
+        return;
+      }
+
+      let cells = trimmedLine.split('\t').map(c => c.trim());
+      if (cells.length <= 1) {
+        cells = trimmedLine.split(/\s{2,}/).map(c => c.trim());
+      }
+      cells = cells.filter(Boolean);
+
+      if (cells.length < 2) return;
+
+      let drawingNo = cells[0] || '';
+      let descIdx = 1;
+
+      // Intelligent heuristic for merged cell drawing numbers
+      if (drawingNo.endsWith('-') && cells[1] && /^\d+$/.test(cells[1])) {
+        drawingNo = drawingNo + cells[1];
+        descIdx = 2;
+      }
+
+      const description = cells[descIdx] || '';
+      const remainingCells = cells.slice(descIdx + 1);
+
+      let lengthMm: number | undefined;
+      let widthMm: number | undefined;
+      let qty = 1;
+      let massKg: number | undefined;
+      let grade = 'SS304';
+      let material = 'SS304';
+
+      let gradeCell = '';
+      const numValues: number[] = [];
+
+      remainingCells.forEach(cell => {
+        const cleaned = cell.trim();
+        const parsedNum = parseFloat(cleaned.replace(/,/g, ''));
+        if (!isNaN(parsedNum)) {
+          numValues.push(parsedNum);
+        } else if (cleaned.length > 1) {
+          gradeCell = cleaned;
+        }
+      });
+
+      if (numValues.length >= 3) {
+        qty = Math.round(numValues[0]);
+        lengthMm = numValues[1];
+        widthMm = numValues[2];
+        if (numValues[3] !== undefined) {
+          massKg = numValues[3];
+        }
+      } else if (numValues.length === 2) {
+        lengthMm = numValues[0];
+        widthMm = numValues[1];
+      } else if (numValues.length === 1) {
+        lengthMm = numValues[0];
+      }
+
+      if (gradeCell) {
+        grade = gradeCell;
+        material = gradeCell;
+      }
+
+      parsed.push({
+        partNo: drawingNo,
+        description,
+        lengthMm,
+        widthMm,
+        grade,
+        material,
+        massKg,
+        qty,
+      });
+    });
+
+    setPasteParsedRows(parsed);
+  };
+
+  // Save multiple parsed cutting list items to project
+  const handleSavePasteImport = async () => {
+    const targetId = pasteTargetProjectId || selectedProjectId;
+    if (!targetId) {
+      alert('Please select a project first.');
+      return;
+    }
+    const targetProject = projects.find(p => p.id === targetId);
+    if (!targetProject) return;
+
+    for (const item of pasteParsedRows) {
+      const initialStages: Partial<Record<ProcessingStageKey, ProcessingStage>> = {};
+      const activeStages: ProcessingStageKey[] = ['nesting', 'cnc', 'bending', 'machining'];
+      activeStages.forEach(key => {
+        initialStages[key] = {
+          pct: 0,
+          status: 'pending',
+          operator: '',
+          notes: ''
+        };
+      });
+
+      try {
+        await onEnsureMasterData('material', item.material || item.grade, targetProject.gaNumber || undefined);
+        if (item.partNo) {
+          await onEnsureMasterData('partNo', item.partNo, targetProject.gaNumber || undefined);
+        }
+      } catch (err) {
+        console.error('Failed to ensure master data:', err);
+      }
+
+      onAdd(targetId, {
+        projectId: targetId,
+        projectName: targetProject.name,
+        workOrder: targetProject.client,
+        gaNumber: targetProject.gaNumber || undefined,
+        materialName: item.description || item.partNo || 'Unnamed Material',
+        partNo: item.partNo || undefined,
+        description: item.description || undefined,
+        thickness: undefined,
+        material: item.material || 'SS304',
+        qty: item.qty || 1,
+        unit: 'pcs',
+        activeStages,
+        stages: initialStages,
+        overallPct: 0,
+        createdBy: currentUser.name,
+        isCompleted: false,
+        lengthMm: item.lengthMm,
+        widthMm: item.widthMm,
+        grade: item.grade,
+        massKg: item.massKg,
+      });
+    }
+
+    setPasteImportOpen(false);
+    setPasteRawText('');
+    setPasteParsedRows([]);
+    alert(`Successfully imported ${pasteParsedRows.length} items into project "${targetProject.name}".`);
   };
 
   // Open add material processing modal
@@ -409,8 +587,18 @@ export default function MaterialProcessingView({
       createdBy: currentUser.name,
       assemblyId: formAssemblyId || undefined,
       assemblyName: selectedAsm?.name || undefined,
-      isCompleted: false
+      isCompleted: false,
+      lengthMm: formLengthMm ? parseFloat(formLengthMm) : undefined,
+      widthMm: formWidthMm ? parseFloat(formWidthMm) : undefined,
+      grade: formGrade.trim() || undefined,
+      massKg: formMassKg ? parseFloat(formMassKg) : undefined,
     });
+
+    // Reset cutting list states
+    setFormLengthMm('');
+    setFormWidthMm('');
+    setFormGrade('');
+    setFormMassKg('');
 
     setIsAddModalOpen(false);
   };
@@ -545,12 +733,21 @@ export default function MaterialProcessingView({
 
         <div className="flex flex-wrap items-center gap-2">
           {!isReadOnly && (
-            <button
-              onClick={handleOpenAddModal}
-              className="px-4 py-2 bg-base-accent hover:bg-base-accent/80 text-black font-condensed font-bold uppercase rounded-lg shadow transition duration-200 flex items-center gap-1.5 cursor-pointer text-sm"
-            >
-              <Plus className="h-4 w-4 stroke-[3]" /> Add Material
-            </button>
+            <>
+              <button
+                onClick={handleOpenAddModal}
+                className="px-4 py-2 bg-base-accent hover:bg-base-accent/80 text-black font-condensed font-bold uppercase rounded-lg shadow transition duration-200 flex items-center gap-1.5 cursor-pointer text-sm"
+              >
+                <Plus className="h-4 w-4 stroke-[3]" /> Add Material
+              </button>
+              <button
+                onClick={() => setPasteImportOpen(true)}
+                className="px-4 py-2 bg-base-surface hover:bg-base-surface3 text-base-text font-condensed font-bold uppercase rounded-lg border border-base-border transition duration-200 flex items-center gap-1.5 cursor-pointer text-sm"
+                title="Paste Cutting List from Excel or PDF"
+              >
+                <Clipboard className="h-4 w-4 text-base-accent" /> Paste Cutting List
+              </button>
+            </>
           )}
           <button
             onClick={handleExportExcel}
@@ -561,83 +758,8 @@ export default function MaterialProcessingView({
         </div>
       </div>
 
-      {/* PROJECT FILTER WORKSPACE SELECTOR */}
-      <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-base-accent/10 rounded-lg text-base-accent">
-              <Folder className="h-5 w-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-base-text font-sans flex items-center gap-2">
-                Project Workspace Selector
-              </h2>
-              <p className="text-xs text-base-muted mt-0.5">
-                Filter the entire tracking board and KPIs specifically by a single chosen project to declutter your view.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-condensed font-bold uppercase tracking-wider text-base-muted whitespace-nowrap">
-                Choose Project:
-              </span>
-              <ProjectSearchSelector
-                projects={filteredProjectsForDropdown}
-                selectedId={selectedProjectId}
-                onChange={setSelectedProjectId}
-                placeholder=""
-                showAllProjectsOption={false}
-                className="w-full sm:w-80"
-              />
-            </div>
-
-            {selectedProjectId && (
-              <button
-                onClick={() => setSelectedProjectId('')}
-                className="px-3 py-1.5 bg-base-surface2 hover:bg-base-surface3 text-base-text text-xs font-sans rounded-md border border-base-border transition cursor-pointer flex items-center gap-1"
-              >
-                <X className="h-3 w-3" /> Clear Filter
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Selected Project Quick-Details bar */}
-        {currentProject && (
-          <div className="mt-4 pt-4 border-t border-base-border/50 flex flex-wrap gap-y-2 gap-x-6 text-xs text-base-muted font-sans items-center">
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-base-text">Client:</span>
-              <span>{currentProject.client || '—'}</span>
-            </div>
-            {currentProject.gaNumber && (
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-base-text">GA Number:</span>
-                <span className="px-1.5 py-0.5 font-mono text-[10px] font-bold bg-base-surface3 border border-base-border text-base-accent rounded">
-                  {currentProject.gaNumber}
-                </span>
-              </div>
-            )}
-            {currentProject.targetMonth && (
-              <div className="flex items-center gap-1.5">
-                <span className="font-semibold text-base-text">Target Month:</span>
-                <span className="px-1.5 py-0.5 bg-base-accent/10 text-base-accent rounded text-[10px] font-bold">
-                  {currentProject.targetMonth}
-                </span>
-              </div>
-            )}
-            <div className="flex items-center gap-1.5">
-              <span className="font-semibold text-base-text">Status:</span>
-              <span className={`capitalize font-bold ${currentProject.status === 'active' ? 'text-emerald-500' : 'text-base-muted'}`}>
-                {currentProject.status}
-              </span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* KPI GRID */}
+      <>
+          {/* KPI GRID */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
         <div className="p-4 bg-base-surface border border-base-border rounded-xl flex items-center justify-between">
@@ -753,6 +875,19 @@ export default function MaterialProcessingView({
               />
             </div>
 
+            {/* Compact Project Search Dropdown */}
+            <div className="flex items-center gap-1.5 bg-base-surface2 border border-base-border rounded-lg px-2.5 py-1 text-sm text-base-text font-condensed">
+              <Folder className="h-4 w-4 text-base-muted" />
+              <ProjectSearchSelector
+                projects={filteredProjectsForDropdown}
+                selectedId={selectedProjectId}
+                onChange={setSelectedProjectId}
+                placeholder="All Projects (Global View)"
+                showAllProjectsOption={true}
+                className="w-48 sm:w-64"
+              />
+            </div>
+
             {/* Target Month Selector */}
             <div className="flex items-center gap-1.5 bg-base-surface2 border border-base-border rounded-lg px-3 py-1.5 text-sm text-base-text font-condensed">
               <Calendar className="h-4 w-4 text-base-muted" />
@@ -799,24 +934,17 @@ export default function MaterialProcessingView({
       </div>
 
       <div className="space-y-4">
-        {!selectedProjectId ? (
-              <div className="p-12 text-center text-base-muted bg-base-surface border border-base-border rounded-xl shadow-sm max-w-xl mx-auto flex flex-col items-center gap-3">
-                <div className="p-3 bg-base-accent/5 text-base-accent rounded-full border border-base-accent/10">
-                  <Search className="h-6 w-6" />
-                </div>
-                <h3 className="font-bold text-sm text-base-text">No Project Selected</h3>
-                <p className="text-xs text-base-muted max-w-md">
-                  Please search or select a project in the <strong>Project Workspace Selector</strong> above to display and track its materials.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto max-h-[70vh] overflow-y-auto rounded-lg border border-base-border bg-base-surface shadow-sm">
-                <table className="w-full border-collapse text-left min-w-[1000px]">
+        <div className="overflow-x-auto max-h-[70vh] overflow-y-auto rounded-lg border border-base-border bg-base-surface shadow-sm">
+          <table className="w-full border-collapse text-left min-w-[1000px]">
                   <thead>
                     <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
                       <th className="py-2.5 px-3 min-w-[150px]">Project</th>
                       <th className="py-2.5 px-3 min-w-[100px]">GA No</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Material Name & Part No</th>
+                      <th className="py-2.5 px-2 text-center w-20">Length (mm)</th>
+                      <th className="py-2.5 px-2 text-center w-20">Width (mm)</th>
+                      <th className="py-2.5 px-2 text-center w-20">Grade</th>
+                      <th className="py-2.5 px-2 text-center w-20">Mass (Kg/part)</th>
                       <th className="py-2.5 px-3 text-center w-24">Qty</th>
                       {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
                         const st = PROCESSING_STAGES[stageKey as ProcessingStageKey];
@@ -836,7 +964,7 @@ export default function MaterialProcessingView({
                   <tbody className="divide-y divide-base-border/40 text-xs">
                     {filteredProcessings.length === 0 ? (
                        <tr>
-                        <td colSpan={11} className="py-12 text-center text-base-muted">
+                        <td colSpan={14} className="py-12 text-center text-base-muted">
                            No materials found matching filters.
                          </td>
                        </tr>
@@ -867,6 +995,26 @@ export default function MaterialProcessingView({
                               <div className="text-[10px] text-base-muted font-mono truncate">
                                 {mp.partNo ? `Part: ${mp.partNo}` : 'No Part No'}
                               </div>
+                            </td>
+
+                            {/* Length */}
+                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                              {mp.lengthMm !== undefined ? `${mp.lengthMm} mm` : '—'}
+                            </td>
+
+                            {/* Width */}
+                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                              {mp.widthMm !== undefined ? `${mp.widthMm} mm` : '—'}
+                            </td>
+
+                            {/* Grade */}
+                            <td className="py-1 px-2 text-center text-base-text font-medium font-mono">
+                              {mp.grade || '—'}
+                            </td>
+
+                            {/* Mass */}
+                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                              {mp.massKg !== undefined ? `${mp.massKg} kg` : '—'}
                             </td>
 
                             {/* Qty Column */}
@@ -986,8 +1134,8 @@ export default function MaterialProcessingView({
                   </tbody>
                 </table>
               </div>
-            )}
           </div>
+        </>
 
       {/* ================= ADD MATERIAL MODAL ================= */}
       {isAddModalOpen && (
@@ -1157,6 +1305,70 @@ export default function MaterialProcessingView({
                     <option value="m">m</option>
                     <option value="set">set</option>
                   </select>
+                </div>
+
+                {/* Cutting List drawing fields */}
+                <div className="col-span-2 space-y-3 border-t border-base-border pt-3 mt-1">
+                  <span className="text-xs font-condensed font-bold uppercase tracking-wider text-base-accent block">
+                    Cutting List Properties
+                  </span>
+                  <div className="grid grid-cols-2 gap-3 bg-base-surface2 p-3 rounded-lg border border-base-border">
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-base-muted font-condensed font-bold uppercase tracking-wider">
+                        Length (mm)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 1200"
+                        value={formLengthMm}
+                        onChange={e => setFormLengthMm(e.target.value)}
+                        className="w-full bg-base-surface3 border border-base-border text-base-text text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-base-muted font-condensed font-bold uppercase tracking-wider">
+                        Width (mm)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder="e.g. 800"
+                        value={formWidthMm}
+                        onChange={e => setFormWidthMm(e.target.value)}
+                        className="w-full bg-base-surface3 border border-base-border text-base-text text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-base-muted font-condensed font-bold uppercase tracking-wider">
+                        Grade
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. S355JR"
+                        value={formGrade}
+                        onChange={e => setFormGrade(e.target.value)}
+                        className="w-full bg-base-surface3 border border-base-border text-base-text text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] text-base-muted font-condensed font-bold uppercase tracking-wider">
+                        Mass (Kg per part)
+                      </label>
+                      <input
+                        type="number"
+                        step="0.001"
+                        min="0"
+                        placeholder="e.g. 45.5"
+                        value={formMassKg}
+                        onChange={e => setFormMassKg(e.target.value)}
+                        className="w-full bg-base-surface3 border border-base-border text-base-text text-xs rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-base-accent"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Active Stages Checkboxes */}
@@ -1360,6 +1572,148 @@ export default function MaterialProcessingView({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ================= PASTE CUTTING LIST MODAL ================= */}
+      {pasteImportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="w-full max-w-4xl bg-base-surface border border-base-border rounded-xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-base-border bg-base-surface2">
+              <h2 className="text-lg font-bold font-sans text-base-text flex items-center gap-2">
+                <Clipboard className="h-5 w-5 text-base-accent" />
+                Paste Cutting List Table (Bulk Import)
+              </h2>
+              <button
+                onClick={() => {
+                  setPasteImportOpen(false);
+                  setPasteRawText('');
+                  setPasteParsedRows([]);
+                }}
+                className="p-1 hover:bg-base-surface3 rounded-lg transition text-base-muted hover:text-base-text"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Content split in columns or stacked */}
+            <div className="p-6 overflow-y-auto space-y-6 flex-1">
+              <div>
+                <p className="text-xs text-base-muted">
+                  Copy and paste a table of drawings from Excel or PDF. Columns should contain: <strong>Drawing/Part No, Description, Length, Width, Grade, Mass (Kg/part), Qty</strong>.
+                </p>
+                <p className="text-[11px] text-amber-500/95 mt-1 font-medium">
+                  💡 Note: If a drawing number is split across cells (e.g., "0083-3-" in one cell, "1341979" in the next), our intelligent heuristic will automatically join them together!
+                </p>
+              </div>
+
+              {/* Project selector for import */}
+              <div className="space-y-1.5 bg-base-surface2 p-3.5 rounded-lg border border-base-border">
+                <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider block">
+                  Select Target Project for Import *
+                </label>
+                <ProjectSearchSelector
+                  projects={projects}
+                  selectedId={pasteTargetProjectId}
+                  onChange={setPasteTargetProjectId}
+                  placeholder="Select a project..."
+                  showAllProjectsOption={false}
+                  className="max-w-md"
+                />
+              </div>
+
+              {/* Textarea for pasting */}
+              <div className="space-y-2">
+                <label className="text-xs font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                  Paste Raw Copied Table Text Here:
+                </label>
+                <textarea
+                  className="w-full h-32 bg-base-surface2 border border-base-border text-base-text text-xs rounded-lg p-3 font-mono focus:outline-none focus:ring-1 focus:ring-base-accent"
+                  placeholder="Paste copied cells from Excel/PDF here..."
+                  value={pasteRawText}
+                  onChange={(e) => {
+                    setPasteRawText(e.target.value);
+                    parseCuttingListText(e.target.value);
+                  }}
+                />
+              </div>
+
+              {/* Parsed Preview Section */}
+              {pasteParsedRows.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-condensed font-bold uppercase tracking-wider text-base-accent block">
+                    Parsed Preview ({pasteParsedRows.length} Items Found)
+                  </span>
+                  <div className="overflow-x-auto border border-base-border rounded-lg bg-base-surface2">
+                    <table className="w-full border-collapse text-left text-xs">
+                      <thead>
+                        <tr className="bg-base-surface3 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted">
+                          <th className="py-2 px-3">Part / Drawing No</th>
+                          <th className="py-2 px-3">Description</th>
+                          <th className="py-2 px-3 text-center">Length (mm)</th>
+                          <th className="py-2 px-3 text-center">Width (mm)</th>
+                          <th className="py-2 px-3 text-center">Grade</th>
+                          <th className="py-2 px-3 text-center">Mass (Kg/part)</th>
+                          <th className="py-2 px-3 text-center">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-base-border/30">
+                        {pasteParsedRows.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-base-surface3/30 h-8">
+                            <td className="py-1 px-3 font-mono font-bold text-base-text">
+                              {row.partNo || '—'}
+                            </td>
+                            <td className="py-1 px-3 text-base-muted truncate max-w-[150px]">
+                              {row.description || '—'}
+                            </td>
+                            <td className="py-1 px-3 text-center font-mono text-base-text">
+                              {row.lengthMm !== undefined ? `${row.lengthMm} mm` : '—'}
+                            </td>
+                            <td className="py-1 px-3 text-center font-mono text-base-text">
+                              {row.widthMm !== undefined ? `${row.widthMm} mm` : '—'}
+                            </td>
+                            <td className="py-1 px-3 text-center text-base-muted font-mono">
+                              {row.grade || '—'}
+                            </td>
+                            <td className="py-1 px-3 text-center font-mono text-base-text">
+                              {row.massKg !== undefined ? `${row.massKg} kg` : '—'}
+                            </td>
+                            <td className="py-1 px-3 text-center font-bold text-base-text font-mono">
+                              {row.qty}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex items-center justify-end gap-2 border-t border-base-border px-6 py-4 bg-base-surface2">
+              <button
+                type="button"
+                onClick={() => {
+                  setPasteImportOpen(false);
+                  setPasteRawText('');
+                  setPasteParsedRows([]);
+                }}
+                className="px-4 py-2 text-base-muted hover:text-base-text font-condensed font-bold uppercase text-xs cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={pasteParsedRows.length === 0}
+                onClick={handleSavePasteImport}
+                className="px-5 py-2 bg-base-accent hover:bg-base-accent/80 text-black font-condensed font-bold uppercase text-xs rounded-lg shadow cursor-pointer transition disabled:opacity-50"
+              >
+                Import {pasteParsedRows.length} Items
+              </button>
+            </div>
           </div>
         </div>
       )}

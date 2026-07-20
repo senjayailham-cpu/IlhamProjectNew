@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useMasterData } from '../hooks/useMasterData';
 import { MasterDataEntry, User } from '../types';
+import { can } from '../utils/permissions';
 import { Database, Search, Trash2, GitMerge, AlertTriangle, Check, X } from 'lucide-react';
 
 interface MasterDataViewProps {
@@ -28,7 +29,7 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
 
   // Access check
   const hasAccess = useMemo(() => {
-    return currentUser?.role === 'admin' || currentUser?.role === 'manager';
+    return can(currentUser, 'manageMasterData');
   }, [currentUser]);
 
   // Filter items

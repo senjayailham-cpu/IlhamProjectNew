@@ -38,11 +38,11 @@ import {
 interface MaterialsViewProps {
   materials: MaterialItem[];
   materialRequests: MaterialRequest[];
-  consumptionLogs: MaterialConsumptionLog[];
   projects: Project[];
   currentUser: User;
   onAddMaterial: (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateMaterialStock: (id: string, newStock: number) => void;
+  onUpdateMaterial?: (id: string, updates: Partial<MaterialItem>) => void;
   onDeleteMaterial: (id: string) => void;
   onAddMaterialRequest: (mr: Omit<MaterialRequest, 'id' | 'mrNo'>) => void;
   onUpdateMaterialRequestStatus: (
@@ -51,13 +51,12 @@ interface MaterialsViewProps {
     extra?: { approvedBy?: string; rejectedReason?: string; issuedBy?: string }
   ) => void;
   onDeleteMaterialRequest: (id: string) => void;
-  onAddConsumptionLog: (log: Omit<MaterialConsumptionLog, 'id'>) => void;
 }
 
 const CATEGORIES: MaterialCategory[] = [
   'Welding Consumable',
-  'Raw Material',
   'PPE',
+  'Wire',
   'Tools & Equipment',
   'Paint & Chemical',
   'Other'
@@ -76,19 +75,19 @@ const UNITS: MaterialUnit[] = [
 export default function MaterialsView({
   materials = [],
   materialRequests = [],
-  consumptionLogs = [],
   projects = [],
   currentUser,
   onAddMaterial,
   onUpdateMaterialStock,
+  onUpdateMaterial,
   onDeleteMaterial,
   onAddMaterialRequest,
   onUpdateMaterialRequestStatus,
-  onDeleteMaterialRequest,
-  onAddConsumptionLog
+  onDeleteMaterialRequest
 }: MaterialsViewProps) {
   const isSubmittingRef = useRef<boolean>(false);
   const [isBusy, setIsBusy] = useState(false);
+  const consumptionLogs: any[] = [];
 
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'stock' | 'requests' | 'logs'>('stock');
@@ -120,7 +119,7 @@ export default function MaterialsView({
 
   // Add material form state
   const [newMatName, setNewMatName] = useState('');
-  const [newMatCategory, setNewMatCategory] = useState<MaterialCategory>('Welding Consumable');
+  const [newMatCategory, setNewMatCategory] = useState<MaterialCategory>('Other');
   const [newMatUnit, setNewMatUnit] = useState<MaterialUnit>('pcs');
   const [newMatCurrentStock, setNewMatCurrentStock] = useState('0');
   const [newMatMinStock, setNewMatMinStock] = useState('0');
@@ -182,12 +181,13 @@ export default function MaterialsView({
     return projects.find(p => p.id === logProjectId);
   }, [projects, logProjectId]);
 
-  // Stock Summary calculations
+  // Stock Summary calculations for category 'Other'
   const stockSummary = useMemo(() => {
-    const total = materials.length;
+    const list = materials.filter(m => m.category === 'Other');
+    const total = list.length;
     let low = 0;
     let out = 0;
-    materials.forEach(m => {
+    list.forEach(m => {
       if (m.currentStock === 0) {
         out++;
       } else if (m.currentStock < m.minStock) {
@@ -197,15 +197,16 @@ export default function MaterialsView({
     return { total, low, out };
   }, [materials]);
 
-  // Filtered Stock Items
+  // Filtered Stock Items (Strictly Material Stock where category is 'Other')
   const filteredMaterials = useMemo(() => {
     return materials.filter(m => {
+      if (m.category !== 'Other') return false;
       const matchSearch = m.name.toLowerCase().includes(stockSearch.toLowerCase()) || 
-                          m.category.toLowerCase().includes(stockSearch.toLowerCase());
-      const matchCat = !stockCategoryFilter ? true : m.category === stockCategoryFilter;
-      return matchSearch && matchCat;
+                          (m.location && m.location.toLowerCase().includes(stockSearch.toLowerCase())) ||
+                          (m.notes && m.notes.toLowerCase().includes(stockSearch.toLowerCase()));
+      return matchSearch;
     });
-  }, [materials, stockSearch, stockCategoryFilter]);
+  }, [materials, stockSearch]);
 
   // Filtered Requests (newest first)
   const filteredRequests = useMemo(() => {
@@ -237,7 +238,7 @@ export default function MaterialsView({
       const guideHeaders = ['Column', 'Required', 'Format', 'Description'];
       const guideRows = [
         ['Name', 'Yes', 'Text', 'Material name, must be unique'],
-        ['Category', 'Yes', 'Text', 'Must be one of: Welding Consumable, Raw Material, PPE, Tools & Equipment, Paint & Chemical, Other'],
+        ['Category', 'Yes', 'Text', 'Must be one of: Welding Consumable, PPE, Tools & Equipment, Paint & Chemical, Other'],
         ['Unit', 'Yes', 'Text', 'Must be one of: kg, pcs, roll, liter, meter, box, set'],
         ['Current Stock', 'Yes', 'Number', 'Current quantity in stock (number only, no unit)'],
         ['Min Stock', 'Yes', 'Number', 'Minimum stock threshold for low-stock alert'],
@@ -308,7 +309,7 @@ export default function MaterialsView({
         }
 
         // Valid values for category and unit
-        const validCategories = ['Welding Consumable', 'Raw Material', 'PPE', 'Tools & Equipment', 'Paint & Chemical', 'Other'];
+        const validCategories = ['Welding Consumable', 'PPE', 'Tools & Equipment', 'Paint & Chemical', 'Other'];
         const validUnits = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
 
         const validImport: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>[] = [];
@@ -395,7 +396,7 @@ export default function MaterialsView({
 
     onAddMaterial({
       name: newMatName.trim(),
-      category: newMatCategory,
+      category: 'Other',
       unit: newMatUnit,
       currentStock: currentStockNum,
       minStock: minStockNum,
@@ -405,7 +406,7 @@ export default function MaterialsView({
 
     // Reset Form
     setNewMatName('');
-    setNewMatCategory('Welding Consumable');
+    setNewMatCategory('Other');
     setNewMatUnit('pcs');
     setNewMatCurrentStock('0');
     setNewMatMinStock('0');
@@ -552,7 +553,8 @@ export default function MaterialsView({
     const proj = projects.find(p => p.id === logProjectId);
     const assem = proj?.assemblies.find(a => a.id === logAssemblyId);
 
-    onAddConsumptionLog({
+    // Manual log tracking is now handled in ConsumableView
+    console.log('Manual consumption logged locally in console:', {
       date: logDate,
       materialId: logMaterialId,
       materialName: mat.name,
@@ -609,23 +611,6 @@ export default function MaterialsView({
       const mat = materials.find(m => m.id === item.materialId);
       const curStock = mat ? mat.currentStock : 0;
       onUpdateMaterialStock(item.materialId, Math.max(0, curStock - item.qtyRequested));
-
-      // Also append to consumption log automatically
-      onAddConsumptionLog({
-        date: new Date().toISOString().slice(0, 10),
-        materialId: item.materialId,
-        materialName: item.materialName,
-        unit: item.unit,
-        qtyUsed: item.qtyRequested,
-        projectId: mr.projectId,
-        projectName: mr.projectName,
-        assemblyId: mr.assemblyId,
-        assemblyName: mr.assemblyName,
-        issuedBy: currentUser?.name || 'Admin',
-        mrId: mr.id,
-        mrNo: mr.mrNo,
-        notes: `Issued from MR: ${mr.mrNo}. ` + (mr.notes || '')
-      });
     });
 
     onUpdateMaterialRequestStatus(mr.id, 'Issued', {
@@ -685,6 +670,12 @@ export default function MaterialsView({
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto px-4 md:px-0">
+      {/* NOTICE BANNER */}
+      <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 mb-4 text-sm text-blue-400 flex items-center gap-2">
+        <span>ℹ</span>
+        <span>Raw Materials are managed inside Mat. Processing — linked directly to each project.</span>
+      </div>
+
       {/* HEADER TITLE */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between border-b border-base-border pb-4 gap-4">
         <div>
@@ -693,7 +684,7 @@ export default function MaterialsView({
             <span>Material Management</span>
           </h2>
           <p className="text-xs text-base-muted font-sans font-medium mt-1">
-            Track material stock level, handle assembly material requests, and manage direct consumption audits.
+            Track material stock level and handle assembly material requests.
           </p>
         </div>
 
@@ -718,16 +709,6 @@ export default function MaterialsView({
             }`}
           >
             Material Requests
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all ${
-              activeTab === 'logs'
-                ? 'bg-base-accent text-white shadow-xs'
-                : 'text-base-muted hover:text-base-text'
-            }`}
-          >
-            Consumption Log
           </button>
         </div>
       </div>
@@ -837,17 +818,12 @@ export default function MaterialsView({
                   <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
                     Category
                   </label>
-                  <select
-                    value={newMatCategory}
-                    onChange={e => setNewMatCategory(e.target.value as MaterialCategory)}
-                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
-                  >
-                    {CATEGORIES.map(cat => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
+                  <input
+                    type="text"
+                    disabled
+                    value="Raw Material (Other)"
+                    className="w-full bg-base-surface2/50 border border-base-border rounded-lg px-3 py-2 text-xs outline-none font-semibold text-base-muted"
+                  />
                 </div>
 
                 <div>
@@ -956,21 +932,6 @@ export default function MaterialsView({
                 />
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                <ListFilter className="h-4 w-4 text-base-muted hidden sm:inline" />
-                <select
-                  value={stockCategoryFilter}
-                  onChange={e => setStockCategoryFilter(e.target.value)}
-                  className="w-full sm:w-48 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
-                >
-                  <option value="">All Categories</option>
-                  {CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
             </div>
 
             <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
@@ -1022,18 +983,18 @@ export default function MaterialsView({
             </div>
           )}
 
-          {/* STOCK INVENTORY DATA TABLE */}
+          {/* STOCK INVENTORY DATA TABLE (SPREADSHEET VIEW) */}
           <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
-            <table className="w-full text-left border-collapse text-xs">
+            <table className="w-full text-left border-collapse text-xs min-w-[900px]">
               <thead>
                 <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
-                  <th className="px-4 py-3">Material Name</th>
-                  <th className="px-4 py-3">Category</th>
-                  <th className="px-4 py-3 text-right">Current Stock</th>
-                  <th className="px-4 py-3 text-right">Min Stock</th>
-                  <th className="px-4 py-3">Location</th>
-                  <th className="px-4 py-3 text-center">Status</th>
-                  <th className="px-4 py-3 text-center">Actions</th>
+                  <th className="px-3 py-2.5 w-[30%]">Material Name</th>
+                  <th className="px-3 py-2.5 w-[12%]">Unit</th>
+                  <th className="px-3 py-2.5 w-[12%] text-right">Current Stock</th>
+                  <th className="px-3 py-2.5 w-[12%] text-right">Min Stock Threshold</th>
+                  <th className="px-3 py-2.5 w-[15%]">Location</th>
+                  <th className="px-3 py-2.5 w-[19%]">Notes</th>
+                  <th className="px-3 py-2.5 w-[8%] text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
@@ -1045,101 +1006,110 @@ export default function MaterialsView({
                   </tr>
                 ) : (
                   filteredMaterials.map(m => {
-                    const isEditing = editingStockId === m.id;
                     const isLow = m.currentStock > 0 && m.currentStock < m.minStock;
                     const isOut = m.currentStock === 0;
 
+                    const handleFieldChange = (field: keyof MaterialItem, val: any) => {
+                      if (!onUpdateMaterial) return;
+                      
+                      // For numbers, parse it safely
+                      let parsedVal = val;
+                      if (field === 'currentStock' || field === 'minStock') {
+                        parsedVal = parseFloat(val);
+                        if (isNaN(parsedVal) || parsedVal < 0) return;
+                      }
+                      
+                      onUpdateMaterial(m.id, { [field]: parsedVal });
+                    };
+
                     return (
-                      <tr key={m.id} className="hover:bg-base-surface2/30 transition-colors">
-                        <td className="px-4 py-3.5">
-                          <span className="block font-bold text-base-text">{m.name}</span>
-                          {m.notes && (
-                            <span className="block text-[10px] text-base-muted font-normal italic mt-0.5 truncate max-w-sm">
-                              {m.notes}
-                            </span>
-                          )}
+                      <tr key={m.id} className="hover:bg-amber-500/[0.01] transition-colors focus-within:bg-amber-500/[0.03]">
+                        {/* 1. Name */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="text"
+                            value={m.name}
+                            onChange={(e) => handleFieldChange('name', e.target.value)}
+                            placeholder="Material Name"
+                            className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none font-bold text-base-text text-xs focus:ring-1 focus:ring-amber-500"
+                          />
                         </td>
-                        <td className="px-4 py-3.5 text-base-muted">{m.category}</td>
-                        <td className="px-4 py-3.5 text-right font-mono font-bold">
-                          {isEditing ? (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <input
-                                type="number"
-                                min="0"
-                                value={editingStockVal}
-                                onChange={e => setEditingStockVal(e.target.value)}
-                                className="w-16 bg-base-surface2 border border-base-border rounded px-1.5 py-0.5 text-[11px] font-bold text-right outline-none focus:border-base-accent"
-                                autoFocus
-                              />
-                              <button
-                                onClick={() => handleEditStockSave(m.id)}
-                                className="p-1 text-green-500 hover:bg-green-500/10 rounded cursor-pointer"
-                              >
-                                <Check className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                onClick={() => setEditingStockId(null)}
-                                className="p-1 text-red-500 hover:bg-red-500/10 rounded cursor-pointer"
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-end gap-2">
-                              <span className={isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-base-text'}>
-                                {m.currentStock}
-                              </span>
-                              <span className="text-[9px] text-base-muted font-normal uppercase">{m.unit}</span>
-                            </div>
-                          )}
+
+                        {/* 2. Unit */}
+                        <td className="p-0 border-r border-base-border">
+                          <select
+                            value={m.unit}
+                            onChange={(e) => handleFieldChange('unit', e.target.value)}
+                            className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none text-base-muted text-xs cursor-pointer focus:ring-1 focus:ring-amber-500 appearance-none font-mono"
+                          >
+                            {UNITS.map(u => (
+                              <option key={u} value={u} className="bg-base-surface text-base-text">{u}</option>
+                            ))}
+                          </select>
                         </td>
-                        <td className="px-4 py-3.5 text-right font-mono text-base-muted">
-                          {m.minStock} <span className="text-[9px] uppercase">{m.unit}</span>
+
+                        {/* 3. Current Stock */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.currentStock}
+                            onChange={(e) => handleFieldChange('currentStock', e.target.value)}
+                            className={`w-full h-9 px-3 py-1 bg-transparent text-right hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none font-mono font-black text-xs focus:ring-1 focus:ring-amber-500 ${
+                              isOut ? 'text-red-500 font-extrabold' : isLow ? 'text-amber-500 font-extrabold' : 'text-emerald-500'
+                            }`}
+                          />
                         </td>
-                        <td className="px-4 py-3.5 text-base-muted font-normal">
-                          {m.location || <span className="italic text-base-muted/50">Unassigned</span>}
+
+                        {/* 4. Min Stock */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.minStock}
+                            onChange={(e) => handleFieldChange('minStock', e.target.value)}
+                            className="w-full h-9 px-3 py-1 bg-transparent text-right hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none font-mono text-base-muted text-xs focus:ring-1 focus:ring-amber-500"
+                          />
                         </td>
-                        <td className="px-4 py-3.5 text-center">
-                          {isOut ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-red-500/10 text-red-500">
-                              Out of Stock
-                            </span>
-                          ) : isLow ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-amber-500/10 text-amber-500">
-                              Low Stock
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-green-500/10 text-green-500">
-                              OK
-                            </span>
-                          )}
+
+                        {/* 5. Location */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="text"
+                            value={m.location || ''}
+                            onChange={(e) => handleFieldChange('location', e.target.value)}
+                            placeholder="Storage Location..."
+                            className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none text-base-text text-xs focus:ring-1 focus:ring-amber-500"
+                          />
                         </td>
-                        <td className="px-4 py-3.5 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {!isEditing && canManageMaterials && (
-                              <button
-                                onClick={() => {
-                                  setEditingStockId(m.id);
-                                  setEditingStockVal(String(m.currentStock));
-                                }}
-                                className="p-1.5 rounded hover:bg-base-surface2 text-base-muted hover:text-base-accent transition-colors cursor-pointer"
-                                title="Edit Current Stock"
-                              >
-                                <Edit2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {canManageMaterials && (
-                              <button
-                                onClick={() => {
+
+                        {/* 6. Notes */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="text"
+                            value={m.notes || ''}
+                            onChange={(e) => handleFieldChange('notes', e.target.value)}
+                            placeholder="Specification codes, supplier info..."
+                            className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none text-base-muted text-xs focus:ring-1 focus:ring-amber-500"
+                          />
+                        </td>
+
+                        {/* 7. Actions */}
+                        <td className="p-0 text-center">
+                          {canManageMaterials && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (confirm(`Are you sure you want to delete ${m.name}?`)) {
                                   onDeleteMaterial(m.id);
-                                }}
-                                className="p-1.5 rounded hover:bg-red-500/10 text-base-muted hover:text-red-500 transition-colors cursor-pointer"
-                                title="Delete Item"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                          </div>
+                                }
+                              }}
+                              className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition-colors cursor-pointer"
+                              title="Delete Item"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
