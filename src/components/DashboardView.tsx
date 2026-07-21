@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -651,6 +651,86 @@ export default function DashboardView({
     }
     return true;
   });
+
+  // --------------------------------------------------------------------------
+  // WORKSHOP SIDE-BY-SIDE METRICS FOR CAPACITY BALANCER WIDGET
+  // --------------------------------------------------------------------------
+  // Filter projects by month for each workshop specifically, ignoring the global dashLoc
+  const allMonthProjects = projects.filter(p => {
+    if (p.targetMonth) {
+      return p.targetMonth === selectedMonth;
+    }
+    if (p.status === 'completed' && p.completedDate) {
+      return p.completedDate.slice(0, 7) === selectedMonth;
+    }
+    const createdYM = (p.start || p.created || '').slice(0, 7);
+    const dueYM = (p.due || '').slice(0, 7);
+    return (createdYM === selectedMonth || dueYM === selectedMonth || (createdYM === '' && isCurrentMonth()));
+  });
+
+  const w1ProjectsList = allMonthProjects.filter(p => p.location === 'workshop1');
+  const w2ProjectsList = allMonthProjects.filter(p => p.location === 'workshop2');
+
+  // W1 Progress
+  let w1TotTasks = 0;
+  let w1DoneTasksCount = 0;
+  w1ProjectsList.forEach(p => {
+    const counts = calcTaskCounts(p);
+    w1TotTasks += counts.total;
+    w1DoneTasksCount += counts.done;
+  });
+  const w1AvgProgress = w1TotTasks === 0 ? 0 : Math.round((w1DoneTasksCount / w1TotTasks) * 100);
+
+  // W2 Progress
+  let w2TotTasks = 0;
+  let w2DoneTasksCount = 0;
+  w2ProjectsList.forEach(p => {
+    const counts = calcTaskCounts(p);
+    w2TotTasks += counts.total;
+    w2DoneTasksCount += counts.done;
+  });
+  const w2AvgProgress = w2TotTasks === 0 ? 0 : Math.round((w2DoneTasksCount / w2TotTasks) * 100);
+
+  // W1 Man-Hours spent in selected month
+  const w1MonthTimesheets = timesheets.filter(ts => {
+    if (!ts.date || ts.date.slice(0, 7) !== selectedMonth) return false;
+    const targetProj = projects.find(
+      p => p.client && p.client.trim().toLowerCase() === (ts.workOrder || '').trim().toLowerCase()
+    );
+    return targetProj && targetProj.location === 'workshop1';
+  });
+  const w1ManHoursSpent = getTotalManHours(w1MonthTimesheets);
+
+  // W2 Man-Hours spent in selected month
+  const w2MonthTimesheets = timesheets.filter(ts => {
+    if (!ts.date || ts.date.slice(0, 7) !== selectedMonth) return false;
+    const targetProj = projects.find(
+      p => p.client && p.client.trim().toLowerCase() === (ts.workOrder || '').trim().toLowerCase()
+    );
+    return targetProj && targetProj.location === 'workshop2';
+  });
+  const w2ManHoursSpent = getTotalManHours(w2MonthTimesheets);
+
+  // Headcount & Present count specifically for Workshop 1 vs 2
+  const w1EmpList = employees.filter(e => (e.location || '').trim().toLowerCase() === 'workshop 1');
+  const w2EmpList = employees.filter(e => (e.location || '').trim().toLowerCase() === 'workshop 2');
+
+  const w1PresCount = todayTimesheets.filter(ts => {
+    const emp = employees.find(e => e.id === ts.empId);
+    return emp && (emp.location || '').trim().toLowerCase() === 'workshop 1' && (ts.status === 'present' || ts.status === 'late');
+  }).length;
+
+  const w2PresCount = todayTimesheets.filter(ts => {
+    const emp = employees.find(e => e.id === ts.empId);
+    return emp && (emp.location || '').trim().toLowerCase() === 'workshop 2' && (ts.status === 'present' || ts.status === 'late');
+  }).length;
+
+  // Workload distributions
+  const w1ActiveProjCount = w1ProjectsList.filter(p => p.status === 'active').length;
+  const w2ActiveProjCount = w2ProjectsList.filter(p => p.status === 'active').length;
+  const totalActiveProjs = w1ActiveProjCount + w2ActiveProjCount;
+  const w1WorkloadPct = totalActiveProjs === 0 ? 50 : Math.round((w1ActiveProjCount / totalActiveProjs) * 100);
+  const w2WorkloadPct = totalActiveProjs === 0 ? 50 : 100 - w1WorkloadPct;
 
   // Memoized lists for the detail modals
   const overdueProjectsList = useMemo(() => {
@@ -1429,6 +1509,161 @@ export default function DashboardView({
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Workshop Workload & Capacity Balancer */}
+          <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-6 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="space-y-1">
+                <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
+                  <Sliders className="h-5 w-5 text-base-accent" />
+                  Workshop Workload & Capacity Balancer
+                </h3>
+                <p className="text-xs text-base-muted2">
+                  Compare operational load, active projects, man-hours, and real-time headcount across Batam fabrication workshops.
+                </p>
+              </div>
+              <div className="self-start sm:self-auto text-[10px] font-condensed font-bold text-base-accent bg-base-accent/10 border border-base-accent/25 px-2.5 py-1 rounded-full uppercase tracking-wider animate-pulse shrink-0">
+                Interactive Balancer
+              </div>
+            </div>
+
+            {/* Comparison balance slider / progress bar */}
+            <div className="bg-base-surface2/50 border border-base-border p-4 rounded-xl space-y-3">
+              <div className="flex items-center justify-between text-xs font-condensed font-bold uppercase tracking-wider">
+                <span className="text-base-text flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-[#9b1c2e]" />
+                  Workshop 1 Load ({w1WorkloadPct}%)
+                </span>
+                <span className="text-base-muted2 text-xs">
+                  {w1ActiveProjCount} vs {w2ActiveProjCount} Active Projects
+                </span>
+                <span className="text-base-blue flex items-center gap-1.5">
+                  Workshop 2 Load ({w2WorkloadPct}%)
+                  <span className="w-2.5 h-2.5 rounded-full bg-base-blue" />
+                </span>
+              </div>
+              <div className="h-4 bg-base-surface3 rounded-full overflow-hidden flex animate-pulse-slow">
+                <div 
+                  className="h-full bg-[#9b1c2e] transition-all duration-500 relative"
+                  style={{ width: `${w1WorkloadPct}%` }}
+                >
+                  <div className="absolute inset-y-0 right-0 w-0.5 bg-white/20" />
+                </div>
+                <div 
+                  className="h-full bg-base-blue transition-all duration-500"
+                  style={{ width: `${w2WorkloadPct}%` }}
+                />
+              </div>
+              <p className="text-[10px] text-base-muted2 text-center">
+                Ratio calculated dynamically based on active project distributions for {formatMonthLabel(selectedMonth)}.
+              </p>
+            </div>
+
+            {/* Side-by-Side Detailed KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Workshop 1 Card */}
+              <div 
+                onClick={() => setDashLoc('workshop1')}
+                className={`p-4 rounded-xl border transition-all cursor-pointer select-none space-y-4 hover:shadow-md ${
+                  dashLoc === 'workshop1'
+                    ? 'bg-[#9b1c2e]/5 border-[#9b1c2e] shadow-[0_0_12px_rgba(155,28,46,0.15)] ring-1 ring-[#9b1c2e]'
+                    : 'bg-base-surface2/30 border-base-border hover:border-base-accent/40'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#9b1c2e]" />
+                    <h4 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-[#9b1c2e]">Workshop 1 (W1)</h4>
+                  </div>
+                  <span className="text-[10px] font-condensed font-bold uppercase tracking-wider bg-[#9b1c2e]/10 text-[#9b1c2e] px-2 py-0.5 rounded border border-[#9b1c2e]/20">
+                    {dashLoc === 'workshop1' ? 'Active Filter' : 'Click to Filter'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-base-text">{w1ProjectsList.length}</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Projects</div>
+                  </div>
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-[#4caf7d]">{w1AvgProgress}%</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Avg Progress</div>
+                  </div>
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-base-blue">{w1ManHoursSpent.toFixed(0)}h</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Man-Hours</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs border-t border-base-border/50 pt-2.5 mt-2">
+                  <span className="text-base-muted font-semibold flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    Today's Attendance:
+                  </span>
+                  <span className="font-mono font-bold text-base-text">
+                    {w1PresCount} present / {w1EmpList.length} total
+                  </span>
+                </div>
+              </div>
+
+              {/* Workshop 2 Card */}
+              <div 
+                onClick={() => setDashLoc('workshop2')}
+                className={`p-4 rounded-xl border transition-all cursor-pointer select-none space-y-4 hover:shadow-md ${
+                  dashLoc === 'workshop2'
+                    ? 'bg-base-blue/5 border-base-blue shadow-[0_0_12px_rgba(59,130,246,0.15)] ring-1 ring-base-blue'
+                    : 'bg-base-surface2/30 border-base-border hover:border-base-accent/40'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-full bg-base-blue" />
+                    <h4 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-blue">Workshop 2 (W2)</h4>
+                  </div>
+                  <span className="text-[10px] font-condensed font-bold uppercase tracking-wider bg-base-blue/10 text-base-blue px-2 py-0.5 rounded border border-base-blue/20">
+                    {dashLoc === 'workshop2' ? 'Active Filter' : 'Click to Filter'}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center">
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-base-text">{w2ProjectsList.length}</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Projects</div>
+                  </div>
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-[#4caf7d]">{w2AvgProgress}%</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Avg Progress</div>
+                  </div>
+                  <div className="bg-base-bg border border-base-border/50 p-2.5 rounded-lg">
+                    <div className="text-lg font-condensed font-extrabold text-base-blue">{w2ManHoursSpent.toFixed(0)}h</div>
+                    <div className="text-[9px] text-base-muted font-condensed font-bold uppercase mt-0.5">Man-Hours</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs border-t border-base-border/50 pt-2.5 mt-2">
+                  <span className="text-base-muted font-semibold flex items-center gap-1">
+                    <Users className="h-3.5 w-3.5" />
+                    Today's Attendance:
+                  </span>
+                  <span className="font-mono font-bold text-base-text">
+                    {w2PresCount} present / {w2EmpList.length} total
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Clear Filters Helper Row */}
+            {dashLoc !== 'all' && (
+              <div className="flex justify-center pt-2">
+                <button
+                  onClick={() => setDashLoc('all')}
+                  className="px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider bg-base-surface border border-base-border hover:border-base-accent/50 text-base-muted hover:text-base-accent rounded-lg cursor-pointer transition-all flex items-center gap-1"
+                >
+                  Clear filter (Show both workshops)
+                </button>
+              </div>
+            )}
           </div>
 
         </div>

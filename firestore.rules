@@ -31,7 +31,7 @@ service cloud.firestore {
           request.auth.token.email.matches('^(admin|ilhamsenjaya|irwanr)@(.*\\.)?austinbatam\\.xyz$')
         )) ||
         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('role', 'viewer') == 'admin')
       );
     }
 
@@ -59,7 +59,7 @@ service cloud.firestore {
         (
           exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('allowedPermissions', {}).get(perm, null) != null
-            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.allowedPermissions[perm] == true
+            ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('allowedPermissions', {}).get(perm, false) == true
             : (
               (perm == 'addProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
               (perm == 'editProject' && (getUserRole() == 'admin' || getUserRole() == 'manager')) ||
@@ -110,15 +110,22 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Secure user profiles: only signed-in users can fetch individual docs, preventing unauthenticated hash leakage.
-      allow get: if isSignedIn();
-      allow list: if isSignedIn();
+      // Secure user profiles: only admin or the user themselves can read individual profiles, preventing password hash leakage.
+      allow get: if isAdmin() || (
+        isSignedIn() && (
+          userId == request.auth.uid ||
+          (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@')) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('id', '') == userId)
+        )
+      );
+      allow list: if isAdmin();
       allow create: if isAdmin() || (
         isSignedIn() && (
           // Allow creating their own UID mapping document
           userId == request.auth.uid ||
           // Allow creating their own master profile
-          userId == incoming().id ||
+          userId == incoming().get('id', '') ||
           // Allow creating if email matches the user id
           (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@'))
         )
@@ -128,12 +135,12 @@ service cloud.firestore {
           (incoming() == existing()) ||
           // Allow updating if it's their own document
           userId == request.auth.uid ||
-          userId == incoming().id ||
-          userId == existing().id ||
+          userId == incoming().get('id', '') ||
+          userId == existing().get('id', '') ||
           (request.auth.token.email != null && request.auth.token.email.startsWith(userId + '@')) ||
           // Or they have a UID mapping linking to this document
           (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
-           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.id == userId)
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.get('id', '') == userId)
         )
       );
       allow delete: if isAdmin();
