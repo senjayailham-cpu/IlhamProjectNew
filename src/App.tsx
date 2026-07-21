@@ -440,7 +440,9 @@ function AppContent() {
         listenToCollection('activities', setActivities);
         listenToCollection('problemReports', setProblemReports);
         listenToCollection('inspections', setInspections);
-        listenToCollection('users', setUsers);
+        if (currentUser.role === 'admin') {
+          listenToCollection('users', setUsers);
+        }
         listenToCollection('wireLogs', setWireLogs);
         listenToCollection('materials', setMaterials);
         listenToCollection('materialRequests', setMaterialRequests);

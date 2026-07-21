@@ -1,6 +1,24 @@
 import React, { useState } from 'react';
 import { User, UserRoleType } from '../types';
-import { Users, Shield, ShieldAlert, Plus, Trash2, Key, HelpCircle, Check, RefreshCw, Search, Power, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { 
+  Users, 
+  Shield, 
+  Plus, 
+  Trash2, 
+  Key, 
+  HelpCircle, 
+  Check, 
+  RefreshCw, 
+  Search, 
+  Power, 
+  AlertCircle, 
+  CheckCircle2, 
+  Sliders, 
+  UserCheck, 
+  Lock,
+  Compass,
+  AlertTriangle
+} from 'lucide-react';
 
 interface UsersAccessViewProps {
   users: User[];
@@ -56,6 +74,9 @@ export default function UsersAccessView({
   const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
+  // Right Column Sub-Tab State
+  const [activeSubTab, setActiveSubTab] = useState<'account' | 'navigation' | 'permissions'>('account');
+
   // Custom Toast Notification State
   const [notification, setNotification] = useState<{
     type: 'success' | 'error' | 'info';
@@ -158,7 +179,7 @@ export default function UsersAccessView({
     setNewUserRole('coordinator');
     setNewUserPass('');
     setShowAddForm(false);
-    showToast('success', `User account staged for "${cleanName}". Please click "Save Changes" or "Save & Update Roster" to broadcast.`);
+    showToast('success', `User account staged for "${cleanName}". Please click "Save & Update Roster" to save.`);
   };
 
   const handleDeleteUser = (uId: string) => {
@@ -172,7 +193,7 @@ export default function UsersAccessView({
     setDeleteConfirm({
       isOpen: true,
       title: 'Delete User Account',
-      message: `Are you sure you want to stage deletion of user "${target.name}" (${target.id})? Note: Deletion won't be final until you click "Save Changes" or "Save & Update Roster".`,
+      message: `Are you sure you want to delete user "${target.name}" (${target.id})? Note: Deletion won't be final until you click "Save Changes" or "Save & Update Roster".`,
       onConfirm: () => {
         const updated = localUsers.filter(u => u.id !== uId);
         setLocalUsers(updated);
@@ -231,6 +252,7 @@ export default function UsersAccessView({
         });
         setLocalUsers(updated);
         setDeleteConfirm(prev => ({ ...prev, isOpen: false }));
+        showToast('success', 'Reset custom permissions to default settings for this role.');
       }
     });
   };
@@ -349,12 +371,12 @@ export default function UsersAccessView({
       
       {/* 🔔 CUSTOM TOAST NOTIFICATION BANNER */}
       {notification && (
-        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4.5 py-3.5 rounded-xl shadow-elevated border animate-in slide-in-from-top-3 duration-300 ${
+        <div className={`fixed top-4 right-4 z-50 flex items-center gap-3 px-4.5 py-3.5 rounded-xl shadow-lg border animate-in slide-in-from-top-3 duration-300 ${
           notification.type === 'success'
-            ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/35 text-emerald-500'
+            ? 'bg-emerald-500/10 dark:bg-emerald-500/15 border-emerald-500/30 text-emerald-500'
             : notification.type === 'error'
-              ? 'bg-red-500/10 dark:bg-red-500/15 border-red-500/35 text-red-500'
-              : 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500/35 text-blue-400'
+              ? 'bg-red-500/10 dark:bg-red-500/15 border-red-500/30 text-red-500'
+              : 'bg-blue-500/10 dark:bg-blue-500/15 border-blue-500/30 text-blue-400'
         }`}>
           {notification.type === 'success' ? (
             <CheckCircle2 className="w-5 h-5 shrink-0" />
@@ -363,36 +385,36 @@ export default function UsersAccessView({
           ) : (
             <HelpCircle className="w-5 h-5 shrink-0" />
           )}
-          <div className="text-xs font-bold leading-snug max-w-sm">
+          <div className="text-xs font-semibold leading-snug max-w-sm">
             {notification.message}
           </div>
           <button
             onClick={() => setNotification(null)}
-            className="ml-2 hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded transition-colors text-xxs font-extrabold cursor-pointer"
+            className="ml-2 hover:bg-black/5 dark:hover:bg-white/5 p-1 rounded transition-colors text-xs font-bold cursor-pointer"
           >
             ✕
           </button>
         </div>
       )}
       
-      {/* ⚠️ UNSAVED CHANGES FLOATING ACTION BANNER */}
-      {isDirty && (
-        <div className="bg-amber-500/10 dark:bg-amber-500/15 border border-amber-500/35 rounded-2xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 shadow-elevated animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-full flex items-center justify-center shrink-0">
-              <RefreshCw className="h-5 w-5 animate-spin-slow text-amber-500" />
-            </div>
-            <div>
-              <h4 className="text-sm font-black uppercase font-condensed tracking-wider text-base-text">Unsaved Changes Staged</h4>
-              <p className="text-xs text-base-muted leading-tight mt-0.5">
-                You have modified user profiles, roles, or access bounds. Click <strong className="text-base-text font-bold">"Save & Update Roster"</strong> to apply changes permanently.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0">
+      {/* HEADER SECTION */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-border pb-4">
+        <div>
+          <h1 className="text-2xl font-black font-condensed uppercase tracking-wider text-base-text flex items-center gap-2">
+            <Users className="h-7 w-7 text-[#9b1c2e]" />
+            Users & Access Management
+          </h1>
+          <p className="text-xs text-base-muted mt-1 max-w-2xl leading-relaxed">
+            Assign workspace navigation boundaries, tab visibility bounds, and operational action privileges across all fabrication staff and administrators.
+          </p>
+        </div>
+        
+        {/* Floating save indicator or quick save button when changes are staged */}
+        {isDirty && (
+          <div className="flex items-center gap-2 animate-pulse-slow">
             <button
               onClick={() => setLocalUsers(users)}
-              className="flex-1 md:flex-none px-4 py-2 border border-base-border text-base-muted hover:text-base-text font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface3 transition-all cursor-pointer text-xs"
+              className="px-3.5 py-1.5 border border-base-border text-base-muted hover:text-base-text font-condensed font-bold uppercase tracking-wider rounded-lg hover:bg-base-surface3 transition-all cursor-pointer text-xs"
             >
               Discard Changes
             </button>
@@ -401,476 +423,589 @@ export default function UsersAccessView({
                 onUpdateUsers(localUsers);
                 showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
               }}
-              className="flex-1 md:flex-none px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md text-xs flex items-center justify-center gap-1.5 glow-green active:scale-[0.98]"
+              className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md text-xs flex items-center gap-1.5 glow-green active:scale-[0.98]"
             >
-              <Check className="h-4 w-4" />
+              <Check className="h-3.5 w-3.5" />
               <span>Save & Update Roster</span>
             </button>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {/* TWO COLUMN GRID WRAPPER */}
-      <div className="flex flex-col lg:flex-row gap-6 w-full">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-start">
       
-      {/* LEFT COLUMN: User Directory list */}
-      <div className="w-full lg:w-80 flex flex-col gap-4 bg-base-surface border border-base-border rounded-xl p-4 shadow-card">
-        <div className="flex justify-between items-center pb-2 border-b border-base-border">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-base-accent" />
-            <h2 className="font-condensed font-extrabold uppercase text-sm tracking-wide text-base-text">User roster roster</h2>
+        {/* LEFT COLUMN: User Directory list (Grid cols: 4) */}
+        <div className="lg:col-span-4 flex flex-col gap-4 bg-base-surface border border-base-border rounded-xl p-4 shadow-sm">
+          <div className="flex justify-between items-center pb-2.5 border-b border-base-border">
+            <div className="flex items-center gap-2">
+              <UserCheck className="w-4 h-4 text-[#9b1c2e]" />
+              <h2 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">User Directory</h2>
+            </div>
+            <button
+              onClick={() => setShowAddForm(prev => !prev)}
+              className={`px-2.5 py-1 text-xxs font-condensed font-bold uppercase tracking-wider rounded transition-all flex items-center gap-1 cursor-pointer ${
+                showAddForm 
+                  ? 'bg-base-surface border border-base-border hover:border-base-border/80 text-base-muted' 
+                  : 'bg-[#9b1c2e] hover:bg-[#801422] text-white'
+              }`}
+            >
+              {showAddForm ? 'Cancel' : (
+                <>
+                  <Plus className="w-3 h-3" />
+                  <span>Create User</span>
+                </>
+              )}
+            </button>
           </div>
-          <button
-            onClick={() => setShowAddForm(true)}
-            className="px-2 py-1 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-xxs uppercase tracking-wider rounded transition-colors flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Create</span>
-          </button>
+
+          {/* Search box */}
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-base-muted2" />
+            <input
+              type="text"
+              placeholder="Search user ID or display name..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-base-surface2 border border-base-border rounded-lg outline-none focus:border-[#9b1c2e] text-base-text font-semibold placeholder:font-normal placeholder:text-base-muted/75"
+            />
+          </div>
+
+          {/* Create User Form - Inline Collapsible */}
+          {showAddForm && (
+            <form onSubmit={handleCreateUser} className="bg-base-surface2 border border-[#9b1c2e]/20 p-4 rounded-lg space-y-3.5 shadow-inner animate-fade-in">
+              <div className="text-[10px] uppercase font-condensed font-black tracking-widest text-[#9b1c2e] flex items-center gap-1.5">
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add New User Account</span>
+              </div>
+              
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">User Sign-in ID (No spaces)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. suparman"
+                  required
+                  value={newUserId}
+                  onChange={(e) => setNewUserId(e.target.value.toLowerCase().replace(/\s+/g, ''))}
+                  className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none focus:border-[#9b1c2e]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Full Display Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Suparman Batam"
+                  required
+                  value={newUserName}
+                  onChange={(e) => setNewUserName(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none font-semibold focus:border-[#9b1c2e]"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Default Role Profile</label>
+                <select
+                  value={newUserRole}
+                  onChange={(e) => setNewUserRole(e.target.value as UserRoleType)}
+                  className="w-full px-2 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none font-bold text-base-text"
+                >
+                  <option value="admin">Admin (Full Access)</option>
+                  <option value="manager">Manager (Edit Scope)</option>
+                  <option value="coordinator">Coordinator (Edit Tasks)</option>
+                  <option value="viewer">Viewer (Read Only)</option>
+                  <option value="facility maintanance">Facility Maintenance</option>
+                  <option value="quality control">Quality Control</option>
+                  <option value="safety">Safety</option>
+                  <option value="project control">Project Control</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Initial Passcode</label>
+                <input
+                  type="password"
+                  required
+                  placeholder="Set account password..."
+                  value={newUserPass}
+                  onChange={(e) => setNewUserPass(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none focus:border-[#9b1c2e]"
+                />
+              </div>
+
+              <div className="flex gap-2 justify-end pt-1">
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 bg-[#9b1c2e] hover:bg-[#801422] text-white font-condensed font-bold uppercase tracking-wider rounded text-[10px] w-full shadow-sm transition-all"
+                >
+                  Staged Create User
+                </button>
+              </div>
+            </form>
+          )}
+
+          {/* Directory List Container */}
+          <div className="flex-1 overflow-y-auto space-y-1.5 max-h-[520px] pr-1">
+            {filteredUsers.length === 0 ? (
+              <div className="text-xs text-base-muted italic text-center py-8">No matching user records found.</div>
+            ) : (
+              filteredUsers.map(u => {
+                const isSelected = u.id === selectedUserId;
+                const hasOverrides = u.allowedFeatures !== undefined || u.allowedPermissions !== undefined;
+                
+                // Get initials
+                const initials = u.name.trim().split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+
+                return (
+                  <div
+                    key={u.id}
+                    onClick={() => setSelectedUserId(u.id)}
+                    className={`w-full text-left p-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between group ${
+                      isSelected
+                        ? 'bg-[#9b1c2e]/5 border-[#9b1c2e]/45 text-base-text shadow-xs ring-1 ring-[#9b1c2e]/10'
+                        : 'bg-base-surface2 border-transparent hover:border-base-border text-base-muted hover:text-base-text'
+                    }`}
+                  >
+                    <div className="min-w-0 flex items-center gap-3 flex-1">
+                      {/* Modern Round Initials Avatar */}
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 text-[10px] font-black font-condensed tracking-wider transition-colors ${
+                        isSelected 
+                          ? 'bg-[#9b1c2e] text-white' 
+                          : 'bg-base-surface border border-base-border text-base-muted'
+                      }`}>
+                        {initials || '?'}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold text-xs flex items-center gap-1.5 text-base-text">
+                          <span className="truncate">{u.name}</span>
+                          {u.currentSessionId && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" title="User is currently live & online" />
+                          )}
+                          {u.id === currentUser?.id && (
+                            <span className="shrink-0 text-[8px] font-condensed font-extrabold tracking-widest uppercase px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20">Me</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-base-muted flex items-center gap-1.5 font-bold mt-0.5 uppercase tracking-wide truncate">
+                          <span className="font-mono">{u.id}</span>
+                          <span>•</span>
+                          <span className="text-[9px] font-extrabold text-[#9b1c2e]/90">{u.role}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                      {hasOverrides && (
+                        <span className="w-2 h-2 rounded-full bg-amber-500" title="Custom overrides active" />
+                      )}
+                      
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteUser(u.id);
+                        }}
+                        className="p-1 text-base-muted hover:text-red-500 hover:bg-red-500/10 rounded transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
+                        title="Delete user"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
         </div>
 
-        {/* Searching field */}
-        <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-base-muted2" />
-          <input
-            type="text"
-            placeholder="Filter profiles..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-8 pr-3 py-1.5 text-xs bg-base-surface2 border border-base-border rounded-lg outline-none focus:border-base-accent text-base-text font-semibold placeholder:font-normal"
-          />
-        </div>
+        {/* RIGHT COLUMN: Details & Permissions Override Panel (Grid cols: 8) */}
+        <div className="lg:col-span-8 bg-base-surface border border-base-border rounded-xl p-5 shadow-sm flex flex-col gap-5 min-h-[550px]">
+          {selectedUser ? (
+            <>
+              {/* Profile Details header */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-border pb-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-condensed font-black uppercase text-lg text-base-text">{selectedUser.name}</span>
+                    <span className="px-2 py-0.5 bg-base-surface2 border border-base-border text-base-muted font-mono text-[9px] font-bold rounded">ID: {selectedUser.id}</span>
+                    {(selectedUser.allowedFeatures !== undefined || selectedUser.allowedPermissions !== undefined) && (
+                      <span className="px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20 text-amber-600 text-[9px] uppercase font-extrabold tracking-wider">Custom overrides active</span>
+                    )}
+                  </div>
+                  
+                  <div className="flex flex-wrap items-center gap-3 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base-muted text-[10px] uppercase font-condensed tracking-wider">System Role:</span>
+                      <select
+                        value={selectedUser.role}
+                        onChange={(e) => handleRoleChange(e.target.value as UserRoleType)}
+                        className="px-2 py-0.5 bg-base-bg border border-base-border rounded font-bold text-xxs uppercase tracking-wider text-base-text outline-none focus:border-[#9b1c2e]"
+                      >
+                        <option value="admin">Admin</option>
+                        <option value="manager">Manager</option>
+                        <option value="coordinator">Coordinator</option>
+                        <option value="viewer">Viewer</option>
+                        <option value="facility maintanance">Facility Maintenance</option>
+                        <option value="quality control">Quality Control</option>
+                        <option value="safety">Safety</option>
+                        <option value="project control">Project Control</option>
+                      </select>
+                    </div>
+                    
+                    <span className="text-base-border">|</span>
+                    
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-base-muted text-[10px] uppercase font-condensed tracking-wider">Rename:</span>
+                      <input
+                        type="text"
+                        defaultValue={selectedUser.name}
+                        onBlur={(e) => handleDisplayNameChange(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleDisplayNameChange(e.currentTarget.value);
+                            e.currentTarget.blur();
+                          }
+                        }}
+                        className="px-2 py-0.5 bg-base-bg border border-base-border rounded text-xs font-semibold w-40 outline-none focus:border-[#9b1c2e]"
+                      />
+                    </div>
+                  </div>
+                </div>
 
-        {/* Adds New User Roster Block Form Inline Modal */}
-        {showAddForm && (
-          <form onSubmit={handleCreateUser} className="bg-base-surface2 border border-base-accent/20 p-3.5 rounded-lg space-y-3 shadow-inner">
-            <div className="text-[10px] uppercase font-condensed font-black tracking-widest text-[#9b1c2e]">Add New User Parameters</div>
-            
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">User login ID (No spaces)</label>
-              <input
-                type="text"
-                placeholder="e.g. suparman"
-                required
-                value={newUserId}
-                onChange={(e) => setNewUserId(e.target.value.toLowerCase().replace(/\s+/g, ''))}
-                className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none"
-              />
-            </div>
+                <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+                  {isDirty && (
+                    <button
+                      onClick={() => {
+                        onUpdateUsers(localUsers);
+                        showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 shadow-sm active:scale-95 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" />
+                      <span>Save Changes</span>
+                    </button>
+                  )}
+                </div>
+              </div>
 
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Name Profile Details</label>
-              <input
-                type="text"
-                placeholder="e.g. Suparman Batam"
-                required
-                value={newUserName}
-                onChange={(e) => setNewUserName(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none font-semibold"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Initial Base Role</label>
-              <select
-                value={newUserRole}
-                onChange={(e) => setNewUserRole(e.target.value as UserRoleType)}
-                className="w-full px-2 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none font-bold"
-              >
-                <option value="admin">Admin (Full Control)</option>
-                <option value="manager">Manager (Edit Scope)</option>
-                <option value="coordinator">Coordinator (Update Tasks)</option>
-                <option value="viewer">Viewer (Read Only)</option>
-                <option value="facility maintanance">Facility Maintenance</option>
-                <option value="quality control">Quality Control</option>
-                <option value="safety">Safety</option>
-                <option value="project control">Project Control</option>
-              </select>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[9px] uppercase font-condensed font-bold text-base-muted tracking-wider">Temporary password</label>
-              <input
-                type="password"
-                required
-                placeholder="Set sign-in password..."
-                value={newUserPass}
-                onChange={(e) => setNewUserPass(e.target.value)}
-                className="w-full px-2.5 py-1.5 bg-base-bg border border-base-border rounded text-xs outline-none"
-              />
-            </div>
-
-            <div className="flex gap-1.5 justify-end pt-1">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="px-2.5 py-1 text-[10px] font-condensed uppercase font-bold border border-base-border rounded text-base-muted hover:bg-base-surface"
-              >
-                Discard
-              </button>
-              <button
-                type="submit"
-                className="px-3.5 py-1 bg-[#9b1c2e] hover:bg-[#b02237] text-white font-condensed font-bold uppercase tracking-wider rounded text-[10px]"
-              >
-                Assemble user
-              </button>
-            </div>
-          </form>
-        )}
-
-        {/* Directory List Container */}
-        <div className="flex-1 overflow-y-auto space-y-1.5 max-h-[500px] pr-1">
-          {filteredUsers.length === 0 ? (
-            <div className="text-xs text-base-muted italic text-center py-6">No users discovered.</div>
-          ) : (
-            filteredUsers.map(u => {
-              const isSel = u.id === selectedUserId;
-              const hasCustomAttrs = u.allowedFeatures !== undefined || u.allowedPermissions !== undefined;
-              return (
-                <div
-                  key={u.id}
-                  onClick={() => setSelectedUserId(u.id)}
-                  className={`w-full text-left px-3.5 py-2.5 rounded-lg border transition-all cursor-pointer flex items-center justify-between ${
-                    isSel
-                      ? 'bg-base-accent-dim/10 border-base-accent text-base-accent shadow-xs'
-                      : 'bg-base-surface2 border-transparent hover:border-base-border text-base-muted2 hover:text-base-text'
+              {/* Minimalist Inline Tab switcher inside the details container */}
+              <div className="flex border-b border-base-border gap-1.5 pb-0.5">
+                <button
+                  onClick={() => setActiveSubTab('account')}
+                  className={`px-4 py-2 font-condensed font-bold uppercase text-xs tracking-wider border-b-2 transition-all ${
+                    activeSubTab === 'account'
+                      ? 'border-[#9b1c2e] text-base-text bg-[#9b1c2e]/5'
+                      : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-surface2/40'
                   }`}
                 >
-                  <div className="min-w-0 flex-1">
-                    <div className="font-extrabold text-xs flex items-center gap-1.5 truncate text-base-text">
-                      {u.currentSessionId && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse inline-block shrink-0" title="User is currently live & online" />
-                      )}
-                      <span className="truncate">{u.name}</span>
-                      {u.id === currentUser?.id && (
-                        <span className="shrink-0 scale-90 px-1 py-0.2 rounded-full text-[8px] uppercase bg-base-green/20 text-base-green font-bold tracking-tight">Active</span>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-base-muted flex items-center gap-1 items-baseline font-bold mt-0.5 uppercase tracking-wide truncate">
-                      <span>({u.id})</span>
-                      <span>•</span>
-                      <span>{u.role}</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center gap-2 shrink-0">
-                    {hasCustomAttrs && (
-                      <span className="w-2 h-2 rounded-full bg-base-accent" title="Custom Permission Overrides Enabled" />
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteUser(u.id);
-                      }}
-                      className="p-1 text-base-muted hover:text-base-red hover:bg-base-red/10 rounded-md transition-colors"
-                      title="Permanently remove user"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* RIGHT COLUMN: Studio Permissions Override Engine */}
-      <div className="flex-1 bg-base-surface border border-base-border rounded-xl p-6 shadow-card flex flex-col gap-6">
-        {selectedUser ? (
-          <>
-            {/* 1. Core Profile Details and Security Controls */}
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-4 border-b border-base-border">
-              <div className="space-y-1.5 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap min-w-0">
-                  <span className="font-condensed font-black uppercase text-lg text-base-text leading-none">{selectedUser.name}</span>
-                  <span className="px-2 py-0.5 bg-base-surface2 border border-base-border text-base-muted font-mono font-extrabold text-[10px] rounded tracking-wide leading-none">{selectedUser.id}</span>
-                  {(selectedUser.allowedFeatures !== undefined || selectedUser.allowedPermissions !== undefined) && (
-                    <span className="px-2 py-0.5 rounded-full bg-base-accent/15 text-base-accent border border-base-accent/25 text-[9px] uppercase font-extrabold tracking-wider leading-none">Custom rules active</span>
-                  )}
-                </div>
-                
-                <div className="flex items-center gap-3 text-xs font-semibold">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-base-muted2 text-[10px] uppercase font-condensed tracking-wider">Role profile:</span>
-                    <select
-                      value={selectedUser.role}
-                      onChange={(e) => handleRoleChange(e.target.value as UserRoleType)}
-                      className="px-2 py-0.5 bg-base-bg border border-base-border border rounded font-bold text-xs uppercase cursor-pointer"
-                    >
-                      <option value="admin">Admin</option>
-                      <option value="manager">Manager</option>
-                      <option value="coordinator">Coordinator</option>
-                      <option value="viewer">Viewer</option>
-                      <option value="facility maintanance">Facility Maintenance</option>
-                      <option value="quality control">Quality Control</option>
-                      <option value="safety">Safety</option>
-                      <option value="project control">Project Control</option>
-                    </select>
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Account & Security</span>
                   </div>
-                  
-                  <span className="text-base-border">|</span>
-                  
+                </button>
+                <button
+                  onClick={() => setActiveSubTab('navigation')}
+                  className={`px-4 py-2 font-condensed font-bold uppercase text-xs tracking-wider border-b-2 transition-all ${
+                    activeSubTab === 'navigation'
+                      ? 'border-[#9b1c2e] text-base-text bg-[#9b1c2e]/5'
+                      : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-surface2/40'
+                  }`}
+                >
                   <div className="flex items-center gap-1.5">
-                    <span className="text-base-muted2 text-[10px] uppercase font-condensed tracking-wider">Change Display Name:</span>
-                    <input
-                      type="text"
-                      defaultValue={selectedUser.name}
-                      onBlur={(e) => handleDisplayNameChange(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          handleDisplayNameChange(e.currentTarget.value);
-                          e.currentTarget.blur();
-                        }
-                      }}
-                      className="px-2 py-0.5 bg-base-bg border border-base-border rounded text-xs font-bold w-40 outline-none focus:border-base-accent"
-                    />
+                    <Compass className="w-3.5 h-3.5" />
+                    <span>Menu Tab Visibility</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Action utilities */}
-              <div className="flex items-center gap-2 shrink-0">
-                {isDirty && (
-                  <button
-                    onClick={() => {
-                      onUpdateUsers(localUsers);
-                      showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
-                    }}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5 glow-green shadow-md active:scale-95 cursor-pointer"
-                  >
-                    <Check className="w-3.5 h-3.5" />
-                    <span>Save Changes</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => setShowPassReset(!showPassReset)}
-                  className="px-3 py-1.5 bg-base-surface border border-base-border hover:bg-base-surface3 hover:text-base-text text-base-muted2 font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5"
-                  title="Modify user sign-in credentials"
-                >
-                  <Key className="w-3.5 h-3.5" />
-                  <span>Passcode</span>
                 </button>
-                
-                {(selectedUser.allowedFeatures !== undefined || selectedUser.allowedPermissions !== undefined) && (
-                  <button
-                    onClick={handleResetToDefaults}
-                    className="px-3 py-1.5 bg-base-surface hover:bg-base-accent-dim/15 hover:text-base-accent border border-base-border hover:border-base-accent/25 text-base-muted2 font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center gap-1.5"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>Reset to default</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Password edit form toggler inline */}
-            {showPassReset && (
-              <div className="bg-amber-500/5 border border-amber-500/25 p-4 rounded-xl space-y-2.5 max-w-sm">
-                <div className="text-[10px] uppercase font-condensed font-extrabold text-amber-500 tracking-wider flex items-center gap-1">
-                  <Key className="w-4 h-4" />
-                  <span>Credential Passcode Overrider</span>
-                </div>
-                <div className="text-[11px] text-base-muted">Update sign-in password for {selectedUser.name}.</div>
-                <div className="flex gap-2">
-                  <input
-                    type="password"
-                    placeholder="Input new lockpass..."
-                    value={newPasswordValue}
-                    onChange={(e) => setNewPasswordValue(e.target.value)}
-                    className="flex-1 px-3 py-1 bg-base-bg border border-base-border rounded outline-none text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleUpdatePassword}
-                    className="px-3 py-1 bg-amber-500 text-white font-condensed font-bold uppercase text-xs rounded transition-colors hover:bg-amber-600"
-                  >
-                    Apply Change
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Live Session Status Panel */}
-            <div className="bg-base-surface2 border border-base-border rounded-xl p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <span className="text-[10px] uppercase font-condensed font-extrabold tracking-wider text-base-muted">Live Integration Status</span>
-                  {selectedUser.currentSessionId ? (
-                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-500 text-[10px] uppercase font-black tracking-wide animate-pulse">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
-                      <span>Active Session</span>
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-zinc-500/15 text-zinc-500 text-[10px] uppercase font-black tracking-wide">
-                      <span className="w-1.5 h-1.5 rounded-full bg-zinc-400"></span>
-                      <span>Offline</span>
-                    </span>
-                  )}
-                </div>
-                
-                <p className="text-xs text-base-muted max-w-xl leading-relaxed">
-                  {selectedUser.currentSessionId ? (
-                    <span>This user is currently logged in with active session token <code className="bg-base-bg px-1.5 py-0.5 rounded text-[10px] font-mono border border-base-border text-base-text font-bold">{selectedUser.currentSessionId.substring(0, 8)}...</code>. Any attempt to sign in from another browser or device will automatically invalidate this session and force a real-time logout on this device.</span>
-                  ) : (
-                    <span>No active live session is recorded in the cloud database for this user. The user will be initialized and authenticated upon their next secure portal sign-in.</span>
-                  )}
-                </p>
-              </div>
-
-              {selectedUser.currentSessionId && currentUser?.role === 'admin' && (
                 <button
-                  onClick={() => handleForceTerminateSession(selectedUser.id)}
-                  className="px-3.5 py-1.5 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-500/20 hover:border-red-500/40 font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 self-start sm:self-center cursor-pointer hover:shadow-sm"
-                  title="Force a real-time logout of this active session across all open browsers."
+                  onClick={() => setActiveSubTab('permissions')}
+                  className={`px-4 py-2 font-condensed font-bold uppercase text-xs tracking-wider border-b-2 transition-all ${
+                    activeSubTab === 'permissions'
+                      ? 'border-[#9b1c2e] text-base-text bg-[#9b1c2e]/5'
+                      : 'border-transparent text-base-muted hover:text-base-text hover:bg-base-surface2/40'
+                  }`}
                 >
-                  <Power className="w-3.5 h-3.5" />
-                  <span>Force Terminate</span>
-                </button>
-              )}
-            </div>
-
-            {/* Split Permissions Grid: Features (Left half) vs Controls (Right half) */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start">
-              
-              {/* FEATURE TABS ALLOWED SEGMENT */}
-              <div className="space-y-3.5 bg-base-surface2 p-4 rounded-xl border border-base-border">
-                <div className="flex justify-between items-center pb-1 border-b border-base-border/50">
-                  <div>
-                    <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Menu Feature access bounds</h3>
-                    <p className="text-[11px] text-base-muted leading-tight mt-0.5">Choose which tabs this user is allowed to view in navigation menu</p>
+                  <div className="flex items-center gap-1.5">
+                    <Shield className="w-3.5 h-3.5" />
+                    <span>Operational Actions</span>
                   </div>
-                  {isSelectedUserUsingDefaultFeatures && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] uppercase bg-base-green/20 text-base-green font-bold shrink-0">Role Defaults</span>
-                  )}
-                </div>
+                </button>
+              </div>
 
-                <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
-                  {activeTabsList
-                    .filter(t => t.id !== 'users') // Keep user control secured
-                    .map(t => {
-                      const isDefaultVisible = getIsTabVisibleByDefault(t.id, selectedUser.role);
-                      const isCurrentlyVisible = selectedUser.allowedFeatures 
-                        ? selectedUser.allowedFeatures.includes(t.id)
-                        : isDefaultVisible;
+              {/* Sub-Tab Content Panels */}
+              <div className="flex-1 flex flex-col justify-between">
+                
+                {/* SUBTAB 1: ACCOUNT & GENERAL SECURITY */}
+                {activeSubTab === 'account' && (
+                  <div className="space-y-4 animate-fade-in">
+                    
+                    {/* Live Session Control Card */}
+                    <div className="bg-base-surface2 border border-base-border p-4 rounded-xl flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] uppercase font-condensed font-black tracking-wider text-base-muted">Live Active Status</span>
+                          {selectedUser.currentSessionId ? (
+                            <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 text-[9px] uppercase font-black tracking-wide animate-pulse border border-emerald-500/20">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                              <span>Active Live</span>
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-base-border text-base-muted text-[9px] uppercase font-black tracking-wide">
+                              <span className="w-1.5 h-1.5 rounded-full bg-base-muted/50"></span>
+                              <span>Offline</span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-xs text-base-muted leading-relaxed">
+                          {selectedUser.currentSessionId ? (
+                            <span>Currently authenticated on device/browser with token <code className="bg-base-bg px-1 rounded text-[10px] font-mono border border-base-border text-base-text">{selectedUser.currentSessionId.substring(0, 8)}...</code>. Logging in on another system will terminate this instantly.</span>
+                          ) : (
+                            <span>No active live session. This user is logged out of all active devices.</span>
+                          )}
+                        </p>
+                      </div>
 
-                      return (
-                        <label
-                          key={t.id}
-                          className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg border transition-all cursor-pointer font-semibold ${
-                            isCurrentlyVisible
-                              ? 'bg-base-bg border-base-green/20 text-base-text hover:bg-base-surface'
-                              : 'bg-base-bg/50 border-base-border/50 text-base-muted hover:text-base-muted2 hover:bg-base-bg/80'
-                          }`}
+                      {selectedUser.currentSessionId && currentUser?.role === 'admin' && (
+                        <button
+                          onClick={() => handleForceTerminateSession(selectedUser.id)}
+                          className="px-3 py-1.5 bg-red-600/10 hover:bg-red-600/15 text-red-600 border border-red-500/20 font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg transition-all flex items-center justify-center gap-1.5 shrink-0 self-start md:self-center cursor-pointer"
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={isCurrentlyVisible}
-                              onChange={() => handleToggleTabVisibility(t.id)}
-                              className="w-4 h-4 accent-base-accent shrink-0 rounded cursor-pointer"
-                            />
-                            <div className="truncate min-w-0">
-                              <div className="text-xs font-bold text-base-text">{t.label} Tab</div>
-                              <div className="text-[9px] text-base-muted leading-tight font-normal">
-                                {isDefaultVisible ? 'Visible by default' : 'Hidden by default'} for the {selectedUser.role} role.
+                          <Power className="w-3.5 h-3.5" />
+                          <span>Force Log Out</span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Passcode Overrider */}
+                    <div className="bg-base-surface2 border border-base-border p-4 rounded-xl space-y-3">
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <h4 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text flex items-center gap-1.5">
+                            <Key className="w-4 h-4 text-[#9b1c2e]" />
+                            Modify Password Code
+                          </h4>
+                          <p className="text-[11px] text-base-muted leading-snug mt-0.5">Reset or replace the secure passcode for signing in.</p>
+                        </div>
+                        <button
+                          onClick={() => setShowPassReset(prev => !prev)}
+                          className="px-2.5 py-1 text-xxs font-condensed font-bold uppercase border border-base-border text-base-muted hover:text-base-text rounded-md transition-colors"
+                        >
+                          {showPassReset ? 'Collapse' : 'Update Passcode'}
+                        </button>
+                      </div>
+
+                      {showPassReset && (
+                        <div className="flex gap-2 max-w-md pt-1.5 animate-fade-in">
+                          <input
+                            type="password"
+                            placeholder="Input new secure lockpass..."
+                            value={newPasswordValue}
+                            onChange={(e) => setNewPasswordValue(e.target.value)}
+                            className="flex-1 px-2.5 py-1 bg-base-bg border border-base-border rounded text-xs outline-none focus:border-[#9b1c2e]"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleUpdatePassword}
+                            className="px-4 py-1 bg-[#9b1c2e] text-white font-condensed font-bold uppercase text-xs rounded transition-colors hover:bg-[#801422] cursor-pointer"
+                          >
+                            Apply Change
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Reset custom privileges block */}
+                    <div className="bg-base-surface2 border border-base-border p-4 rounded-xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div className="space-y-1">
+                        <h4 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text flex items-center gap-1.5">
+                          <RefreshCw className="w-3.5 h-3.5 text-amber-500" />
+                          Default Roster Alignment
+                        </h4>
+                        <p className="text-[11px] text-base-muted max-w-xl">
+                          Wipe all manual overrides, re-aligning tab visibility and operational actions back to standard preset roles.
+                        </p>
+                      </div>
+
+                      {(selectedUser.allowedFeatures !== undefined || selectedUser.allowedPermissions !== undefined) ? (
+                        <button
+                          onClick={handleResetToDefaults}
+                          className="px-3.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/15 border border-amber-500/20 hover:border-amber-500/40 text-amber-600 font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all"
+                        >
+                          Reset Defaults
+                        </button>
+                      ) : (
+                        <span className="text-[10px] uppercase font-condensed font-black tracking-wider text-emerald-600 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-md">
+                          Aligned with role presets
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Security warning alert box */}
+                    <div className="bg-red-500/5 dark:bg-red-500/10 border border-red-500/25 p-3.5 rounded-lg flex items-start gap-2 text-base-muted italic">
+                      <Lock className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
+                      <span className="text-[11px] leading-relaxed text-base-muted">
+                        <strong>Passcode Encryption:</strong> Passwords are fully hashed with a secure PBKDF2 style SHA-256 routine before transmitting or storing in Firestore, protecting credential vectors from leakages or unauthenticated readers.
+                      </span>
+                    </div>
+
+                  </div>
+                )}
+
+                {/* SUBTAB 2: MENU NAVIGATION ACCESS */}
+                {activeSubTab === 'navigation' && (
+                  <div className="space-y-3.5 animate-fade-in">
+                    <div className="flex justify-between items-center border-b border-base-border pb-2">
+                      <div>
+                        <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Menu Visibility overrides</h3>
+                        <p className="text-[11px] text-base-muted mt-0.5">Toggle specific sidebar navigation tabs directly for this user account.</p>
+                      </div>
+                      {isSelectedUserUsingDefaultFeatures && (
+                        <span className="px-2 py-0.5 rounded text-[8px] uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 font-bold shrink-0">Role Defaults Active</span>
+                      )}
+                    </div>
+
+                    {/* Scrollable grid of checkable tabs */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[380px] overflow-y-auto pr-1">
+                      {activeTabsList
+                        .filter(t => t.id !== 'users') // Always protect security setup
+                        .map(t => {
+                          const isDefaultVisible = getIsTabVisibleByDefault(t.id, selectedUser.role);
+                          const isCurrentlyVisible = selectedUser.allowedFeatures 
+                            ? selectedUser.allowedFeatures.includes(t.id)
+                            : isDefaultVisible;
+
+                          return (
+                            <label
+                              key={t.id}
+                              className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer font-semibold ${
+                                isCurrentlyVisible
+                                  ? 'bg-base-surface2 border-[#9b1c2e]/25 text-base-text hover:bg-base-surface3/40'
+                                  : 'bg-base-bg/30 border-base-border/50 text-base-muted hover:text-base-muted2 hover:bg-base-bg/50'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isCurrentlyVisible}
+                                  onChange={() => handleToggleTabVisibility(t.id)}
+                                  className="w-4 h-4 accent-[#9b1c2e] shrink-0 rounded cursor-pointer"
+                                />
+                                <div className="truncate min-w-0">
+                                  <div className="text-xs font-bold text-base-text">{t.label} Tab</div>
+                                  <div className="text-[9px] text-base-muted leading-tight font-normal">
+                                    {isDefaultVisible ? 'Active by Default' : 'Hidden by Default'} for role.
+                                  </div>
+                                </div>
+                              </div>
+                              <span className="text-[9px] uppercase font-mono bg-base-surface border border-base-border px-1.5 py-0.5 rounded text-base-muted">
+                                {t.id}
+                              </span>
+                            </label>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* SUBTAB 3: OPERATIONAL ACTION PRIVILEGES */}
+                {activeSubTab === 'permissions' && (
+                  <div className="space-y-3.5 animate-fade-in">
+                    <div className="flex justify-between items-center border-b border-base-border pb-2">
+                      <div>
+                        <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Operational Actions</h3>
+                        <p className="text-[11px] text-base-muted mt-0.5">Toggle what database mutations and operations this user can directly execute.</p>
+                      </div>
+                      {isSelectedUserUsingDefaultPermissions && (
+                        <span className="px-2 py-0.5 rounded text-[8px] uppercase bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 font-bold shrink-0">Role Defaults Active</span>
+                      )}
+                    </div>
+
+                    {/* Filtered Scrollable operations directory */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[380px] overflow-y-auto pr-1">
+                      {permissionMeta.map(pMeta => {
+                        const isDefaultAllowed = getIsPermissionAllowedByDefault(pMeta.id, selectedUser.role);
+                        const isCurrentlyAllowed = selectedUser.allowedPermissions
+                          ? !!selectedUser.allowedPermissions[pMeta.id]
+                          : isDefaultAllowed;
+
+                        return (
+                          <label
+                            key={pMeta.id}
+                            className={`flex items-center justify-between p-2.5 rounded-lg border transition-all cursor-pointer font-semibold ${
+                              isCurrentlyAllowed
+                                ? 'bg-base-surface2 border-emerald-500/20 text-base-text hover:bg-base-surface3/40'
+                                : 'bg-base-bg/30 border-base-border/50 text-base-muted hover:text-base-muted2 hover:bg-base-bg/50'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                              <input
+                                type="checkbox"
+                                checked={isCurrentlyAllowed}
+                                onChange={() => handleTogglePermission(pMeta.id)}
+                                className="w-4 h-4 accent-emerald-500 shrink-0 rounded cursor-pointer"
+                              />
+                              <div className="min-w-0 pr-1">
+                                <div className="text-xs font-bold text-base-text truncate">{pMeta.label}</div>
+                                <div className="text-[9px] text-base-muted leading-tight font-normal truncate" title={pMeta.desc}>
+                                  {pMeta.desc}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                          <span className="text-[10px] uppercase font-condensed font-bold px-1.5 py-0.5 rounded bg-base-surface border border-base-border font-mono">
-                            {t.id}
-                          </span>
-                        </label>
-                      );
-                    })}
-                </div>
-              </div>
-
-              {/* CONTROL PERMISSIONS SEGMENT */}
-              <div className="space-y-3.5 bg-base-surface2 p-4 rounded-xl border border-base-border">
-                <div className="flex justify-between items-center pb-1 border-b border-base-border/50">
-                  <div>
-                    <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Operational Action Permissions</h3>
-                    <p className="text-[11px] text-base-muted leading-tight mt-0.5">Toggle what operations this user can trigger and execute</p>
+                            <span className={`text-[8px] uppercase font-condensed font-black px-1.5 py-0.2 rounded border ${
+                              isDefaultAllowed 
+                                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' 
+                                : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
+                            }`}>
+                              {isDefaultAllowed ? 'Std' : 'Restricted'}
+                            </span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {isSelectedUserUsingDefaultPermissions && (
-                    <span className="px-1.5 py-0.5 rounded text-[8px] uppercase bg-base-green/20 text-base-green font-bold shrink-0">Role Defaults</span>
+                )}
+
+                {/* Staged banner indicator inside details view */}
+                <div className="border-t border-base-border/40 pt-3.5 mt-4 flex items-center justify-between">
+                  <span className="text-[10px] text-base-muted flex items-center gap-1">
+                    <Shield className="w-3.5 h-3.5 text-base-accent" />
+                    <span>Changes above will not write to cloud until you click <strong>Save Changes</strong></span>
+                  </span>
+                  
+                  {isDirty && (
+                    <button
+                      onClick={() => {
+                        onUpdateUsers(localUsers);
+                        showToast('success', 'All changes saved and broadcast successfully to the Live Cloud Sync!');
+                      }}
+                      className="px-4 py-1.5 bg-[#9b1c2e] hover:bg-[#801422] text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer shadow-md"
+                    >
+                      Save Changes
+                    </button>
                   )}
                 </div>
 
-                <div className="space-y-1.5 max-h-[380px] overflow-y-auto pr-1">
-                  {permissionMeta.map(pMeta => {
-                    const isDefaultAllowed = getIsPermissionAllowedByDefault(pMeta.id, selectedUser.role);
-                    const isCurrentlyAllowed = selectedUser.allowedPermissions
-                      ? !!selectedUser.allowedPermissions[pMeta.id]
-                      : isDefaultAllowed;
-
-                    return (
-                      <label
-                        key={pMeta.id}
-                        className={`flex items-center justify-between px-3.5 py-2 rounded-lg border transition-all cursor-pointer font-semibold ${
-                          isCurrentlyAllowed
-                            ? 'bg-base-bg border-base-accent/20 text-base-text hover:bg-base-surface'
-                            : 'bg-base-bg/50 border-base-border/50 text-base-muted hover:text-base-muted2 hover:bg-base-bg/80'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                          <input
-                            type="checkbox"
-                            checked={isCurrentlyAllowed}
-                            onChange={() => handleTogglePermission(pMeta.id)}
-                            className="w-4 h-4 accent-base-accent shrink-0 rounded cursor-pointer"
-                          />
-                          <div className="min-w-0 pr-2">
-                            <div className="text-xs font-bold text-base-text">{pMeta.label}</div>
-                            <div className="text-[9.5px] text-base-muted leading-tight font-normal truncate" title={pMeta.desc}>
-                              {pMeta.desc}
-                            </div>
-                          </div>
-                        </div>
-                        <span className={`text-[9px] uppercase font-condensed font-black px-1.5 py-0.3 rounded border ${
-                          isDefaultAllowed 
-                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-600' 
-                            : 'bg-amber-500/10 border-amber-500/20 text-amber-600'
-                        }`}>
-                          {isDefaultAllowed ? 'Std' : 'Restricted'}
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
               </div>
-
+            </>
+          ) : (
+            <div className="text-center py-20 text-base-muted flex flex-col items-center justify-center gap-3 flex-1">
+              <Users className="w-12 h-12 text-base-border animate-pulse-slow" />
+              <div className="text-sm font-bold uppercase font-condensed tracking-wider">No User Profile Selected</div>
+              <p className="text-xs max-w-sm leading-relaxed text-base-muted/80">
+                Please search and select a team member from the directory list on the left to start viewing live status and adjusting granular permissions.
+              </p>
             </div>
-
-            {/* Note on sync and instant effect */}
-            <div className="text-[11px] bg-amber-500/5 dark:bg-amber-500/10 border border-amber-500/25 p-3.5 rounded-lg flex items-start gap-2 text-base-muted italic">
-              <Shield className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
-              <span>
-                <strong>Staged Editing Engine:</strong> Access overrides processed above are drafted locally. They will not take effect on the workspace until you click <strong className="text-base-text font-bold">"Save Changes"</strong> or <strong className="text-base-text font-bold">"Save & Update Roster"</strong>. Once saved, active sessions are refreshed immediately.
-              </span>
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-20 text-base-muted flex flex-col items-center justify-center gap-2">
-            <Users className="w-10 h-10 text-base-border" />
-            <div className="text-sm font-semibold">No roster user currently selected.</div>
-            <div className="text-xs">Create or search a user id from the left panel directory to start managing tabs and permissions.</div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
       </div>
       
       {/* Custom Delete Confirmation Modal */}
       {deleteConfirm.isOpen && (
-        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in animate-duration-200">
+        <div className="fixed inset-0 flex items-center justify-center p-4 bg-black/60 backdrop-blur-[2px] z-50 animate-fade-in">
           <div className="bg-base-surface border border-base-border shadow-modal rounded-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 ease-out duration-150 p-6 space-y-5 text-left">
             <div className="flex items-start gap-4">
               <div className="p-3 bg-red-500/10 rounded-full text-red-600 shrink-0">
-                <Trash2 className="h-6 w-6" />
+                <AlertTriangle className="h-6 w-6" />
               </div>
-              <div className="space-y-1.5 flex-1 select-none">
+              <div className="space-y-1.5 flex-1">
                 <h4 className="text-sm font-bold text-base-text uppercase font-condensed tracking-wider">{deleteConfirm.title}</h4>
                 <p className="text-xs text-base-muted font-normal leading-relaxed">
                   {deleteConfirm.message}

@@ -479,7 +479,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    const testUser = users.find(u => u.id === currentUser.id);
+    let testUser = users.find(u => u.id === currentUser.id);
+    if (!testUser) {
+      try {
+        const userDocRef = doc(db, 'users', currentUser.id);
+        const userDocSnap = await getDoc(userDocRef);
+        if (userDocSnap.exists()) {
+          testUser = { id: currentUser.id, ...userDocSnap.data() } as User;
+        }
+      } catch (err) {
+        console.warn("Could not fetch user profile for password verification:", err);
+      }
+    }
+
     if (!testUser) {
       setChangePasswordError('Unable to locate your user account.');
       return;
