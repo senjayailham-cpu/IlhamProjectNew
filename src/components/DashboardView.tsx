@@ -595,13 +595,24 @@ export default function DashboardView({
   // Task statistics
   let totalTasks = 0;
   let doneTasks = 0;
+  let totalDifficultyWeight = 0;
+  let accumulatedWeightedPct = 0;
+
   filteredProjects.forEach(p => {
     const counts = calcTaskCounts(p);
     totalTasks += counts.total;
     doneTasks += counts.done;
+
+    (p.assemblies || []).forEach(a => {
+      (a.tasks || []).forEach(t => {
+        const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+        totalDifficultyWeight += difficulty;
+        accumulatedWeightedPct += (t.pct || 0) * difficulty;
+      });
+    });
   });
 
-  const overallPct = totalTasks === 0 ? 0 : Math.round((doneTasks / totalTasks) * 100);
+  const overallPct = totalDifficultyWeight === 0 ? 0 : Math.round(accumulatedWeightedPct / totalDifficultyWeight);
 
   // Status statistics counts
   const statusCounts = { active: 0, pending: 0, completed: 0, 'on-hold': 0 };
