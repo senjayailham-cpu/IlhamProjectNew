@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
+import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -24,6 +25,7 @@ interface DashboardViewProps {
   materialRequests?: MaterialRequest[];
   problemReports?: ProblemReport[];
   inspections?: InspectionRequest[];
+  setActiveTab?: (tab: string) => void;
 }
 
 const BAR_COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c'];
@@ -57,13 +59,14 @@ export default function DashboardView({
   materialRequests = [],
   problemReports = [],
   inspections = [],
+  setActiveTab,
 }: DashboardViewProps) {
   const materialProcessings = useMemo(() => {
     return projects.flatMap(p => p.materialProcessing || []);
   }, [projects]);
 
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
-  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | null>(null);
+  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | 'ai-command-center' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
   const [sCurveView, setSCurveView] = useState<'month' | 'quarter'>('month');
 
@@ -808,6 +811,7 @@ export default function DashboardView({
 
   return (
     <div className="space-y-6">
+
       {/* Hero card */}
       <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-6 sm:p-8 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-6 dark:from-[#151921] dark:to-[#1b212c]">
         {/* Decorative background details */}
@@ -1602,7 +1606,7 @@ export default function DashboardView({
 
 
       {/* Interactive Detail Modal Popups */}
-      {activeModal && (
+      {activeModal && activeModal !== 'ai-command-center' && (
         <div 
           className={`fixed inset-0 bg-black/70 backdrop-blur-xs z-[100] flex items-center justify-center animate-in fade-in duration-200 ${
             activeModal === 'problem-center' ? 'p-0 sm:p-4' : 'p-4'
@@ -2591,6 +2595,47 @@ export default function DashboardView({
           </div>
         </div>
       )}
+
+      {/* AI Command Center Modal */}
+      {activeModal === 'ai-command-center' && (
+        <div 
+          className="fixed inset-0 bg-black/70 backdrop-blur-xs z-[100] flex items-center justify-center p-4 animate-in fade-in duration-200"
+          onClick={() => setActiveModal(null)}
+        >
+          <div 
+            className="w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl relative animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <AICenterModal
+              projects={projects}
+              employees={employees}
+              materials={materials}
+              materialRequests={materialRequests}
+              problemReports={problemReports}
+              inspections={inspections}
+              timesheets={timesheets}
+              setActiveTab={(tab) => {
+                setActiveTab?.(tab);
+                setActiveModal(null);
+              }}
+              onClose={() => setActiveModal(null)}
+              openSpotlight={openSpotlight}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* AI Command Center FAB Button */}
+      <div className="fixed bottom-24 right-6 z-[90]">
+        <button
+          onClick={() => setActiveModal('ai-command-center')}
+          className="relative w-14 h-14 rounded-full bg-base-accent hover:bg-base-accent/90 text-black flex items-center justify-center shadow-2xl transition-all duration-300 transform hover:scale-105 active:scale-95 cursor-pointer ring-4 ring-base-accent/20 animate-pulse"
+          style={{ animationDuration: '4s' }}
+          title="AI Command Center"
+        >
+          <Sparkles className="h-6 w-6 text-black" />
+        </button>
+      </div>
 
       {/* Problem Center FAB Button */}
       <div className="fixed bottom-6 right-6 z-[90]">

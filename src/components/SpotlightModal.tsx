@@ -106,17 +106,7 @@ export default function SpotlightModal({
     onConfirm: () => {}
   });
 
-  if (!isOpen || !projectId) return null;
-  const p = projects.find(x => x.id === projectId);
-  if (!p) return null;
-
-  const modalTimesheets = selectedMonth
-    ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === selectedMonth)
-    : timesheets;
-
-  const pct = calcPct(p);
-  const { total: totalTasks, done: doneTasks } = calcTaskCounts(p);
-  const asms = p.assemblies || [];
+  const p = projectId ? projects.find(x => x.id === projectId) : undefined;
 
   const commandCenterData = useMemo(() => {
     if (!p) return null;
@@ -185,6 +175,16 @@ export default function SpotlightModal({
       assemblyProgress, stageAverages, todayEntries,
     };
   }, [p, timesheets]);
+
+  if (!isOpen || !projectId || !p) return null;
+
+  const modalTimesheets = selectedMonth
+    ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === selectedMonth)
+    : timesheets;
+
+  const pct = calcPct(p);
+  const { total: totalTasks, done: doneTasks } = calcTaskCounts(p);
+  const asms = p.assemblies || [];
 
   const toggleAsm = (aid: string) => {
     setCollapsedAsms(prev => ({ ...prev, [aid]: !prev[aid] }));

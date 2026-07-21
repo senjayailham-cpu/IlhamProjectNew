@@ -1,4 +1,4 @@
-import { Project, TimesheetEntry, Dependency } from '../types';
+import { Project, TimesheetEntry, Dependency, WireLog, MaterialConsumptionLog } from '../types';
 
 export function calcTaskCounts(project: Project) {
   let total = 0;
@@ -176,7 +176,12 @@ function csvEsc(val: any): string {
   return str;
 }
 
-export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntry[]) {
+export function exportProjectsCSV(
+  projects: Project[],
+  timesheets: TimesheetEntry[],
+  wireLogs: WireLog[] = [],
+  consumptionLogs: MaterialConsumptionLog[] = []
+) {
   const headers = [
     'Project ID',
     'Project Name',
@@ -189,6 +194,14 @@ export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntr
     'Completed Date',
     'Budget Hours',
     'Actual Man-Hours Used',
+    'Total Wire Consumed (kg)',
+    'PPE Items Issued',
+    'Welding Consumables Used',
+    'Other Materials Used',
+    'Assemblies Count',
+    'Total Tasks',
+    'Completed Tasks',
+    'Overall Progress (%)',
     'Archived'
   ];
 
@@ -196,6 +209,26 @@ export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntr
 
   projects.forEach(p => {
     const actualHours = getManHoursForWorkOrder(p.client, timesheets);
+    
+    // Wire logs per project
+    const projWireLogs = wireLogs.filter(w => w.projectId === p.id);
+    const totalWire = projWireLogs.reduce((sum, w) => sum + (w.amountKg || 0), 0);
+
+    // Consumption logs per project
+    const projCons = consumptionLogs.filter(c => c.projectId === p.id);
+    const totalPPE = projCons
+      .filter(c => c.category === 'PPE')
+      .reduce((sum, c) => sum + (c.qtyUsed || 0), 0);
+    const totalWeldingCons = projCons
+      .filter(c => c.category === 'Welding Consumable')
+      .reduce((sum, c) => sum + (c.qtyUsed || 0), 0);
+    const totalOtherMat = projCons
+      .filter(c => c.category !== 'PPE' && c.category !== 'Welding Consumable')
+      .reduce((sum, c) => sum + (c.qtyUsed || 0), 0);
+
+    const taskCounts = calcTaskCounts(p);
+    const progress = calcPct(p);
+
     const row = [
       csvEsc(p.id),
       csvEsc(p.name),
@@ -208,6 +241,14 @@ export function exportProjectsCSV(projects: Project[], timesheets: TimesheetEntr
       csvEsc(p.completedDate || ''),
       csvEsc(p.budgetHours !== undefined ? p.budgetHours : ''),
       csvEsc(actualHours),
+      csvEsc(totalWire),
+      csvEsc(totalPPE),
+      csvEsc(totalWeldingCons),
+      csvEsc(totalOtherMat),
+      csvEsc((p.assemblies || []).length),
+      csvEsc(taskCounts.total),
+      csvEsc(taskCounts.done),
+      csvEsc(progress),
       csvEsc(p.isArchived ? 'Yes' : 'No')
     ];
     csvRows.push(row.join(','));

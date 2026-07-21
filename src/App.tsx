@@ -1056,7 +1056,7 @@ function AppContent() {
           currentUser={currentUser}
           isOffline={isOffline}
           canExport={can('exportData')}
-          onExportCSV={() => exportProjectsCSV(projects, timesheets)}
+          onExportCSV={() => exportProjectsCSV(projects, timesheets, wireLogs, consumptionLogs)}
           projects={projects}
           activities={activities}
           employees={employees}
@@ -1083,6 +1083,7 @@ function AppContent() {
                   setSelectedMonth={setSelectedMonth}
                   problemReports={problemReports}
                   inspections={inspections}
+                  setActiveTab={setActiveTab}
                   openSpotlight={(id) => {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);
