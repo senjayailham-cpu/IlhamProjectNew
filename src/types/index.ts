@@ -98,6 +98,8 @@ export interface User {
   uid?: string;
 }
 
+export type WorkflowStatusType = 'verify' | 'on_track' | 'delayed' | 'complete' | 'not_started';
+
 export interface Task {
   id: string;
   name: string;
@@ -110,8 +112,9 @@ export interface Task {
   predecessors?: Dependency[];
   successors?: Dependency[];
   isMilestone?: boolean;
-  baselineDate?: string;      // tanggal start baseline (YYYY-MM-DD)
-  baselineFinish?: string;    // tanggal finish baseline (YYYY-MM-DD)
+  workflowStatus?: WorkflowStatusType;
+  assignedCompany?: string;
+  crewSize?: number;
 }
 
 export interface Dependency {
@@ -130,8 +133,6 @@ export interface Assembly {
   budgetHours?: number;
   predecessors?: Dependency[];
   successors?: Dependency[];
-  baselineStart?: string;
-  baselineFinish?: string;
 }
 
 export interface Project {
@@ -153,9 +154,7 @@ export interface Project {
   budgetHours?: number;
   isArchived?: boolean;
   targetMonth?: string;
-  baselineStart?: string;
-  baselineDue?: string;
-  baselineSetAt?: string;     // timestamp kapan baseline di-set
+  originalDue?: string;   // snapshot tanggal Due saat project pertama dibuat, TIDAK PERNAH diubah lagi setelahnya (untuk deteksi schedule slip)
   materialProcessing?: MaterialProcessing[];
   priority?: 'low' | 'medium' | 'high';
 }

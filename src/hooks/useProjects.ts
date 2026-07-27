@@ -115,6 +115,7 @@ export function useProjects(
       materialProcessing: copiedMaterials,
       completedDate: baseData.status === 'completed'
         ? new Date().toISOString().slice(0, 10) : null,
+      originalDue: baseData.due || undefined,
     };
     setProjects(prev => [...prev, addedProj]);
     saveItem('projects', addedProj);

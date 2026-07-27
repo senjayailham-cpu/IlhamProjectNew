@@ -115,9 +115,10 @@ export const PerformanceReportTab: React.FC<PerformanceReportTabProps> = ({
           {reportRangeType === 'monthly' && (
             <div className="flex items-center gap-1.5 bg-base-surface2 border border-base-border rounded-lg p-1 text-xs font-bold font-condensed">
               <select
+                id="month-select"
                 value={repMonth}
                 onChange={(e) => setRepMonth(parseInt(e.target.value, 10))}
-                className="bg-transparent text-base-text py-1 px-2 cursor-pointer outline-none rounded hover:bg-base-surface3 transition-colors uppercase text-center font-bold"
+                className="bg-transparent text-base-text py-1 px-2 w-[58px] cursor-pointer outline-none rounded hover:bg-base-surface3 transition-colors uppercase text-center font-bold"
               >
                 {MONTHS_LIST.map(m => (
                   <option key={m.value} value={m.value} className="bg-base-surface2 text-base-text font-sans">

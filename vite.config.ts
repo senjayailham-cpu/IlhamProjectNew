@@ -9,23 +9,37 @@ export default defineConfig(() => {
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
       },
     },
     build: {
       rollupOptions: {
         output: {
-          manualChunks: {
-            'vendor-react':    ['react', 'react-dom'],
-            'vendor-firebase': ['firebase/app', 'firebase/firestore', 'firebase/auth', 'firebase/storage'],
-            'vendor-lucide':   ['lucide-react'],
-            'vendor-charts':   ['recharts'],
-            'vendor-xlsx':     ['xlsx'],
-            'vendor-pdf':      ['jspdf', 'html2canvas'],
-          }
-        }
+          manualChunks(id) {
+            if (id.includes('node_modules')) {
+              if (id.includes('react/') || id.includes('react-dom/') || id.includes('scheduler')) {
+                return 'vendor-react';
+              }
+              if (id.includes('firebase')) {
+                return 'vendor-firebase';
+              }
+              if (id.includes('recharts') || id.includes('d3-') || id.includes('victory')) {
+                return 'vendor-charts';
+              }
+              if (id.includes('xlsx')) {
+                return 'vendor-xlsx';
+              }
+              if (id.includes('jspdf') || id.includes('html2canvas')) {
+                return 'vendor-pdf';
+              }
+              if (id.includes('lucide-react')) {
+                return 'vendor-lucide';
+              }
+            }
+          },
+        },
       },
-      chunkSizeWarningLimit: 600,
+      chunkSizeWarningLimit: 1000,
     },
     test: {
       globals: true,

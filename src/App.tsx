@@ -46,11 +46,12 @@ const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'))
 const MasterDataPage = lazy(() => import('./pages/MasterDataPage').then(m => ({ default: m.MasterDataPage })));
 const KPIView = lazy(() => import('./components/KPIView'));
 const ProjectTimelineView = lazy(() => import('./components/ProjectTimelineView'));
+const SchedulingRiskDashboard = lazy(() => import('./components/SchedulingRiskDashboard'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar, TrendingUp
 } from 'lucide-react';
 
 const activeTabsList = [
@@ -58,6 +59,7 @@ const activeTabsList = [
   { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
   { id: 'gantt', label: 'Gantt', icon: 'BarChart2', access: 'all' },
   { id: 'timeline', label: 'Timeline', icon: 'Calendar', access: 'all' },
+  { id: 'scheduling-risk', label: 'Scheduling & Risk', icon: 'TrendingUp', access: 'all' },
   { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
   { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
   { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
@@ -91,13 +93,14 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   ListChecks,
   Database,
   Trophy,
-  Calendar
+  Calendar,
+  TrendingUp
 };
 
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'focus24', 'gantt', 'timeline', 'progress']
+    items: ['dash', 'focus24', 'gantt', 'timeline', 'scheduling-risk', 'progress']
   },
   {
     title: 'Projects',
@@ -1107,6 +1110,23 @@ function AppContent() {
                     projectsHook.setSpotlightOpen(true);
                   }}
                 />
+              )}
+
+              {activeTab === 'scheduling-risk' && (
+                <ErrorBoundary key="scheduling-risk">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <SchedulingRiskDashboard
+                      projects={projects}
+                      problemReports={problemReports}
+                      inspections={inspections}
+                      currentUser={currentUser}
+                      openSpotlight={(id) => {
+                        projectsHook.setSpotlightProjectId(id);
+                        projectsHook.setSpotlightOpen(true);
+                      }}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
               )}
 
               {activeTab === 'projects' && (

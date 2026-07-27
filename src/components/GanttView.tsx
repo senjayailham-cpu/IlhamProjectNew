@@ -2,8 +2,98 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Project, Assembly, Task, Dependency, User } from '../types';
+import { Project, Assembly, Task, Dependency, User, WorkflowStatusType } from '../types';
 import { can } from '../utils/permissions';
+import { calcPct } from '../utils/projectUtils';
+
+export const WORKFLOW_STATUS_CONFIG: Record<WorkflowStatusType, {
+  label: string;
+  dotColor: string;
+  badgeClass: string;
+}> = {
+  verify: {
+    label: 'VERIFY',
+    dotColor: 'bg-amber-500',
+    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300/50 dark:border-amber-700/50 hover:bg-amber-500/20',
+  },
+  on_track: {
+    label: 'ON TRACK',
+    dotColor: 'bg-emerald-500',
+    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300/50 dark:border-emerald-700/50 hover:bg-emerald-500/20',
+  },
+  delayed: {
+    label: 'DELAYED',
+    dotColor: 'bg-rose-500',
+    badgeClass: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-300/50 dark:border-rose-700/50 hover:bg-rose-500/20',
+  },
+  complete: {
+    label: 'COMPLETE',
+    dotColor: 'bg-blue-500',
+    badgeClass: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-300/50 dark:border-blue-700/50 hover:bg-blue-500/20',
+  },
+  not_started: {
+    label: 'NOT STARTED',
+    dotColor: 'bg-slate-400',
+    badgeClass: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-300/50 dark:border-slate-700/50 hover:bg-slate-500/20',
+  },
+};
+
+export const getEffectiveWorkflowStatus = (
+  status?: WorkflowStatusType,
+  pct?: number,
+  done?: boolean
+): WorkflowStatusType => {
+  if (status) return status;
+  if (done || (typeof pct === 'number' && pct >= 100)) return 'complete';
+  if (typeof pct === 'number' && pct > 0) return 'on_track';
+  return 'not_started';
+};
+
+interface WorkflowStatusBadgeProps {
+  status: WorkflowStatusType;
+  onClick?: (e: React.MouseEvent) => void;
+  isInteractive?: boolean;
+}
+
+const COMPANY_PALETTES = [
+  'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-300/50 dark:border-indigo-700/50',
+  'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300/50 dark:border-emerald-700/50',
+  'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300/50 dark:border-purple-700/50',
+  'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/50 dark:border-amber-700/50',
+  'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-300/50 dark:border-cyan-700/50',
+  'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-300/50 dark:border-rose-700/50',
+  'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-300/50 dark:border-teal-700/50',
+  'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-300/50 dark:border-sky-700/50',
+  'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-300/50 dark:border-fuchsia-700/50',
+  'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-300/50 dark:border-violet-700/50',
+];
+
+export const getCompanyColorClass = (companyName?: string): string => {
+  if (!companyName) return 'bg-slate-500/10 text-slate-600 border-slate-300/50';
+  let hash = 0;
+  for (let i = 0; i < companyName.length; i++) {
+    hash = (hash << 5) - hash + companyName.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % COMPANY_PALETTES.length;
+  return COMPANY_PALETTES[index];
+};
+
+const WorkflowStatusBadge: React.FC<WorkflowStatusBadgeProps> = ({ status, onClick, isInteractive }) => {
+  const cfg = WORKFLOW_STATUS_CONFIG[status] || WORKFLOW_STATUS_CONFIG.not_started;
+  return (
+    <div
+      onClick={onClick}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold uppercase tracking-tight select-none transition-all ${cfg.badgeClass} ${
+        isInteractive ? 'cursor-pointer hover:scale-105 active:scale-95 hover:shadow-xs' : 'cursor-default'
+      }`}
+      title={isInteractive ? 'Click to change status' : cfg.label}
+    >
+      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
+      <span className="truncate max-w-[65px]">{cfg.label}</span>
+    </div>
+  );
+};
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -12,7 +102,6 @@ import {
   Layers,
   Calendar,
   Search,
-  Bookmark,
   Flag,
   Download,
   Plus,
@@ -55,7 +144,12 @@ const overrideCssRules = () => {
 
               const result = {
                 length: filteredRules.length,
-                item: (index: number) => filteredRules[index]
+                item: (index: number) => filteredRules[index],
+                [Symbol.iterator]: function* () {
+                  for (let i = 0; i < filteredRules.length; i++) {
+                    yield filteredRules[i];
+                  }
+                }
               };
               for (let i = 0; i < filteredRules.length; i++) {
                 (result as any)[i] = filteredRules[i];
@@ -171,6 +265,72 @@ const overrideCssRules = () => {
   };
 };
 
+interface CircularProgressBadgeProps {
+  pct: number;
+  size?: number;
+  strokeWidth?: number;
+}
+
+const CircularProgressBadge: React.FC<CircularProgressBadgeProps> = ({ 
+  pct, 
+  size = 24, 
+  strokeWidth = 2.5 
+}) => {
+  const clampedPct = Math.min(100, Math.max(0, Math.round(pct || 0)));
+  const center = size / 2;
+  const radius = center - strokeWidth;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (clampedPct / 100) * circumference;
+
+  const isCompleted = clampedPct === 100;
+  const strokeColor = isCompleted ? '#10b981' : 'var(--accent, #3b82f6)';
+  const textColorClass = isCompleted 
+    ? 'text-emerald-500 font-extrabold' 
+    : clampedPct > 0 
+      ? 'text-base-text font-bold' 
+      : 'text-base-muted/60 font-semibold';
+
+  return (
+    <div 
+      className="relative inline-flex items-center justify-center shrink-0 select-none" 
+      style={{ width: size, height: size }}
+      title={`${clampedPct}% complete`}
+    >
+      <svg width={size} height={size} className="transform -rotate-90">
+        {/* Background Circle */}
+        <circle
+          cx={center}
+          cy={center}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          className="text-base-border/40"
+        />
+        {/* Progress Circle */}
+        {clampedPct > 0 && (
+          <circle
+            cx={center}
+            cy={center}
+            r={radius}
+            fill="none"
+            stroke={strokeColor}
+            strokeWidth={strokeWidth}
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            strokeLinecap="round"
+            className="transition-all duration-300 ease-out"
+          />
+        )}
+      </svg>
+      {/* Center Percentage Text */}
+      <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-mono leading-none ${textColorClass}`}>
+        {clampedPct}
+      </span>
+    </div>
+  );
+};
+
 interface GanttViewProps {
   project?: Project;
   projects?: Project[];
@@ -200,8 +360,9 @@ interface GanttRow {
   predecessors?: Dependency[];
   parentAsmId?: string;
   assigned?: string;
-  baselineDate?: string;
-  baselineFinish?: string;
+  workflowStatus?: WorkflowStatusType;
+  assignedCompany?: string;
+  crewSize?: number;
 }
 
 interface DragState {
@@ -705,7 +866,6 @@ export default function GanttView({
   const [showArrows, setShowArrows] = useState<boolean>(true);
   const [showProgress, setShowProgress] = useState<boolean>(true);
   const [showCriticalPath, setShowCriticalPath] = useState<boolean>(false);
-  const [showBaseline, setShowBaseline] = useState<boolean>(false);
   const [showSCurve, setShowSCurve] = useState<boolean>(() =>
     localStorage.getItem('gantt_showSCurve') === 'true'
   );
@@ -768,12 +928,17 @@ export default function GanttView({
         (el as HTMLElement).style.display = 'none';
       });
 
+      const originalMaxHeight = ganttWorkspaceRef.current.style.maxHeight;
+      ganttWorkspaceRef.current.style.maxHeight = 'none';
+
       // Capture canvas
       const canvas = await html2canvas(ganttWorkspaceRef.current, {
         scale: 2,
         useCORS: true,
         logging: false
       });
+
+      ganttWorkspaceRef.current.style.maxHeight = originalMaxHeight;
 
       // Restore displays
       elementsToHide.forEach((el, idx) => {
@@ -812,12 +977,17 @@ export default function GanttView({
         (el as HTMLElement).style.display = 'none';
       });
 
+      const originalMaxHeight = ganttWorkspaceRef.current.style.maxHeight;
+      ganttWorkspaceRef.current.style.maxHeight = 'none';
+
       // Capture canvas
       const canvas = await html2canvas(ganttWorkspaceRef.current, {
         scale: 2,
         useCORS: true,
         logging: false
       });
+
+      ganttWorkspaceRef.current.style.maxHeight = originalMaxHeight;
 
       // Restore displays
       elementsToHide.forEach((el, idx) => {
@@ -911,30 +1081,6 @@ export default function GanttView({
     }
   };
 
-  const handleSetBaseline = () => {
-    if (!onUpdateProject) return;
-    const confirmSet = window.confirm("Set current schedule as baseline? This will overwrite the previous baseline.");
-    if (!confirmSet) return;
-
-    projectsList.forEach(p => {
-      const updated = JSON.parse(JSON.stringify(p)) as Project;
-      updated.baselineStart = updated.start;
-      updated.baselineDue = updated.due;
-      updated.baselineSetAt = new Date().toISOString();
-
-      updated.assemblies?.forEach(asm => {
-        asm.baselineStart = asm.start;
-        asm.baselineFinish = asm.finish;
-        asm.tasks?.forEach(t => {
-          t.baselineDate = t.date;
-          t.baselineFinish = t.finishDate;
-        });
-      });
-
-      onUpdateProject(updated);
-    });
-  };
-
   useEffect(() => {
     if (cascadedTaskIds.size > 0) {
       const timer = setTimeout(() => {
@@ -946,9 +1092,11 @@ export default function GanttView({
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
+  const [statusPopoverRowId, setStatusPopoverRowId] = useState<string | null>(null);
 
   // Draw-to-Connect Interaction States
   const [connectMode, setConnectMode] = useState<boolean>(false);
+  const [dragHoverTargetRowId, setDragHoverTargetRowId] = useState<string | null>(null);
   const [connectDraw, setConnectDraw] = useState<{
     sourceRowId: string;
     sourceX: number;
@@ -1002,12 +1150,15 @@ export default function GanttView({
 
 
   // Filtering States & Ref
+  const [activeTab, setActiveTab] = useState<'gantt' | 'lookahead'>('gantt');
+  const [lookaheadWeeks, setLookaheadWeeks] = useState<number>(3);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all'|'on-track'|'overdue'|'done'|'not-started'>('all');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Inline Editing States
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: 'start' | 'finish' } | null>(null);
+  const [editingLookaheadCell, setEditingLookaheadCell] = useState<{ rowId: string; field: 'crew' | 'company' | 'assigned' } | null>(null);
   const [editingPred, setEditingPred] = useState<string | null>(null);
   const [predInputVal, setPredInputVal] = useState<string>('');
   const [editingPct, setEditingPct] = useState<string | null>(null);
@@ -1143,8 +1294,14 @@ export default function GanttView({
       due = formatLocalDate(d);
     }
 
+    if (activeTab === 'lookahead') {
+      const todayStr = formatLocalDate(new Date());
+      const dueStr = addDaysToLocalDate(todayStr, lookaheadWeeks * 7);
+      return { start: todayStr, due: dueStr };
+    }
+
     return { start, due };
-  }, [projectsList]);
+  }, [projectsList, activeTab, lookaheadWeeks]);
 
   const pStartD = useMemo(() => parseLocalDate(pStart), [pStart]);
   const pDueD = useMemo(() => parseLocalDate(pDue), [pDue]);
@@ -1253,15 +1410,7 @@ export default function GanttView({
 
     projectsList.forEach((p, pIdx) => {
       // 1. Project level summary row
-      let totalPcts = 0;
-      let totalTasksCount = 0;
-      p.assemblies?.forEach(asm => {
-        asm.tasks?.forEach(t => {
-          totalPcts += t.pct || 0;
-          totalTasksCount++;
-        });
-      });
-      const pPct = totalTasksCount > 0 ? Math.round(totalPcts / totalTasksCount) : 0;
+      const pPct = calcPct(p);
       
       // Calculate start and due for this specific project
       let pStartStr = p.start;
@@ -1313,9 +1462,7 @@ export default function GanttView({
         duration: pDuration,
         pct: pPct,
         done: pPct >= 100,
-        predecessors: p.predecessors,
-        baselineDate: p.baselineStart,
-        baselineFinish: p.baselineDue
+        predecessors: p.predecessors
       });
 
       // 2. Assembly & Task level rows
@@ -1344,9 +1491,14 @@ export default function GanttView({
         const aFinishD = parseLocalDate(aFinish);
         const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
 
-        const aTotalTasks = asm.tasks?.length || 0;
-        const aPct = aTotalTasks > 0
-          ? Math.round(asm.tasks.reduce((sum, t) => sum + (t.pct || 0), 0) / aTotalTasks)
+        const aWeightResult = (asm.tasks || []).reduce((acc, t) => {
+          const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+          acc.totalWeight += difficulty;
+          acc.weightedPct += (t.pct || 0) * difficulty;
+          return acc;
+        }, { totalWeight: 0, weightedPct: 0 });
+        const aPct = aWeightResult.totalWeight > 0
+          ? Math.round(aWeightResult.weightedPct / aWeightResult.totalWeight)
           : 0;
 
         const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
@@ -1362,9 +1514,7 @@ export default function GanttView({
           duration: aDuration,
           pct: aPct,
           done: aPct >= 100,
-          predecessors: asm.predecessors,
-          baselineDate: asm.baselineStart,
-          baselineFinish: asm.baselineFinish
+          predecessors: asm.predecessors
         });
 
         // Add child tasks if assembly is expanded
@@ -1397,8 +1547,9 @@ export default function GanttView({
               predecessors: t.predecessors,
               parentAsmId: asm.id,
               assigned: t.assigned,
-              baselineDate: t.baselineDate,
-              baselineFinish: t.baselineFinish
+              workflowStatus: t.workflowStatus,
+              assignedCompany: t.assignedCompany,
+              crewSize: t.crewSize
             });
           });
         }
@@ -1410,7 +1561,8 @@ export default function GanttView({
 
   // Generate list of filtered Gantt rows
   const rows = useMemo(() => {
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = formatLocalDate(new Date());
+    const lookaheadEndStr = addDaysToLocalDate(todayStr, lookaheadWeeks * 7);
     const searchLower = searchQuery.toLowerCase().trim();
 
     // Helper to check if a row matches the filters
@@ -1431,8 +1583,20 @@ export default function GanttView({
         if (statusFilter === 'on-track' && !isOnTrack) return false;
         if (statusFilter === 'not-started' && !isNotStarted) return false;
       }
+      // Lookahead date window filter
+      if (activeTab === 'lookahead') {
+        const rStart = row.start || row.finish || todayStr;
+        const rFinish = row.finish || row.start || todayStr;
+        const overlaps = rStart <= lookaheadEndStr && rFinish >= todayStr;
+        if (!overlaps) return false;
+      }
       return true;
     };
+
+    // If no filters are active, show all rows directly
+    if (searchLower === '' && statusFilter === 'all' && activeTab === 'gantt') {
+      return allRows;
+    }
 
     // First, identify all task rows (level 2) that match the filter
     const matchingTaskIds = new Set<string>();
@@ -1442,27 +1606,111 @@ export default function GanttView({
       }
     });
 
-    // Filter rows based on matching level 2 tasks and hierarchy rules
+    // Helper to get project id for a row
+    const getProjectIdOfRow = (r: GanttRow): string => {
+      if (r.level === 0) return r.id;
+      return r.id.split('-')[0];
+    };
+
+    // Filter rows based on matching level 2 tasks, direct name matches, and hierarchy rules
     const filteredRows = allRows.filter(row => {
-      if (row.level === 0) return true; // Level 0 (project row) selalu tampil
+      // If row itself directly matches name filter
+      if (searchLower !== '' && row.name.toLowerCase().includes(searchLower)) {
+        return true;
+      }
+
       if (row.level === 2) {
         return matchingTaskIds.has(row.id);
       }
       if (row.level === 1) {
-        // Level 1 (assembly) tampil jika setidaknya satu child task lolos filter, atau jika search kosong
-        if (searchLower === '') {
-          return true;
-        }
-        // If search is not empty, check if at least one child task of this assembly matches the filter
+        // Assembly is kept if at least one child task matches or assembly itself has no tasks
         const childTasks = allRows.filter(r => r.level === 2 && r.parentAsmId === row.id);
-        const hasMatchingChild = childTasks.some(r => matchingTaskIds.has(r.id));
-        return hasMatchingChild;
+        if (childTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
+        return childTasks.some(r => matchingTaskIds.has(r.id));
+      }
+      if (row.level === 0) {
+        // Project is kept if at least one task across its assemblies matches or project has no tasks
+        const projTasks = allRows.filter(r => r.level === 2 && getProjectIdOfRow(r) === row.id);
+        if (projTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
+        return projTasks.some(r => matchingTaskIds.has(r.id));
       }
       return true;
     });
 
     return filteredRows;
-  }, [allRows, searchQuery, statusFilter]);
+  }, [allRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
+
+  // Global window mouse movement and release listener for Draw-to-Connect
+  useEffect(() => {
+    if (!connectDraw) {
+      setDragHoverTargetRowId(null);
+      return;
+    }
+
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      const container = document.querySelector('.gantt-relative-container');
+      if (!container) return;
+      const rect = container.getBoundingClientRect();
+      
+      const currentX = e.clientX - rect.left;
+      const currentY = e.clientY - rect.top - 56;
+
+      setConnectDraw(prev => prev ? {
+        ...prev,
+        currentX,
+        currentY
+      } : null);
+
+      const targetRowIdx = Math.floor(currentY / 32);
+
+      if (targetRowIdx >= 0 && targetRowIdx < rows.length) {
+        const targetRow = rows[targetRowIdx];
+        if (targetRow && targetRow.id !== connectDraw.sourceRowId) {
+          setDragHoverTargetRowId(targetRow.id);
+        } else {
+          setDragHoverTargetRowId(null);
+        }
+      } else {
+        setDragHoverTargetRowId(null);
+      }
+    };
+
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      const container = document.querySelector('.gantt-relative-container');
+      if (container) {
+        const rect = container.getBoundingClientRect();
+        const currentY = e.clientY - rect.top - 56;
+        const targetRowIdx = Math.floor(currentY / 32);
+
+        if (targetRowIdx >= 0 && targetRowIdx < rows.length) {
+          const targetRow = rows[targetRowIdx];
+          if (targetRow && targetRow.id !== connectDraw.sourceRowId) {
+            const popupX = Math.min(Math.max(160, e.clientX), window.innerWidth - 160);
+            const popupY = Math.min(Math.max(180, e.clientY), window.innerHeight - 80);
+
+            setPendingConnect({
+              sourceRowId: connectDraw.sourceRowId,
+              targetRowId: targetRow.id
+            });
+            setConnectPopupPos({
+              x: popupX,
+              y: popupY
+            });
+          }
+        }
+      }
+      setConnectDraw(null);
+      setDragHoverTargetRowId(null);
+    };
+
+    window.addEventListener('mousemove', handleWindowMouseMove);
+    window.addEventListener('mouseup', handleWindowMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleWindowMouseMove);
+      window.removeEventListener('mouseup', handleWindowMouseUp);
+    };
+  }, [connectDraw, rows]);
 
   // WBS Map lookup for predecessor parsing
   const wbsMap = useMemo(() => {
@@ -1486,7 +1734,7 @@ export default function GanttView({
   const availablePredecessors = useMemo(() => {
     if (!depPanelRowId) return [];
     
-    // Parse depPanelRowId (format: t:pId:asmId:taskId) to find actual row ID
+    // Parse depPanelRowId (format: t:pId:asmId:taskId, a:pId:asmId, or p:pId) to find actual row ID
     const parts = depPanelRowId.split(':');
     const rowId = parts[parts.length - 1];
     const targetRow = rows.find(r => r.id === rowId);
@@ -1494,9 +1742,8 @@ export default function GanttView({
     
     const currentKeys = new Set(targetRow.predecessors?.map(d => d.key) || []);
     
-    // Filter all level 2 tasks that are NOT target, and NOT already linked
+    // Filter all rows (Project, SubAssembly/Assembly, Task) that are NOT target, and NOT already linked
     return rows.filter(row => {
-      if (row.level !== 2) return false;
       if (row.id === targetRow.id) return false;
       if (currentKeys.has(row.id)) return false;
       if (!depPanelSearch) return true;
@@ -1726,6 +1973,69 @@ export default function GanttView({
     }
   };
 
+  // Workflow Status Saving handler
+  const saveWorkflowStatus = (taskId: string, newStatus: WorkflowStatusType) => {
+    if (!onUpdateProject) return;
+
+    const res = findAndCloneProject(taskId);
+    if (!res) return;
+    const updated = res.cloned;
+
+    let found = false;
+    for (const a of updated.assemblies || []) {
+      const t = a.tasks?.find(t => t.id === taskId);
+      if (t) {
+        t.workflowStatus = newStatus;
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      setFlashingCellId(taskId);
+      setTimeout(() => {
+        setFlashingCellId(null);
+      }, 500);
+
+      onUpdateProject(updated);
+    }
+  };
+
+  // Lookahead task field save handler
+  const saveTaskField = (taskId: string, field: 'crew' | 'company' | 'assigned', val: string) => {
+    if (!onUpdateProject) return;
+
+    const res = findAndCloneProject(taskId);
+    if (!res) return;
+    const updated = res.cloned;
+
+    let found = false;
+    for (const a of updated.assemblies || []) {
+      const t = a.tasks?.find(t => t.id === taskId);
+      if (t) {
+        if (field === 'crew') {
+          const num = parseInt(val, 10);
+          t.crewSize = isNaN(num) || num <= 0 ? undefined : num;
+        } else if (field === 'company') {
+          t.assignedCompany = val.trim() || undefined;
+        } else if (field === 'assigned') {
+          t.assigned = val.trim() || undefined;
+        }
+        found = true;
+        break;
+      }
+    }
+
+    if (found) {
+      setFlashingCellId(taskId);
+      setTimeout(() => {
+        setFlashingCellId(null);
+      }, 500);
+
+      onUpdateProject(updated);
+    }
+  };
+
   // Header row elements generators
   const topHeaders = useMemo(() => {
     const list: { label: string; width: number }[] = [];
@@ -1903,8 +2213,7 @@ export default function GanttView({
     if (taskRows.length === 0) return null;
 
     // Each task contributes equal weight (1/N of total progress)
-    // For planned: assume linear progress from baselineDate to baselineFinish
-    //              (if no baseline, use actual start/finish)
+    // For planned: assume linear progress based on actual start/finish
     // For actual:  assume linear progress from start to finish at pct%
     //              (tasks past finish with pct<100 cap at pct)
 
@@ -1918,9 +2227,9 @@ export default function GanttView({
     const actualArr  = new Float32Array(totalDays + 1).fill(0);
 
     taskRows.forEach(row => {
-      // --- PLANNED curve (baseline or actual dates as fallback) ---
-      const planStart  = parseLocalDate(row.baselineDate  || row.start!);
-      const planFinish = parseLocalDate(row.baselineFinish || row.finish!);
+      // --- PLANNED curve (based on actual scheduled dates) ---
+      const planStart  = parseLocalDate(row.start!);
+      const planFinish = parseLocalDate(row.finish!);
       const planDays   = Math.max(1, daysBetween(planStart, planFinish) + 1);
 
       const planStartIdx  = Math.max(0, daysBetween(timelineStart, planStart));
@@ -2059,25 +2368,6 @@ export default function GanttView({
   }, []);
 
 
-
-  // Baseline coordinate helper
-  const getBaselineCoords = (row: GanttRow) => {
-    if (!row.baselineDate) return null;
-    try {
-      const startD = parseLocalDate(row.baselineDate);
-      const left = daysBetween(timelineStart, startD) * pixelsPerDay;
-      
-      let width = 0;
-      if (!row.isMilestone) {
-        const finishD = row.baselineFinish ? parseLocalDate(row.baselineFinish) : startD;
-        const duration = Math.max(1, daysBetween(startD, finishD) + 1);
-        width = duration * pixelsPerDay;
-      }
-      return { left, width };
-    } catch (e) {
-      return null;
-    }
-  };
 
   // Drag listeners handler
   const handleBarMouseDown = (row: GanttRow, type: 'move' | 'resize', e: React.MouseEvent) => {
@@ -2333,7 +2623,7 @@ export default function GanttView({
         const isCritical = criticalPathIds.has(sourceRow.id) && criticalPathIds.has(targetRow.id);
 
         let path = '';
-        let markerEnd = 'url(#arrow-right)';
+        const markerEnd = isCritical ? 'url(#arrow-critical)' : 'url(#arrow-right)';
 
         const sx_start = sourceCoords.left;
         const sx_end = sourceCoords.left + sourceCoords.width;
@@ -2341,34 +2631,32 @@ export default function GanttView({
         const tx_end = targetCoords.left + targetCoords.width;
 
         if (dep.type === 'FS') {
-          const sx = sx_end;
-          const tx = tx_start;
-          if (tx >= sx + 20) {
-            path = `M ${sx} ${sy} H ${sx + 10} V ${ty} H ${tx}`;
+          const sx = sx_end + 3;
+          const tx = tx_start - 6;
+          if (tx >= sx + 12) {
+            const midX = sx + Math.max(6, (tx - sx) / 2);
+            path = `M ${sx} ${sy} H ${midX} V ${ty} H ${tx}`;
           } else {
-            const detourX = Math.max(sx, tx) + 20;
-            const midY = Math.min(sy, ty) - 16;
-            path = `M ${sx} ${sy} V ${midY} H ${detourX} V ${ty} H ${tx}`;
+            const rightMargin = sx + 12;
+            const leftMargin = Math.min(sx_start, tx_start) - 16;
+            const midY = (sy + ty) / 2;
+            path = `M ${sx} ${sy} H ${rightMargin} V ${midY} H ${leftMargin} V ${ty} H ${tx}`;
           }
-          markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SS') {
-          const sx = sx_start;
-          const tx = tx_start;
-          const minX = Math.min(sx, tx) - 16;
+          const sx = sx_start - 3;
+          const tx = tx_start - 6;
+          const minX = Math.min(sx_start, tx_start) - 16;
           path = `M ${sx} ${sy} H ${minX} V ${ty} H ${tx}`;
-          markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'FF') {
-          const sx = sx_end;
-          const tx = tx_end;
-          const maxX = Math.max(sx, tx) + 16;
+          const sx = sx_end + 3;
+          const tx = tx_end + 6;
+          const maxX = Math.max(sx_end, tx_end) + 16;
           path = `M ${sx} ${sy} H ${maxX} V ${ty} H ${tx}`;
-          markerEnd = 'url(#arrow-right)';
         } else if (dep.type === 'SF') {
-          const sx = sx_start;
-          const tx = tx_end;
+          const sx = sx_start - 3;
+          const tx = tx_end + 6;
           const midY = (sy + ty) / 2;
           path = `M ${sx} ${sy} H ${sx - 10} V ${midY} H ${tx + 10} V ${ty} H ${tx}`;
-          markerEnd = 'url(#arrow-left)';
         }
 
         list.push({ path, isCritical, markerEnd });
@@ -2441,13 +2729,17 @@ export default function GanttView({
   const colWbsWidth = 56;
   const colNameWidth = 200;
   const colDurWidth = 64;
+  const colCrewWidth = 50;
+  const colCompanyWidth = 105;
+  const colAssigneeWidth = 105;
   const colStartWidth = 85;
   const colFinishWidth = 85;
   const colPredWidth = 90;
-  const colPctWidth = 52;
-  const colVarWidth = 48;
-  const isBaselineActiveAndSet = showBaseline && projectsList.some(p => !!p.baselineSetAt);
-  const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + (isBaselineActiveAndSet ? colVarWidth : 0);
+  const colPctWidth = 64;
+  const colStatusWidth = 100;
+  const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth 
+    + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
+    + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + colStatusWidth;
 
   return (
     <div className={`flex flex-col bg-base-bg text-base-text transition-all duration-200 ${
@@ -2480,8 +2772,70 @@ export default function GanttView({
           )}
         </div>
 
-        {/* Row 2: Action Controls (stable, horizontally scrollable container, never wraps) */}
-        <div className="flex items-center gap-3 text-xs overflow-x-auto scrollbar-none py-1 w-full flex-nowrap shrink-0">
+        {/* Row 2: Action Controls (stable, overflow-visible container, wraps on small screens) */}
+        <div className="flex items-center gap-3 text-xs overflow-visible py-1 w-full flex-wrap shrink-0">
+          {/* Main View Tab Switcher: Gantt vs Lookahead */}
+          <div className="relative flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
+            <button
+              type="button"
+              onClick={() => setActiveTab('gantt')}
+              className={`relative z-10 px-3 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'gantt' ? 'text-white' : 'text-base-muted hover:text-base-text'
+              }`}
+            >
+              {activeTab === 'gantt' && (
+                <motion.div
+                  layoutId="ganttMainTabPill"
+                  className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+              <Layers className="w-3.5 h-3.5" />
+              <span>Gantt</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('lookahead')}
+              className={`relative z-10 px-3 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                activeTab === 'lookahead' ? 'text-white' : 'text-base-muted hover:text-base-text'
+              }`}
+            >
+              {activeTab === 'lookahead' && (
+                <motion.div
+                  layoutId="ganttMainTabPill"
+                  className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                />
+              )}
+              <Calendar className="w-3.5 h-3.5 text-amber-400" />
+              <span>Lookahead</span>
+            </button>
+          </div>
+
+          {/* Lookahead Range Selector (only shown when Lookahead tab is active) */}
+          {activeTab === 'lookahead' && (
+            <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1 h-[34px] shrink-0">
+              <span className="text-[10px] font-condensed font-bold uppercase text-amber-600 dark:text-amber-400 shrink-0">
+                Range:
+              </span>
+              <select
+                value={lookaheadWeeks}
+                onChange={(e) => setLookaheadWeeks(Number(e.target.value))}
+                className="bg-transparent text-xs font-mono font-bold text-amber-700 dark:text-amber-300 outline-none cursor-pointer"
+              >
+                <option value={1} className="bg-base-surface text-base-text">1 minggu ke depan</option>
+                <option value={2} className="bg-base-surface text-base-text">2 minggu ke depan</option>
+                <option value={3} className="bg-base-surface text-base-text">3 minggu ke depan</option>
+                <option value={4} className="bg-base-surface text-base-text">4 minggu ke depan</option>
+                <option value={5} className="bg-base-surface text-base-text">5 minggu ke depan</option>
+                <option value={6} className="bg-base-surface text-base-text">6 minggu ke depan</option>
+              </select>
+            </div>
+          )}
+
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
           {/* Today Button */}
           <button 
             onClick={scrollToToday}
@@ -2644,16 +2998,6 @@ export default function GanttView({
                 </label>
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Baseline</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showBaseline} 
-                    onChange={e => setShowBaseline(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
                   <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">S-Curve Overlay</span>
                   <input 
                     type="checkbox" 
@@ -2691,18 +3035,6 @@ export default function GanttView({
                   />
                 )}
                 <span>Auto-Shift</span>
-              </button>
-
-              <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
-
-              {/* Set Baseline */}
-              <button
-                onClick={handleSetBaseline}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-accent transition-colors cursor-pointer shrink-0"
-                title="Set current schedule as baseline"
-              >
-                <Bookmark className="h-3 w-3 text-base-accent shrink-0" />
-                <span>Baseline</span>
               </button>
 
               <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
@@ -2841,13 +3173,18 @@ export default function GanttView({
               <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-bold">WBS</div>
               <div style={{ width: `${colNameWidth}px` }} className="shrink-0 px-2 font-bold truncate">Task Name</div>
               <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center font-bold truncate">Duration</div>
+              {activeTab === 'lookahead' && (
+                <>
+                  <div style={{ width: `${colCrewWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Crew Size">Crew</div>
+                  <div style={{ width: `${colCompanyWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Company / Vendor">Company</div>
+                  <div style={{ width: `${colAssigneeWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Assignees / PIC">Assignees</div>
+                </>
+              )}
               <div style={{ width: `${colStartWidth}px` }} className="shrink-0 text-center font-bold truncate">Start</div>
               <div style={{ width: `${colFinishWidth}px` }} className="shrink-0 text-center font-bold truncate">Finish</div>
               <div style={{ width: `${colPredWidth}px` }} className="shrink-0 text-center font-bold truncate">Pred</div>
-              <div style={{ width: `${colPctWidth}px` }} className="shrink-0 text-center font-bold truncate">%</div>
-              {isBaselineActiveAndSet && (
-                <div style={{ width: `${colVarWidth}px` }} className="shrink-0 text-center font-bold truncate">Var</div>
-              )}
+              <div style={{ width: `${colPctWidth}px` }} className="shrink-0 text-center font-bold truncate" title="% Complete">% Comp</div>
+              <div style={{ width: `${colStatusWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Workflow Status">Status</div>
             </div>
           </div>
 
@@ -2859,13 +3196,15 @@ export default function GanttView({
           >
             {rows.map((row, idx) => {
               const isSelected = selectedRowId === row.id;
+              const isTargetHovered = dragHoverTargetRowId === row.id;
               
               let bgClass = 'bg-base-surface hover:bg-base-surface2/50';
-              if (row.level === 0) bgClass = 'bg-base-accent-dim hover:bg-base-accent-dim/80';
+              if (isTargetHovered) bgClass = 'bg-green-500/20 text-green-800 dark:text-green-300 font-bold border-y-2 border-green-500 z-20';
+              else if (row.level === 0) bgClass = 'bg-base-accent-dim hover:bg-base-accent-dim/80';
               else if (row.level === 1) bgClass = 'bg-base-surface2 hover:bg-base-surface3/50';
               else if (idx % 2 === 1) bgClass = 'bg-base-surface2/30 hover:bg-base-surface2/75';
 
-              if (isSelected) bgClass = 'bg-base-accent-dim/60 font-semibold';
+              if (!isTargetHovered && isSelected) bgClass = 'bg-base-accent-dim/60 font-semibold';
 
               return (
                 <div 
@@ -2926,6 +3265,138 @@ export default function GanttView({
                   <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
                     {row.isMilestone ? '0 days' : `${row.duration}d`}
                   </div>
+
+                  {activeTab === 'lookahead' && (
+                    <>
+                      {/* Crew Size Column */}
+                      <div
+                        style={{ width: `${colCrewWidth}px` }}
+                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+                        onClick={() => {
+                          if (row.level === 2 && onUpdateProject) {
+                            setEditingLookaheadCell({ rowId: row.id, field: 'crew' });
+                          }
+                        }}
+                      >
+                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'crew' ? (
+                          <input
+                            type="number"
+                            min="1"
+                            autoFocus
+                            defaultValue={row.crewSize || ''}
+                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => {
+                              saveTaskField(row.id, 'crew', e.target.value);
+                              setEditingLookaheadCell(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveTaskField(row.id, 'crew', e.currentTarget.value);
+                                setEditingLookaheadCell(null);
+                              }
+                              if (e.key === 'Escape') setEditingLookaheadCell(null);
+                            }}
+                          />
+                        ) : (
+                          <span className="select-none font-bold text-base-text" title={row.level === 2 ? 'Click to edit Crew Size' : ''}>
+                            {row.level === 2 
+                              ? (row.crewSize ? row.crewSize : '—')
+                              : (
+                                (() => {
+                                  const childCrew = allRows
+                                    .filter(r => r.level === 2 && (row.level === 1 ? r.parentAsmId === row.id : getProjectIdOfRow(r) === row.id))
+                                    .reduce((sum, r) => sum + (r.crewSize || 0), 0);
+                                  return childCrew > 0 ? childCrew : '—';
+                                })()
+                              )
+                            }
+                            {row.level === 2 && onUpdateProject && (
+                              <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5">✏️</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Company Column */}
+                      <div
+                        style={{ width: `${colCompanyWidth}px` }}
+                        className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+                        onClick={() => {
+                          if (row.level === 2 && onUpdateProject) {
+                            setEditingLookaheadCell({ rowId: row.id, field: 'company' });
+                          }
+                        }}
+                      >
+                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'company' ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            defaultValue={row.assignedCompany || ''}
+                            placeholder="Company..."
+                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => {
+                              saveTaskField(row.id, 'company', e.target.value);
+                              setEditingLookaheadCell(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveTaskField(row.id, 'company', e.currentTarget.value);
+                                setEditingLookaheadCell(null);
+                              }
+                              if (e.key === 'Escape') setEditingLookaheadCell(null);
+                            }}
+                          />
+                        ) : (
+                          row.level === 2 && row.assignedCompany ? (
+                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-mono font-bold truncate max-w-[95px] ${getCompanyColorClass(row.assignedCompany)}`} title={row.assignedCompany}>
+                              {row.assignedCompany}
+                            </span>
+                          ) : (
+                            <span className="text-base-muted/60 text-[10px] select-none">—</span>
+                          )
+                        )}
+                      </div>
+
+                      {/* Assignees Column */}
+                      <div
+                        style={{ width: `${colAssigneeWidth}px` }}
+                        className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+                        onClick={() => {
+                          if (row.level === 2 && onUpdateProject) {
+                            setEditingLookaheadCell({ rowId: row.id, field: 'assigned' });
+                          }
+                        }}
+                      >
+                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'assigned' ? (
+                          <input
+                            type="text"
+                            autoFocus
+                            defaultValue={row.assigned || ''}
+                            placeholder="Assignees..."
+                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => {
+                              saveTaskField(row.id, 'assigned', e.target.value);
+                              setEditingLookaheadCell(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveTaskField(row.id, 'assigned', e.currentTarget.value);
+                                setEditingLookaheadCell(null);
+                              }
+                              if (e.key === 'Escape') setEditingLookaheadCell(null);
+                            }}
+                          />
+                        ) : (
+                          <span className="text-base-text font-medium truncate max-w-[95px] select-none" title={row.assigned || ''}>
+                            {row.assigned || '—'}
+                          </span>
+                        )}
+                      </div>
+                    </>
+                  )}
 
                   {/* Start Date Column with Inline Editing */}
                   <div 
@@ -3134,40 +3605,77 @@ export default function GanttView({
                         }}
                       />
                     ) : (
-                      <span className="select-none font-bold">
-                        {row.pct}%
+                      <div className="flex items-center justify-center relative w-full h-full">
+                        <CircularProgressBadge pct={row.pct} size={24} />
                         {row.level === 2 && onUpdateProject && (
-                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5">✏️</span>
+                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 top-0.5">✏️</span>
                         )}
-                      </span>
+                      </div>
                     )}
                   </div>
 
-                  {/* Variance Column */}
-                  {isBaselineActiveAndSet && (
-                    <div
-                      style={{ width: `${colVarWidth}px` }}
-                      className="shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center border-l border-base-border/10 select-none"
-                    >
-                      {(() => {
-                        if (!row.finish || !row.baselineFinish) {
-                          return <span className="text-base-muted">—</span>;
-                        }
-                        try {
-                          const act = parseLocalDate(row.finish);
-                          const base = parseLocalDate(row.baselineFinish);
-                          const diff = daysBetween(base, act);
-                          if (diff > 0) {
-                            return <span className="text-red-500 font-bold">{`+${diff}d`}</span>;
-                          } else {
-                            return <span className="text-green-500 font-bold">✓</span>;
-                          }
-                        } catch (e) {
-                          return <span className="text-base-muted">—</span>;
-                        }
-                      })()}
-                    </div>
-                  )}
+                  {/* Status Column */}
+                  <div
+                    style={{ width: `${colStatusWidth}px` }}
+                    className="shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center relative px-1"
+                  >
+                    {row.level === 2 ? (
+                      <div className="relative flex items-center justify-center w-full">
+                        <WorkflowStatusBadge
+                          status={getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done)}
+                          isInteractive={!!onUpdateProject}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (onUpdateProject) {
+                              setStatusPopoverRowId(statusPopoverRowId === row.id ? null : row.id);
+                            }
+                          }}
+                        />
+
+                        {statusPopoverRowId === row.id && (
+                          <>
+                            <div 
+                              className="fixed inset-0 z-40" 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setStatusPopoverRowId(null);
+                              }} 
+                            />
+                            <div 
+                              className="absolute top-full mt-1 z-50 bg-base-surface border border-base-border rounded-lg shadow-xl p-1 flex flex-col gap-0.5 w-32 text-left"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {(['verify', 'on_track', 'delayed', 'complete', 'not_started'] as WorkflowStatusType[]).map((stKey) => {
+                                const cfg = WORKFLOW_STATUS_CONFIG[stKey];
+                                const isSelected = getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done) === stKey;
+                                return (
+                                  <button
+                                    key={stKey}
+                                    type="button"
+                                    onClick={() => {
+                                      saveWorkflowStatus(row.id, stKey);
+                                      setStatusPopoverRowId(null);
+                                    }}
+                                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-mono font-bold transition-colors w-full ${
+                                      isSelected ? 'bg-base-accent/20 text-base-text font-extrabold' : 'hover:bg-base-surface3 text-base-muted hover:text-base-text'
+                                    }`}
+                                  >
+                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
+                                    <span>{cfg.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <WorkflowStatusBadge
+                        status={getEffectiveWorkflowStatus(undefined, row.pct, row.done)}
+                        isInteractive={false}
+                      />
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -3210,47 +3718,6 @@ export default function GanttView({
           <div 
             className="gantt-relative-container relative min-h-full" 
             style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}
-            onMouseMove={(e) => {
-              if (connectDraw) {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top - 56; // relative to the rows zone
-                setConnectDraw(prev => prev ? {
-                  ...prev,
-                  currentX: x,
-                  currentY: y
-                } : null);
-              }
-            }}
-            onMouseUp={(e) => {
-              if (connectDraw) {
-                const rect = e.currentTarget.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top - 56; // relative to the rows zone
-
-                const targetRowIdx = Math.floor(y / 32);
-
-                if (targetRowIdx >= 0 && targetRowIdx < rows.length) {
-                  const targetRow = rows[targetRowIdx];
-                  if (targetRow && targetRow.level === 2 && targetRow.id !== connectDraw.sourceRowId) {
-                    setPendingConnect({
-                      sourceRowId: connectDraw.sourceRowId,
-                      targetRowId: targetRow.id
-                    });
-                    setConnectPopupPos({
-                      x: e.clientX,
-                      y: e.clientY
-                    });
-                  }
-                }
-                setConnectDraw(null);
-              }
-            }}
-            onMouseLeave={() => {
-              if (connectDraw) {
-                setConnectDraw(null);
-              }
-            }}
           >
             {/* 1. TIMELINE HEADER BAND (56px) */}
             <div className="h-14 border-b border-base-border sticky top-0 z-30 select-none shrink-0 bg-base-surface">
@@ -3347,8 +3814,8 @@ export default function GanttView({
               ) : (
                 rows.map((row, idx) => {
                 const isSelected = selectedRowId === row.id;
+                const isTargetHovered = dragHoverTargetRowId === row.id;
                 const barCoords = rowBarCoordsCache.get(row.id);
-                const baselineCoords = getBaselineCoords(row);
                 const slackValue = slackMap.get(row.id) ?? 999;
                 const hasEarlyWarning = showCriticalPath && row.level === 2 && !criticalPathIds.has(row.id) && slackValue >= 0 && slackValue <= 1;
                 
@@ -3361,25 +3828,10 @@ export default function GanttView({
                     key={`timeline-row-${row.id}`}
                     onClick={() => setSelectedRowId(row.id)}
                     className={`h-8 relative select-none border-b border-base-border/20 cursor-pointer transition-colors ${hoverClass} ${
-                      isSelected ? 'bg-base-accent-dim/40' : ''
+                      isTargetHovered ? 'bg-green-500/25 border-y-2 border-green-500 z-20 font-bold' : isSelected ? 'bg-base-accent-dim/40' : ''
                     }`}
                     style={{ height: '32px' }}
                   >
-                    {/* Render Baseline Bar */}
-                    {showBaseline && baselineCoords && row.level === 2 && !row.isMilestone && (
-                      <div 
-                        className="absolute select-none pointer-events-none z-10"
-                        style={{ 
-                          left: `${baselineCoords.left}px`, 
-                          width: `${Math.max(8, baselineCoords.width)}px`,
-                          top: '25px',
-                          height: '3px',
-                          backgroundColor: '#6b7280',
-                          opacity: 0.5
-                        }}
-                      />
-                    )}
-
                     {barCoords && (
                       <div 
                         onMouseEnter={(e) => handleMouseEnter(row, e)}
@@ -3394,8 +3846,15 @@ export default function GanttView({
                           alignItems: 'center'
                         }}
                       >
+                        {/* Target hover indicator on bar */}
+                        {isTargetHovered && (
+                          <div 
+                            className="absolute -left-1 z-30 w-3 h-3 rounded-full bg-green-500 border-2 border-white shadow-md animate-ping pointer-events-none"
+                          />
+                        )}
+
                         {/* Connector Dot for Draw-to-Connect dependency arrows */}
-                        {row.level === 2 && !row.isMilestone && (
+                        {!row.isMilestone && (
                           <div
                             data-export-hide="true"
                             className={`absolute -right-1.5 z-30 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white shadow-sm cursor-crosshair transition-all duration-150 flex items-center justify-center ${
@@ -3408,14 +3867,16 @@ export default function GanttView({
                               const container = document.querySelector('.gantt-relative-container');
                               if (container) {
                                 const rect = container.getBoundingClientRect();
-                                const startX = e.clientX - rect.left;
-                                const startY = e.clientY - rect.top - 56;
+                                const sourceRowIdx = rows.findIndex(r => r.id === row.id);
+                                const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (e.clientX - rect.left);
+                                const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
+
                                 setConnectDraw({
                                   sourceRowId: row.id,
                                   sourceX: startX,
                                   sourceY: startY,
-                                  currentX: startX,
-                                  currentY: startY
+                                  currentX: e.clientX - rect.left,
+                                  currentY: e.clientY - rect.top - 56
                                 });
                               }
                             }}
@@ -3580,18 +4041,18 @@ export default function GanttView({
                     markerHeight="6" 
                     orient="auto"
                   >
-                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#888" />
+                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#6b7280" />
                   </marker>
                   <marker 
-                    id="arrow-left" 
+                    id="arrow-critical" 
                     viewBox="0 0 10 10" 
-                    refX="2" 
+                    refX="8" 
                     refY="5" 
                     markerWidth="6" 
                     markerHeight="6" 
                     orient="auto"
                   >
-                    <path d="M 10 1.5 L 2 5 L 10 8.5 z" fill="#888" />
+                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
                   </marker>
                 </defs>
 
@@ -3792,7 +4253,7 @@ export default function GanttView({
             className="absolute bg-base-surface border border-base-border rounded-lg shadow-md p-3 text-xs z-[200] max-w-sm font-sans pointer-events-none animate-fade-in print:hidden"
             style={{ 
               left: `${Math.max(0, Math.min(hoveredTask.x, totalTimelineDays * pixelsPerDay - 280))}px`, 
-              top: `${hoveredTask.y - (showBaseline && hoveredTask.row.baselineDate ? 210 : 145)}px` 
+              top: `${hoveredTask.y - 145}px` 
             }}
           >
             <div className="font-condensed font-extrabold text-xs text-base-text uppercase tracking-wide border-b border-base-border pb-1.5 mb-1.5 flex items-center gap-1.5 justify-between">
@@ -3841,41 +4302,6 @@ export default function GanttView({
                   )}
                 </div>
               )}
-              
-              {showBaseline && hoveredTask.row.baselineDate && (
-                <div className="border-t border-base-border/40 mt-1.5 pt-1.5 space-y-1">
-                  <div className="flex justify-between gap-6">
-                    <span>Baseline Start:</span>
-                    <span className="font-mono text-base-text">{hoveredTask.row.baselineDate}</span>
-                  </div>
-                  <div className="flex justify-between gap-6">
-                    <span>Baseline Finish:</span>
-                    <span className="font-mono text-base-text">{hoveredTask.row.baselineFinish || '—'}</span>
-                  </div>
-                  <div className="flex justify-between gap-6">
-                    <span>Variance:</span>
-                    {(() => {
-                      if (!hoveredTask.row.finish || !hoveredTask.row.baselineFinish) {
-                        return <span className="font-mono text-base-muted">—</span>;
-                      }
-                      try {
-                        const act = parseLocalDate(hoveredTask.row.finish);
-                        const base = parseLocalDate(hoveredTask.row.baselineFinish);
-                        const diff = daysBetween(base, act);
-                        if (diff > 0) {
-                          return <span className="font-mono text-red-500 font-bold">⚠ {diff} days late</span>;
-                        } else if (diff < 0) {
-                          return <span className="font-mono text-green-500 font-bold">✓ {Math.abs(diff)} days early</span>;
-                        } else {
-                          return <span className="font-mono text-green-500 font-bold">✓ On time</span>;
-                        }
-                      } catch (e) {
-                        return <span className="font-mono text-base-muted">—</span>;
-                      }
-                    })()}
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -3888,98 +4314,109 @@ export default function GanttView({
         )}
 
         {/* DRAW-TO-CONNECT POPUP DIALOG */}
-        {pendingConnect && (
-          <div 
-            data-export-hide="true"
-            className="fixed bg-base-surface border-2 border-green-500 rounded-xl shadow-2xl p-4 z-[250] w-64 text-xs font-sans animate-fade-in print:hidden"
-            style={{ 
-              left: `${connectPopupPos.x}px`, 
-              top: `${connectPopupPos.y}px`,
-              transform: 'translate(-50%, -100%) translateY(-12px)'
-            }}
-          >
-            <div className="flex items-center gap-1.5 font-condensed font-extrabold text-sm uppercase tracking-wide border-b border-base-border pb-2 mb-3 text-green-500">
-              <Link className="h-4 w-4" />
-              <span>Link Dependency</span>
-            </div>
-            
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">Relationship Type</label>
-                <select
-                  value={pendingDepType}
-                  onChange={(e) => setPendingDepType(e.target.value as any)}
-                  className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-medium text-base-text"
-                >
-                  <option value="FS">Finish-to-Start (FS)</option>
-                  <option value="SS">Start-to-Start (SS)</option>
-                  <option value="FF">Finish-to-Finish (FF)</option>
-                  <option value="SF">Start-to-Finish (SF)</option>
-                </select>
+        {pendingConnect && (() => {
+          const sourceRow = rows.find(r => r.id === pendingConnect.sourceRowId);
+          const targetRow = rows.find(r => r.id === pendingConnect.targetRowId);
+
+          return (
+            <div 
+              data-export-hide="true"
+              className="fixed bg-base-surface border-2 border-green-500 rounded-xl shadow-2xl p-4 z-[250] w-72 text-xs font-sans animate-fade-in print:hidden"
+              style={{ 
+                left: `${connectPopupPos ? connectPopupPos.x : 0}px`, 
+                top: `${connectPopupPos ? connectPopupPos.y : 0}px`,
+                transform: 'translate(-50%, -100%) translateY(-12px)'
+              }}
+            >
+              <div className="flex items-center gap-1.5 font-condensed font-extrabold text-sm uppercase tracking-wide border-b border-base-border pb-2 mb-2 text-green-500">
+                <Link className="h-4 w-4" />
+                <span>Link Dependency</span>
               </div>
 
-              <div>
-                <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">Lag (e.g. 2d, -1d)</label>
-                <input
-                  type="text"
-                  placeholder="0d"
-                  value={pendingDepLag}
-                  onChange={(e) => setPendingDepLag(e.target.value)}
-                  className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-mono text-base-text"
-                />
-              </div>
+              {sourceRow && targetRow && (
+                <div className="text-[10px] font-mono text-base-muted mb-3 bg-base-surface2 p-2 rounded border border-base-border space-y-1">
+                  <div className="truncate"><strong className="text-base-text font-sans">From:</strong> [{sourceRow.wbs}] {sourceRow.name}</div>
+                  <div className="truncate"><strong className="text-base-text font-sans">To:</strong> [{targetRow.wbs}] {targetRow.name}</div>
+                </div>
+              )}
+              
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">Relationship Type</label>
+                  <select
+                    value={pendingDepType}
+                    onChange={(e) => setPendingDepType(e.target.value as any)}
+                    className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-medium text-base-text"
+                  >
+                    <option value="FS">Finish-to-Start (FS)</option>
+                    <option value="SS">Start-to-Start (SS)</option>
+                    <option value="FF">Finish-to-Finish (FF)</option>
+                    <option value="SF">Start-to-Finish (SF)</option>
+                  </select>
+                </div>
 
-              <div className="flex gap-2 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (pendingConnect) {
-                      const sourceRow = rows.find(r => r.id === pendingConnect.sourceRowId);
-                      const targetRow = rows.find(r => r.id === pendingConnect.targetRowId);
-                      if (sourceRow && targetRow) {
-                        setDepPanelRowId(targetRow.id);
-                        setDepPanelType(pendingDepType);
-                        setDepPanelLag(pendingDepLag);
-                        
-                        // We must call handleAddPredecessor inside a functional style or direct update
-                        const currentDeps = targetRow.predecessors || [];
-                        const parsedLag = parseInt(pendingDepLag.replace('d', ''), 10);
-                        const lagValue = !isNaN(parsedLag) && parsedLag !== 0 ? parsedLag : undefined;
-                        const newDep = {
-                          key: sourceRow.id,
-                          type: pendingDepType,
-                          lag: lagValue
-                        };
-                        const nextDeps = [...currentDeps];
-                        const existingIdx = nextDeps.findIndex(d => d.key === newDep.key);
-                        if (existingIdx !== -1) {
-                          nextDeps[existingIdx] = newDep;
-                        } else {
-                          nextDeps.push(newDep);
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed font-mono">Lag (e.g. 2d, -1d)</label>
+                  <input
+                    type="text"
+                    placeholder="0d"
+                    value={pendingDepLag}
+                    onChange={(e) => setPendingDepLag(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1.5 focus:border-green-500 outline-none font-mono text-base-text"
+                  />
+                </div>
+
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (pendingConnect) {
+                        const srcR = rows.find(r => r.id === pendingConnect.sourceRowId);
+                        const tgtR = rows.find(r => r.id === pendingConnect.targetRowId);
+                        if (srcR && tgtR) {
+                          setDepPanelRowId(tgtR.id);
+                          setDepPanelType(pendingDepType);
+                          setDepPanelLag(pendingDepLag);
+                          
+                          const currentDeps = tgtR.predecessors || [];
+                          const parsedLag = parseInt(pendingDepLag.replace('d', ''), 10);
+                          const lagValue = !isNaN(parsedLag) && parsedLag !== 0 ? parsedLag : undefined;
+                          const newDep = {
+                            key: srcR.id,
+                            type: pendingDepType,
+                            lag: lagValue
+                          };
+                          const nextDeps = [...currentDeps];
+                          const existingIdx = nextDeps.findIndex(d => d.key === newDep.key);
+                          if (existingIdx !== -1) {
+                            nextDeps[existingIdx] = newDep;
+                          } else {
+                            nextDeps.push(newDep);
+                          }
+                          savePredecessorsDirect(tgtR.id, nextDeps);
+
+                          setToastMsg(`Linked ${srcR.wbs} → ${tgtR.wbs} (${pendingDepType}${pendingDepLag ? `+${pendingDepLag}` : ''})`);
+                          setTimeout(() => setToastMsg(null), 3000);
                         }
-                        savePredecessorsDirect(targetRow.id, nextDeps);
-
-                        setToastMsg(`Linked ${sourceRow.wbs} → ${targetRow.wbs} (${pendingDepType}${pendingDepLag ? `+${pendingDepLag}` : ''})`);
-                        setTimeout(() => setToastMsg(null), 3000);
                       }
-                    }
-                    setPendingConnect(null);
-                  }}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors shadow-sm cursor-pointer"
-                >
-                  Add Link
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPendingConnect(null)}
-                  className="px-3 bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border py-1.5 rounded font-bold transition-all cursor-pointer"
-                >
-                  Cancel
-                </button>
+                      setPendingConnect(null);
+                    }}
+                    className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors shadow-sm cursor-pointer"
+                  >
+                    Add Link
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPendingConnect(null)}
+                    className="px-3 bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border py-1.5 rounded font-bold transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
 
         {/* SMART SEARCH DEPENDENCY SIDE PANEL */}
         {depPanelOpen && (() => {

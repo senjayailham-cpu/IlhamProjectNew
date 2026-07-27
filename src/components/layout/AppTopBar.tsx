@@ -230,11 +230,26 @@ export function AppTopBar({
 
   return (
     <>
-      <header className="hidden md:flex h-14 bg-base-surface/80 backdrop-blur-md border-b border-base-border px-6 items-center justify-between sticky top-0 z-30 select-none shadow-[0_1px_2px_rgba(0,0,0,0.01)] shrink-0">
-        <div className="flex items-center gap-4">
-          <span className="text-[11px] font-condensed font-extrabold uppercase tracking-widest text-base-accent bg-base-accent-dim/15 px-3 py-1 rounded border border-base-accent/20">
+      <header className="hidden md:flex h-14 bg-base-surface/85 backdrop-blur-md border-b border-base-border px-6 items-center justify-between sticky top-0 z-30 select-none shadow-card shrink-0">
+        <div className="flex items-center gap-3">
+          <span className="text-[11px] font-condensed font-extrabold uppercase tracking-widest text-base-accent bg-base-accent-dim px-3 py-1 rounded-lg border border-base-accent/20 flex items-center gap-1.5">
+            <span className="w-1.5 h-1.5 rounded-full bg-base-accent animate-pulse" />
             {activeTabLabel}
           </span>
+
+          {/* System Status HUD Pill */}
+          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-[11px] font-condensed font-bold text-base-muted">
+            <div className="flex items-center gap-1 text-base-text">
+              <span className="w-1.5 h-1.5 rounded-full bg-base-green" />
+              <span>{projects.filter(p => p.status === 'active').length} Active Proj</span>
+            </div>
+            <span className="text-base-border">|</span>
+            <div className="flex items-center gap-1 text-base-text">
+              <Users className="h-3 w-3 text-base-blue" />
+              <span>{employees.filter(e => !e.isExEmployee).length} Workforce</span>
+            </div>
+          </div>
+
           {isOffline && (
             <span className="px-2 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-red-500/15 text-red-500 border border-red-500/30 tracking-wider animate-pulse">
               OFFLINE (CACHE ACTIVE)
@@ -244,27 +259,39 @@ export function AppTopBar({
           {/* Inline Search Bar Trigger */}
           <div 
             onClick={() => setIsSearchOpen(true)}
-            className="flex items-center bg-base-surface3 hover:bg-base-surface2 border border-base-border rounded-lg px-3 py-1.5 gap-2.5 text-base-muted hover:text-base-text hover:border-base-border-hover cursor-pointer transition-all duration-150 w-64"
+            className="flex items-center bg-base-surface3 hover:bg-base-surface2 border border-base-border rounded-xl px-3.5 py-1.5 gap-2.5 text-base-muted hover:text-base-text hover:border-base-border2 cursor-pointer transition-all duration-150 w-64 shadow-xs"
           >
-            <Search className="h-3.5 w-3.5 text-base-muted" />
-            <span className="text-xs text-base-muted select-none flex-1">Search anything...</span>
-            <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-base-surface border border-base-border text-[9px] font-mono font-bold text-base-muted select-none shadow-sm">
+            <Search className="h-3.5 w-3.5 text-base-accent" />
+            <span className="text-xs text-base-muted select-none flex-1 font-sans">Quick search or CMD+K...</span>
+            <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-base-surface border border-base-border text-[9px] font-mono font-bold text-base-muted select-none shadow-xs">
               <span>⌘</span>K
             </kbd>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
+          {currentUser && (
+            <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-base-surface2 border border-base-border">
+              <div className="w-6 h-6 rounded-full bg-base-accent-dim text-base-accent font-condensed font-extrabold text-xs flex items-center justify-center border border-base-accent/30">
+                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+              </div>
+              <div className="text-left hidden sm:block">
+                <p className="text-[11px] font-condensed font-bold text-base-text leading-tight">{currentUser.name}</p>
+                <p className="text-[9px] font-condensed uppercase tracking-wider text-base-muted leading-none">{currentUser.role}</p>
+              </div>
+            </div>
+          )}
+
           <ThemeToggle />
           
           {canExport && (
             <button 
               onClick={onExportCSV} 
-              className="px-3.5 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 transition-all font-condensed font-extrabold text-xs rounded-lg uppercase tracking-wider flex items-center gap-1.5 cursor-pointer"
+              className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 transition-all font-condensed font-extrabold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
               title="Download consolidated spreadsheets"
             >
-              <Download className="h-4 w-4" />
-              <span>Export CSV data</span>
+              <Download className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Export CSV</span>
             </button>
           )}
         </div>

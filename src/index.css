@@ -2,57 +2,59 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #f4f5f7;
+  /* Precision Slate Light Theme */
+  --bg: #f1f5f9;
   --surface: #ffffff;
-  --surface2: #fafbfc;
-  --surface3: #f0f2f5;
-  --border: rgba(0, 0, 0, 0.08);
-  --border2: rgba(0, 0, 0, 0.14);
-  --text: #1d2129;
-  --muted: #8c929c;
-  --muted2: #5c6370;
-  --accent: #d4880a;
-  --accent2: #b87008;
-  --accent-dim: rgba(212, 136, 10, 0.09);
-  --green: #2a9a5a;
-  --green-dim: rgba(42, 154, 90, 0.10);
-  --red: #cc3f36;
-  --red-dim: rgba(204, 63, 54, 0.10);
-  --blue: #2c6eb3;
-  --blue-dim: rgba(44, 110, 179, 0.10);
+  --surface2: #f8fafc;
+  --surface3: #e2e8f0;
+  --border: rgba(15, 23, 42, 0.09);
+  --border2: rgba(15, 23, 42, 0.16);
+  --text: #0f172a;
+  --muted: #64748b;
+  --muted2: #475569;
+  --accent: #d97706;
+  --accent2: #b45309;
+  --accent-dim: rgba(217, 119, 6, 0.10);
+  --green: #16a34a;
+  --green-dim: rgba(22, 163, 74, 0.10);
+  --red: #dc2626;
+  --red-dim: rgba(220, 38, 38, 0.10);
+  --blue: #2563eb;
+  --blue-dim: rgba(37, 99, 235, 0.10);
   
   /* Depth tokens */
-  --shadow-card: 0 1px 3px rgba(0,0,0,.06), 0 1px 2px rgba(0,0,0,.04);
-  --shadow-modal: 0 12px 32px rgba(0,0,0,.12), 0 4px 12px rgba(0,0,0,.06);
-  --shadow-elevated: 0 4px 12px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04);
+  --shadow-card: 0 1px 3px rgba(15,23,42,.06), 0 1px 2px rgba(15,23,42,.04);
+  --shadow-modal: 0 12px 32px rgba(15,23,42,.14), 0 4px 12px rgba(15,23,42,.08);
+  --shadow-elevated: 0 4px 12px rgba(15,23,42,.08), 0 2px 4px rgba(15,23,42,.04);
   --radius-sm: 6px;
   --radius-md: 10px;
   --radius-lg: 14px;
 }
 
 .dark {
-  --bg: #0d1014;
-  --surface: #151921;
-  --surface2: #1b212c;
-  --surface3: #232a39;
-  --border: rgba(255, 255, 255, 0.07);
-  --border2: rgba(255, 255, 255, 0.14);
-  --text: #eae8e2;
-  --muted: #737068;
-  --muted2: #9e9b94;
-  --accent: #f0a832;
-  --accent2: #d4880a;
-  --accent-dim: rgba(240, 168, 50, 0.15);
-  --green: #4caf7d;
-  --green-dim: rgba(76, 175, 125, 0.15);
-  --red: #d45a4d;
-  --red-dim: rgba(212, 90, 77, 0.15);
-  --blue: #4a90d9;
-  --blue-dim: rgba(74, 144, 217, 0.15);
+  /* Precision Slate Dark Theme */
+  --bg: #0b0f17;
+  --surface: #111827;
+  --surface2: #1e293b;
+  --surface3: #334155;
+  --border: rgba(226, 232, 240, 0.09);
+  --border2: rgba(226, 232, 240, 0.18);
+  --text: #f8fafc;
+  --muted: #94a3b8;
+  --muted2: #cbd5e1;
+  --accent: #f59e0b;
+  --accent2: #d97706;
+  --accent-dim: rgba(245, 158, 11, 0.16);
+  --green: #22c55e;
+  --green-dim: rgba(34, 197, 94, 0.16);
+  --red: #ef4444;
+  --red-dim: rgba(239, 68, 68, 0.16);
+  --blue: #3b82f6;
+  --blue-dim: rgba(59, 130, 246, 0.16);
   
-  --shadow-card: 0 2px 8px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.2);
-  --shadow-modal: 0 20px 48px rgba(0,0,0,.55), 0 8px 16px rgba(0,0,0,.3);
-  --shadow-elevated: 0 8px 24px rgba(0,0,0,.4), 0 2px 8px rgba(0,0,0,.25);
+  --shadow-card: 0 2px 8px rgba(0,0,0,.45), 0 1px 3px rgba(0,0,0,.25);
+  --shadow-modal: 0 20px 48px rgba(0,0,0,.65), 0 8px 16px rgba(0,0,0,.35);
+  --shadow-elevated: 0 8px 24px rgba(0,0,0,.45), 0 2px 8px rgba(0,0,0,.3);
 }
 
 @theme {
@@ -175,6 +177,50 @@ input:focus, select:focus, textarea:focus {
 .dark .glass-panel {
   background: linear-gradient(135deg, rgba(21, 25, 33, 0.6) 0%, rgba(27, 33, 44, 0.4) 100%);
   backdrop-filter: blur(12px);
+}
+
+.modern-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.modern-card:hover {
+  border-color: var(--border2);
+  box-shadow: var(--shadow-elevated);
+}
+
+.modern-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  border-radius: 9999px;
+  font-family: var(--font-condensed);
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border: 1px solid transparent;
+}
+
+.glass-pill {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+  border-radius: 9999px;
+}
+
+/* Gradient accent borders for highlighted focus cards */
+.accent-border-left {
+  border-left: 3px solid var(--accent);
+}
+.green-border-left {
+  border-left: 3px solid var(--green);
+}
+.blue-border-left {
+  border-left: 3px solid var(--blue);
 }
 
 /* ============================================================

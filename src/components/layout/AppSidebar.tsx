@@ -2,7 +2,7 @@ import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -22,7 +22,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Layers,
   Database,
   Trophy,
-  Calendar
+  Calendar,
+  TrendingUp
 };
 
 interface AppSidebarProps {

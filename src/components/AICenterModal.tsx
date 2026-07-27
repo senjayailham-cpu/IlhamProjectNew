@@ -347,32 +347,78 @@ export default function AICenterModal({
     };
   };
 
+  const queryGemini = async (userMsg: string) => {
+    setIsTyping(true);
+    try {
+      const context = {
+        activeProjectsCount: projects.filter(p => p.status === 'active').length,
+        projects: projects.map(p => ({
+          id: p.id,
+          name: p.name,
+          client: p.client,
+          status: p.status,
+          due: p.due,
+          budgetHours: p.budgetHours,
+          assembliesCount: p.assemblies?.length || 0,
+        })),
+        employees: employees.map(e => ({
+          id: e.id,
+          name: e.name,
+          position: e.position,
+          isExEmployee: e.isExEmployee,
+        })),
+        lowStockMaterials: materials.filter(m => m.currentStock < m.minStock).map(m => ({
+          name: m.name,
+          stock: m.currentStock,
+          min: m.minStock,
+          unit: m.unit,
+        })),
+        openProblemReports: problemReports.filter(pr => pr.status === 'Open').map(pr => ({
+          id: pr.id,
+          description: pr.description,
+          reportedBy: pr.reportedBy,
+        })),
+        pendingInspections: inspections.filter(i => i.status === 'Requested').length,
+      };
+
+      const res = await fetch("/api/gemini/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: userMsg, context }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.text) {
+          // Check if any projects mentioned in text
+          const matchedIds = projects.filter(p => data.text.toLowerCase().includes(p.name.toLowerCase())).map(p => p.id);
+          setChatHistory(prev => [...prev, { sender: 'ai', text: data.text, projectIds: matchedIds.length > 0 ? matchedIds : undefined }]);
+          setIsTyping(false);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn("Server Gemini call failed, using local intelligence engine:", err);
+    }
+
+    // Fallback to local intelligent answer synthesis
+    const localReply = generateLocalAnswer(userMsg);
+    setChatHistory(prev => [...prev, { sender: 'ai', text: localReply.text, projectIds: localReply.projectIds }]);
+    setIsTyping(false);
+  };
+
   const handleSend = () => {
     if (!question.trim()) return;
     const userMsg = question;
     setChatHistory(prev => [...prev, { sender: 'user', text: userMsg }]);
     setQuestion('');
-    setIsTyping(true);
-
-    setTimeout(() => {
-      const reply = generateLocalAnswer(userMsg);
-      setChatHistory(prev => [...prev, { sender: 'ai', text: reply.text, projectIds: reply.projectIds }]);
-      setIsTyping(false);
-    }, 600);
+    queryGemini(userMsg);
   };
 
   const handleQuickQuestion = (qText: string) => {
-    setQuestion(qText);
-    setTimeout(() => {
-      setChatHistory(prev => [...prev, { sender: 'user', text: qText }]);
-      setQuestion('');
-      setIsTyping(true);
-      setTimeout(() => {
-        const reply = generateLocalAnswer(qText);
-        setChatHistory(prev => [...prev, { sender: 'ai', text: reply.text, projectIds: reply.projectIds }]);
-        setIsTyping(false);
-      }, 500);
-    }, 100);
+    setChatHistory(prev => [...prev, { sender: 'user', text: qText }]);
+    setQuestion('');
+    queryGemini(qText);
   };
 
   const clearChat = () => {

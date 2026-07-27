@@ -445,7 +445,7 @@ export default function DailyReportView({
               <select
                 value={curDay}
                 onChange={handleDayChange}
-                className="bg-transparent text-base-text py-0.5 px-1 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors text-center"
+                className="bg-transparent text-base-text py-0.5 px-1 w-[32px] text-center cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors"
               >
                 {daysArray.map(d => (
                   <option key={d} value={d} className="bg-base-surface2 text-base-text font-sans">
@@ -458,9 +458,10 @@ export default function DailyReportView({
 
               {/* Month Dropdown */}
               <select
+                id="month-select"
                 value={curMonth}
                 onChange={handleMonthChange}
-                className="bg-transparent text-base-text py-0.5 px-1 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors uppercase text-center"
+                className="bg-transparent text-base-text py-0.5 px-1 w-[54px] text-center cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors uppercase font-bold"
               >
                 {MONTHS_LIST.map(m => (
                   <option key={m.value} value={m.value} className="bg-base-surface2 text-base-text font-sans">
@@ -475,7 +476,7 @@ export default function DailyReportView({
               <select
                 value={curYear}
                 onChange={handleYearChange}
-                className="bg-transparent text-base-text py-0.5 px-0.5 cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors text-center"
+                className="bg-transparent text-base-text py-0.5 px-0.5 w-[46px] text-center cursor-pointer outline-none hover:bg-base-surface3 rounded transition-colors"
               >
                 {yearsArray.map(y => (
                   <option key={y} value={y} className="bg-base-surface2 text-base-text font-sans">

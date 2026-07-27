@@ -131,7 +131,7 @@ export default function ProjectTimelineView({ projects }: ProjectTimelineViewPro
       p.assemblies?.forEach(a => {
         a.tasks?.forEach(t => {
           if (t.isMilestone || t.name.toLowerCase().includes('milestone') || t.name.toLowerCase().includes('gate')) {
-            const mDate = parseDate(t.date || t.finishDate || t.baselineDate || t.baselineFinish);
+            const mDate = parseDate(t.date || t.finishDate || (t as any).baselineDate || (t as any).baselineFinish);
             if (mDate) {
               milestones.push({
                 task: t,
@@ -806,7 +806,7 @@ export default function ProjectTimelineView({ projects }: ProjectTimelineViewPro
 
                                   {/* Plot assembly-specific milestones as small ticks for details */}
                                   {assemblyMilestones.map((task, taskIdx) => {
-                                    const tDate = parseDate(task.date || task.finishDate || task.baselineDate || task.baselineFinish);
+                                    const tDate = parseDate(task.date || task.finishDate || (task as any).baselineDate || (task as any).baselineFinish);
                                     if (!tDate) return null;
                                     const mPct = getRelativePoint(tDate);
                                     if (mPct < 0 || mPct > 100) return null;
