@@ -512,7 +512,7 @@ export interface OrgSettings {
   terminology: {
     gaNumberLabel: string;        // default: "GA Number"
     materialProcessingLabel: string; // default: "Material Processing"
-    wireConsumableLabel: string;  // default: "Wire Consumable"
+    wireConsumableLabel: string;  // default: "Consumable"
   };
 
   updatedAt: string;
@@ -593,7 +593,7 @@ export const INDUSTRY_TEMPLATES: Record<string, Omit<OrgSettings, 'id' | 'update
     terminology: {
       gaNumberLabel: 'GA Number',
       materialProcessingLabel: 'Material Processing',
-      wireConsumableLabel: 'Wire Consumable',
+      wireConsumableLabel: 'Consumable',
     },
   },
 

@@ -54,8 +54,8 @@ const permissionMeta = [
   { id: 'deleteEmployee', label: 'Delete Employees', desc: 'Allows permanent deletion of employee records' },
   { id: 'manageTimesheet', label: 'Manage Timesheet', desc: 'Allows adding and editing timesheet entries' },
   { id: 'deleteTimesheet', label: 'Delete Timesheet Entries', desc: 'Allows permanent deletion of timesheet entries' },
-  { id: 'manageWireLog', label: 'Manage Wire Consumable Log', desc: 'Allows adding new wire consumable log entries' },
-  { id: 'deleteWireLog', label: 'Delete Wire Log Entries', desc: 'Allows permanent deletion of wire consumable log entries' },
+  { id: 'manageWireLog', label: 'Manage Consumable Log', desc: 'Allows adding new consumable log entries' },
+  { id: 'deleteWireLog', label: 'Delete Consumable Log Entries', desc: 'Allows permanent deletion of consumable log entries' },
   { id: 'editGanttSchedule', label: 'Edit Gantt Schedule', desc: 'Allows dragging, resizing, and rescheduling tasks in the Gantt chart' },
   { id: 'manageManpowerBoard', label: 'Manage Manpower Board', desc: 'Allows assigning and reassigning employees on the Manpower Board' },
   { id: 'manageMasterData', label: 'Manage Master Data', desc: 'Allows deleting and merging GA Number, Material, Part No, and Sub-Assembly master data entries' }

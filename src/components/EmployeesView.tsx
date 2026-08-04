@@ -1223,7 +1223,7 @@ export default function EmployeesView({
                 <div className="space-y-4">
                   <h4 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text flex items-center gap-1.5 border-b border-base-border pb-1">
                     <FileText className="h-4 w-4 text-base-accent" />
-                    <span>Section A — Wire Consumable Summary</span>
+                    <span>Section A — Consumable Summary</span>
                   </h4>
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -1279,7 +1279,7 @@ export default function EmployeesView({
                         {kpiData?.wireBreakdown.length === 0 && (
                           <tr>
                             <td colSpan={3} className="py-4 text-center text-base-muted text-xs italic">
-                              No wire consumable logs found for this user in the filtered range.
+                              No consumable logs found for this user in the filtered range.
                             </td>
                           </tr>
                         )}

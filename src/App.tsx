@@ -97,7 +97,11 @@ const sectionGroups = [
   },
   {
     title: 'Operations',
-    items: ['timesheet', 'manpower', 'inspections', 'drawings', 'bom', 'consumable', 'kpi', 'materials', 'matprocessing', 'dailyreport']
+    items: ['timesheet', 'manpower', 'inspections', 'drawings', 'bom', 'dailyreport', 'kpi']
+  },
+  {
+    title: 'Materials & Supply',
+    items: ['materials', 'consumable', 'matprocessing']
   },
   {
     title: 'Management',
@@ -1539,6 +1543,10 @@ function AppContent() {
                     projectsHook.setSpotlightOpen(true);
                   }}
                   currentUser={currentUser}
+                  onNavigateToManpower={(date) => {
+                    if (date) timesheetsHook.setTimesheetDate(date);
+                    setActiveTab('manpower');
+                  }}
                 />
               )}
 
@@ -1551,6 +1559,11 @@ function AppContent() {
                       projects={projects}
                       initialDate={timesheetsHook.timesheetDate}
                       currentUser={currentUser}
+                      onNavigateToTimesheet={(date) => {
+                        if (date) timesheetsHook.setTimesheetDate(date);
+                        setActiveTab('timesheet');
+                      }}
+                      openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
                     />
                   </Suspense>
                 </ErrorBoundary>

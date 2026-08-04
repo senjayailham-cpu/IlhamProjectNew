@@ -36,6 +36,7 @@ interface TimesheetViewProps {
   exportTimesheetDaily: () => void;
   openSpotlight?: (pid: string) => void;
   currentUser: User | null;
+  onNavigateToManpower?: (date?: string) => void;
 }
 
 const STATUS_PILLS = {
@@ -56,7 +57,8 @@ export default function TimesheetView({
   deleteTsEntry,
   exportTimesheetDaily,
   openSpotlight,
-  currentUser
+  currentUser,
+  onNavigateToManpower
 }: TimesheetViewProps) {
   // Navigation between Daily Log and Monthly/Weekly Reporting
   const [activeSegment, setActiveSegment] = useState<'daily' | 'reporting'>('daily');
@@ -576,6 +578,7 @@ export default function TimesheetView({
           employeeFilter={employeeFilter}
           setEmployeeFilter={setEmployeeFilter}
           currentUser={currentUser}
+          onNavigateToManpower={onNavigateToManpower}
         />
       ) : (
         <PerformanceReportTab

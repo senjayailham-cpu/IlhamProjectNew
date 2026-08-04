@@ -604,7 +604,7 @@ export default function SpotlightModal({
               return (
                 <div className="flex items-center gap-1 border-l border-base-border/50 pl-3 text-amber-500">
                   <Flame className="h-4 w-4 text-amber-500 animate-pulse" />
-                  <span>Wire consumable: {totalWire.toFixed(1)} kg Total</span>
+                  <span>Consumable: {totalWire.toFixed(1)} kg Total</span>
                 </div>
               );
             })()}

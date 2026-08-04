@@ -60,6 +60,7 @@ export interface DailyTimesheetTabProps {
   employeeFilter: string;
   setEmployeeFilter: (filter: string) => void;
   currentUser: User | null;
+  onNavigateToManpower?: (date?: string) => void;
 }
 
 export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
@@ -97,7 +98,8 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   setProjectFilter,
   employeeFilter,
   setEmployeeFilter,
-  currentUser
+  currentUser,
+  onNavigateToManpower
 }) => {
   const canManageTimesheet = can(currentUser as any, 'manageTimesheet');
   const canDeleteTimesheet = can(currentUser as any, 'deleteTimesheet');
@@ -212,11 +214,21 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
 
         {/* Global Action Handlers */}
         <div className="flex items-center gap-2">
+          {onNavigateToManpower && (
+            <button
+              onClick={() => onNavigateToManpower(timesheetDate)}
+              className="btn btn-sm bg-base-surface2 border border-base-border text-base-text hover:bg-base-surface3 hover:border-amber-500/50 flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+              title="Open Manpower Allocation Board for this date"
+            >
+              <Calendar className="h-4 w-4 text-amber-500" />
+              <span className="hidden sm:inline">Manpower Board</span>
+            </button>
+          )}
           <button
             onClick={handleExportExcel}
             className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer"
           >
-            <ClipboardList className="h-4 w-4 text-base-blue animate-pulse" />
+            <ClipboardList className="h-4 w-4 text-base-blue" />
             <span>Export Daily</span>
           </button>
           {canManageTimesheet && (
@@ -230,6 +242,32 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
           )}
         </div>
       </div>
+
+      {/* Complementary Manpower Integration Banner */}
+      {onNavigateToManpower && (
+        <div className="bg-base-surface2/60 border border-base-border rounded-xl p-3 px-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 font-condensed font-bold text-base-text uppercase text-xs">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-pulse"></span>
+              Manpower Synced
+            </div>
+            <div className="text-base-muted text-[11px] flex items-center gap-3 flex-wrap">
+              <span>Logged: <strong className="text-base-text font-bold">{unfilteredDayEntriesCount}</strong> entries</span>
+              <span className="text-base-border">•</span>
+              <span>Present/Late: <strong className="text-emerald-500 font-bold">{counts.present + counts.late}</strong></span>
+              <span className="text-base-border">•</span>
+              <span>Total Logged: <strong className="text-base-accent font-bold">{fmtHrs(totalHrsToday)}</strong></span>
+            </div>
+          </div>
+          <button
+            onClick={() => onNavigateToManpower(timesheetDate)}
+            className="text-amber-500 hover:text-amber-400 font-condensed font-bold uppercase text-xs flex items-center gap-1 transition-colors shrink-0 cursor-pointer"
+          >
+            <span>View Plotting & Allocation Board</span>
+            <span>→</span>
+          </button>
+        </div>
+      )}
 
       {/* Search and Filter Controls */}
       <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-card space-y-3 animate-fade-in">

@@ -26,6 +26,8 @@ interface ManpowerBoardViewProps {
   projects:   Project[];
   initialDate?: string;
   currentUser: User | null;
+  onNavigateToTimesheet?: (date?: string) => void;
+  openAddTimesheet?: () => void;
 }
 
 export default function ManpowerBoardView({
@@ -33,7 +35,9 @@ export default function ManpowerBoardView({
   employees,
   projects,
   initialDate,
-  currentUser
+  currentUser,
+  onNavigateToTimesheet,
+  openAddTimesheet
 }: ManpowerBoardViewProps) {
   const canManageManpowerBoard = can(currentUser, 'manageManpowerBoard');
 
@@ -563,6 +567,17 @@ export default function ManpowerBoardView({
             >
               Today
             </button>
+
+            {onNavigateToTimesheet && (
+              <button
+                onClick={() => onNavigateToTimesheet(selectedDate)}
+                className="px-3 h-8 rounded-lg bg-base-surface2 hover:bg-base-surface3 border border-base-border hover:border-base-accent/50 text-base-text text-xs font-condensed font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ml-1"
+                title="Open Daily Timesheet Log Sheet for this date"
+              >
+                <Clock className="h-3.5 w-3.5 text-base-accent" />
+                <span className="hidden sm:inline">Timesheet Log</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -648,8 +663,17 @@ export default function ManpowerBoardView({
                   </span>
                 ))}
             </div>
-            <div className="ml-auto flex items-center gap-2">
+            <div className="ml-auto flex items-center gap-3">
               <span className="text-[10px] text-base-muted">{boardData.length} projects active</span>
+              {onNavigateToTimesheet && (
+                <button
+                  onClick={() => onNavigateToTimesheet(selectedDate)}
+                  className="text-xs font-condensed font-bold uppercase text-base-accent hover:underline cursor-pointer flex items-center gap-1"
+                >
+                  <span>Edit Timesheets</span>
+                  <span>→</span>
+                </button>
+              )}
             </div>
           </div>
 

@@ -13,7 +13,7 @@ const activeTabsList = [
   { id: 'tray', label: 'Project Tray', icon: 'Folder', access: 'all' },
   { id: 'nontray', label: 'Project Non-Tray', icon: 'Folder', access: 'all' },
   { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
-  { id: 'wire', label: 'Wire Consumable', icon: 'Flame', access: 'all' },
+  { id: 'wire', label: 'Consumable', icon: 'Flame', access: 'all' },
   { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
   { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
   { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },

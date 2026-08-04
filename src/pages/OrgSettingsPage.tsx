@@ -549,7 +549,7 @@ export function OrgSettingsPage({
 
           <div>
             <label className="text-xs font-bold text-base-text uppercase tracking-wider block mb-1">
-              Wire Consumable Label
+              Consumable Label
             </label>
             <input
               type="text"
@@ -564,7 +564,7 @@ export function OrgSettingsPage({
               className="w-full bg-base-bg border border-base-border text-base-text px-3 py-2 rounded-xl text-sm font-semibold focus:outline-none focus:border-base-accent"
               placeholder="e.g. Consumables"
             />
-            <p className="text-[10px] text-base-muted mt-1">Default: "Wire Consumable"</p>
+            <p className="text-[10px] text-base-muted mt-1">Default: "Consumable"</p>
           </div>
         </div>
       </div>
