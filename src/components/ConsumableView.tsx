@@ -56,6 +56,7 @@ interface ConsumableViewProps {
   onAddMaterial?: (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateMaterial?: (id: string, updates: Partial<MaterialItem>) => void;
   onDeleteMaterial?: (id: string) => void;
+  orgSettings?: any;
 }
 
 const getPositionColorClass = (position?: string) => {
@@ -83,7 +84,8 @@ export default function ConsumableView({
   onNavigateToMaterials,
   onAddMaterial,
   onUpdateMaterial,
-  onDeleteMaterial
+  onDeleteMaterial,
+  orgSettings
 }: ConsumableViewProps) {
 
   const canManageConsumables = can(currentUser, 'manageWireLog'); 
@@ -715,7 +717,7 @@ export default function ConsumableView({
         <div>
           <h2 className="text-xl font-condensed font-black uppercase tracking-tight text-base-text flex items-center gap-2">
             <Activity className="h-5 w-5 text-amber-500" />
-            <span>Consumables & PPE Unified Registry</span>
+            <span>{orgSettings?.terminology?.wireConsumableLabel || 'Consumables'} & PPE Unified Registry</span>
           </h2>
           <p className="text-xs text-base-muted font-sans font-medium mt-1">
             Shopfloor checkout logging for flux-core welding spools, PPE items, and handtools.
@@ -847,7 +849,7 @@ export default function ConsumableView({
       )}
 
       {/* STATS OVERVIEW GRIDS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-base-surface border border-base-border p-4 rounded-xl shadow-xs">
           <span className="block text-[10px] font-condensed font-bold text-base-muted uppercase tracking-widest">Total Wire Consumed</span>
           <span className="text-lg font-mono font-black text-amber-500 block mt-1">{summaryTotals.totalWire.toFixed(1)} <span className="font-sans text-xs font-normal text-base-muted">kg</span></span>
@@ -1186,7 +1188,7 @@ export default function ConsumableView({
               </div>
 
               {/* Display Added Items List */}
-              <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface shadow-xs">
+              <div className="border border-base-border rounded-xl overflow-x-auto bg-base-surface shadow-xs">
                 {mainOrderItems.length === 0 ? (
                   <div className="p-6 text-center italic text-base-muted text-xs">
                     No items added to request list yet. Select a material and qty above, then click "+ Add to List".

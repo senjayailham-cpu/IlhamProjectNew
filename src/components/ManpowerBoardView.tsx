@@ -631,7 +631,7 @@ export default function ManpowerBoardView({
             </div>
             <div className="w-px h-4 bg-base-border hidden sm:block" />
             <div className="flex items-center gap-2 flex-wrap flex-1">
-              {Array.from(summary.craftTotals.entries())
+              {(Array.from(summary.craftTotals.entries()) as [string, number][])
                 .sort(([, a], [, b]) => b - a)
                 .map(([craft, count]) => (
                   <span
@@ -671,7 +671,7 @@ export default function ManpowerBoardView({
             <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {boardData.map(pd => (
-                  <ProjectAllocationCard key={pd.workOrder} data={pd} />
+                  <ProjectAllocationCard key={pd.workOrder} data={pd as any} />
                 ))}
               </div>
             </div>
@@ -721,7 +721,7 @@ export default function ManpowerBoardView({
             <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {availableLaborData.map(cg => (
-                  <CraftAvailableCard key={cg.craft} craftGroup={cg} />
+                  <CraftAvailableCard key={cg.craft} craftGroup={cg as any} />
                 ))}
               </div>
             </div>

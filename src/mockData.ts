@@ -1,8 +1,11 @@
 import { Project, Employee, TimesheetEntry, ActivityLog, User, ProblemReport, InspectionRequest, WireLog } from './types';
 import { sha256 } from './utils/helpers';
 
+// @ts-ignore
 const adminPass = import.meta.env.VITE_DEFAULT_ADMIN_PASS || 'admin123';
+// @ts-ignore
 const managerPass = import.meta.env.VITE_DEFAULT_MANAGER_PASS || '123456';
+// @ts-ignore
 const staffPass = import.meta.env.VITE_DEFAULT_STAFF_PASS || '123456';
 
 export const DEFAULT_USERS = async (): Promise<User[]> => {

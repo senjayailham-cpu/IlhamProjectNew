@@ -545,7 +545,7 @@ export default function DailyReportView({
                 Section A — Executive Summary & Portfolio KPIs
               </h3>
             </div>
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-base-surface border border-base-border rounded-xl p-4 text-center shadow-card border-b-2 border-b-base-accent">
                 <div className="text-[28px] font-condensed font-extrabold text-base-accent leading-none">{dayLogs.length}</div>
                 <div className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-wider mt-2">Total updates</div>

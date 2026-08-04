@@ -6,6 +6,8 @@ interface NotificationBellProps {
   projects: Project[];
   activities: ActivityLog[];
   currentUser: User;
+  readNotificationIds?: string[];
+  onMarkRead?: (ids: string[]) => void;
 }
 
 interface AppNotif {
@@ -26,19 +28,23 @@ function timeAgo(isoString: string): string {
   return `${Math.floor(h / 24)}d ago`;
 }
 
-export function NotificationBell({ projects, activities, currentUser }: NotificationBellProps) {
+export function NotificationBell({ projects, activities, currentUser, readNotificationIds, onMarkRead }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
   const [filter, setFilter] = useState<'all' | 'overdue' | 'due-soon' | 'activity'>('all');
 
   // Load and memoize reading state
   const STORAGE_KEY = `ab_notif_read_${currentUser.id}`;
-  const [readIds, setReadIds] = useState<Set<string>>(new Set());
+  const [readIds, setReadIds] = useState<Set<string>>(new Set(readNotificationIds || []));
 
   useEffect(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
-    setReadIds(new Set(saved ? JSON.parse(saved) : []));
-  }, [currentUser.id, STORAGE_KEY]);
+    if (readNotificationIds) {
+      setReadIds(new Set(readNotificationIds));
+    } else {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      setReadIds(new Set(saved ? JSON.parse(saved) : []));
+    }
+  }, [currentUser.id, STORAGE_KEY, readNotificationIds]);
 
   // Generate notifications
   const notifs = useMemo(() => {
@@ -198,7 +204,11 @@ export function NotificationBell({ projects, activities, currentUser }: Notifica
 
   const markAllRead = () => {
     const allIds = notifs.map(n => n.id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(allIds));
+    if (onMarkRead) {
+      onMarkRead(allIds);
+    } else {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(allIds));
+    }
     setReadIds(new Set(allIds));
   };
 
@@ -206,7 +216,12 @@ export function NotificationBell({ projects, activities, currentUser }: Notifica
     const updated = new Set(readIds);
     if (!updated.has(id)) {
       updated.add(id);
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(updated)));
+      const arr = Array.from(updated);
+      if (onMarkRead) {
+        onMarkRead(arr as string[]);
+      } else {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(arr));
+      }
       setReadIds(updated);
     }
   };

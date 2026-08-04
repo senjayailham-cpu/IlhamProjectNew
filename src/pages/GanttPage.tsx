@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Project, User } from '../types';
+import { Project, User, OrgSettings } from '../types';
 import GanttView from '../components/GanttView';
 import { Briefcase, Calendar, AlertCircle, FileText, BarChart2 } from 'lucide-react';
 
@@ -11,6 +11,9 @@ interface GanttPageProps {
   externalRowKey?: string | null;
   onCloseDepModal?: () => void;
   currentUser: User | null;
+  orgSettings?: OrgSettings;
+  prefs?: any;
+  onSetPref?: (key: string, value: any) => void;
 }
 
 export function GanttPage({ 
@@ -20,7 +23,10 @@ export function GanttPage({
   depModalOpen,
   externalRowKey,
   onCloseDepModal,
-  currentUser
+  currentUser,
+  orgSettings,
+  prefs,
+  onSetPref
 }: GanttPageProps) {
   // Default selected month to 'ALL' so all projects are displayed by default
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
@@ -146,6 +152,9 @@ export function GanttPage({
             depModalRowKey={externalRowKey || undefined}
             onCloseDepModal={onCloseDepModal}
             currentUser={currentUser}
+            orgSettings={orgSettings}
+            prefs={prefs}
+            onSetPref={onSetPref}
           />
         </div>
       ) : (

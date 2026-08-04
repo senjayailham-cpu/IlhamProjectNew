@@ -6,7 +6,8 @@ import {
   ProcessingStageKey,
   ProcessingStage,
   ProcessingStatus,
-  PROCESSING_STAGES
+  PROCESSING_STAGES,
+  OrgSettings
 } from '../../types';
 import {
   Plus,
@@ -28,6 +29,7 @@ interface SpotlightProcessingTabProps {
   onUpdateStage: (mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
   onDelete: (id: string) => void;
   setDeleteConfirm?: (state: any) => void;
+  orgSettings?: OrgSettings;
 }
 
 export function SpotlightProcessingTab({
@@ -37,8 +39,30 @@ export function SpotlightProcessingTab({
   onAdd,
   onUpdateStage,
   onDelete,
-  setDeleteConfirm
+  setDeleteConfirm,
+  orgSettings
 }: SpotlightProcessingTabProps) {
+  const configuredStages = useMemo(() => {
+    if (orgSettings?.processingStages && orgSettings.processingStages.length > 0) {
+      return orgSettings.processingStages;
+    }
+    return [
+      { key: 'nesting', label: 'Nesting', color: 'var(--green)', order: 1 },
+      { key: 'cnc', label: 'CNC', color: 'var(--accent)', order: 2 },
+      { key: 'bending', label: 'Bending', color: 'var(--blue)', order: 3 },
+      { key: 'machining', label: 'Machining', color: '#8b5cf6', order: 4 },
+    ];
+  }, [orgSettings]);
+
+  const stageKeys = useMemo(() => configuredStages.map(s => s.key), [configuredStages]);
+
+  const getStageDisplay = (key: string) => {
+    const found = configuredStages.find(s => s.key === key);
+    if (found) return { key, label: found.label, color: found.color, icon: '⚙️' };
+    const fallback = PROCESSING_STAGES[key as keyof typeof PROCESSING_STAGES];
+    if (fallback) return { key, label: fallback.label, color: fallback.color, icon: fallback.icon };
+    return { key, label: key.toUpperCase(), color: 'var(--muted)', icon: '📋' };
+  };
   // Filters and Add State
   const [showQuickAdd, setShowQuickAdd] = useState(false);
 
@@ -349,9 +373,9 @@ export function SpotlightProcessingTab({
               Active Processing Stages *
             </label>
             <div className="flex flex-wrap gap-4 bg-base-surface2 p-2.5 rounded-lg border border-base-border">
-              {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(key => {
-                const info = PROCESSING_STAGES[key];
-                const checked = formActiveStages.includes(key);
+              {stageKeys.map(key => {
+                const info = getStageDisplay(key);
+                const checked = formActiveStages.includes(key as ProcessingStageKey);
                 return (
                   <label
                     key={key}
@@ -360,7 +384,7 @@ export function SpotlightProcessingTab({
                     <input
                       type="checkbox"
                       checked={checked}
-                      onChange={() => handleStageToggle(key)}
+                      onChange={() => handleStageToggle(key as ProcessingStageKey)}
                       className="accent-base-accent"
                     />
                     <span>{info.icon}</span>
@@ -397,8 +421,8 @@ export function SpotlightProcessingTab({
               <th className="px-3 py-2.5 text-center w-10">#</th>
               <th className="px-3 py-2.5">Material Details</th>
               <th className="px-3 py-2.5 text-center w-20">Qty</th>
-              {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
-                const s = PROCESSING_STAGES[stageKey as ProcessingStageKey];
+              {stageKeys.map(stageKey => {
+                const s = getStageDisplay(stageKey);
                 return (
                   <th key={stageKey} className="px-3 py-2.5 text-center w-32 font-condensed">
                     <div className="flex items-center justify-center gap-1">
@@ -454,10 +478,10 @@ export function SpotlightProcessingTab({
                     </td>
 
                     {/* Stage cells */}
-                    {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(
+                    {stageKeys.map(
                       stageKey => {
-                        const isApp = mp.activeStages.includes(stageKey);
-                        const sData = mp.stages[stageKey];
+                        const isApp = mp.activeStages.includes(stageKey as ProcessingStageKey);
+                        const sData = mp.stages[stageKey as ProcessingStageKey];
 
                         if (!isApp) {
                           return (
@@ -481,7 +505,7 @@ export function SpotlightProcessingTab({
                         return (
                           <td
                             key={stageKey}
-                            onClick={() => handleOpenStageEdit(mp, stageKey)}
+                            onClick={() => handleOpenStageEdit(mp, stageKey as ProcessingStageKey)}
                             className={`px-3 py-3 text-center ${
                               isReadOnly
                                 ? 'cursor-default'
@@ -576,8 +600,8 @@ export function SpotlightProcessingTab({
           <div className="w-full max-w-sm bg-base-surface border border-base-border rounded-xl shadow-xl overflow-hidden flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 border-b border-base-border bg-base-surface2">
               <h4 className="text-xs font-bold font-sans text-base-text flex items-center gap-1.5 uppercase tracking-wide">
-                <span>{PROCESSING_STAGES[updatingStage.stageKey].icon}</span>
-                Update {PROCESSING_STAGES[updatingStage.stageKey].label} Stage
+                <span>{getStageDisplay(updatingStage.stageKey).icon}</span>
+                Update {getStageDisplay(updatingStage.stageKey).label} Stage
               </h4>
               <button
                 type="button"

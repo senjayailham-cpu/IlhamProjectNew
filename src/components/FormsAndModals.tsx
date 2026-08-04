@@ -6,7 +6,7 @@ import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
-import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry } from '../types';
+import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry, OrgSettings } from '../types';
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import SpotlightModal from './SpotlightModal';
 
@@ -33,6 +33,7 @@ interface FormsAndModalsProps {
     value: string,
     gaNumber?: string
   ) => Promise<void>;
+  orgSettings?: OrgSettings;
 }
 
 export function FormsAndModals({
@@ -54,10 +55,59 @@ export function FormsAndModals({
   selectedMonth,
   masterDataEntries,
   onEnsureMasterData,
+  orgSettings,
 }: FormsAndModalsProps) {
   const { currentUser } = authHook;
   const can = (perm: any) => canUtil(currentUser, perm);
   const { saveItem } = useFirestore();
+
+  const gaNumberLabel = orgSettings?.terminology?.gaNumberLabel || 'GA Number';
+  const categoryOptions = React.useMemo(() => {
+    if (orgSettings?.projectCategories && orgSettings.projectCategories.length > 0) {
+      return orgSettings.projectCategories.map((item: any) => {
+        if (typeof item === 'string') {
+          return { key: item, label: item };
+        }
+        return {
+          key: item.key || item.label || String(item),
+          label: item.label || item.key || String(item)
+        };
+      });
+    }
+    return [
+      { key: 'tray', label: 'Tray' },
+      { key: 'nontray', label: 'Non-Tray' },
+    ];
+  }, [orgSettings]);
+
+  const locationOptions = React.useMemo(() => {
+    if (orgSettings?.projectLocations && orgSettings.projectLocations.length > 0) {
+      return orgSettings.projectLocations.map((item: any) => {
+        if (typeof item === 'string') {
+          return { key: item, label: item };
+        }
+        return {
+          key: item.key || item.label || String(item),
+          label: item.label || item.key || String(item)
+        };
+      });
+    }
+    return [
+      { key: 'workshop1', label: 'Workshop 1' },
+      { key: 'workshop2', label: 'Workshop 2' },
+    ];
+  }, [orgSettings]);
+
+  React.useEffect(() => {
+    if (projectsHook.projectFormOpen) {
+      if (categoryOptions.length > 0 && !categoryOptions.find(o => o.key === projectsHook.pCat)) {
+        projectsHook.setPCat(categoryOptions[0].key);
+      }
+      if (locationOptions.length > 0 && !locationOptions.find(o => o.key === projectsHook.pLoc)) {
+        projectsHook.setPLoc(locationOptions[0].key);
+      }
+    }
+  }, [projectsHook.projectFormOpen, categoryOptions, locationOptions, projectsHook.pCat, projectsHook.pLoc]);
 
   return (
     <>
@@ -73,47 +123,47 @@ export function FormsAndModals({
               <div className="space-y-1">
                 <label className="field-label">Project Name</label>
                 <input
-                  type="text"
+                  type="text" inputMode="text"
                   value={projectsHook.pName}
                   onChange={(e) => projectsHook.setPName(e.target.value)}
                   placeholder=""
-                  className="input-field"
+                  className="input-field min-h-[44px]"
                 />
               </div>
 
               <div className="space-y-1">
                 <label className="field-label">Work Order Code</label>
                 <input
-                  type="text"
+                  type="text" inputMode="text"
                   value={projectsHook.pWorkOrder}
                   onChange={(e) => projectsHook.setPWorkOrder(e.target.value)}
                   placeholder=""
-                  className="input-field uppercase font-mono font-bold tracking-wide"
+                  className="input-field min-h-[44px] uppercase font-mono font-bold tracking-wide"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="field-label">GA Number</label>
+                <label className="field-label">{gaNumberLabel}</label>
                 <MasterDataAutocomplete
                   category="gaNumber"
                   value={projectsHook.pGaNumber}
                   onChange={(val) => projectsHook.setPGaNumber(val.toUpperCase())}
                   placeholder="e.g. GA17733"
                   entries={masterDataEntries}
-                  className="input-field uppercase font-mono font-bold tracking-wide"
+                  className="input-field min-h-[44px] uppercase font-mono font-bold tracking-wide"
                 />
                 <p className="text-[10px] text-base-muted italic font-normal">
-                  Nomor identitas jenis produk. Project dengan GA Number sama = desain & material sama, walau nama project berbeda. Ketik untuk cari GA Number yang sudah pernah dipakai.
+                  Identitas jenis produk/desain. Project dengan ID/GA sama = desain & material sama, walau nama project berbeda.
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="field-label">Status</label>
                   <select
                     value={projectsHook.pStatus}
                     onChange={(e: any) => projectsHook.setPStatus(e.target.value)}
-                    className="select-field"
+                    className="select-field min-h-[44px]"
                   >
                     <option value="active">Active</option>
                     <option value="pending">Pending</option>
@@ -126,22 +176,23 @@ export function FormsAndModals({
                   <select
                     value={projectsHook.pCat}
                     onChange={(e: any) => projectsHook.setPCat(e.target.value)}
-                    className="select-field"
+                    className="select-field min-h-[44px]"
                   >
-                    <option value="tray">Tray</option>
-                    <option value="nontray">Non-Tray</option>
+                    {categoryOptions.map(cat => (
+                      <option key={cat.key} value={cat.key}>{cat.label}</option>
+                    ))}
                   </select>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="field-label">Start Date</label>
                   <input
                     type="date"
                     value={projectsHook.pStart}
                     onChange={(e) => projectsHook.setPStart(e.target.value)}
-                    className="input-field"
+                    className="input-field min-h-[44px]"
                   />
                 </div>
                 <div className="space-y-1">
@@ -150,7 +201,7 @@ export function FormsAndModals({
                     type="date"
                     value={projectsHook.pDue}
                     onChange={(e) => projectsHook.setPDue(e.target.value)}
-                    className="input-field"
+                    className="input-field min-h-[44px]"
                   />
                   <p className="text-[10px] text-base-muted italic">
                     Jika GA Number ditemukan sama dengan project lain, tanggal ini akan otomatis dihitung ulang berdasarkan durasi struktur yang disalin.
@@ -158,33 +209,34 @@ export function FormsAndModals({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="field-label">Location Workshop</label>
                   <select
                     value={projectsHook.pLoc}
                     onChange={(e: any) => projectsHook.setPLoc(e.target.value)}
-                    className="select-field"
+                    className="select-field min-h-[44px]"
                   >
-                    <option value="workshop1">Workshop 1</option>
-                    <option value="workshop2">Workshop 2</option>
+                    {locationOptions.map(loc => (
+                      <option key={loc.key} value={loc.key}>{loc.label}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Budget Hours</label>
                   <input
-                    type="number"
+                    type="number" inputMode="decimal" pattern="[0-9]*"
                     value={projectsHook.pBudgetHours}
                     onChange={(e) => projectsHook.setPBudgetHours(e.target.value)}
                     placeholder="None"
                     min="0"
                     step="any"
-                    className="input-field"
+                    className="input-field min-h-[44px]"
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="field-label">Target Month</label>
                   <input
@@ -204,7 +256,7 @@ export function FormsAndModals({
                         projectsHook.setPStart(`${suggestedYStr}-${suggestedMStr}-01`);
                       }
                     }}
-                    className="input-field"
+                    className="input-field min-h-[44px]"
                   />
                 </div>
                 <div className="space-y-1">
@@ -212,7 +264,7 @@ export function FormsAndModals({
                   <select
                     value={projectsHook.pPriority || 'medium'}
                     onChange={(e: any) => projectsHook.setPPriority(e.target.value)}
-                    className="select-field"
+                    className="select-field min-h-[44px]"
                   >
                     <option value="low">🟢 Low</option>
                     <option value="medium">🟡 Medium</option>
@@ -282,7 +334,7 @@ export function FormsAndModals({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Start Date</label>
                   <input
@@ -306,7 +358,7 @@ export function FormsAndModals({
               <div className="space-y-1.5">
                 <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Budget Hours Limit</label>
                 <input
-                  type="number"
+                  type="number" inputMode="decimal" pattern="[0-9]*"
                   value={projectsHook.aBudgetHours}
                   onChange={(e) => projectsHook.setABudgetHours(e.target.value)}
                   placeholder="None (e.g. 40)"
@@ -340,11 +392,11 @@ export function FormsAndModals({
                           <div className="flex gap-2 items-center">
                             <span className="text-[11px] font-condensed font-extrabold text-base-muted bg-base-border/30 h-5 w-5 rounded-full flex items-center justify-center shrink-0">{idx + 1}</span>
                             <input
-                              type="text"
+                              type="text" inputMode="text"
                               value={t.name}
                               onChange={(e) => projectsHook.handleDraftTaskField(idx, 'name', e.target.value)}
                               placeholder="Task name... (e.g. Frame alignment check)"
-                              className="flex-1 px-3 py-1.5 bg-base-bg border border-base-border rounded-lg text-xs font-semibold focus:border-base-accent outline-none"
+                              className="flex-1 px-3 py-1.5 min-h-[44px] bg-base-bg border border-base-border rounded-lg text-xs font-semibold focus:border-base-accent outline-none"
                             />
                             <button
                               type="button"
@@ -359,7 +411,7 @@ export function FormsAndModals({
                             <div className="flex items-center gap-1.5 bg-base-bg px-2 py-1 rounded-lg border border-base-border">
                               <span className="text-[9px] text-base-muted font-bold select-none uppercase tracking-wider font-condensed">Difficulty (1-20):</span>
                               <input
-                                type="number"
+                                type="number" inputMode="decimal" pattern="[0-9]*"
                                 min="1"
                                 max="20"
                                 value={typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1}
@@ -376,7 +428,7 @@ export function FormsAndModals({
                                 type="date"
                                 value={t.date || ''}
                                 onChange={(e) => projectsHook.handleDraftTaskField(idx, 'date', e.target.value)}
-                                className="px-2 py-1 bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-base-text font-semibold outline-none focus:border-base-accent"
+                                className="px-2 py-1 min-h-[44px] bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-base-text font-semibold outline-none focus:border-base-accent"
                               />
                             </div>
                             <div className="flex items-center gap-1" title="Finish Date">
@@ -385,7 +437,7 @@ export function FormsAndModals({
                                 type="date"
                                 value={t.finishDate || ''}
                                 onChange={(e) => projectsHook.handleDraftTaskField(idx, 'finishDate', e.target.value)}
-                                className="px-2 py-1 bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-emerald-600 font-bold outline-none focus:border-base-accent"
+                                className="px-2 py-1 min-h-[44px] bg-base-bg border border-base-border rounded-lg text-[10px] cursor-pointer text-emerald-600 font-bold outline-none focus:border-base-accent"
                               />
                             </div>
                           </div>
@@ -424,26 +476,26 @@ export function FormsAndModals({
             <div className="space-y-4 text-xs font-semibold">
               <div className="space-y-1">
                 <label className="field-label">New Name</label>
-                <input type="text" value={projectsHook.copyName} onChange={(e) => projectsHook.setCopyName(e.target.value)} className="input-field" />
+                <input type="text" inputMode="text" value={projectsHook.copyName} onChange={(e) => projectsHook.setCopyName(e.target.value)} className="input-field min-h-[44px]" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <label className="field-label">New Start</label>
-                  <input type="date" value={projectsHook.copyStart} onChange={(e) => projectsHook.setCopyStart(e.target.value)} className="input-field" />
+                  <input type="date" value={projectsHook.copyStart} onChange={(e) => projectsHook.setCopyStart(e.target.value)} className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">New Due</label>
-                  <input type="date" value={projectsHook.copyDue} onChange={(e) => projectsHook.setCopyDue(e.target.value)} className="input-field" />
+                  <input type="date" value={projectsHook.copyDue} onChange={(e) => projectsHook.setCopyDue(e.target.value)} className="input-field min-h-[44px]" />
                 </div>
               </div>
               <div className="bg-base-surface2 border border-base-border p-3.5 rounded-lg space-y-2">
-                <label className="flex items-center gap-2 cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
+                <label className="flex items-center gap-2 min-h-[44px] cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
                   <input type="checkbox" checked={projectsHook.copyAsm} onChange={(e) => projectsHook.setCopyAsm(e.target.checked)} className="h-3.5 w-3.5 accent-base-accent" /> Clone sub-assemblies
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
+                <label className="flex items-center gap-2 min-h-[44px] cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
                   <input type="checkbox" checked={projectsHook.copyTasks} onChange={(e) => projectsHook.setCopyTasks(e.target.checked)} className="h-3.5 w-3.5 accent-base-accent" /> Clone tasks details
                 </label>
-                <label className="flex items-center gap-2 cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
+                <label className="flex items-center gap-2 min-h-[44px] cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
                   <input type="checkbox" checked={projectsHook.copyKeepClient} onChange={(e) => projectsHook.setCopyKeepClient(e.target.checked)} className="h-3.5 w-3.5 accent-base-accent" /> Keep Work Order
                 </label>
               </div>
@@ -464,45 +516,45 @@ export function FormsAndModals({
               {employeesHook.editingEmpId ? 'Modify Personnel' : 'Add Personnel'}
             </h3>
             <div className="max-h-[60vh] overflow-y-auto pr-1 space-y-4 text-xs font-semibold">
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1 col-span-2">
                   <label className="field-label">Full Name</label>
-                  <input type="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="input-field" />
+                  <input type="text" inputMode="text" value={employeesHook.empName} onChange={(e) => employeesHook.setEmpName(e.target.value)} placeholder="e.g. Budi Wijaya" className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Employee No</label>
-                  <input type="text" value={employeesHook.empNo} onChange={(e) => employeesHook.setEmpNo(e.target.value)} placeholder="e.g. 2110051" className="input-field" />
+                  <input type="text" inputMode="text" value={employeesHook.empNo} onChange={(e) => employeesHook.setEmpNo(e.target.value)} placeholder="e.g. 2110051" className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Shift</label>
-                  <select value={employeesHook.shift} onChange={(e) => employeesHook.setShift(e.target.value)} className="select-field">
+                  <select value={employeesHook.shift} onChange={(e) => employeesHook.setShift(e.target.value)} className="select-field min-h-[44px]">
                     <option value="DAY SHIFT">DAY SHIFT</option>
                     <option value="NIGHT SHIFT">NIGHT SHIFT</option>
                   </select>
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Position Role</label>
-                  <input type="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="input-field" />
+                  <input type="text" inputMode="text" value={employeesHook.empPosition} onChange={(e) => employeesHook.setEmpPosition(e.target.value)} placeholder="e.g. Fitter Class 1" className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Site Location</label>
-                  <input type="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="input-field" />
+                  <input type="text" inputMode="text" value={employeesHook.empLocation} onChange={(e) => employeesHook.setEmpLocation(e.target.value)} placeholder="e.g. Workshop 1, Batam" className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1 col-span-2">
                   <label className="field-label">Coordinator PPC</label>
-                  <input type="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="input-field" />
+                  <input type="text" inputMode="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">Join Date</label>
-                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="input-field" />
+                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1">
                   <label className="field-label">End of Contract (EOC)</label>
-                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="input-field" />
+                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="input-field min-h-[44px]" />
                 </div>
                 <div className="space-y-1 col-span-2">
                   <label className="field-label">Employment Status</label>
-                  <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="select-field">
+                  <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="select-field min-h-[44px]">
                     <option value="Permanent">Permanent</option>
                     <option value="Contract">Contract</option>
                     <option value="Finish Contract">Finish Contract</option>
@@ -674,7 +726,7 @@ export function FormsAndModals({
                   onChange={(e) => authHook.setCurrentPasswordInput(e.target.value)}
                   placeholder="Enter current password..."
                   required
-                  className="input-field"
+                  className="input-field min-h-[44px]"
                 />
               </div>
 
@@ -686,7 +738,7 @@ export function FormsAndModals({
                   onChange={(e) => authHook.setNewPasswordInput(e.target.value)}
                   placeholder="At least 4 characters..."
                   required
-                  className="input-field"
+                  className="input-field min-h-[44px]"
                 />
               </div>
 
@@ -698,7 +750,7 @@ export function FormsAndModals({
                   onChange={(e) => authHook.setConfirmPasswordInput(e.target.value)}
                   placeholder="Re-type new password..."
                   required
-                  className="input-field"
+                  className="input-field min-h-[44px]"
                 />
               </div>
 

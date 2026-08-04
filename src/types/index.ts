@@ -38,14 +38,14 @@ export enum ProjectCategory {
   NonTray = 'nontray'
 }
 
-export type ProjectCategoryType = ProjectCategory | 'tray' | 'nontray';
+export type ProjectCategoryType = string;
 
 export enum ProjectLocation {
   Workshop1 = 'workshop1',
   Workshop2 = 'workshop2'
 }
 
-export type ProjectLocationType = ProjectLocation | 'workshop1' | 'workshop2';
+export type ProjectLocationType = string;
 
 export enum TimesheetStatus {
   Present = 'present',
@@ -96,6 +96,17 @@ export interface User {
   allowedPermissions?: Record<string, boolean>;
   currentSessionId?: string;
   uid?: string;
+  preferences?: {
+    sidebarCollapsed?: boolean;
+    projectsViewMode?: 'list' | 'timeline' | 'radial';
+    projectsFilterTab?: string;
+    projectsSortBy?: 'deadline' | 'priority' | 'alphabetical';
+    ganttShowSCurve?: boolean;
+    ganttAutoSchedule?: boolean;
+    ganttShowResourceLoad?: boolean;
+    matProcessingViewMode?: string;
+    readNotificationIds?: string[];
+  };
 }
 
 export type WorkflowStatusType = 'verify' | 'on_track' | 'delayed' | 'complete' | 'not_started';
@@ -109,6 +120,8 @@ export interface Task {
   done: boolean;
   date?: string;
   finishDate?: string;
+  startDate?: string;
+  endDate?: string;
   predecessors?: Dependency[];
   successors?: Dependency[];
   isMilestone?: boolean;
@@ -157,6 +170,7 @@ export interface Project {
   originalDue?: string;   // snapshot tanggal Due saat project pertama dibuat, TIDAK PERNAH diubah lagi setelahnya (untuk deteksi schedule slip)
   materialProcessing?: MaterialProcessing[];
   priority?: 'low' | 'medium' | 'high';
+  bay?: string;
 }
 
 export interface Employee {
@@ -192,7 +206,7 @@ export interface ProblemReport {
   id: string;
   projectId?: string;
   projectName?: string;
-  category: 'Facility Issue' | 'Drawing Issue' | 'Safety Issue' | 'Material Issue' | 'Equipment Issue' | 'Other';
+  category: string;
   description: string;
   assignedPosition: string;
   reportedBy: string;
@@ -211,7 +225,7 @@ export interface InspectionRequest {
   projectName: string;
   assemblyId?: string;
   assemblyName?: string;
-  inspectionType: 'Fit-up' | 'Welding Visual' | 'Dimensional Check' | 'NDT' | 'Painting / Blasting' | 'Final Inspection' | 'FAT' | 'Other';
+  inspectionType: string;
   status: 'Draft' | 'Requested' | 'Approved' | 'Rejected / Punchlist';
   requestedBy: string;
   requestedById: string;
@@ -384,12 +398,12 @@ export interface MaterialConsumptionLog {
 
 // ─── MATERIAL PROCESSING ──────────────────────────────────────────────────
 
-export type ProcessingStageKey = 'nesting' | 'cnc' | 'bending' | 'machining';
+export type ProcessingStageKey = string;
 
 export type ProcessingStatus = 'pending' | 'in-progress' | 'done' | 'skipped';
 
 export interface ProcessingStage {
-  pct:        number;           // 0–100
+  pct?:       number;           // 0–100, defaults to 0 when unset
   status:     ProcessingStatus;
   startDate?: string;           // ISO "YYYY-MM-DD"
   doneDate?:  string;
@@ -408,6 +422,7 @@ export interface MaterialProcessing {
   materialName: string;         // e.g. "Plate SS304 6mm"
   partNo?:      string;         // drawing part number
   description?: string;
+  dimensions?:  string;         // e.g. "100x200x6mm"
   thickness?:   string;         // e.g. "6mm", "10mm"
   material?:    string;         // e.g. "SS304", "CS A36", "Aluminium"
   qty:          number;         // quantity of pieces/sheets
@@ -459,4 +474,204 @@ export interface MasterDataEntry {
   createdAt: string;             // ISO date
   createdBy?: string;            // nama/id user yang pertama input
 }
+
+// ─── ORGANIZATION SETTINGS & TEMPLATES ─────────────────────────────────────
+
+export interface OrgSettings {
+  id: string;                    // 'default' or org-specific
+  industryTemplate: 'fabrication' | 'construction' | 'it' | 'general' | 'custom';
+
+  // Configurable processing stages
+  processingStages: {
+    key: string;                 // slug, e.g. 'nesting', 'foundation'
+    label: string;               // display name, e.g. "Nesting", "Foundation"
+    color: string;               // CSS variable or hex
+    order: number;
+  }[];
+
+  // Configurable trade/position list
+  tradePositions: {
+    key: string;
+    label: string;
+    color: string;
+  }[];
+
+  // Configurable inspection/QC types
+  inspectionTypes: string[];
+
+  // Configurable project categories
+  projectCategories: string[];
+
+  // Configurable locations
+  projectLocations: string[];
+
+  // Configurable problem/issue categories
+  issueCategories: string[];
+
+  // Terminology overrides
+  terminology: {
+    gaNumberLabel: string;        // default: "GA Number"
+    materialProcessingLabel: string; // default: "Material Processing"
+    wireConsumableLabel: string;  // default: "Wire Consumable"
+  };
+
+  updatedAt: string;
+}
+
+
+export interface DrawingRevision {
+  id: string;
+  drawingNumber: string;      // contoh: "AB-DT-001"
+  title: string;              // contoh: "Floor Plate Assembly - Ultima 793"
+  revision: string;           // contoh: "A", "B", "C1", "Rev.2"
+  projectId?: string;         // link ke project (opsional)
+  projectName?: string;       // denormalized untuk display
+  discipline: 'structural' | 'mechanical' | 'welding' | 'assembly' | 'general';
+  status: 'active' | 'superseded' | 'void';
+  uploadedBy: string;         // userId
+  uploadedByName: string;     // display name
+  uploadedAt: string;         // ISO timestamp
+  notes?: string;             // catatan revisi (apa yang berubah)
+  fileUrl?: string;           // URL Firebase Storage (opsional — lihat note)
+  fileName?: string;          // nama file asli
+  supersededBy?: string;      // id DrawingRevision yang menggantikan ini
+}
+
+export interface BomItem {
+  id: string;
+  partNumber: string;        // contoh: "AB-FP-001"
+  description: string;       // contoh: "Floor Plate Main"
+  material: string;          // contoh: "Bisalloy 400", "Hardox 450", "MS Plate"
+  quantity: number;
+  unit: 'pcs' | 'kg' | 'm' | 'm2' | 'set';
+  dimensions?: string;       // contoh: "6000×2000×12mm" (free text)
+  weightPerUnit?: number;    // kg per pcs/unit
+  totalWeight?: number;      // kalkulasi otomatis: weightPerUnit × quantity
+  drawingRef?: string;       // referensi nomor drawing (linked ke DrawingRevision)
+  category: 'plate' | 'structural' | 'hardware' | 'welding_consumable' | 'paint' | 'other';
+  notes?: string;
+}
+
+export interface BomTemplate {
+  id: string;
+  name: string;              // contoh: "Austin Ultima — Komatsu 930E"
+  model: string;             // contoh: "Ultima", "HPT", "JEC"
+  truckModel?: string;       // contoh: "Komatsu 930E", "CAT 793"
+  version: string;           // contoh: "v1", "v2.1"
+  status: 'active' | 'draft' | 'archived';
+  gaNumber?: string;         // GA Number order/unit yang pakai BOM ini
+  items: BomItem[];          // nested array dalam dokumen Firestore
+  totalEstWeight?: number;   // sum semua totalWeight item (auto-calc)
+  createdBy: string;
+  createdByName: string;
+  createdAt: string;
+  updatedAt: string;
+  notes?: string;
+}
+
+export const INDUSTRY_TEMPLATES: Record<string, Omit<OrgSettings, 'id' | 'updatedAt'>> = {
+  fabrication: {
+    industryTemplate: 'fabrication',
+    processingStages: [
+      { key: 'nesting', label: 'Nesting', color: 'var(--green)', order: 1 },
+      { key: 'cnc', label: 'CNC', color: 'var(--accent)', order: 2 },
+      { key: 'bending', label: 'Bending', color: 'var(--blue)', order: 3 },
+      { key: 'machining', label: 'Machining', color: '#8b5cf6', order: 4 },
+    ],
+    tradePositions: [
+      { key: 'welder', label: 'Welder', color: 'var(--accent)' },
+      { key: 'fitter', label: 'Fitter', color: '#2c6eb3' },
+      { key: 'grinder', label: 'Grinder', color: 'var(--green)' },
+      { key: 'supervisor', label: 'Supervisor', color: '#8b5cf6' },
+    ],
+    inspectionTypes: ['Fit-up', 'Welding Visual', 'Dimensional Check', 'NDT',
+                       'Painting / Blasting', 'Final Inspection', 'FAT', 'Other'],
+    projectCategories: ['Tray', 'Non-Tray'],
+    projectLocations: ['Workshop 1', 'Workshop 2'],
+    issueCategories: ['Facility Issue', 'Drawing Issue', 'Safety Issue',
+                       'Material Issue', 'Equipment Issue', 'Other'],
+    terminology: {
+      gaNumberLabel: 'GA Number',
+      materialProcessingLabel: 'Material Processing',
+      wireConsumableLabel: 'Wire Consumable',
+    },
+  },
+
+  construction: {
+    industryTemplate: 'construction',
+    processingStages: [
+      { key: 'foundation', label: 'Foundation', color: 'var(--green)', order: 1 },
+      { key: 'structure', label: 'Structure', color: 'var(--accent)', order: 2 },
+      { key: 'mep', label: 'MEP', color: 'var(--blue)', order: 3 },
+      { key: 'finishing', label: 'Finishing', color: '#8b5cf6', order: 4 },
+    ],
+    tradePositions: [
+      { key: 'mason', label: 'Mason', color: 'var(--accent)' },
+      { key: 'carpenter', label: 'Carpenter', color: '#2c6eb3' },
+      { key: 'electrician', label: 'Electrician', color: 'var(--green)' },
+      { key: 'plumber', label: 'Plumber', color: '#8b5cf6' },
+      { key: 'supervisor', label: 'Supervisor', color: '#f59e0b' },
+    ],
+    inspectionTypes: ['Structural Inspection', 'MEP Inspection', 'Fire Safety Check',
+                       'Waterproofing Check', 'Final Inspection', 'Occupancy Certificate', 'Other'],
+    projectCategories: ['Residential', 'Commercial', 'Infrastructure'],
+    projectLocations: ['Site A', 'Site B'],
+    issueCategories: ['Structural Issue', 'Drawing Issue', 'Safety Issue',
+                       'Material Issue', 'Equipment Issue', 'Permit Issue', 'Other'],
+    terminology: {
+      gaNumberLabel: 'Design Reference',
+      materialProcessingLabel: 'Work Stages',
+      wireConsumableLabel: 'Consumables',
+    },
+  },
+
+  it: {
+    industryTemplate: 'it',
+    processingStages: [
+      { key: 'design', label: 'Design', color: 'var(--green)', order: 1 },
+      { key: 'development', label: 'Development', color: 'var(--accent)', order: 2 },
+      { key: 'testing', label: 'Testing', color: 'var(--blue)', order: 3 },
+      { key: 'deployment', label: 'Deployment', color: '#8b5cf6', order: 4 },
+    ],
+    tradePositions: [
+      { key: 'frontend', label: 'Frontend Dev', color: 'var(--accent)' },
+      { key: 'backend', label: 'Backend Dev', color: '#2c6eb3' },
+      { key: 'qa', label: 'QA Engineer', color: 'var(--green)' },
+      { key: 'designer', label: 'Designer', color: '#8b5cf6' },
+    ],
+    inspectionTypes: ['Code Review', 'QA Testing', 'UAT', 'Security Review',
+                       'Performance Review', 'Final Sign-off', 'Other'],
+    projectCategories: ['Web', 'Mobile', 'Backend'],
+    projectLocations: ['Remote', 'Office'],
+    issueCategories: ['Bug', 'Feature Request', 'Technical Debt',
+                       'Infrastructure Issue', 'Other'],
+    terminology: {
+      gaNumberLabel: 'Design Reference',
+      materialProcessingLabel: 'Work Stages',
+      wireConsumableLabel: 'Resources',
+    },
+  },
+
+  general: {
+    industryTemplate: 'general',
+    processingStages: [
+      { key: 'planning', label: 'Planning', color: 'var(--green)', order: 1 },
+      { key: 'execution', label: 'Execution', color: 'var(--accent)', order: 2 },
+      { key: 'review', label: 'Review', color: 'var(--blue)', order: 3 },
+    ],
+    tradePositions: [
+      { key: 'team-member', label: 'Team Member', color: 'var(--accent)' },
+      { key: 'supervisor', label: 'Supervisor', color: '#8b5cf6' },
+    ],
+    inspectionTypes: ['Quality Check', 'Final Review', 'Other'],
+    projectCategories: ['Type A', 'Type B'],
+    projectLocations: ['Location A', 'Location B'],
+    issueCategories: ['General Issue', 'Resource Issue', 'Other'],
+    terminology: {
+      gaNumberLabel: 'Design Reference',
+      materialProcessingLabel: 'Work Stages',
+      wireConsumableLabel: 'Consumables',
+    },
+  },
+};
 

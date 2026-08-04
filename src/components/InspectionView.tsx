@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Project, InspectionRequest, UserRoleType, User } from '../types';
+import { Project, InspectionRequest, UserRoleType, User, OrgSettings } from '../types';
 import { can } from '../utils/permissions';
 import { 
   ClipboardCheck, 
@@ -33,6 +33,7 @@ interface InspectionViewProps {
     punchList?: string
   ) => void;
   onDeleteInspection?: (id: string) => void;
+  orgSettings?: OrgSettings;
 }
 
 export default function InspectionView({
@@ -41,8 +42,32 @@ export default function InspectionView({
   currentUser,
   onAddInspection,
   onUpdateInspectionStatus,
-  onDeleteInspection
+  onDeleteInspection,
+  orgSettings
 }: InspectionViewProps) {
+  const inspectionTypeList = React.useMemo(() => {
+    if (orgSettings?.inspectionTypes && orgSettings.inspectionTypes.length > 0) {
+      return orgSettings.inspectionTypes.map((item: any, idx: number) => {
+        if (typeof item === 'string') {
+          return { key: item + '-' + idx, label: item };
+        }
+        return {
+          key: (item.key || item.label || String(item)) + '-' + idx,
+          label: item.label || item.key || String(item)
+        };
+      });
+    }
+    return [
+      { key: 'Fit-up', label: 'Fit-up check' },
+      { key: 'Welding Visual', label: 'Welding Visual inspection' },
+      { key: 'Dimensional Check', label: 'Dimensional Check' },
+      { key: 'NDT', label: 'Non-Destructive Testing (NDT)' },
+      { key: 'Painting / Blasting', label: 'Painting & Blasting coating' },
+      { key: 'Final Inspection', label: 'Final visual inspection' },
+      { key: 'FAT', label: 'Factory Acceptance Test (FAT)' },
+      { key: 'Other', label: 'Other special parameters' },
+    ];
+  }, [orgSettings]);
   // Query filters state
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedProjectFilter, setSelectedProjectFilter] = useState('');
@@ -244,7 +269,7 @@ export default function InspectionView({
       </div>
 
       {/* Numerical Metrics Summary Widget */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="bg-base-surface border border-base-border rounded-xl p-4 flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-base-surface3 border border-base-border flex items-center justify-center text-base-text">
             <FileText className="w-5 h-5" />
@@ -327,14 +352,9 @@ export default function InspectionView({
             className="px-3 py-1.5 bg-base-bg border border-base-border rounded-lg outline-none text-xs font-medium text-base-text cursor-pointer"
           >
             <option value="">All Inspection Types</option>
-            <option value="Fit-up">Fit-up check</option>
-            <option value="Welding Visual">Welding Visual inspection</option>
-            <option value="Dimensional Check">Dimensional Check</option>
-            <option value="NDT">Non-Destructive Testing (NDT)</option>
-            <option value="Painting / Blasting">Painting & Blasting coating</option>
-            <option value="Final Inspection">Final visual inspection</option>
-            <option value="FAT">Factory Acceptance Test (FAT)</option>
-            <option value="Other">Other special parameters</option>
+            {inspectionTypeList.map(it => (
+              <option key={it.key} value={it.key}>{it.label}</option>
+            ))}
           </select>
 
           {/* Status selection */}
@@ -591,7 +611,7 @@ export default function InspectionView({
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {/* Inspection Category */}
                 <div className="space-y-1">
                   <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2 block">
@@ -602,14 +622,9 @@ export default function InspectionView({
                     onChange={e => setFormType(e.target.value as any)}
                     className="w-full px-3 py-1.5 bg-base-bg border border-base-border rounded-lg text-xs outline-none font-medium text-base-text"
                   >
-                    <option value="Fit-up">Fit-up</option>
-                    <option value="Welding Visual">Welding Visual</option>
-                    <option value="Dimensional Check">Dimensional Check</option>
-                    <option value="NDT">Non-Destructive Test (NDT)</option>
-                    <option value="Painting / Blasting">Painting & Coating</option>
-                    <option value="Final Inspection">Final visual</option>
-                    <option value="FAT">Factory Acceptance (FAT)</option>
-                    <option value="Other">Other customized check</option>
+                    {inspectionTypeList.map(it => (
+                      <option key={it.key} value={it.key}>{it.label}</option>
+                    ))}
                   </select>
                 </div>
 
@@ -719,7 +734,7 @@ export default function InspectionView({
               </div>
 
               {/* Meta information grid */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs border-b border-base-border/30 pb-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-y-4 gap-x-6 text-xs border-b border-base-border/30 pb-5">
                 <div>
                   <span className="text-[10px] font-condensed font-bold uppercase text-base-muted tracking-wider block">Project Name</span>
                   <span className="font-bold text-base-text block mt-1">{selectedRfi.projectName}</span>
@@ -776,7 +791,7 @@ export default function InspectionView({
                       <p className="text-base-text font-medium mt-1 font-sans">{selectedRfi.comments || 'No evaluation remarks saved.'}</p>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4 pt-2 border-t border-emerald-500/10 text-[10px] text-base-muted">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-emerald-500/10 text-[10px] text-base-muted">
                       <div>Signed by: <b className="text-base-text font-sans font-bold">{selectedRfi.inspectedBy || selectedRfi.assignedInspector}</b></div>
                       <div className="text-right">Inspection Date: <b className="text-base-text font-mono">{selectedRfi.inspectedDate}</b></div>
                     </div>
@@ -807,7 +822,7 @@ export default function InspectionView({
                       </div>
                     )}
 
-                    <div className="grid grid-cols-2 gap-4 pt-1 text-[10px] text-base-muted border-t border-[#9b1c2e]/10">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1 text-[10px] text-base-muted border-t border-[#9b1c2e]/10">
                       <div>Rejected by: <b className="text-base-text">{selectedRfi.inspectedBy || selectedRfi.assignedInspector}</b></div>
                       <div className="text-right">Failed Date: <b className="text-base-text font-mono">{selectedRfi.inspectedDate}</b></div>
                     </div>

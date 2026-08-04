@@ -9,7 +9,8 @@ import {
   ProcessingStatus,
   PROCESSING_STAGES,
   MasterDataEntry,
-  Assembly
+  Assembly,
+  OrgSettings
 } from '../types';
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import { ProjectSearchSelector } from './ProjectSearchSelector';
@@ -47,6 +48,11 @@ interface MaterialProcessingViewProps {
   onEnsureMasterData: (category: 'material' | 'partNo' | 'client' | 'subAssembly', value: string, gaNumber?: string) => Promise<void>;
   onCopyStructure: (targetProjectId: string, newAssemblies: Assembly[]) => Promise<void>;
   initialProjectId?: string;
+  orgSettings?: OrgSettings;
+  prefs?: {
+    matProcessingViewMode?: string;
+  };
+  onSetPref?: (key: string, value: any) => void;
 }
 
 const normalizeMonth = (m: string | undefined): string => {
@@ -115,8 +121,36 @@ export default function MaterialProcessingView({
   masterDataEntries = [],
   onEnsureMasterData,
   onCopyStructure,
-  initialProjectId
+  initialProjectId,
+  orgSettings,
+  prefs,
+  onSetPref
 }: MaterialProcessingViewProps) {
+  const configuredStages = useMemo(() => {
+    if (orgSettings?.processingStages && orgSettings.processingStages.length > 0) {
+      return orgSettings.processingStages;
+    }
+    return [
+      { key: 'nesting', label: 'Nesting', color: 'var(--green)', order: 1 },
+      { key: 'cnc', label: 'CNC', color: 'var(--accent)', order: 2 },
+      { key: 'bending', label: 'Bending', color: 'var(--blue)', order: 3 },
+      { key: 'machining', label: 'Machining', color: '#8b5cf6', order: 4 },
+    ];
+  }, [orgSettings]);
+
+  const stageKeys = useMemo(() => configuredStages.map(s => s.key), [configuredStages]);
+
+  const getStageDisplay = (key: string) => {
+    const found = configuredStages.find(s => s.key === key);
+    if (found) return { key, label: found.label, color: found.color, icon: '⚙️' };
+    const fallback = PROCESSING_STAGES[key as keyof typeof PROCESSING_STAGES];
+    if (fallback) return { key, label: fallback.label, color: fallback.color, icon: fallback.icon };
+    return { key, label: key.toUpperCase(), color: 'var(--muted)', icon: '📋' };
+  };
+
+  const gaNumberLabel = orgSettings?.terminology?.gaNumberLabel || 'GA Number';
+  const pageTitleLabel = orgSettings?.terminology?.materialProcessingLabel || 'Material Processing';
+
   // Add Form cutting list states
   const [formLengthMm, setFormLengthMm] = useState('');
   const [formWidthMm, setFormWidthMm] = useState('');
@@ -145,9 +179,24 @@ export default function MaterialProcessingView({
   }, [projects]);
   // View mode for grouped cards vs spreadsheet table
   const [viewMode, setViewMode] = useState<'card' | 'table'>(() => {
+    if (prefs?.matProcessingViewMode === 'card' || prefs?.matProcessingViewMode === 'table') {
+      return prefs.matProcessingViewMode;
+    }
     const saved = localStorage.getItem('matProcessingViewMode');
     return (saved === 'card' || saved === 'table') ? saved : 'table';
   });
+
+  const handleSetViewMode = (mode: 'card' | 'table') => {
+    setViewMode(mode);
+    if (onSetPref) onSetPref('matProcessingViewMode', mode);
+    else localStorage.setItem('matProcessingViewMode', mode);
+  };
+
+  React.useEffect(() => {
+    if (prefs?.matProcessingViewMode === 'card' || prefs?.matProcessingViewMode === 'table') {
+      setViewMode(prefs.matProcessingViewMode);
+    }
+  }, [prefs?.matProcessingViewMode]);
 
   // Search & Filters state
   const [searchQuery, setSearchQuery] = useState('');
@@ -691,9 +740,10 @@ export default function MaterialProcessingView({
         items.reduce((s, m) => s + m.overallPct, 0) / items.length
       );
 
-      // Compute mini 4 stage averages
-      const stageAverages = { nesting: 0, cnc: 0, bending: 0, machining: 0 };
-      (['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).forEach(stage => {
+      // Compute stage averages dynamically
+      const stageAverages: Record<string, number> = {};
+      stageKeys.forEach(stage => {
+        stageAverages[stage] = 0;
         const stageItems = items.filter(mp => mp.activeStages.includes(stage));
         const sum = stageItems.reduce((s, m) => s + (m.stages[stage]?.pct ?? 0), 0);
         stageAverages[stage] = stageItems.length > 0 ? Math.round(sum / stageItems.length) : 0;
@@ -760,7 +810,7 @@ export default function MaterialProcessingView({
 
       <>
           {/* KPI GRID */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
         <div className="p-4 bg-base-surface border border-base-border rounded-xl flex items-center justify-between">
           <div>
@@ -939,15 +989,15 @@ export default function MaterialProcessingView({
                   <thead>
                     <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
                       <th className="py-2.5 px-3 min-w-[150px]">Project</th>
-                      <th className="py-2.5 px-3 min-w-[100px]">GA No</th>
+                      <th className="py-2.5 px-3 min-w-[100px]">{gaNumberLabel}</th>
                       <th className="py-2.5 px-3 min-w-[180px]">Material Name & Part No</th>
                       <th className="py-2.5 px-2 text-center w-20">Length (mm)</th>
                       <th className="py-2.5 px-2 text-center w-20">Width (mm)</th>
                       <th className="py-2.5 px-2 text-center w-20">Grade</th>
                       <th className="py-2.5 px-2 text-center w-20">Mass (Kg/part)</th>
                       <th className="py-2.5 px-3 text-center w-24">Qty</th>
-                      {['nesting', 'cnc', 'bending', 'machining'].map(stageKey => {
-                        const st = PROCESSING_STAGES[stageKey as ProcessingStageKey];
+                      {stageKeys.map(stageKey => {
+                        const st = getStageDisplay(stageKey);
                         return (
                           <th key={stageKey} className="py-2.5 px-3 text-center w-28">
                             <div className="flex items-center justify-center gap-1">
@@ -1023,7 +1073,7 @@ export default function MaterialProcessingView({
                             </td>
 
                             {/* Stage Columns */}
-                            {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(stageKey => {
+                            {stageKeys.map(stageKey => {
                               const isApp = mp.activeStages.includes(stageKey);
                               const sd = mp.stages[stageKey];
                               if (!isApp) {
@@ -1377,30 +1427,28 @@ export default function MaterialProcessingView({
                     Active Shop-Floor Stages *
                   </label>
                   <div className="grid grid-cols-2 gap-3 bg-base-surface2 p-3 rounded-lg border border-base-border">
-                    {(['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]).map(
-                      key => {
-                        const info = PROCESSING_STAGES[key];
-                        const isChecked = formActiveStages.includes(key);
+                    {stageKeys.map(key => {
+                      const info = getStageDisplay(key);
+                      const isChecked = formActiveStages.includes(key);
 
-                        return (
-                          <label
-                            key={key}
-                            className="flex items-center gap-2 text-sm text-base-text cursor-pointer select-none"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleStageToggle(key)}
-                              className="accent-base-accent h-4 w-4"
-                            />
-                            <span className="flex items-center gap-1">
-                              <span>{info.icon}</span>
-                              <span className="font-medium">{info.label}</span>
-                            </span>
-                          </label>
-                        );
-                      }
-                    )}
+                      return (
+                        <label
+                          key={key}
+                          className="flex items-center gap-2 text-sm text-base-text cursor-pointer select-none"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleStageToggle(key)}
+                            className="accent-base-accent h-4 w-4"
+                          />
+                          <span className="flex items-center gap-1">
+                            <span>{info.icon}</span>
+                            <span className="font-medium">{info.label}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -1433,8 +1481,8 @@ export default function MaterialProcessingView({
             {/* Header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-base-border bg-base-surface2">
               <h2 className="text-base font-bold font-sans text-base-text flex items-center gap-2">
-                <span>{PROCESSING_STAGES[updatingStageInfo.stageKey].icon}</span>
-                Update {PROCESSING_STAGES[updatingStageInfo.stageKey].label} Stage
+                <span>{getStageDisplay(updatingStageInfo.stageKey).icon}</span>
+                Update {getStageDisplay(updatingStageInfo.stageKey).label} Stage
               </h2>
               <button
                 onClick={() => setUpdatingStageInfo(null)}

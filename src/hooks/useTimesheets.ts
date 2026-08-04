@@ -84,7 +84,7 @@ export function useTimesheets(
   };
 
   const exportTimesheetExcel = () => {
-    alert('Spreadsheet compiled dynamically in component views!');
+    // Handled in DailyTimesheetTab component
   };
 
   return {

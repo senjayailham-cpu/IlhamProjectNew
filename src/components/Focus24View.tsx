@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ProblemReport, Project, Employee, UserRoleType } from '../types';
+import React, { useState, useMemo } from 'react';
+import { ProblemReport, Project, Employee, UserRoleType, OrgSettings } from '../types';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 
 interface Focus24ViewProps {
+  orgSettings?: OrgSettings;
   problemReports: ProblemReport[];
   projects: Project[];
   employees: Employee[];
@@ -83,6 +84,7 @@ const CATEGORY_STYLES = {
 };
 
 export default function Focus24View({
+  orgSettings,
   problemReports,
   projects,
   employees,
@@ -129,7 +131,21 @@ export default function Focus24View({
     onConfirm: () => {}
   });
 
-  // Prepopulate standard department options
+  // Dynamic Categories and Departments from orgSettings
+  const availableCategories = useMemo(() => {
+    if (orgSettings?.issueCategories && orgSettings.issueCategories.length > 0) {
+      return orgSettings.issueCategories;
+    }
+    return [
+      'Drawing Issue',
+      'Safety Issue',
+      'Facility Issue',
+      'Material Issue',
+      'Equipment Issue',
+      'Other'
+    ];
+  }, [orgSettings]);
+
   const standardDepartments = [
     'Project Control',
     'Production',
@@ -141,6 +157,13 @@ export default function Focus24View({
     'HSE',
     'Material Procces'
   ];
+
+  const availableDepartments = useMemo(() => {
+    if (orgSettings?.tradePositions && orgSettings.tradePositions.length > 0) {
+      return orgSettings.tradePositions.map(tp => tp.label);
+    }
+    return standardDepartments;
+  }, [orgSettings]);
 
   // Extract unique projects with issues for dropdown filter
   const projectsInIssues = Array.from(new Set(problemReports.map(r => r.projectId).filter(Boolean))) as string[];
@@ -277,7 +300,7 @@ export default function Focus24View({
       </div>
 
       {/* KPI Stats Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         
         {/* Total Active Open */}
         <div className="bg-base-surface border border-base-border p-4 rounded-xl shadow-card flex items-start justify-between">
@@ -352,12 +375,9 @@ export default function Focus24View({
               onChange={(e) => setFormCategory(e.target.value as any)}
               className="px-3 py-2 bg-base-surface2 text-base-text border border-base-border rounded-md text-xs font-semibold outline-none focus:border-[#9b1c2e] cursor-pointer"
             >
-              <option value="Drawing Issue">Drawing Issue</option>
-              <option value="Safety Issue">Safety Issue</option>
-              <option value="Facility Issue">Facility Issue</option>
-              <option value="Material Issue">Material Issue</option>
-              <option value="Equipment Issue">Equipment Issue</option>
-              <option value="Other">Other</option>
+              {availableCategories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
           </div>
 
@@ -372,7 +392,7 @@ export default function Focus24View({
               className="px-3 py-2 bg-base-surface2 text-base-text border border-base-border rounded-md text-xs font-semibold outline-none focus:border-[#9b1c2e] cursor-pointer"
             >
               <option value="">— Select Department —</option>
-              {standardDepartments.map((dept) => (
+              {availableDepartments.map((dept) => (
                 <option key={dept} value={dept}>{dept}</option>
               ))}
             </select>
@@ -555,12 +575,9 @@ export default function Focus24View({
               className="px-2.5 py-1 bg-base-surface2 border border-base-border text-[11px] rounded-lg font-bold text-base-text outline-none cursor-pointer"
             >
               <option value="All">All Categories</option>
-              <option value="Drawing Issue">Drawing Issues</option>
-              <option value="Safety Issue">Safety Concerns</option>
-              <option value="Facility Issue">Facility Glitches</option>
-              <option value="Material Issue">Material Shortages</option>
-              <option value="Equipment Issue">Equipment Breakdowns</option>
-              <option value="Other">Others</option>
+              {availableCategories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
             </select>
           </div>
 

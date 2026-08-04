@@ -42,8 +42,8 @@ export function useProjects(
   const [pStatus, setPStatus] = useState<'active' | 'pending' | 'completed' | 'on-hold'>('active');
   const [pStart, setPStart] = useState<string>('');
   const [pDue, setPDue] = useState<string>('');
-  const [pCat, setPCat] = useState<'tray' | 'nontray'>('tray');
-  const [pLoc, setPLoc] = useState<'workshop1' | 'workshop2'>('workshop1');
+  const [pCat, setPCat] = useState<string>('tray');
+  const [pLoc, setPLoc] = useState<string>('workshop1');
   const [pNotes, setPNotes] = useState<string>('');
   const [pBudgetHours, setPBudgetHours] = useState<string>('');
   const [pTargetMonth, setPTargetMonth] = useState<string>('');

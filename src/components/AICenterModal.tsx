@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { getAuth } from 'firebase/auth';
 import { Project, Employee, MaterialItem, MaterialRequest, ProblemReport, InspectionRequest, TimesheetEntry } from '../types';
 import { calcPct } from '../utils/projectUtils';
 import { 
@@ -381,9 +382,14 @@ export default function AICenterModal({
         pendingInspections: inspections.filter(i => i.status === 'Requested').length,
       };
 
+      const idToken = await getAuth().currentUser?.getIdToken();
+
       const res = await fetch("/api/gemini/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken || ''}`
+        },
         body: JSON.stringify({ prompt: userMsg, context }),
       });
 

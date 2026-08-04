@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Project, Assembly, Task, Dependency, User, WorkflowStatusType } from '../types';
+import { Project, Assembly, Task, Dependency, User, WorkflowStatusType, OrgSettings } from '../types';
 import { can } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 
@@ -107,7 +107,16 @@ import {
   Plus,
   X,
   Trash2,
-  Link
+  Link,
+  Users,
+  User as UserIcon,
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Filter,
+  BarChart3,
+  Sparkles,
+  Flame
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -343,6 +352,13 @@ interface GanttViewProps {
   onSaveDependencies?: (targetKey: string, preds: Dependency[], succs: Dependency[]) => void;
   onCloseDepModal?: () => void;
   currentUser?: User | null;
+  orgSettings?: OrgSettings;
+  prefs?: {
+    ganttShowSCurve?: boolean;
+    ganttAutoSchedule?: boolean;
+    ganttShowResourceLoad?: boolean;
+  };
+  onSetPref?: (key: string, value: any) => void;
 }
 
 interface GanttRow {
@@ -367,7 +383,7 @@ interface GanttRow {
 
 interface DragState {
   rowId: string;
-  type: 'move' | 'resize';
+  type: 'move' | 'resize' | 'resize-left';
   initialX: number;
   initialStart: string;
   initialFinish: string;
@@ -451,8 +467,8 @@ const calculateCriticalPath = (project: Project): { criticalIds: Set<string>; fl
   project.assemblies?.forEach(asm => {
     asm.tasks?.forEach(t => {
       // Parse task dates
-      const tStart = t.date || asm.start || project.start;
-      let tFinish = t.finishDate || tStart;
+      const tStart = t.date || asm.start || project.start || '';
+      let tFinish = t.finishDate || tStart || '';
       if (new Date(tFinish) < new Date(tStart)) {
         tFinish = tStart;
       }
@@ -616,8 +632,8 @@ const cascadeSchedule = (
 
   cloned.assemblies?.forEach(asm => {
     asm.tasks?.forEach(t => {
-      const tStart = t.date || asm.start || cloned.start;
-      let tFinish = t.finishDate || tStart;
+      const tStart = t.date || asm.start || cloned.start || '';
+      let tFinish = t.finishDate || tStart || '';
       if (new Date(tFinish) < new Date(tStart)) {
         tFinish = tStart;
       }
@@ -742,6 +758,8 @@ const cascadeSchedule = (
         S.finishDate = addDaysToLocalDate(S.finishDate, shiftDays);
         S.taskRef.date = S.date;
         S.taskRef.finishDate = S.finishDate;
+        S.taskRef.startDate = S.date;
+        S.taskRef.endDate = S.finishDate;
 
         if (S.id !== draggedOrEditedId) {
           shiftedIds.add(S.id);
@@ -758,8 +776,8 @@ const cascadeSchedule = (
     let maxFinish: Date | null = null;
 
     asm.tasks.forEach(t => {
-      const tStartStr = t.date || asm.start || cloned.start;
-      const tFinishStr = t.finishDate || tStartStr;
+      const tStartStr = t.date || asm.start || cloned.start || '';
+      const tFinishStr = t.finishDate || tStartStr || '';
 
       const tStartD = parseLocalDate(tStartStr);
       const tFinishD = parseLocalDate(tFinishStr);
@@ -794,9 +812,12 @@ export default function GanttView({
   setDepModalOpen,
   onSaveDependencies,
   onCloseDepModal,
-  currentUser
+  currentUser,
+  orgSettings,
+  prefs,
+  onSetPref
 }: GanttViewProps) {
-  const allowedToEdit = can(currentUser, 'editGanttSchedule');
+  const allowedToEdit = can(currentUser ?? null, 'editGanttSchedule');
   const onUpdateProject = allowedToEdit ? onUpdateProjectRaw : undefined;
 
   const projectsList = useMemo(() => {
@@ -867,25 +888,105 @@ export default function GanttView({
   const [showProgress, setShowProgress] = useState<boolean>(true);
   const [showCriticalPath, setShowCriticalPath] = useState<boolean>(false);
   const [showSCurve, setShowSCurve] = useState<boolean>(() =>
-    localStorage.getItem('gantt_showSCurve') === 'true'
+    prefs?.ganttShowSCurve ?? (localStorage.getItem('gantt_showSCurve') === 'true')
   );
   const [cascadedTaskIds, setCascadedTaskIds] = useState<Set<string>>(new Set());
 
   // AUTO-SCHEDULE FEATURE
   const [autoSchedule, setAutoSchedule] = useState<boolean>(() => {
+    if (prefs?.ganttAutoSchedule !== undefined) return prefs.ganttAutoSchedule;
     const saved = localStorage.getItem('gantt_autoSchedule');
     return saved !== null ? saved === 'true' : true; // default ON
   });
 
-  // Save to localStorage on change
-  useEffect(() => {
-    localStorage.setItem('gantt_autoSchedule', String(autoSchedule));
-  }, [autoSchedule]);
+  // Save to prefs / localStorage on change
+  const handleSetAutoSchedule = (val: boolean) => {
+    setAutoSchedule(val);
+    if (onSetPref) onSetPref('ganttAutoSchedule', val);
+    else localStorage.setItem('gantt_autoSchedule', String(val));
+  };
 
-  // ── S-CURVE FEATURE PERSISTENCE ──
+  const handleSetShowSCurve = (val: boolean) => {
+    setShowSCurve(val);
+    if (onSetPref) onSetPref('ganttShowSCurve', val);
+    else localStorage.setItem('gantt_showSCurve', String(val));
+  };
+
   useEffect(() => {
-    localStorage.setItem('gantt_showSCurve', String(showSCurve));
-  }, [showSCurve]);
+    if (prefs?.ganttAutoSchedule !== undefined) {
+      setAutoSchedule(prefs.ganttAutoSchedule);
+    }
+  }, [prefs?.ganttAutoSchedule]);
+
+  useEffect(() => {
+    if (prefs?.ganttShowSCurve !== undefined) {
+      setShowSCurve(prefs.ganttShowSCurve);
+    }
+  }, [prefs?.ganttShowSCurve]);
+
+  // ── RESOURCE LOAD VIEW STATES ──
+  const [showResourceLoad, setShowResourceLoad] = useState<boolean>(() => {
+    if (prefs?.ganttShowResourceLoad !== undefined) return prefs.ganttShowResourceLoad;
+    const saved = localStorage.getItem('gantt_showResourceLoad');
+    return saved !== null ? saved === 'true' : true;
+  });
+
+  const handleSetShowResourceLoad = (val: boolean) => {
+    setShowResourceLoad(val);
+    if (onSetPref) onSetPref('ganttShowResourceLoad', val);
+    else localStorage.setItem('gantt_showResourceLoad', String(val));
+  };
+
+  useEffect(() => {
+    if (prefs?.ganttShowResourceLoad !== undefined) {
+      setShowResourceLoad(prefs.ganttShowResourceLoad);
+    }
+  }, [prefs?.ganttShowResourceLoad]);
+  const [resourceFilter, setResourceFilter] = useState<'all' | 'conflicts'>('all');
+  const [resourceSearch, setResourceSearch] = useState<string>('');
+  const [dailyCapacityLimit, setDailyCapacityLimit] = useState<number>(8);
+  const [expandedResources, setExpandedResources] = useState<Set<string>>(new Set());
+  const [hoveredResourceCell, setHoveredResourceCell] = useState<{
+    employeeName: string;
+    dayIdx: number;
+    dateStr: string;
+    totalHours: number;
+    tasks: Array<{ taskId: string; taskName: string; wbs: string; project: string; hours: number }>;
+    x: number;
+    y: number;
+  } | null>(null);
+
+  useEffect(() => {
+    localStorage.setItem('gantt_showResourceLoad', String(showResourceLoad));
+  }, [showResourceLoad]);
+
+  // ── SMART SCHEDULE ENGINE ──
+  const handleSmartSchedule = () => {
+    if (!onUpdateProject || projectsList.length === 0) return;
+
+    let totalShiftedCount = 0;
+    const allShiftedIds = new Set<string>();
+
+    projectsList.forEach(proj => {
+      const { updatedProject, shiftedIds } = cascadeSchedule(proj);
+      if (shiftedIds.size > 0) {
+        shiftedIds.forEach(id => allShiftedIds.add(id));
+        totalShiftedCount += shiftedIds.size;
+        onUpdateProject(updatedProject);
+      }
+    });
+
+    if (totalShiftedCount > 0) {
+      setCascadedTaskIds(allShiftedIds);
+      setToastMsg(`Smart Schedule: Automatically shifted ${totalShiftedCount} dependent task(s) to eliminate overlap conflicts.`);
+    } else {
+      setToastMsg(`Smart Schedule: All task dependencies are already properly aligned with no overlaps.`);
+    }
+
+    setTimeout(() => {
+      setToastMsg(null);
+    }, 4000);
+  };
 
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -1097,6 +1198,8 @@ export default function GanttView({
   // Draw-to-Connect Interaction States
   const [connectMode, setConnectMode] = useState<boolean>(false);
   const [dragHoverTargetRowId, setDragHoverTargetRowId] = useState<string | null>(null);
+  const [hoveredArrowId, setHoveredArrowId] = useState<string | null>(null);
+  const [selectedArrowId, setSelectedArrowId] = useState<string | null>(null);
   const [connectDraw, setConnectDraw] = useState<{
     sourceRowId: string;
     sourceX: number;
@@ -1407,6 +1510,22 @@ export default function GanttView({
   // Generate full unfiltered list of Gantt rows (including WBS numbering)
   const allRows = useMemo(() => {
     const result: GanttRow[] = [];
+    const usedIds = new Set<string>();
+
+    const getUniqueRowId = (baseId: string) => {
+      if (!baseId) baseId = 'row';
+      if (!usedIds.has(baseId)) {
+        usedIds.add(baseId);
+        return baseId;
+      }
+      let counter = 1;
+      while (usedIds.has(`${baseId}_${counter}`)) {
+        counter++;
+      }
+      const uniqueId = `${baseId}_${counter}`;
+      usedIds.add(uniqueId);
+      return uniqueId;
+    };
 
     projectsList.forEach((p, pIdx) => {
       // 1. Project level summary row
@@ -1452,7 +1571,7 @@ export default function GanttView({
       const projectWbs = `${pIdx + 1}`;
 
       result.push({
-        id: p.id,
+        id: getUniqueRowId(p.id),
         type: 'project',
         name: p.name,
         level: 0,
@@ -1504,7 +1623,7 @@ export default function GanttView({
         const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
 
         result.push({
-          id: asm.id,
+          id: getUniqueRowId(asm.id),
           type: 'assembly',
           name: asm.name,
           level: 1,
@@ -1533,7 +1652,7 @@ export default function GanttView({
             const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
 
             result.push({
-              id: t.id,
+              id: getUniqueRowId(t.id),
               type: 'task',
               name: t.name,
               level: 2,
@@ -1640,20 +1759,148 @@ export default function GanttView({
     return filteredRows;
   }, [allRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
 
-  // Global window mouse movement and release listener for Draw-to-Connect
+  // ── HARD DEPENDENCY CONSTRAINT VIOLATION CALCULATOR ──
+  const dependencyViolationsMap = useMemo(() => {
+    const map = new Map<string, Array<{
+      predId: string;
+      predWbs: string;
+      predName: string;
+      predFinish: string;
+      predStart: string;
+      depType: string;
+      lag?: number;
+      requiredMinDateStr: string;
+      actualDateStr: string;
+      reason: string;
+    }>>();
+
+    const rowLookup = new Map<string, GanttRow>();
+    allRows.forEach(r => {
+      if (r.id) rowLookup.set(r.id, r);
+    });
+
+    allRows.forEach(row => {
+      if (row.level !== 2 || !row.predecessors || row.predecessors.length === 0 || !row.start || !row.finish) {
+        return;
+      }
+
+      const conflicts: Array<{
+        predId: string;
+        predWbs: string;
+        predName: string;
+        predFinish: string;
+        predStart: string;
+        depType: string;
+        lag?: number;
+        requiredMinDateStr: string;
+        actualDateStr: string;
+        reason: string;
+      }> = [];
+
+      row.predecessors.forEach(dep => {
+        const pred = rowLookup.get(dep.key);
+        if (!pred || !pred.start || !pred.finish) return;
+
+        const lag = dep.lag || 0;
+        const type = dep.type || 'FS';
+
+        if (type === 'FS') {
+          // Finish-to-Start: target start must be on or after pred.finish + lag
+          const requiredStartStr = addDaysToLocalDate(pred.finish, lag);
+          if (row.start! < requiredStartStr) {
+            conflicts.push({
+              predId: pred.id,
+              predWbs: pred.wbs,
+              predName: pred.name,
+              predFinish: pred.finish,
+              predStart: pred.start,
+              depType: type,
+              lag,
+              requiredMinDateStr: requiredStartStr,
+              actualDateStr: row.start!,
+              reason: `Starts on ${row.start} before predecessor [WBS ${pred.wbs}] finishes on ${pred.finish}${lag ? ` (+${lag}d lag)` : ''}`
+            });
+          }
+        } else if (type === 'SS') {
+          // Start-to-Start: target start must be on or after pred.start + lag
+          const requiredStartStr = addDaysToLocalDate(pred.start, lag);
+          if (row.start! < requiredStartStr) {
+            conflicts.push({
+              predId: pred.id,
+              predWbs: pred.wbs,
+              predName: pred.name,
+              predFinish: pred.finish,
+              predStart: pred.start,
+              depType: type,
+              lag,
+              requiredMinDateStr: requiredStartStr,
+              actualDateStr: row.start!,
+              reason: `Starts on ${row.start} before predecessor [WBS ${pred.wbs}] starts on ${pred.start}${lag ? ` (+${lag}d lag)` : ''}`
+            });
+          }
+        } else if (type === 'FF') {
+          // Finish-to-Finish: target finish must be on or after pred.finish + lag
+          const requiredFinishStr = addDaysToLocalDate(pred.finish, lag);
+          if (row.finish! < requiredFinishStr) {
+            conflicts.push({
+              predId: pred.id,
+              predWbs: pred.wbs,
+              predName: pred.name,
+              predFinish: pred.finish,
+              predStart: pred.start,
+              depType: type,
+              lag,
+              requiredMinDateStr: requiredFinishStr,
+              actualDateStr: row.finish!,
+              reason: `Finishes on ${row.finish} before predecessor [WBS ${pred.wbs}] finishes on ${pred.finish}${lag ? ` (+${lag}d lag)` : ''}`
+            });
+          }
+        } else if (type === 'SF') {
+          // Start-to-Finish: target finish must be on or after pred.start + lag
+          const requiredFinishStr = addDaysToLocalDate(pred.start, lag);
+          if (row.finish! < requiredFinishStr) {
+            conflicts.push({
+              predId: pred.id,
+              predWbs: pred.wbs,
+              predName: pred.name,
+              predFinish: pred.finish,
+              predStart: pred.start,
+              depType: type,
+              lag,
+              requiredMinDateStr: requiredFinishStr,
+              actualDateStr: row.finish!,
+              reason: `Finishes on ${row.finish} before predecessor [WBS ${pred.wbs}] starts on ${pred.start}${lag ? ` (+${lag}d lag)` : ''}`
+            });
+          }
+        }
+      });
+
+      if (conflicts.length > 0) {
+        map.set(row.id, conflicts);
+      }
+    });
+
+    return map;
+  }, [allRows]);
+
+  const totalDependencyConflictsCount = useMemo(() => {
+    return dependencyViolationsMap.size;
+  }, [dependencyViolationsMap]);
+
+  // Global window mouse/touch movement and release listener for Draw-to-Connect
   useEffect(() => {
     if (!connectDraw) {
       setDragHoverTargetRowId(null);
       return;
     }
 
-    const handleWindowMouseMove = (e: MouseEvent) => {
+    const updatePositionAndTarget = (clientX: number, clientY: number) => {
       const container = document.querySelector('.gantt-relative-container');
       if (!container) return;
       const rect = container.getBoundingClientRect();
       
-      const currentX = e.clientX - rect.left;
-      const currentY = e.clientY - rect.top - 56;
+      const currentX = clientX - rect.left;
+      const currentY = clientY - rect.top - 56;
 
       setConnectDraw(prev => prev ? {
         ...prev,
@@ -1675,18 +1922,28 @@ export default function GanttView({
       }
     };
 
-    const handleWindowMouseUp = (e: MouseEvent) => {
+    const handleWindowMouseMove = (e: MouseEvent) => {
+      updatePositionAndTarget(e.clientX, e.clientY);
+    };
+
+    const handleWindowTouchMove = (e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        updatePositionAndTarget(e.touches[0].clientX, e.touches[0].clientY);
+      }
+    };
+
+    const finishConnect = (clientX: number, clientY: number) => {
       const container = document.querySelector('.gantt-relative-container');
       if (container) {
         const rect = container.getBoundingClientRect();
-        const currentY = e.clientY - rect.top - 56;
+        const currentY = clientY - rect.top - 56;
         const targetRowIdx = Math.floor(currentY / 32);
 
         if (targetRowIdx >= 0 && targetRowIdx < rows.length) {
           const targetRow = rows[targetRowIdx];
           if (targetRow && targetRow.id !== connectDraw.sourceRowId) {
-            const popupX = Math.min(Math.max(160, e.clientX), window.innerWidth - 160);
-            const popupY = Math.min(Math.max(180, e.clientY), window.innerHeight - 80);
+            const popupX = Math.min(Math.max(160, clientX), window.innerWidth - 160);
+            const popupY = Math.min(Math.max(180, clientY), window.innerHeight - 80);
 
             setPendingConnect({
               sourceRowId: connectDraw.sourceRowId,
@@ -1703,12 +1960,29 @@ export default function GanttView({
       setDragHoverTargetRowId(null);
     };
 
+    const handleWindowMouseUp = (e: MouseEvent) => {
+      finishConnect(e.clientX, e.clientY);
+    };
+
+    const handleWindowTouchEnd = (e: TouchEvent) => {
+      if (e.changedTouches.length > 0) {
+        finishConnect(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      } else {
+        setConnectDraw(null);
+        setDragHoverTargetRowId(null);
+      }
+    };
+
     window.addEventListener('mousemove', handleWindowMouseMove);
     window.addEventListener('mouseup', handleWindowMouseUp);
+    window.addEventListener('touchmove', handleWindowTouchMove, { passive: true });
+    window.addEventListener('touchend', handleWindowTouchEnd);
 
     return () => {
       window.removeEventListener('mousemove', handleWindowMouseMove);
       window.removeEventListener('mouseup', handleWindowMouseUp);
+      window.removeEventListener('touchmove', handleWindowTouchMove);
+      window.removeEventListener('touchend', handleWindowTouchEnd);
     };
   }, [connectDraw, rows]);
 
@@ -1810,8 +2084,13 @@ export default function GanttView({
         for (const a of updated.assemblies || []) {
           const t = a.tasks?.find(t => t.id === rowId);
           if (t) {
-            if (field === 'start') t.date = newVal;
-            else t.finishDate = newVal;
+            if (field === 'start') {
+              t.date = newVal;
+              t.startDate = newVal;
+            } else {
+              t.finishDate = newVal;
+              t.endDate = newVal;
+            }
             break;
           }
         }
@@ -1899,6 +2178,19 @@ export default function GanttView({
       }
     }
     onUpdateProject(updated);
+  };
+
+  // Delete dependency link between targetRow and sourceRow directly from SVG line or node
+  const handleDeleteDependencyArrow = (targetRowId: string, sourceRowId: string) => {
+    const targetRow = rows.find(r => r.id === targetRowId);
+    if (!targetRow) return;
+    const currentDeps = targetRow.predecessors || [];
+    const nextDeps = currentDeps.filter(d => d.key !== sourceRowId);
+    savePredecessorsDirect(targetRow.id, nextDeps);
+
+    const srcRow = rows.find(r => r.id === sourceRowId);
+    setToastMsg(`Removed dependency link: ${srcRow?.wbs || 'Task'} → ${targetRow.wbs}`);
+    setTimeout(() => setToastMsg(null), 3000);
   };
 
   const handleAddPredecessor = (predId: string) => {
@@ -2305,6 +2597,137 @@ export default function GanttView({
     };
   }, [sCurveData, pixelsPerDay, totalTimelineDays]);
 
+  // Daily Resource Load & Man-Hours Calculation Engine
+  const resourceLoadData = useMemo(() => {
+    if (!showResourceLoad) return null;
+
+    // Filter level 2 task rows with valid start and finish dates
+    const taskRows = allRows.filter(r => r.level === 2 && r.type === 'task' && r.start && r.finish);
+
+    const employeeMap = new Map<string, {
+      name: string;
+      company: string;
+      dailyHours: Float32Array;
+      dailyTasks: Map<number, Array<{ taskId: string; taskName: string; wbs: string; project: string; hours: number }>>;
+      assignedTasks: Array<{ id: string; name: string; wbs: string; start: string; finish: string; company?: string }>;
+    }>();
+
+    taskRows.forEach(row => {
+      const rawAssigned = row.assigned && row.assigned.trim() !== '' ? row.assigned : 'Unassigned';
+      const assignees = rawAssigned
+        .split(/[,/&]+/)
+        .map(s => s.trim())
+        .filter(Boolean);
+
+      const startD = parseLocalDate(row.start!);
+      const finishD = parseLocalDate(row.finish!);
+      const startIdx = Math.max(0, daysBetween(timelineStart, startD));
+      const finishIdx = Math.min(totalTimelineDays, daysBetween(timelineStart, finishD));
+
+      // Standard allocation = 8 man-hours per day per assigned person
+      const dailyHoursPerPerson = 8;
+
+      assignees.forEach(empName => {
+        let empRecord = employeeMap.get(empName);
+        if (!empRecord) {
+          empRecord = {
+            name: empName,
+            company: row.assignedCompany || (empName === 'Unassigned' ? 'System' : 'Internal'),
+            dailyHours: new Float32Array(totalTimelineDays + 1).fill(0),
+            dailyTasks: new Map(),
+            assignedTasks: []
+          };
+          employeeMap.set(empName, empRecord);
+        }
+
+        if (!empRecord.assignedTasks.some(t => t.id === row.id)) {
+          empRecord.assignedTasks.push({
+            id: row.id,
+            name: row.name,
+            wbs: row.wbs,
+            start: row.start!,
+            finish: row.finish!,
+            company: row.assignedCompany
+          });
+        }
+
+        if (startIdx <= finishIdx) {
+          for (let d = startIdx; d <= finishIdx; d++) {
+            empRecord.dailyHours[d] += dailyHoursPerPerson;
+
+            if (!empRecord.dailyTasks.has(d)) {
+              empRecord.dailyTasks.set(d, []);
+            }
+            empRecord.dailyTasks.get(d)!.push({
+              taskId: row.id,
+              taskName: row.name,
+              wbs: row.wbs,
+              project: 'Task',
+              hours: dailyHoursPerPerson
+            });
+          }
+        }
+      });
+    });
+
+    const resourceList = Array.from(employeeMap.values()).map(emp => {
+      let totalHours = 0;
+      let conflictDaysCount = 0;
+      let maxDailyHours = 0;
+
+      for (let d = 0; d <= totalTimelineDays; d++) {
+        const h = emp.dailyHours[d];
+        totalHours += h;
+        if (h > maxDailyHours) maxDailyHours = h;
+        if (h > dailyCapacityLimit) {
+          conflictDaysCount++;
+        }
+      }
+
+      return {
+        ...emp,
+        totalHours,
+        conflictDaysCount,
+        maxDailyHours
+      };
+    });
+
+    // Sort resources: employees with conflicts first, then total hours, then alphabetically
+    resourceList.sort((a, b) => {
+      if (b.conflictDaysCount !== a.conflictDaysCount) {
+        return b.conflictDaysCount - a.conflictDaysCount;
+      }
+      if (b.totalHours !== a.totalHours) {
+        return b.totalHours - a.totalHours;
+      }
+      if (a.name === 'Unassigned') return 1;
+      if (b.name === 'Unassigned') return -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    const filteredList = resourceList.filter(emp => {
+      const q = resourceSearch.trim().toLowerCase();
+      const matchesSearch = q === '' ||
+        emp.name.toLowerCase().includes(q) ||
+        emp.company.toLowerCase().includes(q);
+
+      const matchesFilter = resourceFilter === 'all' || (resourceFilter === 'conflicts' && emp.conflictDaysCount > 0);
+
+      return matchesSearch && matchesFilter;
+    });
+
+    const totalResources = resourceList.length;
+    const totalOverloadedEmployees = resourceList.filter(r => r.conflictDaysCount > 0).length;
+    const totalConflictDaysOverall = resourceList.reduce((acc, r) => acc + r.conflictDaysCount, 0);
+
+    return {
+      resourceList: filteredList,
+      totalResources,
+      totalOverloadedEmployees,
+      totalConflictDaysOverall
+    };
+  }, [allRows, timelineStart, totalTimelineDays, dailyCapacityLimit, showResourceLoad, resourceFilter, resourceSearch]);
+
   const scrollToToday = () => {
     if (!rightScrollRef.current) return;
     if (!isTodayInTimeline) {
@@ -2370,7 +2793,7 @@ export default function GanttView({
 
 
   // Drag listeners handler
-  const handleBarMouseDown = (row: GanttRow, type: 'move' | 'resize', e: React.MouseEvent) => {
+  const handleBarMouseDown = (row: GanttRow, type: 'move' | 'resize' | 'resize-left', e: React.MouseEvent) => {
     if (!onUpdateProject || !row.start || !row.finish) return;
     e.preventDefault();
     setDragState({
@@ -2386,7 +2809,7 @@ export default function GanttView({
     });
   };
 
-  const handleBarTouchStart = (row: GanttRow, type: 'move' | 'resize', e: React.TouchEvent) => {
+  const handleBarTouchStart = (row: GanttRow, type: 'move' | 'resize' | 'resize-left', e: React.TouchEvent) => {
     if (!onUpdateProject || !row.start || !row.finish) return;
     
     setIsTouchDragging(true);
@@ -2426,6 +2849,12 @@ export default function GanttView({
           nextFinish = dragState.initialStart;
         }
         setDragState(prev => prev ? { ...prev, tempFinish: nextFinish } : null);
+      } else if (dragState.type === 'resize-left') {
+        let nextStart = addDaysToLocalDate(dragState.initialStart, deltaDays);
+        if (new Date(nextStart) > new Date(dragState.initialFinish)) {
+          nextStart = dragState.initialFinish;
+        }
+        setDragState(prev => prev ? { ...prev, tempStart: nextStart } : null);
       }
     };
 
@@ -2444,6 +2873,12 @@ export default function GanttView({
           nextFinish = dragState.initialStart;
         }
         setDragState(prev => prev ? { ...prev, tempFinish: nextFinish } : null);
+      } else if (dragState.type === 'resize-left') {
+        let nextStart = addDaysToLocalDate(dragState.initialStart, deltaDays);
+        if (new Date(nextStart) > new Date(dragState.initialFinish)) {
+          nextStart = dragState.initialFinish;
+        }
+        setDragState(prev => prev ? { ...prev, tempStart: nextStart } : null);
       }
       e.preventDefault();
     };
@@ -2463,12 +2898,46 @@ export default function GanttView({
             const targetProj = res.cloned;
 
             if (dragState.rowType === 'project') {
-              // Level 0 Project: Update project.start and project.due
-              onUpdateProject && onUpdateProject({
+              // Level 0 Project: Update project.start, project.due, and cascade deltaDays
+              const dStart = parseLocalDate(dragState.initialStart);
+              const dTempStart = parseLocalDate(dragState.tempStart);
+              const deltaDays = daysBetween(dStart, dTempStart);
+
+              const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
+                const updatedTasks = (asm.tasks || []).map(t => {
+                  const curStart = t.startDate || t.date;
+                  const curFinish = t.endDate || t.finishDate;
+                  const nextTaskStart = curStart ? addDaysToLocalDate(curStart, deltaDays) : curStart;
+                  const nextTaskFinish = curFinish ? addDaysToLocalDate(curFinish, deltaDays) : curFinish;
+                  return {
+                    ...t,
+                    date: nextTaskStart,
+                    finishDate: nextTaskFinish,
+                    startDate: nextTaskStart,
+                    endDate: nextTaskFinish
+                  };
+                });
+
+                return {
+                  ...asm,
+                  start: asm.start ? addDaysToLocalDate(asm.start, deltaDays) : asm.start,
+                  finish: asm.finish ? addDaysToLocalDate(asm.finish, deltaDays) : asm.finish,
+                  tasks: updatedTasks
+                };
+              });
+
+              const baseUpdated = {
                 ...targetProj,
                 start: dragState.tempStart,
-                due: dragState.tempFinish
-              });
+                due: dragState.tempFinish,
+                assemblies: updatedAssemblies
+              };
+
+              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+              if (shiftedIds.size > 0) {
+                setCascadedTaskIds(shiftedIds);
+              }
+              onUpdateProject && onUpdateProject(updatedProject);
             } else if (dragState.rowType === 'assembly') {
               // Level 1 Assembly: Update assembly start and finish and cascade deltaDays to child tasks
               const dStart = parseLocalDate(dragState.initialStart);
@@ -2479,12 +2948,16 @@ export default function GanttView({
                 if (asm.id !== dragState.rowId) return asm;
 
                 const updatedTasks = (asm.tasks || []).map(t => {
-                  const nextTaskStart = t.date ? addDaysToLocalDate(t.date, deltaDays) : t.date;
-                  const nextTaskFinish = t.finishDate ? addDaysToLocalDate(t.finishDate, deltaDays) : t.finishDate;
+                  const curStart = t.startDate || t.date;
+                  const curFinish = t.endDate || t.finishDate;
+                  const nextTaskStart = curStart ? addDaysToLocalDate(curStart, deltaDays) : curStart;
+                  const nextTaskFinish = curFinish ? addDaysToLocalDate(curFinish, deltaDays) : curFinish;
                   return {
                     ...t,
                     date: nextTaskStart,
-                    finishDate: nextTaskFinish
+                    finishDate: nextTaskFinish,
+                    startDate: nextTaskStart,
+                    endDate: nextTaskFinish
                   };
                 });
 
@@ -2500,18 +2973,14 @@ export default function GanttView({
                 ...targetProj,
                 assemblies: updatedAssemblies
               };
-              // AUTO-SCHEDULE FEATURE
-              if (autoSchedule) {
-                const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-                if (shiftedIds.size > 0) {
-                  setCascadedTaskIds(shiftedIds);
-                }
-                onUpdateProject && onUpdateProject(updatedProject);
-              } else {
-                onUpdateProject && onUpdateProject(baseUpdated);
+
+              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+              if (shiftedIds.size > 0) {
+                setCascadedTaskIds(shiftedIds);
               }
+              onUpdateProject && onUpdateProject(updatedProject);
             } else if (dragState.rowType === 'task') {
-              // Level 2 Task: Update the single task
+              // Level 2 Task: Update the single task startDate and endDate
               const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
                 if (asm.id !== dragState.parentAsmId) return asm;
                 return {
@@ -2521,7 +2990,9 @@ export default function GanttView({
                     return {
                       ...t,
                       date: dragState.tempStart,
-                      finishDate: dragState.tempFinish
+                      finishDate: dragState.tempFinish,
+                      startDate: dragState.tempStart,
+                      endDate: dragState.tempFinish
                     };
                   })
                 };
@@ -2531,16 +3002,12 @@ export default function GanttView({
                 ...targetProj,
                 assemblies: updatedAssemblies
               };
-              // AUTO-SCHEDULE FEATURE
-              if (autoSchedule) {
-                const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
-                if (shiftedIds.size > 0) {
-                  setCascadedTaskIds(shiftedIds);
-                }
-                onUpdateProject && onUpdateProject(updatedProject);
-              } else {
-                onUpdateProject && onUpdateProject(baseUpdated);
+
+              const { updatedProject, shiftedIds } = cascadeSchedule(baseUpdated, dragState.rowId);
+              if (shiftedIds.size > 0) {
+                setCascadedTaskIds(shiftedIds);
               }
+              onUpdateProject && onUpdateProject(updatedProject);
             }
           }
         }
@@ -2599,8 +3066,20 @@ export default function GanttView({
   const arrows = useMemo(() => {
     if (!showArrows) return [];
     const list: {
+      id: string;
+      sourceRowId: string;
+      targetRowId: string;
+      sourceWbs: string;
+      targetWbs: string;
+      sourceName: string;
+      targetName: string;
+      depType: string;
+      lag?: number;
       path: string;
+      midX: number;
+      midY: number;
       isCritical: boolean;
+      isConflict: boolean;
       markerEnd: string;
     }[] = [];
 
@@ -2620,10 +3099,13 @@ export default function GanttView({
         const sy = sourceRowIdx * 32 + 16;
         const ty = targetIdx * 32 + 16;
 
+        const isConflict = dependencyViolationsMap.get(targetRow.id)?.some(c => c.predId === sourceRow.id) ?? false;
         const isCritical = criticalPathIds.has(sourceRow.id) && criticalPathIds.has(targetRow.id);
 
         let path = '';
-        const markerEnd = isCritical ? 'url(#arrow-critical)' : 'url(#arrow-right)';
+        let midX = 0;
+        let midY = (sy + ty) / 2;
+        const markerEnd = isConflict ? 'url(#arrow-conflict)' : (isCritical ? 'url(#arrow-critical)' : 'url(#arrow-right)');
 
         const sx_start = sourceCoords.left;
         const sx_end = sourceCoords.left + sourceCoords.width;
@@ -2634,37 +3116,60 @@ export default function GanttView({
           const sx = sx_end + 3;
           const tx = tx_start - 6;
           if (tx >= sx + 12) {
-            const midX = sx + Math.max(6, (tx - sx) / 2);
-            path = `M ${sx} ${sy} H ${midX} V ${ty} H ${tx}`;
+            const mX = sx + Math.max(6, (tx - sx) / 2);
+            path = `M ${sx} ${sy} H ${mX} V ${ty} H ${tx}`;
+            midX = mX;
           } else {
             const rightMargin = sx + 12;
             const leftMargin = Math.min(sx_start, tx_start) - 16;
-            const midY = (sy + ty) / 2;
-            path = `M ${sx} ${sy} H ${rightMargin} V ${midY} H ${leftMargin} V ${ty} H ${tx}`;
+            const mY = (sy + ty) / 2;
+            path = `M ${sx} ${sy} H ${rightMargin} V ${mY} H ${leftMargin} V ${ty} H ${tx}`;
+            midX = (leftMargin + rightMargin) / 2;
+            midY = mY;
           }
         } else if (dep.type === 'SS') {
           const sx = sx_start - 3;
           const tx = tx_start - 6;
           const minX = Math.min(sx_start, tx_start) - 16;
           path = `M ${sx} ${sy} H ${minX} V ${ty} H ${tx}`;
+          midX = minX;
         } else if (dep.type === 'FF') {
           const sx = sx_end + 3;
           const tx = tx_end + 6;
           const maxX = Math.max(sx_end, tx_end) + 16;
           path = `M ${sx} ${sy} H ${maxX} V ${ty} H ${tx}`;
+          midX = maxX;
         } else if (dep.type === 'SF') {
           const sx = sx_start - 3;
           const tx = tx_end + 6;
-          const midY = (sy + ty) / 2;
-          path = `M ${sx} ${sy} H ${sx - 10} V ${midY} H ${tx + 10} V ${ty} H ${tx}`;
+          const mY = (sy + ty) / 2;
+          path = `M ${sx} ${sy} H ${sx - 10} V ${mY} H ${tx + 10} V ${ty} H ${tx}`;
+          midX = (sx - 10 + tx + 10) / 2;
+          midY = mY;
         }
 
-        list.push({ path, isCritical, markerEnd });
+        list.push({
+          id: `${sourceRow.id}->${targetRow.id}`,
+          sourceRowId: sourceRow.id,
+          targetRowId: targetRow.id,
+          sourceWbs: sourceRow.wbs,
+          targetWbs: targetRow.wbs,
+          sourceName: sourceRow.name,
+          targetName: targetRow.name,
+          depType: dep.type || 'FS',
+          lag: dep.lag,
+          path,
+          midX,
+          midY,
+          isCritical,
+          isConflict,
+          markerEnd
+        });
       });
     });
 
     return list;
-  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows]);
+  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows, criticalPathIds, dependencyViolationsMap]);
 
   const handleMouseEnter = (row: GanttRow, event: React.MouseEvent) => {
     if (isTouchDragging) return;
@@ -3006,15 +3511,113 @@ export default function GanttView({
                     className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
                   />
                 </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Resource Load View</span>
+                  <input 
+                    type="checkbox" 
+                    checked={showResourceLoad} 
+                    onChange={e => setShowResourceLoad(e.target.checked)}
+                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                  />
+                </label>
               </div>
             )}
           </div>
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
+          {/* Dedicated Critical Path Highlighter Button */}
+          <button
+            onClick={() => {
+              const nextState = !showCriticalPath;
+              setShowCriticalPath(nextState);
+              if (nextState) {
+                setToastMsg(`Critical Path Highlighter Active: ${criticalPathIds.size} critical tasks driving project timeline.`);
+                setTimeout(() => setToastMsg(null), 3500);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
+              showCriticalPath 
+                ? 'bg-red-600 text-white border-red-500 shadow-sm ring-2 ring-red-500/30' 
+                : 'bg-base-surface border-base-border text-base-muted hover:text-red-600 hover:border-red-500/50'
+            }`}
+            title="Toggle Critical Path Highlighter: Automatically identifies and highlights the zero-slack chain of tasks determining overall project completion"
+          >
+            <Flame className={`h-3.5 w-3.5 shrink-0 ${showCriticalPath ? 'text-white fill-white' : 'text-red-500'}`} />
+            <span>Critical Path</span>
+            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+              showCriticalPath ? 'bg-white/20 text-white' : 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30'
+            }`}>
+              {criticalPathIds.size}
+            </span>
+          </button>
+
+          {/* Dependency Constraint Violation Badge/Button */}
+          {totalDependencyConflictsCount > 0 && (
+            <>
+              <div className="w-[1px] h-4 bg-base-border shrink-0" />
+              <button
+                onClick={() => {
+                  const firstConflictingId = Array.from(dependencyViolationsMap.keys())[0];
+                  if (firstConflictingId && rightScrollRef.current) {
+                    const rowIdx = rows.findIndex(r => r.id === firstConflictingId);
+                    if (rowIdx >= 0) {
+                      rightScrollRef.current.scrollTop = rowIdx * 32;
+                      setSelectedRowId(firstConflictingId);
+                      const rowConflicts = dependencyViolationsMap.get(firstConflictingId);
+                      setToastMsg(`Constraint Conflict on "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Click 'Smart Schedule' to resolve.`);
+                      setTimeout(() => setToastMsg(null), 6000);
+                    }
+                  }
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-600 dark:text-red-400 border border-red-500/60 shadow-xs transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] animate-pulse"
+                title={`${totalDependencyConflictsCount} task(s) violate hard dependency timing constraints! Click to jump to the first conflict.`}
+              >
+                <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                <span>{totalDependencyConflictsCount} Violation{totalDependencyConflictsCount > 1 ? 's' : ''}</span>
+              </button>
+            </>
+          )}
+
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
+          {/* Dedicated Resource Load Button */}
+          <button
+            onClick={() => setShowResourceLoad(prev => !prev)}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
+              showResourceLoad 
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm' 
+                : 'bg-base-surface border-base-border text-base-muted hover:text-indigo-500 hover:border-indigo-500/50'
+            }`}
+            title="Toggle Resource Daily Allocation & Scheduling Conflict Load View"
+          >
+            <Users className="h-3.5 w-3.5 shrink-0" />
+            <span>Resource Load</span>
+            {resourceLoadData && resourceLoadData.totalOverloadedEmployees > 0 && (
+              <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black animate-pulse">
+                {resourceLoadData.totalOverloadedEmployees} ⚠️
+              </span>
+            )}
+          </button>
+
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
           {/* Scheduling & Interactivity Actions Group */}
           {onUpdateProject !== undefined && (
-            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px] shrink-0">
+            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px] shrink-0 gap-0.5">
+              {/* Smart Schedule Button */}
+              <button
+                onClick={handleSmartSchedule}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:border-amber-500/70 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 shadow-xs active:scale-95"
+                title="Smart Schedule: Automatically shift start dates of dependent tasks using existing dependency structure to eliminate overlaps"
+              >
+                <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0 animate-pulse" />
+                <span>Smart Schedule</span>
+              </button>
+
+              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
+
               {/* Auto Schedule switch */}
               <button
                 onClick={() => setAutoSchedule(prev => !prev)}
@@ -3105,6 +3708,23 @@ export default function GanttView({
           </div>
         </div>
       </div>
+
+      {/* Connect Mode Guidance Banner */}
+      {connectMode && (
+        <div className="bg-emerald-600 text-white text-xs px-4 py-2 flex items-center justify-between font-medium shadow-sm animate-fade-in shrink-0 z-20 border-b border-emerald-700">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
+            <span className="font-bold font-condensed uppercase tracking-wider text-xs">Visual Link Mode Active</span>
+            <span className="text-emerald-100 hidden sm:inline text-[11px]">— Drag from any task node circle (blue=start, green=finish) to connect dependencies, or click on any line node (✕) to remove links.</span>
+          </div>
+          <button
+            onClick={() => setConnectMode(false)}
+            className="px-2.5 py-0.5 bg-emerald-800 hover:bg-emerald-900 rounded font-bold text-[10px] uppercase tracking-wide transition-colors cursor-pointer shrink-0"
+          >
+            Exit (Esc)
+          </button>
+        </div>
+      )}
 
       {/* Critical Path Summary Mini-Panel */}
       {showCriticalPath && (
@@ -3197,18 +3817,21 @@ export default function GanttView({
             {rows.map((row, idx) => {
               const isSelected = selectedRowId === row.id;
               const isTargetHovered = dragHoverTargetRowId === row.id;
+              const rowConflicts = dependencyViolationsMap.get(row.id);
+              const hasConflict = rowConflicts && rowConflicts.length > 0;
               
               let bgClass = 'bg-base-surface hover:bg-base-surface2/50';
               if (isTargetHovered) bgClass = 'bg-green-500/20 text-green-800 dark:text-green-300 font-bold border-y-2 border-green-500 z-20';
+              else if (hasConflict) bgClass = 'bg-red-500/15 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-l-4 border-l-red-500';
               else if (row.level === 0) bgClass = 'bg-base-accent-dim hover:bg-base-accent-dim/80';
               else if (row.level === 1) bgClass = 'bg-base-surface2 hover:bg-base-surface3/50';
               else if (idx % 2 === 1) bgClass = 'bg-base-surface2/30 hover:bg-base-surface2/75';
 
-              if (!isTargetHovered && isSelected) bgClass = 'bg-base-accent-dim/60 font-semibold';
+              if (!isTargetHovered && isSelected) bgClass = hasConflict ? 'bg-red-500/25 border-l-4 border-l-red-600 font-bold' : 'bg-base-accent-dim/60 font-semibold';
 
               return (
                 <div 
-                  key={row.id} 
+                  key={`row-left-${row.id}-${idx}`} 
                   onClick={() => setSelectedRowId(row.id)}
                   className={`h-8 flex text-xs font-semibold select-none items-center cursor-pointer transition-colors border-b border-base-border/20 divide-x divide-base-border/10 ${bgClass}`}
                 >
@@ -3242,7 +3865,15 @@ export default function GanttView({
                       <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
                     )}
 
-
+                    {hasConflict && (
+                      <span 
+                        className="inline-flex items-center gap-0.5 mr-1.5 px-1 py-0.2 rounded bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/50 text-[9px] font-extrabold font-mono animate-pulse shrink-0 cursor-help"
+                        title={`HARD DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}`}
+                      >
+                        <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+                        <span className="hidden sm:inline">CONFLICT</span>
+                      </span>
+                    )}
 
                     <span className={`truncate select-none ${
                       row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
@@ -3531,9 +4162,16 @@ export default function GanttView({
                                 setDepPanelSearch('');
                               }
                             }}
-                            className="text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
-                            title="Click to manage predecessors"
+                            className={hasConflict 
+                              ? "text-red-600 dark:text-red-400 font-extrabold cursor-pointer truncate max-w-[65px] flex items-center justify-center gap-0.5 bg-red-500/20 border border-red-500/50 px-1 py-0.5 rounded text-[10px] animate-pulse" 
+                              : "text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
+                            }
+                            title={hasConflict 
+                              ? `DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}` 
+                              : "Click to manage predecessors"
+                            }
                           >
+                            {hasConflict && <AlertTriangle className="h-2.5 w-2.5 text-red-500 shrink-0" />}
                             {getPredecessorsLabel(row)}
                           </span>
                         ) : (
@@ -3694,6 +4332,166 @@ export default function GanttView({
                 </div>
               </div>
             )}
+
+            {/* ── RESOURCE LOAD VIEW TABLE SECTION ── */}
+            {showResourceLoad && resourceLoadData && (
+              <div className="flex-shrink-0 border-t-2 border-base-border bg-base-surface3/80" style={{ width: `${totalTableWidth}px` }}>
+                {/* Section Header Controls */}
+                <div className="px-3 py-2 border-b border-base-border bg-base-surface flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-indigo-500 shrink-0" />
+                      <span className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-text">
+                        Resource Daily Man-Hours Load
+                      </span>
+                      <span className="text-[10px] text-base-muted font-mono font-bold px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border">
+                        {resourceLoadData.totalResources} Employees
+                      </span>
+                    </div>
+
+                    {resourceLoadData.totalOverloadedEmployees > 0 ? (
+                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/40 text-[10px] font-mono font-extrabold animate-pulse">
+                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
+                        <span>{resourceLoadData.totalOverloadedEmployees} Overloaded ({resourceLoadData.totalConflictDaysOverall} Conflict Days)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold">
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
+                        <span>Optimal Capacity</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Control Bar: Filters, Search, Capacity threshold */}
+                  <div className="flex items-center justify-between gap-2 text-[10px] font-sans">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setResourceFilter('all')}
+                        className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[9px] cursor-pointer transition-all ${
+                          resourceFilter === 'all'
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-base-surface2 text-base-muted hover:text-base-text'
+                        }`}
+                      >
+                        All Resources
+                      </button>
+                      <button
+                        onClick={() => setResourceFilter('conflicts')}
+                        className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[9px] cursor-pointer transition-all flex items-center gap-1 ${
+                          resourceFilter === 'conflicts'
+                            ? 'bg-red-600 text-white shadow-xs font-black'
+                            : 'bg-base-surface2 text-base-muted hover:text-red-500'
+                        }`}
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        <span>Conflicts Only</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {/* Search box */}
+                      <div className="relative flex items-center">
+                        <Search className="h-3 w-3 absolute left-1.5 text-base-muted pointer-events-none" />
+                        <input
+                          type="text"
+                          placeholder="Search resource..."
+                          value={resourceSearch}
+                          onChange={e => setResourceSearch(e.target.value)}
+                          className="pl-5 pr-2 py-0.5 text-[10px] bg-base-surface border border-base-border rounded focus:outline-none focus:border-indigo-500 w-28 text-base-text"
+                        />
+                      </div>
+
+                      {/* Max Capacity threshold */}
+                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-base-muted">
+                        <span>Max:</span>
+                        <select
+                          value={dailyCapacityLimit}
+                          onChange={e => setDailyCapacityLimit(Number(e.target.value))}
+                          className="bg-base-surface border border-base-border rounded px-1 py-0.5 text-[10px] text-base-text font-bold cursor-pointer"
+                        >
+                          <option value={8}>8h / day</option>
+                          <option value={10}>10h / day</option>
+                          <option value={12}>12h / day</option>
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Resource Rows List */}
+                {resourceLoadData.resourceList.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-base-muted font-mono">
+                    No resources match current filter.
+                  </div>
+                ) : (
+                  <div>
+                    {resourceLoadData.resourceList.map(emp => {
+                      const isExpanded = expandedResources.has(emp.name);
+                      const hasConflicts = emp.conflictDaysCount > 0;
+
+                      return (
+                        <React.Fragment key={`res-row-left-${emp.name}`}>
+                          {/* Employee Main Row */}
+                          <div className={`h-9 border-b border-base-border flex items-center px-2 gap-2 text-xs transition-colors ${
+                            hasConflicts ? 'bg-red-500/10 dark:bg-red-950/20' : 'bg-base-surface hover:bg-base-surface2'
+                          }`}>
+                            <button
+                              onClick={() => {
+                                const next = new Set(expandedResources);
+                                if (isExpanded) next.delete(emp.name);
+                                else next.add(emp.name);
+                                setExpandedResources(next);
+                              }}
+                              className="p-0.5 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text transition-colors cursor-pointer shrink-0"
+                              title="Expand task breakdown"
+                            >
+                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                            </button>
+
+                            <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] text-white shrink-0 shadow-xs ${
+                              hasConflicts ? 'bg-red-600' : 'bg-indigo-600'
+                            }`}>
+                              {emp.name.slice(0, 2).toUpperCase()}
+                            </div>
+
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5 truncate">
+                                <span className="font-bold text-base-text text-xs truncate">{emp.name}</span>
+                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-base-surface2 border border-base-border text-base-muted truncate">
+                                  {emp.company}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 shrink-0">
+                              {hasConflicts ? (
+                                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-black text-[9px] flex items-center gap-1 font-mono shadow-xs animate-pulse">
+                                  <AlertTriangle className="h-3 w-3" />
+                                  <span>{emp.conflictDaysCount} Overload Days</span>
+                                </span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold text-[9px] font-mono border border-emerald-500/30">
+                                  OK ({emp.totalHours}h)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Task Breakdown Sub-rows */}
+                          {isExpanded && emp.assignedTasks.map(t => (
+                            <div key={`res-task-left-${emp.name}-${t.id}`} className="h-7 border-b border-base-border/60 bg-base-surface2/50 flex items-center pl-8 pr-2 gap-2 text-[11px] text-base-muted">
+                              <span className="font-mono text-[10px] font-bold text-indigo-500 shrink-0">[{t.wbs}]</span>
+                              <span className="truncate flex-1 font-medium text-base-text">{t.name}</span>
+                              <span className="text-[9px] font-mono text-base-muted shrink-0">{t.start} → {t.finish}</span>
+                            </div>
+                          ))}
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -3825,7 +4623,7 @@ export default function GanttView({
 
                 return (
                   <div 
-                    key={`timeline-row-${row.id}`}
+                    key={`timeline-row-${row.id}-${idx}`}
                     onClick={() => setSelectedRowId(row.id)}
                     className={`h-8 relative select-none border-b border-base-border/20 cursor-pointer transition-colors ${hoverClass} ${
                       isTargetHovered ? 'bg-green-500/25 border-y-2 border-green-500 z-20 font-bold' : isSelected ? 'bg-base-accent-dim/40' : ''
@@ -3853,34 +4651,109 @@ export default function GanttView({
                           />
                         )}
 
-                        {/* Connector Dot for Draw-to-Connect dependency arrows */}
-                        {!row.isMilestone && (
-                          <div
-                            data-export-hide="true"
-                            className={`absolute -right-1.5 z-30 w-2.5 h-2.5 rounded-full bg-green-500 border-2 border-white shadow-sm cursor-crosshair transition-all duration-150 flex items-center justify-center ${
-                              connectMode ? 'opacity-100 animate-pulse scale-115' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
-                            }`}
-                            title="Drag to connect dependency"
-                            onMouseDown={(e) => {
-                              e.stopPropagation();
-                              e.preventDefault();
-                              const container = document.querySelector('.gantt-relative-container');
-                              if (container) {
-                                const rect = container.getBoundingClientRect();
-                                const sourceRowIdx = rows.findIndex(r => r.id === row.id);
-                                const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (e.clientX - rect.left);
-                                const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
+                        {/* Connector Nodes for Draw-to-Connect dependency arrows */}
+                        {onUpdateProject && (
+                          <>
+                            {/* Left Start Node Handle */}
+                            <div
+                              data-export-hide="true"
+                              className={`absolute -left-2 z-30 w-3 h-3 rounded-full bg-blue-500 hover:bg-blue-400 border-2 border-white dark:border-slate-800 shadow-md cursor-crosshair transition-all duration-150 flex items-center justify-center ${
+                                connectMode ? 'opacity-100 animate-pulse scale-110' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
+                              }`}
+                              title={`Drag from Start of ${row.name} to connect`}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const container = document.querySelector('.gantt-relative-container');
+                                if (container) {
+                                  const rect = container.getBoundingClientRect();
+                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
+                                  const startX = barCoords ? barCoords.left : (e.clientX - rect.left);
+                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
 
-                                setConnectDraw({
-                                  sourceRowId: row.id,
-                                  sourceX: startX,
-                                  sourceY: startY,
-                                  currentX: e.clientX - rect.left,
-                                  currentY: e.clientY - rect.top - 56
-                                });
-                              }
-                            }}
-                          />
+                                  setConnectDraw({
+                                    sourceRowId: row.id,
+                                    sourceX: startX,
+                                    sourceY: startY,
+                                    currentX: e.clientX - rect.left,
+                                    currentY: e.clientY - rect.top - 56
+                                  });
+                                }
+                              }}
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                if (e.touches.length === 0) return;
+                                const touch = e.touches[0];
+                                const container = document.querySelector('.gantt-relative-container');
+                                if (container) {
+                                  const rect = container.getBoundingClientRect();
+                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
+                                  const startX = barCoords ? barCoords.left : (touch.clientX - rect.left);
+                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (touch.clientY - rect.top - 56);
+
+                                  setConnectDraw({
+                                    sourceRowId: row.id,
+                                    sourceX: startX,
+                                    sourceY: startY,
+                                    currentX: touch.clientX - rect.left,
+                                    currentY: touch.clientY - rect.top - 56
+                                  });
+                                }
+                              }}
+                            >
+                              <div className="w-1 h-1 bg-white rounded-full pointer-events-none" />
+                            </div>
+
+                            {/* Right Finish Node Handle */}
+                            <div
+                              data-export-hide="true"
+                              className={`absolute -right-2 z-30 w-3 h-3 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-white dark:border-slate-800 shadow-md cursor-crosshair transition-all duration-150 flex items-center justify-center ${
+                                connectMode ? 'opacity-100 animate-pulse scale-110' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
+                              }`}
+                              title={`Drag from Finish of ${row.name} to connect`}
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                e.preventDefault();
+                                const container = document.querySelector('.gantt-relative-container');
+                                if (container) {
+                                  const rect = container.getBoundingClientRect();
+                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
+                                  const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (e.clientX - rect.left);
+                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
+
+                                  setConnectDraw({
+                                    sourceRowId: row.id,
+                                    sourceX: startX,
+                                    sourceY: startY,
+                                    currentX: e.clientX - rect.left,
+                                    currentY: e.clientY - rect.top - 56
+                                  });
+                                }
+                              }}
+                              onTouchStart={(e) => {
+                                e.stopPropagation();
+                                if (e.touches.length === 0) return;
+                                const touch = e.touches[0];
+                                const container = document.querySelector('.gantt-relative-container');
+                                if (container) {
+                                  const rect = container.getBoundingClientRect();
+                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
+                                  const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (touch.clientX - rect.left);
+                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (touch.clientY - rect.top - 56);
+
+                                  setConnectDraw({
+                                    sourceRowId: row.id,
+                                    sourceX: startX,
+                                    sourceY: startY,
+                                    currentX: touch.clientX - rect.left,
+                                    currentY: touch.clientY - rect.top - 56
+                                  });
+                                }
+                              }}
+                            >
+                              <div className="w-1 h-1 bg-white rounded-full pointer-events-none" />
+                            </div>
+                          </>
                         )}
                         {/* Summary Bar Level 0 (Project rollup) */}
                         {row.level === 0 && (
@@ -3923,84 +4796,135 @@ export default function GanttView({
                         )}
 
                         {/* Task Bar Level 2 (Standard Task) */}
-                        {row.level === 2 && !row.isMilestone && (
-                          <div 
-                            className={`w-full h-4.5 rounded relative overflow-hidden flex items-center select-none text-[9px] font-bold text-white transition-all shadow-xs border ${
-                              cascadedTaskIds.has(row.id)
-                                ? 'border-2 border-amber-400 ring-2 ring-amber-400/40 ring-offset-0 animate-[pulse_0.6s_ease-in-out_3] bg-amber-500'
-                                : row.done 
-                                  ? 'bg-base-green border-base-green' 
-                                  : showCriticalPath && criticalPathIds.has(row.id)
-                                    ? 'bg-red-600 border-red-600'
-                                    : (() => {
-                                        const todayStr = new Date().toISOString().slice(0, 10);
-                                        const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
-                                        return isOverdue 
-                                          ? 'bg-base-red border-base-red animate-pulse' 
-                                          : 'bg-base-blue border-base-blue';
-                                      })()
-                            } ${hasEarlyWarning ? 'border-l-2 border-l-amber-400 pl-1' : ''}`}
-                            style={{ cursor: onUpdateProject ? 'move' : 'default' }}
-                            onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                            onTouchStart={(e) => handleBarTouchStart(row, 'move', e)}
-                          >
-                            {/* Progress overlay */}
-                            {showProgress && row.pct > 0 && (
-                              <div 
-                                className="absolute left-0 top-0 bottom-0 bg-black/25 pointer-events-none"
-                                style={{ width: `${row.pct}%` }}
-                              />
-                            )}
+                        {row.level === 2 && !row.isMilestone && (() => {
+                          const rowConflicts = dependencyViolationsMap.get(row.id);
+                          const hasConflict = rowConflicts && rowConflicts.length > 0;
 
-                            {/* AUTO-SCHEDULE FEATURE SHIFTED LABEL */}
-                            {cascadedTaskIds.has(row.id) && (
-                              <span className="absolute inset-0 flex items-center justify-center 
-                                               text-[8px] font-black text-amber-900 uppercase 
-                                               tracking-widest pointer-events-none z-10">
-                                ↕ shifted
-                              </span>
-                            )}
+                          return (
+                            <div 
+                              className={`w-full h-4.5 rounded relative overflow-hidden flex items-center select-none text-[9px] font-bold text-white transition-all shadow-xs border ${
+                                hasConflict
+                                  ? 'bg-red-600 border-2 border-red-500 ring-2 ring-red-500/60 shadow-md animate-pulse'
+                                  : cascadedTaskIds.has(row.id)
+                                    ? 'border-2 border-amber-400 ring-2 ring-amber-400/40 ring-offset-0 animate-[pulse_0.6s_ease-in-out_3] bg-amber-500'
+                                    : row.done 
+                                      ? 'bg-base-green border-base-green' 
+                                      : showCriticalPath && criticalPathIds.has(row.id)
+                                        ? 'bg-red-600 border-red-600'
+                                        : (() => {
+                                            const todayStr = new Date().toISOString().slice(0, 10);
+                                            const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
+                                            return isOverdue 
+                                              ? 'bg-base-red border-base-red animate-pulse' 
+                                              : 'bg-base-blue border-base-blue';
+                                          })()
+                              } ${hasEarlyWarning ? 'border-l-2 border-l-amber-400 pl-1' : ''}`}
+                              style={{ cursor: onUpdateProject ? 'move' : 'default' }}
+                              onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
+                              onTouchStart={(e) => handleBarTouchStart(row, 'move', e)}
+                            >
+                              {/* Progress overlay */}
+                              {showProgress && row.pct > 0 && (
+                                <div 
+                                  className="absolute left-0 top-0 bottom-0 bg-black/25 pointer-events-none"
+                                  style={{ width: `${row.pct}%` }}
+                                />
+                              )}
 
-                            {/* Task name inside label if wide enough */}
-                            {barCoords.width > 80 && (
-                              <span className={`relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8 ${row.pct === 100 ? 'line-through opacity-75' : ''}`}>
-                                {row.pct === 100 ? `✓ — ${row.name}` : row.name} ({row.pct}%)
-                              </span>
-                            )}
+                              {/* AUTO-SCHEDULE FEATURE SHIFTED LABEL */}
+                              {cascadedTaskIds.has(row.id) && !hasConflict && (
+                                <span className="absolute inset-0 flex items-center justify-center 
+                                                 text-[8px] font-black text-amber-900 uppercase 
+                                                 tracking-widest pointer-events-none z-10">
+                                  ↕ shifted
+                                </span>
+                              )}
 
-                            {/* Critical Path Indicator Badge inside bar */}
-                            {showCriticalPath && criticalPathIds.has(row.id) && !row.done && barCoords.width > 40 && (
-                              <span className="absolute right-2.5 text-[7px] bg-white/20 px-1 rounded-sm text-white select-none pointer-events-none z-10 uppercase tracking-wider font-extrabold font-mono">
-                                CP
-                              </span>
-                            )}
+                              {/* Task name inside label if wide enough */}
+                              {barCoords.width > 80 && (
+                                <span className={`relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8 ${row.pct === 100 ? 'line-through opacity-75' : ''}`}>
+                                  {row.pct === 100 ? `✓ — ${row.name}` : row.name} ({row.pct}%)
+                                </span>
+                              )}
 
-                            {/* Right edge drag resize handle */}
-                            {onUpdateProject && (
-                              <div 
-                                data-export-hide="true"
-                                className="absolute right-0 top-0 bottom-0 w-2 hover:bg-white/30 cursor-col-resize z-20 print:hidden"
-                                onMouseDown={(e) => {
-                                  e.stopPropagation();
-                                  handleBarMouseDown(row, 'resize', e);
-                                }}
-                                onTouchStart={(e) => {
-                                  e.stopPropagation();
-                                  handleBarTouchStart(row, 'resize', e);
-                                }}
-                              />
-                            )}
-                          </div>
-                        )}
+                              {/* Critical Path Indicator Badge inside bar */}
+                              {showCriticalPath && criticalPathIds.has(row.id) && !row.done && !hasConflict && barCoords.width > 40 && (
+                                <span className="absolute right-2.5 text-[7px] bg-white/20 px-1 rounded-sm text-white select-none pointer-events-none z-10 uppercase tracking-wider font-extrabold font-mono">
+                                  CP
+                                </span>
+                              )}
+
+                              {/* Hard Dependency Conflict Badge */}
+                              {hasConflict && (
+                                <span 
+                                  className="absolute right-1 text-[7.5px] bg-red-950/90 text-white border border-red-300 px-1 rounded flex items-center gap-0.5 select-none pointer-events-none z-20 uppercase font-mono font-black animate-pulse"
+                                  title={rowConflicts.map(c => c.reason).join('\n')}
+                                >
+                                  <AlertTriangle className="h-2.5 w-2.5 text-red-300 fill-red-600 shrink-0" />
+                                  <span>CONFLICT</span>
+                                </span>
+                              )}
+
+                              {/* Live Date Tooltip Badge while dragging */}
+                              {dragState && dragState.rowId === row.id && (
+                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-mono px-2 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap z-30 font-bold border border-slate-700 dark:border-slate-300">
+                                  {dragState.tempStart || row.start} → {dragState.tempFinish || row.finish}
+                                </div>
+                              )}
+
+                              {/* Left edge drag resize handle */}
+                              {onUpdateProject && (
+                                <div 
+                                  data-export-hide="true"
+                                  className="absolute left-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-col-resize z-20 print:hidden rounded-l"
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    handleBarMouseDown(row, 'resize-left', e);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    handleBarTouchStart(row, 'resize-left', e);
+                                  }}
+                                  title="Drag to adjust start date"
+                                />
+                              )}
+
+                              {/* Right edge drag resize handle */}
+                              {onUpdateProject && (
+                                <div 
+                                  data-export-hide="true"
+                                  className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-col-resize z-20 print:hidden rounded-r"
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    handleBarMouseDown(row, 'resize', e);
+                                  }}
+                                  onTouchStart={(e) => {
+                                    e.stopPropagation();
+                                    handleBarTouchStart(row, 'resize', e);
+                                  }}
+                                  title="Drag to adjust end date"
+                                />
+                              )}
+                            </div>
+                          );
+                        })()}
 
                         {/* Milestone Diamond shape */}
-                        {row.isMilestone && (
-                          <div 
-                            className="w-3.5 h-3.5 bg-yellow-500 dark:bg-yellow-400 rotate-45 transform border border-white/40 shadow-xs flex items-center justify-center shrink-0 -ml-1.5 z-20 cursor-move"
-                            onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                            title="Drag milestone to shift target date"
-                          />
-                        )}
+                        {row.isMilestone && (() => {
+                          const rowConflicts = dependencyViolationsMap.get(row.id);
+                          const hasConflict = rowConflicts && rowConflicts.length > 0;
+                          return (
+                            <div 
+                              className={`w-3.5 h-3.5 rotate-45 transform border shadow-xs flex items-center justify-center shrink-0 -ml-1.5 z-20 cursor-move ${
+                                hasConflict 
+                                  ? 'bg-red-600 border-red-300 ring-2 ring-red-500/60 animate-pulse' 
+                                  : 'bg-yellow-500 dark:bg-yellow-400 border-white/40'
+                              }`}
+                              onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
+                              title={hasConflict ? `Milestone Dependency Conflict:\n${rowConflicts.map(c => c.reason).join('\n')}` : "Drag milestone to shift target date"}
+                            />
+                          );
+                        })()}
 
                         {/* Resource Labels shown to the right of the bar */}
                         {row.level === 2 && row.assigned && (
@@ -4054,20 +4978,113 @@ export default function GanttView({
                   >
                     <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
                   </marker>
+                  <marker 
+                    id="arrow-conflict" 
+                    viewBox="0 0 10 10" 
+                    refX="8" 
+                    refY="5" 
+                    markerWidth="6" 
+                    markerHeight="6" 
+                    orient="auto"
+                  >
+                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#dc2626" />
+                  </marker>
+                  <marker 
+                    id="arrow-hover" 
+                    viewBox="0 0 10 10" 
+                    refX="8" 
+                    refY="5" 
+                    markerWidth="6" 
+                    markerHeight="6" 
+                    orient="auto"
+                  >
+                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3b82f6" />
+                  </marker>
                 </defs>
 
-                {arrows.map((arr, index) => (
-                  <path
-                    key={`arrow-${index}`}
-                    d={arr.path}
-                    fill="none"
-                    stroke={arr.isCritical ? '#ef4444' : '#6b7280'}
-                    strokeWidth={arr.isCritical ? 2 : 1.5}
-                    markerEnd={arr.markerEnd}
-                    className="transition-all duration-300"
-                    opacity={arr.isCritical ? 1 : 0.9}
-                  />
-                ))}
+                {arrows.map((arr) => {
+                  const isHovered = hoveredArrowId === arr.id;
+                  const isSelected = selectedArrowId === arr.id;
+                  const showNodeBadge = connectMode || isHovered || isSelected || arr.isConflict;
+
+                  return (
+                    <g key={`arrow-group-${arr.id}`}>
+                      {/* Thick invisible hit path for easy interaction */}
+                      <path
+                        d={arr.path}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth={14}
+                        className="pointer-events-auto cursor-pointer"
+                        onMouseEnter={() => setHoveredArrowId(arr.id)}
+                        onMouseLeave={() => setHoveredArrowId(null)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedArrowId(selectedArrowId === arr.id ? null : arr.id);
+                        }}
+                      />
+
+                      {/* Visible Arrow Line */}
+                      <path
+                        d={arr.path}
+                        fill="none"
+                        stroke={
+                          isHovered || isSelected 
+                            ? '#3b82f6' 
+                            : arr.isConflict
+                              ? '#dc2626'
+                              : arr.isCritical 
+                                ? '#ef4444' 
+                                : '#6b7280'
+                        }
+                        strokeWidth={
+                          isHovered || isSelected 
+                            ? 3 
+                            : arr.isConflict
+                              ? 2.5
+                              : arr.isCritical 
+                                ? 2 
+                                : 1.5
+                        }
+                        strokeDasharray={arr.isConflict ? '5,3' : (isHovered ? '4,3' : undefined)}
+                        markerEnd={
+                          isHovered || isSelected 
+                            ? 'url(#arrow-hover)' 
+                            : arr.markerEnd
+                        }
+                        className="transition-all duration-200 pointer-events-none"
+                        opacity={isHovered || isSelected ? 1 : arr.isCritical ? 1 : 0.85}
+                      />
+
+                      {/* Interactive Removal Node Badge at Line Midpoint */}
+                      {showNodeBadge && (
+                        <foreignObject
+                          x={arr.midX - 52}
+                          y={arr.midY - 12}
+                          width={104}
+                          height={26}
+                          className="pointer-events-auto overflow-visible z-50"
+                        >
+                          <div className="flex items-center justify-center">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteDependencyArrow(arr.targetRowId, arr.sourceRowId);
+                              }}
+                              className="bg-red-600 hover:bg-red-700 active:scale-95 text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded shadow-md border border-white/40 flex items-center gap-1 cursor-pointer transition-all hover:scale-110 whitespace-nowrap"
+                              title={`Click to remove link: ${arr.sourceWbs} → ${arr.targetWbs}`}
+                            >
+                              <Link className="h-2.5 w-2.5 rotate-45" />
+                              <span>{arr.sourceWbs}➔{arr.targetWbs}</span>
+                              <span className="bg-red-800 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black ml-0.5">✕</span>
+                            </button>
+                          </div>
+                        </foreignObject>
+                      )}
+                    </g>
+                  );
+                })}
 
                 {/* Live Rubber-Band Connection Line */}
                 {connectDraw && (
@@ -4243,8 +5260,195 @@ export default function GanttView({
                 </svg>
               </div>
             )}
+
+            {/* ── RESOURCE LOAD VIEW TIMELINE GRID ── */}
+            {showResourceLoad && resourceLoadData && (
+              <div className="relative border-t-2 border-base-border bg-base-surface flex-shrink-0" style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}>
+                {/* Section Header Spacer */}
+                <div className="h-[61px] border-b border-base-border bg-base-surface2/80 flex items-center px-4">
+                  <span className="font-condensed font-extrabold text-[10px] uppercase tracking-widest text-base-muted flex items-center gap-2">
+                    <span>Daily Allocated Man-Hours Grid</span>
+                    <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+                      ■ 8h (Optimal)
+                    </span>
+                    <span className="inline-flex items-center gap-1 text-[9px] text-red-600 dark:text-red-400 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
+                      ■ &gt;8h (Conflict Overload)
+                    </span>
+                  </span>
+                </div>
+
+                {/* Resource Rows Grid */}
+                {resourceLoadData.resourceList.map(emp => {
+                  const isExpanded = expandedResources.has(emp.name);
+                  const hasConflicts = emp.conflictDaysCount > 0;
+
+                  return (
+                    <React.Fragment key={`res-row-right-${emp.name}`}>
+                      {/* Main Employee Daily Cell Row */}
+                      <div className={`h-9 border-b border-base-border flex ${hasConflicts ? 'bg-red-500/5' : 'bg-base-surface'}`}>
+                        {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
+                          const hours = emp.dailyHours[dIdx];
+                          const isOver = hours > dailyCapacityLimit;
+                          const isOptimal = hours === dailyCapacityLimit;
+                          const isUnder = hours > 0 && hours < dailyCapacityLimit;
+
+                          const currentDateStr = addDaysToLocalDate(formatLocalDate(timelineStart), dIdx);
+
+                          return (
+                            <div
+                              key={`res-cell-${emp.name}-${dIdx}`}
+                              style={{ width: `${pixelsPerDay}px` }}
+                              onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                setHoveredResourceCell({
+                                  employeeName: emp.name,
+                                  dayIdx: dIdx,
+                                  dateStr: currentDateStr,
+                                  totalHours: hours,
+                                  tasks: emp.dailyTasks.get(dIdx) || [],
+                                  x: rect.left + rect.width / 2,
+                                  y: rect.top - 8
+                                });
+                              }}
+                              onMouseLeave={() => setHoveredResourceCell(null)}
+                              className={`h-full border-r border-base-border/40 flex items-center justify-center font-mono text-[10px] transition-all cursor-pointer select-none ${
+                                isOver
+                                  ? 'bg-red-500/30 text-red-700 dark:text-red-300 font-black border-y-2 border-red-500/60 shadow-xs hover:bg-red-500/50 hover:scale-105 z-10'
+                                  : isOptimal
+                                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border-y border-emerald-500/30 hover:bg-emerald-500/30'
+                                    : isUnder
+                                      ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300 font-semibold hover:bg-blue-500/25'
+                                      : 'text-base-muted/20 hover:bg-base-surface3/40'
+                              }`}
+                            >
+                              {hours > 0 ? (
+                                <span className={`px-1 py-0.2 rounded ${isOver ? 'bg-red-600 text-white font-black' : ''}`}>
+                                  {hours}h
+                                </span>
+                              ) : (
+                                <span>·</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Sub-rows for tasks when expanded */}
+                      {isExpanded && emp.assignedTasks.map(t => {
+                        const taskStartD = parseLocalDate(t.start);
+                        const taskFinishD = parseLocalDate(t.finish);
+                        const taskStartIdx = daysBetween(timelineStart, taskStartD);
+                        const taskFinishIdx = daysBetween(timelineStart, taskFinishD);
+
+                        return (
+                          <div key={`res-task-right-${emp.name}-${t.id}`} className="h-7 border-b border-base-border/60 bg-base-surface2/30 flex">
+                            {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
+                              const isActive = dIdx >= taskStartIdx && dIdx <= taskFinishIdx;
+
+                              return (
+                                <div
+                                  key={`res-task-cell-${t.id}-${dIdx}`}
+                                  style={{ width: `${pixelsPerDay}px` }}
+                                  className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[9px] ${
+                                    isActive
+                                      ? 'bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold border-y border-indigo-500/40'
+                                      : 'text-transparent'
+                                  }`}
+                                  title={isActive ? `${t.name} (8h)` : ''}
+                                >
+                                  {isActive ? '8h' : ''}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* RESOURCE LOAD HOVER TOOLTIP POPUP */}
+        {hoveredResourceCell && (
+          <div
+            className="fixed z-50 bg-base-surface border-2 border-base-border rounded-xl shadow-2xl p-3 w-80 text-xs text-base-text pointer-events-auto animate-fade-in"
+            style={{
+              left: `${Math.min(Math.max(160, hoveredResourceCell.x), window.innerWidth - 340)}px`,
+              top: `${Math.max(80, hoveredResourceCell.y - 180)}px`,
+              transform: 'translateX(-50%)'
+            }}
+          >
+            <div className="flex items-center justify-between border-b border-base-border pb-2 mb-2">
+              <div className="flex items-center gap-2 font-bold text-sm">
+                <UserIcon className="h-4 w-4 text-indigo-500" />
+                <span className="truncate max-w-[180px]">{hoveredResourceCell.employeeName}</span>
+              </div>
+              <span className="text-[10px] font-mono text-base-muted font-bold">
+                {hoveredResourceCell.dateStr}
+              </span>
+            </div>
+
+            {/* Capacity Status Pill */}
+            {hoveredResourceCell.totalHours > dailyCapacityLimit ? (
+              <div className="bg-red-500/20 border border-red-500/50 text-red-600 dark:text-red-400 p-2 rounded-lg mb-2 font-mono text-[11px] font-bold flex items-start gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-extrabold uppercase">Scheduling Overload Conflict!</div>
+                  <div>Total: {hoveredResourceCell.totalHours}h / max {dailyCapacityLimit}h (+{hoveredResourceCell.totalHours - dailyCapacityLimit}h over capacity)</div>
+                </div>
+              </div>
+            ) : hoveredResourceCell.totalHours === dailyCapacityLimit ? (
+              <div className="bg-emerald-500/15 border border-emerald-500/40 text-emerald-700 dark:text-emerald-300 p-1.5 rounded-lg mb-2 font-mono text-[11px] font-bold flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0" />
+                <span>Full Capacity (8 Hours Allocated)</span>
+              </div>
+            ) : hoveredResourceCell.totalHours > 0 ? (
+              <div className="bg-blue-500/15 border border-blue-500/30 text-blue-600 dark:text-blue-300 p-1.5 rounded-lg mb-2 font-mono text-[11px] font-bold flex items-center gap-2">
+                <Clock className="h-4 w-4 text-blue-500 shrink-0" />
+                <span>Part-Time Load ({hoveredResourceCell.totalHours} Hours Allocated)</span>
+              </div>
+            ) : (
+              <div className="text-base-muted p-1 text-[11px] italic mb-2">No tasks assigned on this date.</div>
+            )}
+
+            {/* Active Tasks Breakdown List */}
+            {hoveredResourceCell.tasks.length > 0 && (
+              <div>
+                <div className="text-[10px] font-bold text-base-muted uppercase tracking-wider mb-1">
+                  Active Assigned Tasks ({hoveredResourceCell.tasks.length}):
+                </div>
+                <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+                  {hoveredResourceCell.tasks.map(t => (
+                    <div
+                      key={`tooltip-task-${t.taskId}`}
+                      onClick={() => {
+                        const rowIdx = allRows.findIndex(r => r.id === t.taskId);
+                        if (rowIdx >= 0 && rightScrollRef.current) {
+                          rightScrollRef.current.scrollTop = rowIdx * 32;
+                          setToastMsg(`Jumped to task: ${t.taskName}`);
+                          setTimeout(() => setToastMsg(null), 3000);
+                        }
+                      }}
+                      className="p-1.5 rounded bg-base-surface2 border border-base-border/60 hover:border-indigo-500 hover:bg-indigo-500/10 cursor-pointer transition-all text-[11px] flex items-center justify-between group"
+                      title="Click to jump to this task in Gantt chart above"
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0 pr-2">
+                        <span className="font-mono text-[10px] font-bold text-indigo-500">[{t.wbs}]</span>
+                        <span className="truncate font-medium group-hover:text-indigo-600 dark:group-hover:text-indigo-300">{t.taskName}</span>
+                      </div>
+                      <span className="font-mono font-bold text-[10px] text-base-muted group-hover:text-indigo-500 shrink-0">
+                        8h
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* FLOATING HOVER TOOLTIP */}
         {hoveredTask && !isTouchDragging && (
@@ -4291,16 +5495,32 @@ export default function GanttView({
               )}
               
               {hoveredTask.row.level === 2 && (
-                <div className="flex justify-between gap-6 border-t border-base-border/40 mt-1.5 pt-1.5">
-                  <span>Slack:</span>
-                  {criticalPathIds.has(hoveredTask.row.id) ? (
-                    <span className="text-red-600 dark:text-red-400 font-extrabold font-condensed uppercase tracking-wider">Critical — 0 days slack</span>
-                  ) : (
-                    <span className="font-mono text-base-text font-extrabold">
-                      {Math.max(0, Math.round(slackMap.get(hoveredTask.row.id) ?? 0))} day(s)
-                    </span>
+                <>
+                  <div className="flex justify-between gap-6 border-t border-base-border/40 mt-1.5 pt-1.5">
+                    <span>Slack:</span>
+                    {criticalPathIds.has(hoveredTask.row.id) ? (
+                      <span className="text-red-600 dark:text-red-400 font-extrabold font-condensed uppercase tracking-wider">Critical — 0 days slack</span>
+                    ) : (
+                      <span className="font-mono text-base-text font-extrabold">
+                        {Math.max(0, Math.round(slackMap.get(hoveredTask.row.id) ?? 0))} day(s)
+                      </span>
+                    )}
+                  </div>
+
+                  {dependencyViolationsMap.get(hoveredTask.row.id) && (
+                    <div className="bg-red-500/15 border border-red-500/50 rounded-lg p-2 my-1.5 text-[10px] font-mono">
+                      <div className="font-extrabold uppercase flex items-center gap-1 text-red-600 dark:text-red-400 mb-1">
+                        <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0 animate-pulse" />
+                        <span>HARD DEPENDENCY VIOLATION</span>
+                      </div>
+                      {dependencyViolationsMap.get(hoveredTask.row.id)!.map((c, i) => (
+                        <div key={i} className="text-[10px] leading-tight text-red-700 dark:text-red-300 font-medium my-0.5">
+                          • {c.reason}
+                        </div>
+                      ))}
+                    </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           </div>
@@ -4317,6 +5537,7 @@ export default function GanttView({
         {pendingConnect && (() => {
           const sourceRow = rows.find(r => r.id === pendingConnect.sourceRowId);
           const targetRow = rows.find(r => r.id === pendingConnect.targetRowId);
+          const isAlreadyLinked = targetRow?.predecessors?.some(d => d.key === sourceRow?.id);
 
           return (
             <div 
@@ -4328,9 +5549,18 @@ export default function GanttView({
                 transform: 'translate(-50%, -100%) translateY(-12px)'
               }}
             >
-              <div className="flex items-center gap-1.5 font-condensed font-extrabold text-sm uppercase tracking-wide border-b border-base-border pb-2 mb-2 text-green-500">
-                <Link className="h-4 w-4" />
-                <span>Link Dependency</span>
+              <div className="flex items-center justify-between border-b border-base-border pb-2 mb-2">
+                <div className="flex items-center gap-1.5 font-condensed font-extrabold text-sm uppercase tracking-wide text-green-500">
+                  <Link className="h-4 w-4" />
+                  <span>Link Dependency</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPendingConnect(null)}
+                  className="text-base-muted hover:text-base-text transition-colors p-0.5 rounded cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
               {sourceRow && targetRow && (
@@ -4338,6 +5568,20 @@ export default function GanttView({
                   <div className="truncate"><strong className="text-base-text font-sans">From:</strong> [{sourceRow.wbs}] {sourceRow.name}</div>
                   <div className="truncate"><strong className="text-base-text font-sans">To:</strong> [{targetRow.wbs}] {targetRow.name}</div>
                 </div>
+              )}
+
+              {isAlreadyLinked && sourceRow && targetRow && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteDependencyArrow(targetRow.id, sourceRow.id);
+                    setPendingConnect(null);
+                  }}
+                  className="w-full bg-red-600 hover:bg-red-700 active:scale-95 text-white text-[10px] font-bold py-1.5 rounded transition-all shadow-xs cursor-pointer flex items-center justify-center gap-1.5 mb-3"
+                >
+                  <Trash2 className="h-3 w-3" />
+                  <span>Remove Existing Link ({sourceRow.wbs}➔{targetRow.wbs})</span>
+                </button>
               )}
               
               <div className="space-y-3">
@@ -4403,7 +5647,7 @@ export default function GanttView({
                     }}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors shadow-sm cursor-pointer"
                   >
-                    Add Link
+                    {isAlreadyLinked ? 'Update Link' : 'Add Link'}
                   </button>
                   <button
                     type="button"
@@ -4549,9 +5793,9 @@ export default function GanttView({
 
                     return (
                       <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                        {available.slice(0, 10).map((r: any) => (
+                        {available.slice(0, 10).map((r: any, rIdx: number) => (
                           <div 
-                            key={`search-item-${r.id}`}
+                            key={`search-item-${r.id}-${rIdx}`}
                             className="p-2 bg-base-surface2/40 hover:bg-base-surface2 border border-base-border rounded-lg flex flex-col gap-2 transition-all"
                           >
                             <div className="flex items-center gap-1.5 min-w-0">

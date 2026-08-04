@@ -48,6 +48,7 @@ interface EmployeesViewProps {
   onReinstateEmployee: (id: string) => void;
   onClearAllEmployees?: () => void;
   onBulkUpdateEmployees?: (ids: string[], updates: Partial<Employee>) => void;
+  orgSettings?: any;
 }
 
 const COLORS = ['#e8a020', '#4a90d9', '#4caf7d', '#d65c4f', '#9b59b6', '#e67e22', '#1abc9c', '#e74c3c', '#3498db'];
@@ -129,7 +130,8 @@ export default function EmployeesView({
   onMarkExEmployee,
   onReinstateEmployee,
   onClearAllEmployees,
-  onBulkUpdateEmployees
+  onBulkUpdateEmployees,
+  orgSettings
 }: EmployeesViewProps) {
   const [activeTab, setActiveTab] = useState<'workshop1' | 'workshop2' | 'other' | 'kpi' | 'ex'>('workshop1');
   const [groupBy, setGroupBy] = useState<'coordinator' | 'location'>('coordinator');
@@ -1257,7 +1259,7 @@ export default function EmployeesView({
                   </div>
 
                   {/* Project breakdown table */}
-                  <div className="bg-base-bg/20 border border-base-border rounded-xl overflow-hidden shadow-sm">
+                  <div className="bg-base-bg/20 border border-base-border rounded-xl overflow-x-auto shadow-sm">
                     <table className="w-full border-collapse text-xs text-left">
                       <thead>
                         <tr className="bg-base-surface2/50 border-b border-base-border text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted">

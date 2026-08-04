@@ -1,5 +1,5 @@
 import React, { useState, useEffect, lazy, Suspense } from 'react';
-import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory, Assembly } from './types';
+import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory, Assembly, DrawingRevision, BomTemplate, BomItem } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
 import { can as canUtil, PERMISSIONS } from './utils/permissions';
@@ -10,10 +10,12 @@ import { db, auth } from './services/firebase';
 import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
 
 // Custom Hooks & Subcomponents
-import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore, useMasterData } from './hooks';
+import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore, useMasterData, useOrgSettings } from './hooks';
+import { useUserPreferences } from './hooks/useUserPreferences';
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
 import { GaAutoMatchModal } from './components/GaAutoMatchModal';
+import { IndustryTemplatePicker } from './components/IndustryTemplatePicker';
 import { ToastContainer } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -21,6 +23,8 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppSidebar } from './components/layout/AppSidebar';
 import { AppMobileMenu } from './components/layout/AppMobileMenu';
 import { AppTopBar } from './components/layout/AppTopBar';
+import BottomNav from './components/layout/BottomNav';
+import InstallPrompt from './components/layout/InstallPrompt';
 
 // Fallback loader
 import { PageLoadingFallback } from './components/layout/PageLoadingFallback';
@@ -39,41 +43,23 @@ const MaterialsView = lazy(() => import('./components/MaterialsView'));
 const UsersAccessView = lazy(() => import('./components/UsersAccessView'));
 const DailyReportView = lazy(() => import('./components/DailyReportView'));
 const EmployeesView = lazy(() => import('./components/EmployeesView'));
-const GanttPage = lazy(() => import('./pages/GanttPage').then(m => ({ default: m.GanttPage })));
+const ProjectSchedulePage = lazy(() => import('./pages/ProjectSchedulePage').then(m => ({ default: m.ProjectSchedulePage })));
 const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
 const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
 const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'));
 const MasterDataPage = lazy(() => import('./pages/MasterDataPage').then(m => ({ default: m.MasterDataPage })));
+const OrgSettingsPage = lazy(() => import('./pages/OrgSettingsPage').then(m => ({ default: m.OrgSettingsPage })));
 const KPIView = lazy(() => import('./components/KPIView'));
+const DrawingRegisterView = lazy(() => import('./components/DrawingRegisterView'));
+const BomView = lazy(() => import('./components/BomView'));
 const ProjectTimelineView = lazy(() => import('./components/ProjectTimelineView'));
 const SchedulingRiskDashboard = lazy(() => import('./components/SchedulingRiskDashboard'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar, TrendingUp
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar, TrendingUp, Settings
 } from 'lucide-react';
-
-const activeTabsList = [
-  { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
-  { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
-  { id: 'gantt', label: 'Gantt', icon: 'BarChart2', access: 'all' },
-  { id: 'timeline', label: 'Timeline', icon: 'Calendar', access: 'all' },
-  { id: 'scheduling-risk', label: 'Scheduling & Risk', icon: 'TrendingUp', access: 'all' },
-  { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
-  { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
-  { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
-  { id: 'consumable', label: 'Consumable', icon: 'Flame', access: 'all' },
-  { id: 'kpi', label: 'KPI Dashboard', icon: 'Trophy', access: 'all' },
-  { id: 'materials', label: 'Materials & Stock', icon: 'Package', access: 'all' },
-  { id: 'matprocessing', label: 'Mat. Processing', icon: 'Layers', access: 'all' },
-  { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
-  { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
-  { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
-  { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
-  { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
-  { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] }
-];
 
 const IconMap: Record<string, React.ComponentType<any>> = {
   LayoutGrid,
@@ -85,6 +71,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   ClipboardCheck,
   Flame,
   FileText,
+  FileBadge,
+  ListTree,
   Users,
   ShieldCheck,
   BarChart2,
@@ -94,13 +82,14 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Database,
   Trophy,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  Settings
 };
 
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'focus24', 'gantt', 'timeline', 'scheduling-risk', 'progress']
+    items: ['dash', 'focus24', 'schedule', 'scheduling-risk', 'progress']
   },
   {
     title: 'Projects',
@@ -108,11 +97,11 @@ const sectionGroups = [
   },
   {
     title: 'Operations',
-    items: ['timesheet', 'manpower', 'inspections', 'consumable', 'kpi', 'materials', 'matprocessing', 'dailyreport']
+    items: ['timesheet', 'manpower', 'inspections', 'drawings', 'bom', 'consumable', 'kpi', 'materials', 'matprocessing', 'dailyreport']
   },
   {
     title: 'Management',
-    items: ['employees', 'users', 'masterdata']
+    items: ['employees', 'users', 'masterdata', 'orgsettings']
   }
 ];
 
@@ -148,6 +137,7 @@ export function App() {
 function AppContent() {
   const authHook = useAuth();
   const { currentUser, fbUser, users, setUsers, isAuthLoading, setCurrentUser } = authHook;
+  const { prefs, setPref } = useUserPreferences(currentUser);
 
   // Local sync and list states
   const [activities, setRealActivities] = useState<ActivityLog[]>([]);
@@ -157,25 +147,13 @@ function AppContent() {
   const [materials, setRealMaterials] = useState<MaterialItem[]>([]);
   const [materialRequests, setRealMaterialRequests] = useState<MaterialRequest[]>([]);
   const [consumptionLogs, setRealConsumptionLogs] = useState<MaterialConsumptionLog[]>([]);
+  const [drawings, setRealDrawings] = useState<DrawingRevision[]>([]);
+  const [bomTemplates, setRealBomTemplates] = useState<BomTemplate[]>([]);
 
   // Toggle states for sidebar and navigation
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('w2proj_sidebar_collapsed') === 'true';
-    } catch (_) {
-      return false;
-    }
-  });
+  const sidebarCollapsed = prefs.sidebarCollapsed ?? false;
+  const toggleSidebar = () => setPref('sidebarCollapsed', !sidebarCollapsed);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
-
-  const toggleSidebar = () => {
-    setSidebarCollapsed(prev => {
-      try {
-        localStorage.setItem('w2proj_sidebar_collapsed', String(!prev));
-      } catch (_) {}
-      return !prev;
-    });
-  };
 
   // Wrap state setters for direct local updates if needed, but snapshots set these directly.
   const setActivities = setRealActivities;
@@ -185,6 +163,8 @@ function AppContent() {
   const setMaterials = setRealMaterials;
   const setMaterialRequests = setRealMaterialRequests;
   const setConsumptionLogs = setRealConsumptionLogs;
+  const setDrawings = setRealDrawings;
+  const setBomTemplates = setRealBomTemplates;
 
   // Local states for custom search filters
   const [projectSearchQuery, setProjectSearchQuery] = useState<string>('');
@@ -272,6 +252,8 @@ function AppContent() {
   };
 
   const masterData = useMasterData(!!fbUser && !!currentUser && !!auth.currentUser);
+  const orgSettingsHook = useOrgSettings(!!fbUser && !!currentUser && !!auth.currentUser);
+  const { orgSettings, saveSettings, applyTemplate } = orgSettingsHook;
 
   // Setup sub-hooks and project contexts
   const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm, masterData.ensureEntry);
@@ -289,7 +271,7 @@ function AppContent() {
         .filter(e => e.category === 'gaNumber')
         .map(e => e.value.toUpperCase())
     );
-    const uniqueGaNumbers = new Set(
+    const uniqueGaNumbers = new Set<string>(
       projects
         .map(p => p.gaNumber?.trim().toUpperCase())
         .filter((g): g is string => !!g && !existingGaValues.has(g))
@@ -450,6 +432,8 @@ function AppContent() {
         listenToCollection('materials', setMaterials);
         listenToCollection('materialRequests', setMaterialRequests);
         listenToCollection('consumptionLogs', setConsumptionLogs);
+        listenToCollection('drawings', setDrawings);
+        listenToCollection('bomTemplates', setBomTemplates);
       } catch (err) {
         console.error("Firestore setup sync error:", err);
       }
@@ -874,14 +858,21 @@ function AppContent() {
     const currentList = proj.materialProcessing || [];
 
     let updatedMpName = '';
-    let updatedItem: MaterialProcessing | null = null;
+    let updatedItem = null as MaterialProcessing | null;
 
     const updatedMPs = currentList.map(mp => {
       if (mp.id !== mpId) return mp;
       updatedMpName = mp.materialName;
-      const updatedStages = {
+      const existingStage = mp.stages[stageKey];
+      const updatedStage: ProcessingStage = {
+        pct: 0,
+        status: 'pending',
+        ...existingStage,
+        ...stageData
+      };
+      const updatedStages: Partial<Record<ProcessingStageKey, ProcessingStage>> = {
         ...mp.stages,
-        [stageKey]: { ...(mp.stages[stageKey] || {}), ...stageData }
+        [stageKey]: updatedStage
       };
       // Recompute overallPct
       const activePcts = mp.activeStages.map(k =>
@@ -894,7 +885,7 @@ function AppContent() {
         k => updatedStages[k]?.status === 'done' || updatedStages[k]?.status === 'skipped'
       );
       const itemAfterStage = { ...mp, stages: updatedStages, overallPct, isCompleted, updatedAt: now };
-      updatedItem = itemAfterStage;
+      updatedItem = itemAfterStage as MaterialProcessing;
       return itemAfterStage;
     });
 
@@ -987,6 +978,151 @@ function AppContent() {
     }
   };
 
+  const handleAddDrawing = async (
+    drawing: Omit<DrawingRevision, 'id' | 'uploadedAt' | 'uploadedBy' | 'uploadedByName' | 'status'> & { revision: string }
+  ) => {
+    const now = new Date().toISOString();
+    const newDrawing: DrawingRevision = {
+      ...drawing,
+      id: 'drw_' + uid(),
+      status: 'active',
+      uploadedBy: currentUser?.id || 'sys',
+      uploadedByName: currentUser?.name || 'Authorized User',
+      uploadedAt: now,
+    };
+    setDrawings(prev => [newDrawing, ...prev]);
+    verifyMarkChanged();
+    await saveItem('drawings', newDrawing);
+
+    logActivity('task_add' as any, `Uploaded drawing: ${newDrawing.drawingNumber} Rev ${newDrawing.revision} — "${newDrawing.title}"`, newDrawing.projectId, newDrawing.projectName);
+
+    const notif = {
+      id: 'notif_' + uid(),
+      type: 'drawing_revision',
+      title: 'New Drawing Revision',
+      message: `Drawing ${newDrawing.drawingNumber} Rev ${newDrawing.revision} — "${newDrawing.title}" has been uploaded by ${newDrawing.uploadedByName}`,
+      targetRoles: ['admin', 'manager', 'coordinator', 'project_control', 'project control'],
+      projectId: newDrawing.projectId || null,
+      createdAt: now
+    };
+    await saveItem('notifications', notif);
+  };
+
+  const handleReviseDrawing = async (
+    oldDrawingId: string,
+    newDrawing: Omit<DrawingRevision, 'id' | 'uploadedAt' | 'uploadedBy' | 'uploadedByName' | 'status'> & { revision: string }
+  ) => {
+    const now = new Date().toISOString();
+    const newId = 'drw_' + uid();
+
+    const oldDrawing = drawings.find(d => d.id === oldDrawingId);
+    if (oldDrawing) {
+      const updatedOld: DrawingRevision = {
+        ...oldDrawing,
+        status: 'superseded',
+        supersededBy: newId
+      };
+      setDrawings(prev => prev.map(d => d.id === oldDrawingId ? updatedOld : d));
+      await saveItem('drawings', updatedOld);
+    }
+
+    const createdDrawing: DrawingRevision = {
+      ...newDrawing,
+      id: newId,
+      status: 'active',
+      uploadedBy: currentUser?.id || 'sys',
+      uploadedByName: currentUser?.name || 'Authorized User',
+      uploadedAt: now
+    };
+    setDrawings(prev => [createdDrawing, ...prev.filter(d => d.id !== oldDrawingId)]);
+    verifyMarkChanged();
+    await saveItem('drawings', createdDrawing);
+
+    logActivity('task_edit' as any, `Revised drawing: ${createdDrawing.drawingNumber} to Rev ${createdDrawing.revision}`, createdDrawing.projectId, createdDrawing.projectName);
+
+    const notif = {
+      id: 'notif_' + uid(),
+      type: 'drawing_revision',
+      title: 'New Drawing Revision',
+      message: `Drawing ${createdDrawing.drawingNumber} Rev ${createdDrawing.revision} — "${createdDrawing.title}" has been uploaded by ${createdDrawing.uploadedByName}`,
+      targetRoles: ['admin', 'manager', 'coordinator', 'project_control', 'project control'],
+      projectId: createdDrawing.projectId || null,
+      createdAt: now
+    };
+    await saveItem('notifications', notif);
+  };
+
+  const handleVoidDrawing = async (id: string) => {
+    const target = drawings.find(d => d.id === id);
+    if (!target) return;
+    const updatedTarget: DrawingRevision = { ...target, status: 'void' };
+    setDrawings(prev => prev.map(d => d.id === id ? updatedTarget : d));
+    verifyMarkChanged();
+    await saveItem('drawings', updatedTarget);
+    logActivity('task_edit' as any, `Voided drawing: ${target.drawingNumber} Rev ${target.revision}`, target.projectId, target.projectName);
+  };
+
+  const handleDeleteDrawing = async (id: string) => {
+    setDrawings(prev => prev.filter(d => d.id !== id));
+    verifyMarkChanged();
+    await removeItem('drawings', id);
+  };
+
+  const handleAddBomTemplate = async (
+    template: Omit<BomTemplate, 'id' | 'createdAt' | 'updatedAt' | 'createdBy' | 'createdByName'>
+  ) => {
+    const now = new Date().toISOString();
+    const newTemplate: BomTemplate = {
+      ...template,
+      id: 'bom_' + uid(),
+      createdBy: currentUser?.id || 'sys',
+      createdByName: currentUser?.name || 'Authorized User',
+      createdAt: now,
+      updatedAt: now
+    };
+    setBomTemplates(prev => [newTemplate, ...prev]);
+    verifyMarkChanged();
+    await saveItem('bomTemplates', newTemplate);
+    logActivity('task_add' as any, `Created BOM Template: "${newTemplate.name}" (${newTemplate.model})`, undefined, undefined, undefined, undefined, undefined, undefined, `GA: ${newTemplate.gaNumber || 'None'}`);
+  };
+
+  const handleUpdateBomTemplate = async (id: string, updates: Partial<BomTemplate>) => {
+    const now = new Date().toISOString();
+    setBomTemplates(prev => prev.map(b => b.id === id ? { ...b, ...updates, updatedAt: now } : b));
+    verifyMarkChanged();
+    await saveItem('bomTemplates', { id, ...updates, updatedAt: now });
+  };
+
+  const handleDeleteBomTemplate = async (id: string) => {
+    setBomTemplates(prev => prev.filter(b => b.id !== id));
+    verifyMarkChanged();
+    await removeItem('bomTemplates', id);
+    logActivity('task_edit' as any, `Deleted BOM Template: ${id}`);
+  };
+
+  const activeTabsList = React.useMemo(() => [
+    { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
+    { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
+    { id: 'schedule', label: 'Project Schedule', icon: 'Calendar', access: 'all' },
+    { id: 'scheduling-risk', label: 'Scheduling & Risk', icon: 'TrendingUp', access: 'all' },
+    { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
+    { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
+    { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
+    { id: 'drawings', label: 'Drawing Register', icon: 'FileBadge', access: 'all' },
+    { id: 'bom', label: 'BOM', icon: 'ListTree', access: 'all' },
+    { id: 'consumable', label: orgSettings?.terminology?.wireConsumableLabel || 'Consumable', icon: 'Flame', access: 'all' },
+    { id: 'kpi', label: 'KPI Dashboard', icon: 'Trophy', access: 'all' },
+    { id: 'materials', label: 'Materials & Stock', icon: 'Package', access: 'all' },
+    { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
+    { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
+    { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
+    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
+    { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
+    { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
+    { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] },
+    { id: 'orgsettings', label: 'Org Settings', icon: 'Settings', access: ['admin'] }
+  ], [orgSettings]);
+
   if (isAuthLoading) {
     return (
       <div className="min-h-screen bg-base-bg flex flex-col items-center justify-center p-6 space-y-4">
@@ -1067,6 +1203,8 @@ function AppContent() {
           employees={employees}
           materials={materials}
           setActiveTab={setActiveTab}
+          readNotificationIds={prefs.readNotificationIds || []}
+          onMarkRead={(ids) => setPref('readNotificationIds', ids)}
           openSpotlight={(id) => {
             projectsHook.setSpotlightProjectId(id);
             projectsHook.setSpotlightOpen(true);
@@ -1074,7 +1212,7 @@ function AppContent() {
         />
 
         {/* Core Screen Viewport */}
-        <main key={activeTab} className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-24 page-enter ${activeTab === 'gantt' ? 'max-w-none' : 'max-w-[1600px]'}`}>
+        <main key={activeTab} className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32 page-enter ${activeTab === 'gantt' || activeTab === 'schedule' ? 'max-w-none' : 'max-w-[1600px]'}`}>
           <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
             <Suspense fallback={<PageLoadingFallback />}>
               {activeTab === 'dash' && (
@@ -1098,6 +1236,7 @@ function AppContent() {
 
               {activeTab === 'focus24' && (
                 <Focus24View
+                  orgSettings={orgSettings}
                   problemReports={problemReports}
                   projects={projects}
                   employees={employees}
@@ -1131,7 +1270,10 @@ function AppContent() {
 
               {activeTab === 'projects' && (
                 <ProjectsPage
+                  orgSettings={orgSettings}
                   projects={projects}
+                  prefs={prefs}
+                  onSetPref={(key, val) => setPref(key as any, val)}
                   timesheets={timesheets}
                   wireLogs={wireLogs}
                   consumptionLogs={consumptionLogs}
@@ -1174,6 +1316,7 @@ function AppContent() {
 
               {activeTab === 'inspections' && (
                 <InspectionView
+                  orgSettings={orgSettings}
                   inspections={inspections}
                   projects={projects}
                   currentUser={currentUser}
@@ -1183,8 +1326,46 @@ function AppContent() {
                 />
               )}
 
+              {activeTab === 'drawings' && (
+                <ErrorBoundary key="drawings">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <DrawingRegisterView
+                      drawings={drawings}
+                      projects={projects}
+                      currentUser={currentUser}
+                      onAddDrawing={handleAddDrawing}
+                      onReviseDrawing={handleReviseDrawing}
+                      onVoidDrawing={handleVoidDrawing}
+                      onDeleteDrawing={handleDeleteDrawing}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+
+              {activeTab === 'bom' && (
+                <ErrorBoundary key="bom">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <BomView
+                      bomTemplates={bomTemplates}
+                      materials={materials}
+                      materialProcessings={projects.flatMap(p => (p.materialProcessing || []).map(mp => ({ ...mp, gaNumber: p.gaNumber })))}
+                      drawings={drawings}
+                      masterData={masterData}
+                      projects={projects}
+                      currentUser={currentUser}
+                      setActiveTab={setActiveTab}
+                      onAddBomTemplate={handleAddBomTemplate}
+                      onUpdateBomTemplate={handleUpdateBomTemplate}
+                      onDeleteBomTemplate={handleDeleteBomTemplate}
+                      onAddMaterialProcessing={handleAddMaterialProcessing}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
+
               {activeTab === 'consumable' && (
                 <ConsumableView
+                  orgSettings={orgSettings}
                   wireLogs={wireLogs}
                   consumptionLogs={consumptionLogs}
                   materials={materials}
@@ -1234,8 +1415,11 @@ function AppContent() {
                 <ErrorBoundary key="matprocessing">
                   <Suspense fallback={<PageLoadingFallback />}>
                     <MaterialProcessingView
+                      orgSettings={orgSettings}
                       projects={projects}
                       currentUser={currentUser!}
+                      prefs={prefs}
+                      onSetPref={(key, val) => setPref(key as any, val)}
                       onAdd={handleAddMaterialProcessing}
                       onUpdateStage={handleUpdateProcessingStage}
                       onDelete={handleDeleteMaterialProcessing}
@@ -1274,9 +1458,11 @@ function AppContent() {
                 />
               )}
 
-              {activeTab === 'gantt' && (
-                <GanttPage
+              {(activeTab === 'schedule' || activeTab === 'gantt' || activeTab === 'timeline') && (
+                <ProjectSchedulePage
                   projects={projects}
+                  prefs={prefs}
+                  onSetPref={(key, val) => setPref(key as any, val)}
                   onUpdateProject={(updatedProj) => {
                     setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
                     saveItem('projects', updatedProj);
@@ -1296,12 +1482,8 @@ function AppContent() {
                   externalRowKey={projectsHook.depModalRowKey}
                   onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
                   currentUser={currentUser}
-                />
-              )}
-
-              {activeTab === 'timeline' && (
-                <ProjectTimelineView
-                  projects={projects}
+                  orgSettings={orgSettings}
+                  defaultView={activeTab === 'timeline' ? 'timeline' : 'gantt'}
                 />
               )}
 
@@ -1325,6 +1507,7 @@ function AppContent() {
 
                {activeTab === 'employees' && (
                 <EmployeesView
+                  orgSettings={orgSettings}
                   employees={employees}
                   timesheets={timesheets}
                   wireLogs={wireLogs}
@@ -1415,9 +1598,33 @@ function AppContent() {
                   </Suspense>
                 </ErrorBoundary>
               )}
+
+              {activeTab === 'orgsettings' && (
+                <ErrorBoundary key="orgsettings">
+                  <Suspense fallback={<PageLoadingFallback />}>
+                    <OrgSettingsPage
+                      orgSettings={orgSettings}
+                      currentUser={currentUser}
+                      onSave={saveSettings}
+                      onApplyTemplate={applyTemplate}
+                    />
+                  </Suspense>
+                </ErrorBoundary>
+              )}
             </Suspense>
           </ErrorBoundary>
         </main>
+
+        {/* PWA Mobile Install Banner */}
+        <InstallPrompt />
+
+        {/* PWA Mobile Bottom Navigation */}
+        <BottomNav
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          setMobileMenuOpen={setMobileMenuOpen}
+          totalMenuCount={allowedTabs.length}
+        />
 
         {/* Universal Footer Alignment */}
         <footer className={`fixed bottom-0 right-0 py-2.5 px-6 border-t border-base-border bg-base-surface text-base-muted text-[10px] font-condensed font-bold uppercase tracking-wider flex items-center justify-between z-30 shadow-[0_-1px_3px_rgba(0,0,0,0.05)] transition-all duration-300 ${sidebarCollapsed ? 'left-16' : 'left-64'} md:left-auto`}>
@@ -1429,6 +1636,7 @@ function AppContent() {
 
       {/* Modal and forms center */}
       <FormsAndModals
+        orgSettings={orgSettings}
         authHook={authHook}
         projectsHook={projectsHook}
         employeesHook={employeesHook}
@@ -1449,6 +1657,7 @@ function AppContent() {
       />
 
       <GaAutoMatchModal
+        orgSettings={orgSettings}
         isOpen={projectsHook.gaMatchModalOpen}
         gaNumber={projectsHook.pGaNumber}
         matchedProjects={projectsHook.gaMatchCandidates}

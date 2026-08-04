@@ -1,12 +1,44 @@
 /// <reference types="vitest" />
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
+import { VitePWA } from 'vite-plugin-pwa';
 import path from 'path';
 import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss()],
+    plugins: [
+      react(),
+      tailwindcss(),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['icon.svg'],
+        manifest: false,
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+          runtimeCaching: [
+            {
+              urlPattern: /^https:\/\/firestore\.googleapis\.com/,
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'firestore-cache',
+                networkTimeoutSeconds: 10,
+              }
+            },
+            {
+              urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
+              handler: 'CacheFirst',
+              options: {
+                cacheName: 'google-fonts-cache',
+                expiration: { maxEntries: 10, maxAgeSeconds: 60 * 60 * 24 * 365 }
+              }
+            }
+          ],
+          navigateFallback: '/index.html',
+        },
+        devOptions: { enabled: false }
+      })
+    ],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, './src'),

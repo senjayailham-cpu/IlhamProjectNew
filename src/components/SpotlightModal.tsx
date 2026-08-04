@@ -298,10 +298,10 @@ export default function SpotlightModal({
                 {p.status}
               </span>
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-blue-dim text-base-blue border border-base-blue/20">
-                {p.category === 'tray' ? 'Tray' : 'Non-Tray'}
+                {String(p.category || 'Tray')}
               </span>
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-green-dim text-base-green border border-base-green/20">
-                {p.location === 'workshop1' ? 'WS 1' : 'WS 2'}
+                {String(p.location || 'WS 1')}
               </span>
             </div>
           </div>
@@ -380,7 +380,7 @@ export default function SpotlightModal({
         {activeTab === 'overview' && commandCenterData && (
           <div className="flex-1 overflow-y-auto space-y-2">
             {/* KPI GRID (4 cards) */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 px-4 pt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2 px-4 pt-4">
               <div className="bg-base-surface2 border border-base-border rounded-xl p-3">
                 <div className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1">
                   Progress
@@ -523,7 +523,7 @@ export default function SpotlightModal({
                     <Layers className="h-3.5 w-3.5" />
                     <span>Material Processing Status</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[10px]">
                     {['nesting', 'cnc', 'bending', 'machining'].map(stage => {
                       const avg = commandCenterData.stageAverages[stage];
                       const hasData = avg !== undefined;

@@ -1,0 +1,17 @@
+--- src/components/FormsAndModals.tsx
++++ src/components/FormsAndModals.tsx
+@@ -75,6 +75,12 @@
+     ];
+   }, [orgSettings]);
+ 
++  React.useEffect(() => {
++    if (projectsHook.projectFormOpen && !projectsHook.editingProjectId) {
++      if (!categoryOptions.find(o => o.key === projectsHook.pCat)) {
++        projectsHook.setPCat(categoryOptions[0]?.key || 'tray');
++      }
++    }
++  }, [projectsHook.projectFormOpen, projectsHook.editingProjectId, categoryOptions, projectsHook.pCat]);
++
+   const locationOptions = React.useMemo(() => {
+     if (orgSettings?.projectLocations && orgSettings.projectLocations.length > 0) {
+       return orgSettings.projectLocations.map((item: any, idx: number) => {

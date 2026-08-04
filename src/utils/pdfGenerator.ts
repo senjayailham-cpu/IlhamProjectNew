@@ -124,8 +124,8 @@ export function downloadProjectPDF(
   doc.text(project.completedDate || 'N/A', margin + 130, currentY + 21);
   
   // Line 4 Values: Location & Category
-  doc.text(project.location === 'workshop1' ? 'Workshop 1 (W1)' : 'Workshop 2 (W2)', margin + 35, currentY + 28);
-  doc.text(project.category === 'tray' ? 'Tray' : 'Non-Tray', margin + 130, currentY + 28);
+  doc.text(String(project.location || 'N/A').toUpperCase(), margin + 35, currentY + 28);
+  doc.text(String(project.category || 'N/A').toUpperCase(), margin + 130, currentY + 28);
   
   // Line 5 Value: Budget Hours
   doc.text(`${project.budgetHours || 'Not Assigned'} Hours`, margin + 35, currentY + 35);

@@ -387,7 +387,7 @@ export default function ProjectTimelineView({ projects }: ProjectTimelineViewPro
       </div>
 
       {/* STATS PANELS */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Total Active / Completed Card */}
         <div className="bg-base-surface border border-base-border rounded-xl p-4.5 shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
           <div>

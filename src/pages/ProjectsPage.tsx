@@ -1,7 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
-import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar } from 'lucide-react';
+import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
+import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge } from 'lucide-react';
+import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
@@ -127,6 +128,13 @@ interface ProjectsPageProps {
   depModalOpen?: boolean;
   depModalRowKey?: string | null;
   onCloseDepModal?: () => void;
+  orgSettings?: OrgSettings;
+  prefs?: { 
+    projectsViewMode?: string;
+    projectsFilterTab?: string; 
+    projectsSortBy?: string;
+  };
+  onSetPref?: (key: string, value: any) => void;
 }
 
 export function ProjectsPage({
@@ -154,51 +162,60 @@ export function ProjectsPage({
   depModalOpen,
   depModalRowKey,
   onCloseDepModal,
+  orgSettings,
+  prefs,
+  onSetPref
 }: ProjectsPageProps) {
   const { currentUser } = useAuth();
   const can = (perm: any) => canUtil(currentUser, perm);
 
-  const [projectFilterTab, setProjectFilterTab] = React.useState<'current' | 'completed' | 'tray' | 'nontray' | 'archive'>(() => {
-    try {
-      return (localStorage.getItem('projectsFilterTab') as any) || 'current';
-    } catch (_) {
-      return 'current';
-    }
+  const [projectFilterTab, setProjectFilterTab] = React.useState<string>(() => {
+    return prefs?.projectsFilterTab || (localStorage.getItem('projectsFilterTab') as any) || 'current';
   });
 
-  React.useEffect(() => {
-    try {
-      localStorage.setItem('projectsFilterTab', projectFilterTab);
-    } catch (_) {}
-  }, [projectFilterTab]);
-
-  const [viewMode, setViewMode] = React.useState<'list' | 'timeline'>(() => {
-    try {
-      return (localStorage.getItem('gantt_projects_viewMode') as 'list' | 'timeline') || 'list';
-    } catch (_) {
-      return 'list';
-    }
+  const [viewMode, setViewMode] = React.useState<'list' | 'timeline' | 'radial'>(() => {
+    return (prefs?.projectsViewMode as any) || (localStorage.getItem('gantt_projects_viewMode') as any) || 'list';
   });
 
   const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'priority' | 'alphabetical'>(() => {
-    try {
-      return (localStorage.getItem('gantt_projects_sortBy') as 'deadline' | 'priority' | 'alphabetical') || 'deadline';
-    } catch (_) {
-      return 'deadline';
-    }
+    return (prefs?.projectsSortBy as any) || (localStorage.getItem('gantt_projects_sortBy') as any) || 'deadline';
   });
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('gantt_projects_viewMode', viewMode);
-    } catch (_) {}
-  }, [viewMode]);
+    if (prefs?.projectsFilterTab) {
+      setProjectFilterTab(prefs.projectsFilterTab);
+    }
+  }, [prefs?.projectsFilterTab]);
 
   React.useEffect(() => {
-    try {
-      localStorage.setItem('gantt_projects_sortBy', projectSortBy);
-    } catch (_) {}
-  }, [projectSortBy]);
+    if (prefs?.projectsViewMode) {
+      setViewMode(prefs.projectsViewMode as any);
+    }
+  }, [prefs?.projectsViewMode]);
+
+  React.useEffect(() => {
+    if (prefs?.projectsSortBy) {
+      setProjectSortBy(prefs.projectsSortBy as any);
+    }
+  }, [prefs?.projectsSortBy]);
+
+  const handleSetFilterTab = (tab: string) => {
+    setProjectFilterTab(tab);
+    if (onSetPref) onSetPref('projectsFilterTab', tab);
+    else localStorage.setItem('projectsFilterTab', tab);
+  };
+
+  const handleSetViewMode = (mode: 'list' | 'timeline' | 'radial') => {
+    setViewMode(mode);
+    if (onSetPref) onSetPref('projectsViewMode', mode);
+    else localStorage.setItem('gantt_projects_viewMode', mode);
+  };
+
+  const handleSetSortBy = (sort: 'deadline' | 'priority' | 'alphabetical') => {
+    setProjectSortBy(sort);
+    if (onSetPref) onSetPref('projectsSortBy', sort);
+    else localStorage.setItem('gantt_projects_sortBy', sort);
+  };
 
   const scopedTimesheetsForPage = currentTabMonthFilter
     ? timesheets.filter(ts => ts.date && ts.date.slice(0, 7) === currentTabMonthFilter)
@@ -377,10 +394,25 @@ export function ProjectsPage({
           const pDue = parseExcelDate(row[3]);
 
           const catRaw = cellVal(4).toLowerCase();
-          const category: 'tray' | 'nontray' = (catRaw.includes('nontray') || catRaw.includes('non-tray')) ? 'nontray' : 'tray';
+          let category = dynamicCategories.length > 0 ? (typeof dynamicCategories[0] === 'string' ? dynamicCategories[0] : (dynamicCategories[0] as any).key) : 'tray';
+          for (const dCat of dynamicCategories) {
+            const catKey = typeof dCat === 'string' ? dCat : (dCat as any).key;
+            if (catRaw.includes(catKey.toLowerCase())) {
+              category = catKey;
+              break;
+            }
+          }
 
+          const dynamicLocs = orgSettings?.projectLocations || ['workshop1', 'workshop2'];
           const locRaw = cellVal(5).toLowerCase();
-          const location: 'workshop1' | 'workshop2' = (locRaw.includes('workshop2') || locRaw.includes('w2')) ? 'workshop2' : 'workshop1';
+          let location = dynamicLocs.length > 0 ? (typeof dynamicLocs[0] === 'string' ? dynamicLocs[0] : (dynamicLocs[0] as any).key) : 'workshop1';
+          for (const dLoc of dynamicLocs) {
+            const locKey = typeof dLoc === 'string' ? dLoc : (dLoc as any).key;
+            if (locRaw.includes(locKey.toLowerCase())) {
+              location = locKey;
+              break;
+            }
+          }
 
           const budgetHoursRaw = parseFloat(cellVal(6));
           const budgetHours = isNaN(budgetHoursRaw) ? undefined : budgetHoursRaw;
@@ -639,14 +671,13 @@ export function ProjectsPage({
 
   const countCurrent = projects.filter(p => !p.isArchived && (p.status === 'active' || p.status === 'pending' || p.status === 'on-hold')).length;
   const countCompleted = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
-  const countTray = projects.filter(p => p.category === 'tray' && p.status !== 'completed' && !p.isArchived).length;
-  const countNontray = projects.filter(p => p.category === 'nontray' && p.status !== 'completed' && !p.isArchived).length;
   const countArchive = projects.filter(p => p.isArchived === true).length;
+  const dynamicCategories = orgSettings?.projectCategories && orgSettings.projectCategories.length > 0 ? orgSettings.projectCategories : ['tray', 'nontray'];
 
   const renderTabPills = () => (
     <div className="flex flex-wrap bg-base-surface2 border border-base-border p-1 rounded-xl shadow-xs self-start gap-1">
       <button
-        onClick={() => setProjectFilterTab('current')}
+        onClick={() => handleSetFilterTab('current')}
         className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
           projectFilterTab === 'current'
             ? 'bg-base-accent text-white shadow-xs'
@@ -661,7 +692,7 @@ export function ProjectsPage({
         </span>
       </button>
       <button
-        onClick={() => setProjectFilterTab('completed')}
+        onClick={() => handleSetFilterTab('completed')}
         className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
           projectFilterTab === 'completed'
             ? 'bg-base-accent text-white shadow-xs'
@@ -675,38 +706,27 @@ export function ProjectsPage({
           {countCompleted}
         </span>
       </button>
+      {dynamicCategories.map((cat: any) => {
+        const catStr = typeof cat === 'string' ? cat : (cat.label || cat.key || String(cat));
+        const catKey = typeof cat === 'string' ? cat : (cat.key || catStr);
+        const catCount = projects.filter(p => p.category === catKey && p.status !== 'completed' && !p.isArchived).length;
+        return (
+          <button
+            key={catKey}
+            onClick={() => handleSetFilterTab(catKey)}
+            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+              projectFilterTab === catKey ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text'
+            }`}
+          >
+            <span>{catStr}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${projectFilterTab === catKey ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'}`}>
+              {catCount}
+            </span>
+          </button>
+        );
+      })}
       <button
-        onClick={() => setProjectFilterTab('tray')}
-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
-          projectFilterTab === 'tray'
-            ? 'bg-base-accent text-white shadow-xs'
-            : 'text-base-muted hover:text-base-text'
-        }`}
-      >
-        <span>Tray</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-          projectFilterTab === 'tray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
-        }`}>
-          {countTray}
-        </span>
-      </button>
-      <button
-        onClick={() => setProjectFilterTab('nontray')}
-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
-          projectFilterTab === 'nontray'
-            ? 'bg-base-accent text-white shadow-xs'
-            : 'text-base-muted hover:text-base-text'
-        }`}
-      >
-        <span>Non-Tray</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-          projectFilterTab === 'nontray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
-        }`}>
-          {countNontray}
-        </span>
-      </button>
-      <button
-        onClick={() => setProjectFilterTab('archive')}
+        onClick={() => handleSetFilterTab('archive')}
         className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
           projectFilterTab === 'archive'
             ? 'bg-base-accent text-white shadow-xs'
@@ -803,10 +823,10 @@ export function ProjectsPage({
               Current <span className="text-base-accent">Schedules</span>
             </h2>
 
-            {/* Interactive View Toggle: List vs Timeline Gantt */}
+            {/* Interactive View Toggle: List vs Timeline Gantt vs Radial Gauge */}
             <div className="relative flex bg-base-surface2 border border-base-border/70 rounded-xl p-1 shadow-xs select-none">
               <button
-                onClick={() => setViewMode('list')}
+                onClick={() => handleSetViewMode('list')}
                 className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'list'
                     ? 'text-white font-extrabold'
@@ -825,7 +845,7 @@ export function ProjectsPage({
                 <span>List</span>
               </button>
               <button
-                onClick={() => setViewMode('timeline')}
+                onClick={() => handleSetViewMode('timeline')}
                 className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'timeline'
                     ? 'text-white font-extrabold'
@@ -842,6 +862,25 @@ export function ProjectsPage({
                 )}
                 <Calendar className="h-3.5 w-3.5" />
                 <span>Timeline</span>
+              </button>
+              <button
+                onClick={() => handleSetViewMode('radial')}
+                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                  viewMode === 'radial'
+                    ? 'text-white font-extrabold'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Radial Gauge Visualization"
+              >
+                {viewMode === 'radial' && (
+                  <motion.div
+                    layoutId="activeTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <Gauge className="h-3.5 w-3.5" />
+                <span>Radial Gauge</span>
               </button>
             </div>
 
@@ -893,7 +932,7 @@ export function ProjectsPage({
               <select
                 id="current-projects-sort-select"
                 value={projectSortBy}
-                onChange={(e: any) => setProjectSortBy(e.target.value)}
+                onChange={(e: any) => handleSetSortBy(e.target.value)}
                 className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
                 title="Sort projects by"
               >
@@ -932,7 +971,153 @@ export function ProjectsPage({
         </div>
 
         {/* List current active cards */}
-        {viewMode === 'timeline' ? (
+        {viewMode === 'radial' ? (
+          <div className="bg-base-surface border border-base-border rounded-xl p-6 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-border/50 pb-4">
+              <div className="space-y-1">
+                <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
+                  <Gauge className="h-5 w-5 text-base-accent" />
+                  Radial Gauge Visualization
+                </h3>
+                <p className="text-xs text-base-muted2">
+                  High-level radial gauge analytics visualizing overall completion progress across filtered projects.
+                </p>
+              </div>
+              <div className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider">
+                Total Projects: <span className="text-base-accent font-black">{filteredProjects.length}</span>
+              </div>
+            </div>
+
+            {filteredProjects.length === 0 ? (
+              <div className="py-12 text-center bg-base-surface2/30 border border-dashed border-base-border rounded-xl text-base-muted text-xs space-y-3">
+                <div>No projects match the selected search or month filter.</div>
+                <div className="flex gap-2 justify-center">
+                  {projectSearchQuery && (
+                    <button
+                      onClick={() => setProjectSearchQuery('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear search filter
+                    </button>
+                  )}
+                  {currentTabMonthFilter && (
+                    <button
+                      onClick={() => setCurrentTabMonthFilter('')}
+                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                    >
+                      Clear month filter
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                {filteredProjects.map(p => {
+                  const pct = calcPct(p);
+                  const taskCounts = calcTaskCounts(p);
+                  const todayStr = new Date().toISOString().slice(0, 10);
+                  const isOverdue = p.due && p.due < todayStr && p.status !== 'completed';
+                  
+                  const gaugeColor = pct >= 100 
+                    ? '#10b981' 
+                    : isOverdue 
+                    ? '#f43f5e' 
+                    : p.status === 'active' 
+                    ? '#3b82f6' 
+                    : '#f59e0b';
+
+                  return (
+                    <div
+                      key={p.id}
+                      onClick={() => {
+                        setSpotlightProjectId(p.id);
+                        setSpotlightOpen(true);
+                      }}
+                      className="bg-base-surface2/30 hover:bg-base-surface2/80 border border-base-border hover:border-base-accent/60 p-4 rounded-xl shadow-xs hover:shadow-card transition-all cursor-pointer group flex flex-col items-center justify-between text-center relative overflow-hidden space-y-3"
+                    >
+                      {/* Top Bar Info */}
+                      <div className="w-full flex items-center justify-between text-[10px] font-condensed font-bold uppercase tracking-wider">
+                        <span className="text-base-muted truncate max-w-[120px]" title={p.client}>
+                          {p.client || 'Client N/A'}
+                        </span>
+                        <span
+                          className="px-2 py-0.5 rounded-md border text-[9px] uppercase font-bold"
+                          style={{
+                            backgroundColor: p.status === 'completed' ? '#10b98115' : p.status === 'active' ? '#3b82f615' : '#f59e0b15',
+                            color: p.status === 'completed' ? '#10b981' : p.status === 'active' ? '#3b82f6' : '#f59e0b',
+                            borderColor: p.status === 'completed' ? '#10b98130' : p.status === 'active' ? '#3b82f630' : '#f59e0b30'
+                          }}
+                        >
+                          {p.status}
+                        </span>
+                      </div>
+
+                      {/* Radial Gauge Chart Container */}
+                      <div className="relative w-36 h-36 flex items-center justify-center my-1">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <RadialBarChart
+                            cx="50%"
+                            cy="50%"
+                            innerRadius="72%"
+                            outerRadius="100%"
+                            barSize={11}
+                            data={[{ name: p.name, value: pct, fill: gaugeColor }]}
+                            startAngle={90}
+                            endAngle={-270}
+                          >
+                            <PolarAngleAxis type="number" domain={[0, 100]} angleAxisId={0} tick={false} />
+                            <RadialBar
+                              background={{ fill: 'var(--border)', opacity: 0.3 }}
+                              dataKey="value"
+                              cornerRadius={8}
+                            />
+                          </RadialBarChart>
+                        </ResponsiveContainer>
+
+                        {/* Center Overlay Text */}
+                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                          <span className="font-condensed font-black text-2xl tracking-tight text-base-text group-hover:scale-110 transition-transform">
+                            {pct}%
+                          </span>
+                          <span className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-widest">
+                            {pct >= 100 ? 'COMPLETE' : 'PROGRESS'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Project Meta Details */}
+                      <div className="w-full space-y-1.5 border-t border-base-border/50 pt-2.5">
+                        <h4 className="font-condensed font-extrabold text-xs text-base-text truncate group-hover:text-base-accent transition-colors" title={p.name}>
+                          {p.name}
+                        </h4>
+
+                        <div className="flex items-center justify-center gap-3 text-[11px] text-base-muted">
+                          <span className="font-mono font-bold text-base-text">{taskCounts.done}/{taskCounts.total} Tasks</span>
+                          <span>•</span>
+                          <span className={`font-mono text-[10px] ${isOverdue ? 'text-rose-500 font-bold' : ''}`}>
+                            {p.due ? `Due: ${p.due.slice(5)}` : 'No Due Date'}
+                          </span>
+                        </div>
+
+                        {/* Location Badge */}
+                        <div className="pt-1 flex items-center justify-center gap-1.5">
+                          <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted px-2 py-0.5 rounded bg-base-bg border border-base-border">
+                            {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location || 'All Locs'}
+                          </span>
+                          {isOverdue && (
+                            <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                              Overdue
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : viewMode === 'timeline' ? (
           <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs overflow-hidden">
             {filteredProjects.length === 0 ? (
               <div className="py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
@@ -966,6 +1151,7 @@ export function ProjectsPage({
                 depModalOpen={depModalOpen}
                 depModalRowKey={depModalRowKey || undefined}
                 onCloseDepModal={onCloseDepModal}
+                orgSettings={orgSettings}
               />
             )}
           </div>
@@ -1217,9 +1403,15 @@ export function ProjectsPage({
   // Handle completed, tray, nontray, archive tabs
   const matchedProjects = projects.filter(p => {
     if (projectFilterTab === 'completed') return p.status === 'completed' && !p.isArchived;
-    if (projectFilterTab === 'tray') return p.category === 'tray' && p.status !== 'completed' && !p.isArchived;
-    if (projectFilterTab === 'nontray') return p.category === 'nontray' && p.status !== 'completed' && !p.isArchived;
     if (projectFilterTab === 'archive') return p.isArchived === true;
+    
+    // Check if it matches a dynamic category
+    const isDynamicCat = dynamicCategories.some((cat: any) => {
+      const catKey = typeof cat === 'string' ? cat : (cat.key || cat.label || String(cat));
+      return catKey === projectFilterTab;
+    });
+    if (isDynamicCat) return p.category === projectFilterTab && p.status !== 'completed' && !p.isArchived;
+    
     return false;
   });
 
@@ -1229,11 +1421,9 @@ export function ProjectsPage({
       <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
         {projectFilterTab === 'completed'
           ? 'Completed Log'
-          : projectFilterTab === 'tray'
-            ? 'Tray Sub-directory'
-            : projectFilterTab === 'nontray'
-              ? 'Non-Tray Sub-directory'
-              : 'Historical Archive'}
+          : projectFilterTab === 'archive'
+            ? 'Historical Archive'
+            : `${projectFilterTab} Sub-directory`}
       </h2>
 
       {matchedProjects.length === 0 ? (

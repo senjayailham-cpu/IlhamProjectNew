@@ -1,6 +1,17 @@
-export function normalizePosition(pos?: string): string {
+import { OrgSettings } from '../types';
+
+export function normalizePosition(pos?: string, tradePositions?: OrgSettings['tradePositions']): string {
   if (!pos) return 'Other';
   const p = pos.toLowerCase();
+
+  if (tradePositions && tradePositions.length > 0) {
+    for (const trade of tradePositions) {
+      if (p.includes(trade.key.toLowerCase()) || p.includes(trade.label.toLowerCase())) {
+        return trade.label;
+      }
+    }
+  }
+
   if (p.includes('welder'))     return 'Welder';
   if (p.includes('fitter'))     return 'Fitter';
   if (p.includes('grinder'))    return 'Grinder';
@@ -15,6 +26,15 @@ export function normalizePosition(pos?: string): string {
   if (p.includes('helper'))     return 'Helper';
   if (p.includes('admin'))      return 'Admin';
   return pos.split(' ')[0] || 'Other';
+}
+
+export function getCraftColor(position: string, tradePositions?: OrgSettings['tradePositions']): string {
+  const normalized = normalizePosition(position, tradePositions);
+  if (tradePositions) {
+    const found = tradePositions.find(t => t.label.toLowerCase() === normalized.toLowerCase() || t.key.toLowerCase() === normalized.toLowerCase());
+    if (found?.color) return found.color;
+  }
+  return CRAFT_COLORS[normalized] || 'var(--muted)';
 }
 
 export const CRAFT_COLORS: Record<string, string> = {

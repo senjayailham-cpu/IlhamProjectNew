@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Project, Assembly } from '../types';
+import { Project, Assembly, OrgSettings } from '../types';
 import { Copy, Calendar } from 'lucide-react';
 import { calculateProjectDuration, calculateFinishFromStart } from '../utils/copyStructureUtils';
 
@@ -11,6 +11,7 @@ interface GaAutoMatchModalProps {
   onConfirmCopy: (sourceProject: Project, calculatedFinish: string) => void;   // create + copy
   onCreateEmpty: () => void;                          // create without copy
   onCancel: () => void;                               // cancel entirely
+  orgSettings?: OrgSettings;
 }
 
 export function GaAutoMatchModal({
@@ -21,7 +22,9 @@ export function GaAutoMatchModal({
   onConfirmCopy,
   onCreateEmpty,
   onCancel,
+  orgSettings,
 }: GaAutoMatchModalProps) {
+  const gaNumberLabel = orgSettings?.terminology?.gaNumberLabel || 'GA Number';
   const [selectedSource, setSelectedSource] = useState<Project | null>(null);
 
   useEffect(() => {
@@ -54,7 +57,7 @@ export function GaAutoMatchModal({
           </div>
           <div>
             <h3 className="font-condensed font-black uppercase text-sm text-base-text">
-              GA Number Terdeteksi Sama
+              {gaNumberLabel} Terdeteksi Sama
             </h3>
             <p className="text-[10px] text-base-muted mt-0.5">
               {gaNumber} sudah digunakan {matchedProjects.length} project lain
@@ -65,7 +68,7 @@ export function GaAutoMatchModal({
         {/* Body */}
         <div className="p-5 space-y-4">
           <div className="bg-base-accent-dim/10 border border-base-accent/20 rounded-lg p-3 text-xs text-base-muted leading-relaxed">
-            Project dengan GA Number yang sama dianggap produk/desain sejenis.
+            Project dengan {gaNumberLabel} yang sama dianggap produk/desain sejenis.
             Untuk konsistensi, struktur <strong className="text-base-text">
             Sub-Assembly, Task, dan daftar Material Processing (BOM)</strong> akan disalin otomatis dari salah satu project berikut.
             Progress akan dimulai dari 0% (bukan disalin).

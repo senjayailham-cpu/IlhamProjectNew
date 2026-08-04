@@ -2,8 +2,10 @@ import React from 'react';
 import { TimesheetEntry, Employee, Project, User } from '../../types';
 import { can } from '../../utils/permissions';
 import { fmtHrs } from '../../utils/projectUtils';
+import * as XLSX from 'xlsx';
 import { 
   Clock, 
+
   Calendar, 
   ClipboardList, 
   Trash2, 
@@ -99,6 +101,30 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
 }) => {
   const canManageTimesheet = can(currentUser as any, 'manageTimesheet');
   const canDeleteTimesheet = can(currentUser as any, 'deleteTimesheet');
+
+  const handleExportExcel = () => {
+    if (dayEntries.length === 0) {
+      alert('No data to export for this day.');
+      return;
+    }
+    const exportData = dayEntries.map((e: any) => ({
+      'Date': e.date,
+      'Employee No': e.empNo || '',
+      'Employee Name': e.empName,
+      'Coordinator': e.coordinator || '',
+      'Status': e.status,
+      'Work Order': e.workOrder || '',
+      'Project': e.projectName || '',
+      'Sub-Assembly': e.assemblyName || '',
+      'Task': e.desc || '',
+      'Hours': e.totalHours || 0
+    }));
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Daily Timesheet');
+    XLSX.writeFile(wb, `Daily_Timesheet_${timesheetDate}.xlsx`);
+  };
   return (
     <>
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 animate-fade-in">
@@ -187,7 +213,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
         {/* Global Action Handlers */}
         <div className="flex items-center gap-2">
           <button
-            onClick={exportTimesheetDaily}
+            onClick={handleExportExcel}
             className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer"
           >
             <ClipboardList className="h-4 w-4 text-base-blue animate-pulse" />

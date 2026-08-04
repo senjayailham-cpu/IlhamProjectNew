@@ -1,0 +1,93 @@
+--- src/pages/ProjectsPage.tsx
++++ src/pages/ProjectsPage.tsx
+@@ -641,9 +641,8 @@
+ 
+   const countCurrent = projects.filter(p => !p.isArchived && (p.status === 'active' || p.status === 'pending' || p.status === 'on-hold')).length;
+   const countCompleted = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
+-  const countTray = projects.filter(p => p.category === 'tray' && p.status !== 'completed' && !p.isArchived).length;
+-  const countNontray = projects.filter(p => p.category === 'nontray' && p.status !== 'completed' && !p.isArchived).length;
+   const countArchive = projects.filter(p => p.isArchived === true).length;
++  const dynamicCategories = orgSettings?.projectCategories && orgSettings.projectCategories.length > 0 ? orgSettings.projectCategories : ['tray', 'nontray'];
+ 
+   const renderTabPills = () => (
+     <div className="flex flex-wrap bg-base-surface2 border border-base-border p-1 rounded-xl shadow-xs self-start gap-1">
+@@ -671,36 +670,22 @@
+           {countCompleted}
+         </span>
+       </button>
+-      <button
+-        onClick={() => setProjectFilterTab('tray')}
+-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+-          projectFilterTab === 'tray'
+-            ? 'bg-base-accent text-white shadow-xs'
+-            : 'text-base-muted hover:text-base-text'
+-        }`}
+-      >
+-        <span>Tray</span>
+-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+-          projectFilterTab === 'tray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+-        }`}>
+-          {countTray}
+-        </span>
+-      </button>
+-      <button
+-        onClick={() => setProjectFilterTab('nontray')}
+-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+-          projectFilterTab === 'nontray'
+-            ? 'bg-base-accent text-white shadow-xs'
+-            : 'text-base-muted hover:text-base-text'
+-        }`}
+-      >
+-        <span>Non-Tray</span>
+-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+-          projectFilterTab === 'nontray' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+-        }`}>
+-          {countNontray}
+-        </span>
+-      </button>
++      {dynamicCategories.map((cat: string) => {
++        const catCount = projects.filter(p => p.category === cat && p.status !== 'completed' && !p.isArchived).length;
++        return (
++          <button
++            key={cat}
++            onClick={() => setProjectFilterTab(cat)}
++            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
++              projectFilterTab === cat ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text'
++            }`}
++          >
++            <span>{cat}</span>
++            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${projectFilterTab === cat ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'}`}>
++              {catCount}
++            </span>
++          </button>
++        );
++      })}
+       <button
+         onClick={() => setProjectFilterTab('archive')}
+         className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+@@ -1220,9 +1205,8 @@
+   // Handle completed, tray, nontray, archive tabs
+   const matchedProjects = projects.filter(p => {
+     if (projectFilterTab === 'completed') return p.status === 'completed' && !p.isArchived;
+-    if (projectFilterTab === 'tray') return p.category === 'tray' && p.status !== 'completed' && !p.isArchived;
+-    if (projectFilterTab === 'nontray') return p.category === 'nontray' && p.status !== 'completed' && !p.isArchived;
+     if (projectFilterTab === 'archive') return p.isArchived === true;
++    if (dynamicCategories.includes(projectFilterTab)) return p.category === projectFilterTab && p.status !== 'completed' && !p.isArchived;
+     return false;
+   });
+ 
+@@ -1233,11 +1217,9 @@
+       <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
+         {projectFilterTab === 'completed'
+           ? 'Completed Log'
+-          : projectFilterTab === 'tray'
+-            ? 'Tray Sub-directory'
+-            : projectFilterTab === 'nontray'
+-              ? 'Non-Tray Sub-directory'
+-              : 'Historical Archive'}
++          : projectFilterTab === 'archive'
++            ? 'Historical Archive'
++            : `${projectFilterTab} Sub-directory`}
+       </h2>
+       {matchedProjects.length === 0 ? (
+         <div className="bg-base-surface border border-base-border rounded-xl p-8 text-center text-sm text-base-muted font-medium">

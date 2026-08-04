@@ -188,7 +188,7 @@ export function SpotlightOverviewTab({
                       {(() => {
                         const usedHours = getManHoursForAssembly(project.client || '', a.id, modalTimesheets);
                         const hasBudget = a.budgetHours !== undefined && a.budgetHours > 0;
-                        const isOverBudget = hasBudget && usedHours >= a.budgetHours;
+                        const isOverBudget = hasBudget && usedHours >= (a.budgetHours ?? 0);
                         return (
                           <span 
                             className={`inline-flex items-center gap-1 text-[10px] font-condensed font-extrabold uppercase px-1.5 py-0.5 rounded border transition-all ${

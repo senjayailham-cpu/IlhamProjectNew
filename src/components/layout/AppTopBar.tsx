@@ -38,6 +38,8 @@ interface AppTopBarProps {
   materials?: MaterialItem[];
   setActiveTab?: (tab: string) => void;
   openSpotlight?: (id: string) => void;
+  readNotificationIds?: string[];
+  onMarkRead?: (ids: string[]) => void;
 }
 
 type SearchCategory = 'all' | 'projects' | 'personnel' | 'materials';
@@ -68,6 +70,8 @@ export function AppTopBar({
   materials = [],
   setActiveTab,
   openSpotlight,
+  readNotificationIds,
+  onMarkRead,
 }: AppTopBarProps) {
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,9 +101,9 @@ export function AppTopBar({
     // 1. Projects search
     if (activeCategory === 'all' || activeCategory === 'projects') {
       projects.forEach(p => {
-        const matchesName = p.name.toLowerCase().includes(query);
-        const matchesClient = p.client.toLowerCase().includes(query);
-        const matchesAssemblies = p.assemblies?.some(a => a.name.toLowerCase().includes(query));
+        const matchesName = (p.name || '').toLowerCase().includes(query);
+        const matchesClient = (p.client || '').toLowerCase().includes(query);
+        const matchesAssemblies = p.assemblies?.some(a => (a.name || '').toLowerCase().includes(query));
         
         if (matchesName || matchesClient || matchesAssemblies) {
           list.push({
@@ -107,7 +111,7 @@ export function AppTopBar({
             type: 'project',
             title: p.name,
             subtitle: `Work Order: ${p.client} • ${p.assemblies?.length || 0} Assemblies`,
-            badge: p.status.toUpperCase(),
+            badge: (p.status || '').toUpperCase(),
             badgeColor: p.status === 'completed' ? 'bg-base-green-dim text-base-green' : p.status === 'active' ? 'bg-base-blue-dim text-base-blue' : 'bg-base-accent-dim text-base-accent',
             data: p
           });
@@ -118,7 +122,7 @@ export function AppTopBar({
     // 2. Personnel search
     if (activeCategory === 'all' || activeCategory === 'personnel') {
       employees.forEach(e => {
-        const matchesName = e.name.toLowerCase().includes(query);
+        const matchesName = (e.name || '').toLowerCase().includes(query);
         const matchesPosition = e.position?.toLowerCase().includes(query);
         const matchesLoc = e.location?.toLowerCase().includes(query);
         const matchesNo = e.empNo?.toLowerCase().includes(query);
@@ -140,8 +144,8 @@ export function AppTopBar({
     // 3. Materials search
     if (activeCategory === 'all' || activeCategory === 'materials') {
       materials.forEach(m => {
-        const matchesName = m.name.toLowerCase().includes(query);
-        const matchesCategory = m.category.toLowerCase().includes(query);
+        const matchesName = (m.name || '').toLowerCase().includes(query);
+        const matchesCategory = (m.category || '').toLowerCase().includes(query);
         const matchesLoc = m.location?.toLowerCase().includes(query);
         const matchesNotes = m.notes?.toLowerCase().includes(query);
 

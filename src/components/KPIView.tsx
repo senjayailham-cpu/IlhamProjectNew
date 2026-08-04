@@ -611,7 +611,7 @@ export default function KPIView({
       </div>
 
       {/* TOP SUMMARY STRIP ROW (5 CARDS) */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         
         {/* Total Wire Card */}
         <div className="bg-base-surface border border-base-border p-4 rounded-2xl shadow-card flex items-center gap-4">

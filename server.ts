@@ -2,9 +2,39 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import { initializeApp, getApps } from "firebase-admin/app";
+import { getAuth } from "firebase-admin/auth";
+import rateLimit from "express-rate-limit";
 
 const app = express();
 const PORT = 3000;
+
+if (getApps().length === 0) {
+  initializeApp();
+}
+
+async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    res.status(401).json({ error: "Unauthorized: missing token" });
+    return;
+  }
+  const idToken = authHeader.split("Bearer ")[1];
+  try {
+    await getAuth().verifyIdToken(idToken);
+    next();
+  } catch (err) {
+    res.status(401).json({ error: "Unauthorized: invalid token" });
+  }
+}
+
+const geminiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 20,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { error: "Too many requests, please try again later." },
+});
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -43,7 +73,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 // Endpoint: AI Center Chat Q&A
-app.post("/api/gemini/chat", async (req, res) => {
+app.post("/api/gemini/chat", geminiLimiter, requireAuth, async (req, res) => {
   try {
     const { prompt, context } = req.body;
 
@@ -84,7 +114,7 @@ Instructions: Analyze the system context above and give a direct, highly accurat
 });
 
 // Endpoint: AI Project Risk & Timeline Analysis
-app.post("/api/gemini/analyze-project", async (req, res) => {
+app.post("/api/gemini/analyze-project", geminiLimiter, requireAuth, async (req, res) => {
   try {
     const { project, timesheets, problemReports, materials } = req.body;
 
@@ -127,7 +157,7 @@ Perform an AI Audit covering:
 });
 
 // Endpoint: Executive Site Daily Report AI Generator
-app.post("/api/gemini/generate-report", async (req, res) => {
+app.post("/api/gemini/generate-report", geminiLimiter, requireAuth, async (req, res) => {
   try {
     const { date, summaryData } = req.body;
 

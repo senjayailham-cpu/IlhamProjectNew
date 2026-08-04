@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders, Gauge, Target, MapPin } from 'lucide-react';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -11,7 +11,10 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip,
-  Legend
+  Legend,
+  RadialBarChart,
+  RadialBar,
+  PolarAngleAxis
 } from 'recharts';
 
 interface DashboardViewProps {
@@ -70,6 +73,7 @@ export default function DashboardView({
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
   const [sCurveView, setSCurveView] = useState<'month' | 'quarter'>('month');
   const [showProjectScopeTable, setShowProjectScopeTable] = useState<boolean>(false);
+  const [gaugeFilter, setGaugeFilter] = useState<'active' | 'all' | 'overdue' | 'completed'>('active');
 
   const handleToggleProjectScope = () => {
     setShowProjectScopeTable(prev => {
@@ -607,6 +611,16 @@ export default function DashboardView({
     return p.location === dashLoc;
   });
 
+  const gaugeProjects = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    return filteredProjects.filter(p => {
+      if (gaugeFilter === 'active') return p.status === 'active' || p.status === 'pending';
+      if (gaugeFilter === 'completed') return p.status === 'completed';
+      if (gaugeFilter === 'overdue') return p.due && p.due < todayStr && p.status !== 'completed';
+      return true; // 'all'
+    });
+  }, [filteredProjects, gaugeFilter]);
+
   // Task statistics
   let totalTasks = 0;
   let doneTasks = 0;
@@ -1065,19 +1079,19 @@ export default function DashboardView({
 
       {/* SECTION 2 — Bento KPI Grid */}
       <div className="space-y-3">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Card 1 - Total Projects */}
           <div 
             onClick={() => setActiveModal('project')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Folder className="h-4.5 w-4.5 text-base-accent" />
+                <Folder className="h-4.5 w-4.5 text-base-muted" />
                 Total projects
               </div>
-              <svg className="w-10 h-3 text-base-accent/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="4" r="1" fill="currentColor" />
@@ -1087,7 +1101,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">{filteredProjects.length}</div>
+              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{filteredProjects.length}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
           </div>
@@ -1095,15 +1109,15 @@ export default function DashboardView({
           {/* Card 2 - Active */}
           <div 
             onClick={() => setActiveModal('active')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Clock className="h-4.5 w-4.5 text-base-blue" />
+                <Clock className="h-4.5 w-4.5 text-base-muted" />
                 Active
               </div>
-              <svg className="w-10 h-3 text-base-blue/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,6 L 12,3 L 22,7 L 32,4 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="6" r="1" fill="currentColor" />
                 <circle cx="12" cy="3" r="1" fill="currentColor" />
@@ -1113,7 +1127,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{activeCount}</div>
+              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{activeCount}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">in progress</p>
           </div>
@@ -1121,15 +1135,15 @@ export default function DashboardView({
           {/* Card 3 - Completed */}
           <div 
             onClick={() => setActiveModal('completed')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <CheckCircle className="h-4.5 w-4.5 text-base-green" />
+                <CheckCircle className="h-4.5 w-4.5 text-base-muted" />
                 Completed
               </div>
-              <svg className="w-10 h-3 text-base-green/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,5 L 12,6 L 22,4 L 32,7 L 42,3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="5" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1139,7 +1153,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{completedCount}</div>
+              <div className={`text-3xl font-condensed font-extrabold select-none ${completedCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{completedCount}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">finished</p>
           </div>
@@ -1150,7 +1164,7 @@ export default function DashboardView({
               setActiveModal('overdue');
               setOverdueTab(overdueCount > 0 ? 'projects' : overdueTasksList.length > 0 ? 'tasks' : 'projects');
             }}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
@@ -1158,7 +1172,7 @@ export default function DashboardView({
                 <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
                 Overdue
               </div>
-              <svg className="w-10 h-3 text-base-red/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,3 L 12,5 L 22,3 L 32,6 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="3" r="1" fill="currentColor" />
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -1168,12 +1182,12 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">
+              <div className={`text-3xl font-condensed font-extrabold select-none ${(overdueCount > 0 || overdueTasksList.length > 0) ? 'text-base-red' : 'text-base-text'}`}>
                 {overdueCount} <span className="text-xs font-medium text-base-muted">Proj</span>
                 {overdueTasksList.length > 0 && (
                   <>
                     <span className="text-base-muted text-sm mx-1">/</span>
-                    <span className="text-base-red/90">{overdueTasksList.length}</span> <span className="text-xs font-medium text-base-muted">Tasks</span>
+                    <span className={overdueTasksList.length > 0 ? 'text-base-red' : 'text-base-text'}>{overdueTasksList.length}</span> <span className="text-xs font-medium text-base-muted">Tasks</span>
                   </>
                 )}
               </div>
@@ -1188,19 +1202,19 @@ export default function DashboardView({
         </div>
 
         {/* Second row - attendance + manhours + material processing */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
           {/* Card 5 - Man Hours */}
           <div 
             onClick={() => setActiveModal('man-hours')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Clock className="h-4.5 w-4.5 text-base-blue" />
+                <Clock className="h-4.5 w-4.5 text-base-muted" />
                 Man-hours
               </div>
-              <svg className="w-10 h-3 text-base-blue/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,5 L 22,6 L 32,4 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -1210,7 +1224,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-blue select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
+              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
           </div>
@@ -1218,15 +1232,15 @@ export default function DashboardView({
           {/* Card 6 - Present Today */}
           <div 
             onClick={() => setActiveModal('present')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Users className="h-4.5 w-4.5 text-base-green" />
+                <Users className="h-4.5 w-4.5 text-base-muted" />
                 Present
               </div>
-              <svg className="w-10 h-3 text-base-green/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,4 L 12,6 L 22,3 L 32,5 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="4" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1236,7 +1250,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-green select-none">{presentCount}</div>
+              <div className={`text-3xl font-condensed font-extrabold select-none ${presentCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{presentCount}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
           </div>
@@ -1244,15 +1258,15 @@ export default function DashboardView({
           {/* Card 7 - Absent Today */}
           <div 
             onClick={() => setActiveModal('absent')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <ShieldAlert className="h-4.5 w-4.5 text-base-red" />
+                <ShieldAlert className="h-4.5 w-4.5 text-base-muted" />
                 Absent
               </div>
-              <svg className="w-10 h-3 text-base-red/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="4" r="1" fill="currentColor" />
@@ -1262,22 +1276,22 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-red select-none">{absentCount}</div>
+              <div className={`text-3xl font-condensed font-extrabold select-none ${absentCount > 0 ? 'text-base-red' : 'text-base-text'}`}>{absentCount}</div>
             </div>
             <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
           </div>
 
           {/* Card 8 - Material Processing Shop-Floor */}
           <div 
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-4 border-b-base-accent group transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
             <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
               <div className="flex items-center gap-1.5">
-                <Layers className="h-4.5 w-4.5 text-base-accent" />
+                <Layers className="h-4.5 w-4.5 text-base-muted" />
                 Mat. Processing
               </div>
-              <svg className="w-10 h-3 text-base-accent/35" viewBox="0 0 50 10">
+              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
                 <path d="M 2,3 L 12,6 L 22,4 L 32,7 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="3" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1287,7 +1301,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-accent select-none">
+              <div className={`text-3xl font-condensed font-extrabold select-none ${overdueProc > 0 ? 'text-base-red' : 'text-base-text'}`}>
                 {completedProc}/{totalProc}
               </div>
               {overdueProc > 0 && (
@@ -1351,7 +1365,7 @@ export default function DashboardView({
                     <span className="text-base-text">Actual Completion</span>
                   </div>
                   <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
-                    <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-blue" />
+                    <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-muted2" />
                     <span className="text-base-muted2">Planned Baseline</span>
                   </div>
                 </div>
@@ -1728,7 +1742,7 @@ export default function DashboardView({
             {/* Big attendance visual */}
             <div className="flex items-center justify-center gap-6 py-2">
               <div className="text-center">
-                <div className="text-4xl font-condensed font-extrabold text-base-green">{presentCount}</div>
+                <div className={`text-4xl font-condensed font-extrabold ${presentCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{presentCount}</div>
                 <div className="text-xs text-base-muted font-condensed font-bold uppercase mt-1">Present</div>
               </div>
               <div className="text-2xl text-base-border font-light">/</div>
