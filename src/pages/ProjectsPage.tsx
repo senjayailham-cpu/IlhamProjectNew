@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Copy, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
@@ -9,7 +9,6 @@ import { useAuth } from '../hooks/useAuth';
 import { can as canUtil } from '../utils/permissions';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
-import GanttView from '../components/GanttView';
 
 function getProjectCriticalPath(p: Project, allProjects: Project[]) {
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -114,7 +113,6 @@ interface ProjectsPageProps {
   openAddProject: () => void;
   openEditProjectForm: (pid: string) => void;
   openAssemblyAddForm: (pid: string) => void;
-  openCopyModalLauncher: (pid: string) => void;
   setSpotlightProjectId: (id: string | null) => void;
   setSpotlightOpen: (open: boolean) => void;
   archiveProject: (pid: string) => void;
@@ -122,6 +120,7 @@ interface ProjectsPageProps {
   importProjectsExcel?: (projects: Project[]) => void;
   deleteProjectDetails?: (pid: string) => void;
   deleteProjectsExceptTarget?: (targetWorkOrder: string) => void;
+  openCopyModalLauncher?: (pid: string) => void;
   // GANTT INTERACTIVE PROPS
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
@@ -149,7 +148,6 @@ export function ProjectsPage({
   openAddProject,
   openEditProjectForm,
   openAssemblyAddForm,
-  openCopyModalLauncher,
   setSpotlightProjectId,
   setSpotlightOpen,
   archiveProject,
@@ -157,6 +155,7 @@ export function ProjectsPage({
   importProjectsExcel,
   deleteProjectDetails,
   deleteProjectsExceptTarget,
+  openCopyModalLauncher,
   onUpdateProject,
   onOpenDepModal,
   depModalOpen,
@@ -173,8 +172,9 @@ export function ProjectsPage({
     return prefs?.projectsFilterTab || (localStorage.getItem('projectsFilterTab') as any) || 'current';
   });
 
-  const [viewMode, setViewMode] = React.useState<'list' | 'timeline' | 'radial'>(() => {
-    return (prefs?.projectsViewMode as any) || (localStorage.getItem('gantt_projects_viewMode') as any) || 'list';
+  const [viewMode, setViewMode] = React.useState<'list' | 'radial'>(() => {
+    const saved = (prefs?.projectsViewMode as any) || (localStorage.getItem('gantt_projects_viewMode') as any) || 'list';
+    return saved === 'radial' ? 'radial' : 'list';
   });
 
   const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'priority' | 'alphabetical'>(() => {
@@ -205,7 +205,7 @@ export function ProjectsPage({
     else localStorage.setItem('projectsFilterTab', tab);
   };
 
-  const handleSetViewMode = (mode: 'list' | 'timeline' | 'radial') => {
+  const handleSetViewMode = (mode: 'list' | 'radial') => {
     setViewMode(mode);
     if (onSetPref) onSetPref('projectsViewMode', mode);
     else localStorage.setItem('gantt_projects_viewMode', mode);
@@ -362,6 +362,7 @@ export function ProjectsPage({
           budgetHours?: number;
           targetMonth?: string;
           gaNumber?: string;
+          customer?: string;
           assembliesMap: Record<string, {
             name: string;
             budgetHours?: number;
@@ -441,7 +442,8 @@ export function ProjectsPage({
 
           const difficultyRaw = parseInt(cellVal(16), 10); // geser dari 14 -> 16
           const difficulty = isNaN(difficultyRaw) || difficultyRaw <= 0 ? 1 : difficultyRaw;
-          const gaNumber = cellVal(17).toUpperCase(); // Kolom baru paling akhir — GA Number
+          const gaNumber = cellVal(17).toUpperCase(); // GA Number
+          const customer = cellVal(18); // Kolom baru paling akhir — Customer name
 
           const pKey = pName.toLowerCase() + '||' + pWorkOrder.toLowerCase();
 
@@ -456,12 +458,14 @@ export function ProjectsPage({
               budgetHours,
               targetMonth,
               gaNumber: gaNumber || undefined,
+              customer: customer.trim() || undefined,
               assembliesMap: {}
             };
           }
 
           const pGroup = importMap[pKey];
           if (gaNumber && !pGroup.gaNumber) pGroup.gaNumber = gaNumber;
+          if (customer && !pGroup.customer) pGroup.customer = customer.trim() || undefined;
           if (pStart && !pGroup.start) pGroup.start = pStart;
           if (pDue && !pGroup.due) pGroup.due = pDue;
           if (budgetHours && !pGroup.budgetHours) pGroup.budgetHours = budgetHours;
@@ -523,6 +527,7 @@ export function ProjectsPage({
             name: p.name,
             client: p.workOrder,
             gaNumber: p.gaNumber || '',
+            customer: p.customer || undefined,
             start: p.start,
             due: p.due,
             status: 'active',
@@ -560,7 +565,7 @@ export function ProjectsPage({
         'Project Name', 'Work Order', 'Start Date', 'Due Date', 'Category',
         'Location', 'Budget Hours', 'Target Month', 'Assembly Name',
         'Assembly Budget Hours', 'Assembly Start', 'Assembly Finish',
-        'Task Name', 'Is Milestone', 'Task Start', 'Task Finish', 'Difficulty', 'GA Number'
+        'Task Name', 'Is Milestone', 'Task Start', 'Task Finish', 'Difficulty', 'GA Number', 'Customer'
       ];
 
       const sampleRows = [
@@ -568,19 +573,19 @@ export function ProjectsPage({
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Design Structural Framing', 'No', '2026-07-02', '2026-07-08', '2', 'GA17733'
+          'Design Structural Framing', 'No', '2026-07-02', '2026-07-08', '2', 'GA17733', 'PT Chevron Pacific'
         ],
         [
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Material Procurement', 'No', '2026-07-09', '2026-07-14', '1', 'GA17733'
+          'Material Procurement', 'No', '2026-07-09', '2026-07-14', '1', 'GA17733', 'PT Chevron Pacific'
         ],
         [
           'Austin Batam Project A', 'WO-2026-001', '2026-07-01', '2026-07-31', 'Tray',
           'Batam Workshop', '120', '2026-07', 'Assembly Structure Alpha',
           '40', '2026-07-02', '2026-07-15',
-          'Alpha Phase Milestone', 'Yes', '2026-07-15', '2026-07-15', '1', 'GA17733'
+          'Alpha Phase Milestone', 'Yes', '2026-07-15', '2026-07-15', '1', 'GA17733', 'PT Chevron Pacific'
         ]
       ];
 
@@ -602,7 +607,8 @@ export function ProjectsPage({
         { wch: 12 }, // Task Start
         { wch: 12 }, // Task Finish
         { wch: 10 }, // Difficulty
-        { wch: 14 }  // GA Number
+        { wch: 14 }, // GA Number
+        { wch: 20 }  // Customer
       ];
 
       const guideHeaders = ['Nama Kolom', 'Wajib', 'Format/Tipe', 'Keterangan'];
@@ -624,7 +630,8 @@ export function ProjectsPage({
         ['Task Start', 'Ya', 'YYYY-MM-DD', 'Tanggal mulai task'],
         ['Task Finish', 'Ya', 'YYYY-MM-DD', 'Tanggal selesai task'],
         ['Difficulty', 'Tidak', 'Angka', 'Bobot tingkat kesulitan task (default: 1)'],
-        ['GA Number', 'Tidak', 'Teks', 'Nomor identitas jenis produk/desain. Project dengan GA Number sama dianggap produk sejenis dengan material yang sama, walau nama project & client berbeda (misal: GA17733)']
+        ['GA Number', 'Tidak', 'Teks', 'Nomor identitas jenis produk/desain. Project dengan GA Number sama dianggap produk sejenis dengan material yang sama, walau nama project & client berbeda (misal: GA17733)'],
+        ['Customer', 'Tidak', 'Teks', 'Nama customer/end-user akhir dari project ini (contoh: PT Chevron Pacific, Rio Tinto, BHP). Bisa berbeda dengan Work Order yang merupakan nama perusahaan pemberi order langsung.']
       ];
 
       const wb = XLSX.utils.book_new();
@@ -786,7 +793,9 @@ export function ProjectsPage({
         const q = projectSearchQuery.toLowerCase();
         return (
           p.name.toLowerCase().includes(q) ||
-          p.client.toLowerCase().includes(q)
+          p.client.toLowerCase().includes(q) ||
+          (p.customer && p.customer.toLowerCase().includes(q)) ||
+          (p.gaNumber && p.gaNumber.toLowerCase().includes(q))
         );
       });
 
@@ -843,25 +852,6 @@ export function ProjectsPage({
                 )}
                 <List className="h-3.5 w-3.5" />
                 <span>List</span>
-              </button>
-              <button
-                onClick={() => handleSetViewMode('timeline')}
-                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
-                  viewMode === 'timeline'
-                    ? 'text-white font-extrabold'
-                    : 'text-base-muted hover:text-base-text'
-                }`}
-                title="Interactive Timeline Gantt View"
-              >
-                {viewMode === 'timeline' && (
-                  <motion.div
-                    layoutId="activeTabPill"
-                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
-                )}
-                <Calendar className="h-3.5 w-3.5" />
-                <span>Timeline</span>
               </button>
               <button
                 onClick={() => handleSetViewMode('radial')}
@@ -1037,8 +1027,8 @@ export function ProjectsPage({
                     >
                       {/* Top Bar Info */}
                       <div className="w-full flex items-center justify-between text-[10px] font-condensed font-bold uppercase tracking-wider">
-                        <span className="text-base-muted truncate max-w-[120px]" title={p.client}>
-                          {p.client || 'Client N/A'}
+                        <span className="text-base-muted truncate max-w-[140px]" title={p.customer ? `${p.client} — ${p.customer}` : p.client}>
+                          {p.client || 'WO N/A'}{p.customer ? ` (${p.customer})` : ''}
                         </span>
                         <span
                           className="px-2 py-0.5 rounded-md border text-[9px] uppercase font-bold"
@@ -1115,44 +1105,6 @@ export function ProjectsPage({
                   );
                 })}
               </div>
-            )}
-          </div>
-        ) : viewMode === 'timeline' ? (
-          <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs overflow-hidden">
-            {filteredProjects.length === 0 ? (
-              <div className="py-12 text-center bg-base-surface border border-base-border border-dashed rounded-xl space-y-3">
-                <div className="text-base-muted font-medium text-sm">No current schedules match your filters.</div>
-                <div className="flex gap-2 justify-center">
-                  {projectSearchQuery && (
-                    <button
-                      id="current-projects-no-results-clear-btn-timeline"
-                      onClick={() => setProjectSearchQuery('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear search filter
-                    </button>
-                  )}
-                  {currentTabMonthFilter && (
-                    <button
-                      id="current-projects-no-results-clear-month-btn-timeline"
-                      onClick={() => setCurrentTabMonthFilter('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear month filter
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <GanttView
-                projects={filteredProjects}
-                onUpdateProject={onUpdateProject}
-                onOpenDepModal={onOpenDepModal}
-                depModalOpen={depModalOpen}
-                depModalRowKey={depModalRowKey || undefined}
-                onCloseDepModal={onCloseDepModal}
-                orgSettings={orgSettings}
-              />
             )}
           </div>
         ) : (
@@ -1237,6 +1189,11 @@ export function ProjectsPage({
                               </div>
                               <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono truncate">
                                 {highlightText(p.client, projectSearchQuery)}
+                                {p.customer && (
+                                  <span className="text-emerald-500 font-semibold uppercase font-sans ml-1.5 border-l border-base-border/50 pl-1.5">
+                                    👤 {highlightText(p.customer, projectSearchQuery)}
+                                  </span>
+                                )}
                               </p>
                             </div>
                           </div>
@@ -1366,15 +1323,6 @@ export function ProjectsPage({
                                 title="Edit parameters"
                               >
                                 <Edit className="h-3.5 w-3.5" />
-                              </button>
-                            )}
-                            {can('editProject') && (
-                              <button
-                                onClick={() => openCopyModalLauncher(p.id)}
-                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md cursor-pointer"
-                                title="Clone project"
-                              >
-                                <Copy className="h-3.5 w-3.5" />
                               </button>
                             )}
                             {can('deleteProject') && deleteProjectDetails && (

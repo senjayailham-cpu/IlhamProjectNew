@@ -4,7 +4,6 @@ import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembl
 import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2 } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
-import GanttView from './GanttView';
 
 // Spotlight Modular Components
 import { AddTaskModal } from './spotlight/AddTaskModal';
@@ -78,7 +77,7 @@ export default function SpotlightModal({
   onOpenDepModal
 }: SpotlightModalProps) {
   const isAdmin = currentUser?.role === 'admin';
-  const [activeTab, setActiveTab] = useState<'overview' | 'gantt' | 'processing'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'assemblies' | 'processing'>('overview');
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
   const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
@@ -297,6 +296,16 @@ export default function SpotlightModal({
               <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[9px] sm:text-[10px] uppercase tracking-wider border ${STATUS_COLORS[p.status]}`}>
                 {p.status}
               </span>
+              {p.client && (
+                <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-blue-dim text-base-blue border border-base-blue/20">
+                  WO: {p.client}
+                </span>
+              )}
+              {p.customer && (
+                <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-500 border border-emerald-500/20">
+                  Customer: {p.customer}
+                </span>
+              )}
               <span className="px-2 py-0.5 text-[9px] sm:text-[10px] rounded font-condensed font-bold uppercase tracking-wider bg-base-blue-dim text-base-blue border border-base-blue/20">
                 {String(p.category || 'Tray')}
               </span>
@@ -354,14 +363,15 @@ export default function SpotlightModal({
             Overview
           </button>
           <button
-            onClick={() => setActiveTab('gantt')}
-            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 cursor-pointer ${
-              activeTab === 'gantt'
+            onClick={() => setActiveTab('assemblies')}
+            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'assemblies'
                 ? 'bg-base-accent text-black font-extrabold'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
             }`}
           >
-            Gantt Chart
+            <BookOpen className="h-3.5 w-3.5" />
+            <span>Sub-Assemblies & Tasks ({asms.length})</span>
           </button>
           <button
             onClick={() => setActiveTab('processing')}
@@ -557,24 +567,40 @@ export default function SpotlightModal({
           </div>
         )}
 
-        {activeTab === 'gantt' && (
-          <div className="flex-1 overflow-y-auto overflow-x-auto p-5 relative">
-            <GanttView
-              projects={[p]}
-              onUpdateProject={(updatedProj) => {
-                if (onUpdateProject) {
-                  onUpdateProject(updatedProj, {
-                    type: 'project_edit',
-                    action: 'Updated task schedules via Spotlight Gantt'
-                  });
-                }
-              }}
-              onOpenDepModal={onOpenDepModal}
-              depModalOpen={false}
-              depModalRowKey={undefined}
-              onCloseDepModal={() => {}}
-            />
-          </div>
+        {activeTab === 'assemblies' && (
+          <SpotlightOverviewTab
+            project={p}
+            asms={asms}
+            modalTimesheets={modalTimesheets}
+            wireLogs={wireLogs}
+            collapsedAsms={collapsedAsms}
+            toggleAsm={toggleAsm}
+            canAddTaskInline={canAddTaskInline}
+            canAddDifficulty={canAddDifficulty}
+            canDeleteTask={canDeleteTask}
+            canUpdateTask={canUpdateTask}
+            isAdmin={isAdmin}
+            isOverdue={isOverdue}
+            onUpdateProject={onUpdateProject}
+            onEditAssembly={onEditAssembly}
+            setActiveTargetAssembly={setActiveTargetAssembly}
+            setTaskName={setTaskName}
+            setTaskDifficulty={setTaskDifficulty}
+            setTaskStart={setTaskStart}
+            setTaskFinish={setTaskFinish}
+            setIsTaskModalOpen={setIsTaskModalOpen}
+            setDeleteConfirm={setDeleteConfirm}
+            quickTaskNames={quickTaskNames}
+            setQuickTaskNames={setQuickTaskNames}
+            quickTaskDifficulty={quickTaskDifficulty}
+            setQuickTaskDifficulty={setQuickTaskDifficulty}
+            quickTaskDates={quickTaskDates}
+            setQuickTaskDates={setQuickTaskDates}
+            quickTaskFinishDates={quickTaskFinishDates}
+            setQuickTaskFinishDates={setQuickTaskFinishDates}
+            handleQuickAddTask={handleQuickAddTask}
+            onOpenDepModal={onOpenDepModal}
+          />
         )}
 
         {activeTab === 'processing' && (

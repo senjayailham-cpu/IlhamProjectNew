@@ -104,9 +104,10 @@ export function downloadProjectPDF(
   // Line 1 Value: Project Name (with maximum printable width of 140 to prevent any border spillover)
   doc.text(project.name || 'N/A', margin + 35, currentY + 7, { maxWidth: 140 });
   
-  // Line 2 Values: Work Order (bold) & Completed Status Badge (right)
+  // Line 2 Values: Work Order & Customer (bold) & Completed Status Badge (right)
   doc.setFont('Helvetica', 'bold');
-  doc.text(project.client || 'N/A', margin + 35, currentY + 14);
+  const woText = project.customer ? `${project.client || 'N/A'} (Cust: ${project.customer})` : (project.client || 'N/A');
+  doc.text(woText, margin + 35, currentY + 14);
   doc.setFont('Helvetica', 'normal');
   
   // Completed status badge

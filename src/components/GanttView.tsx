@@ -116,7 +116,9 @@ import {
   Filter,
   BarChart3,
   Sparkles,
-  Flame
+  Flame,
+  Undo2,
+  Redo2
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -818,7 +820,19 @@ export default function GanttView({
   onSetPref
 }: GanttViewProps) {
   const allowedToEdit = can(currentUser ?? null, 'editGanttSchedule');
-  const onUpdateProject = allowedToEdit ? onUpdateProjectRaw : undefined;
+
+  const [historyStack, setHistoryStack] = useState<Project[][]>([]);
+  const [redoStack, setRedoStack] = useState<Project[][]>([]);
+
+  const commitProjectUpdate = (updatedProject: Project) => {
+    if (!onUpdateProjectRaw) return;
+    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
+    setHistoryStack(prev => [...prev.slice(-29), currentSnapshot]);
+    setRedoStack([]);
+    onUpdateProjectRaw(updatedProject);
+  };
+
+  const onUpdateProject = allowedToEdit ? commitProjectUpdate : undefined;
 
   const projectsList = useMemo(() => {
     let list: Project[] = [];
@@ -2467,6 +2481,68 @@ export default function GanttView({
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
+  const handleUndo = () => {
+    if (historyStack.length === 0 || !onUpdateProjectRaw) return;
+
+    const previousSnapshot = historyStack[historyStack.length - 1];
+    const newHistoryStack = historyStack.slice(0, historyStack.length - 1);
+    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
+
+    setRedoStack(prev => [...prev, currentSnapshot]);
+    setHistoryStack(newHistoryStack);
+
+    previousSnapshot.forEach(proj => {
+      onUpdateProjectRaw(proj);
+    });
+
+    setToastMsg('Undo: Perubahan terakhir dibatalkan (Ctrl+Z)');
+  };
+
+  const handleRedo = () => {
+    if (redoStack.length === 0 || !onUpdateProjectRaw) return;
+
+    const nextSnapshot = redoStack[redoStack.length - 1];
+    const newRedoStack = redoStack.slice(0, redoStack.length - 1);
+    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
+
+    setHistoryStack(prev => [...prev, currentSnapshot]);
+    setRedoStack(newRedoStack);
+
+    nextSnapshot.forEach(proj => {
+      onUpdateProjectRaw(proj);
+    });
+
+    setToastMsg('Redo: Perubahan diterapkan kembali (Ctrl+Y)');
+  };
+
+  useEffect(() => {
+    const handleUndoRedoKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable);
+
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (isInput && !e.shiftKey) {
+          return;
+        }
+        if (e.shiftKey) {
+          e.preventDefault();
+          handleRedo();
+        } else {
+          e.preventDefault();
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        if (!isInput) {
+          e.preventDefault();
+          handleRedo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleUndoRedoKeyDown);
+    return () => window.removeEventListener('keydown', handleUndoRedoKeyDown);
+  }, [historyStack, redoStack, projectsList, onUpdateProjectRaw]);
+
   // To handle auto dismissal safely
   useEffect(() => {
     if (!toastMsg) return;
@@ -3606,6 +3682,38 @@ export default function GanttView({
           {/* Scheduling & Interactivity Actions Group */}
           {onUpdateProject !== undefined && (
             <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px] shrink-0 gap-0.5">
+              {/* Undo Button */}
+              <button
+                onClick={handleUndo}
+                disabled={historyStack.length === 0}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
+                  historyStack.length > 0
+                    ? 'bg-base-surface hover:bg-base-surface3 text-base-text border border-base-border shadow-2xs active:scale-95'
+                    : 'text-base-muted/40 cursor-not-allowed opacity-50'
+                }`}
+                title={historyStack.length > 0 ? "Undo last Gantt action (Ctrl + Z)" : "Nothing to undo"}
+              >
+                <Undo2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Undo</span>
+              </button>
+
+              {/* Redo Button */}
+              <button
+                onClick={handleRedo}
+                disabled={redoStack.length === 0}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
+                  redoStack.length > 0
+                    ? 'bg-base-surface hover:bg-base-surface3 text-base-text border border-base-border shadow-2xs active:scale-95'
+                    : 'text-base-muted/40 cursor-not-allowed opacity-50'
+                }`}
+                title={redoStack.length > 0 ? "Redo Gantt action (Ctrl + Y or Ctrl + Shift + Z)" : "Nothing to redo"}
+              >
+                <Redo2 className="h-3.5 w-3.5 shrink-0" />
+                <span className="hidden sm:inline">Redo</span>
+              </button>
+
+              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
+
               {/* Smart Schedule Button */}
               <button
                 onClick={handleSmartSchedule}

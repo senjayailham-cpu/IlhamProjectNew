@@ -98,7 +98,7 @@ export function GaAutoMatchModal({
                         {p.name}
                       </div>
                       <div className="text-[10px] text-base-muted mt-0.5">
-                        {p.client} · dibuat {p.created ? new Date(p.created).toLocaleDateString('id-ID') : 'N/A'}
+                        {p.client}{p.customer ? ` (${p.customer})` : ''} · dibuat {p.created ? new Date(p.created).toLocaleDateString('id-ID') : 'N/A'}
                       </div>
                     </div>
                     <div className="flex gap-1 flex-shrink-0">

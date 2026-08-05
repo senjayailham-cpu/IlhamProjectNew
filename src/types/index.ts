@@ -152,6 +152,7 @@ export interface Project {
   id: string;
   name: string;
   client: string;
+  customer?: string;
   gaNumber?: string;
   start?: string;
   due?: string;
@@ -465,7 +466,7 @@ export const PROCESSING_STAGES: Record<ProcessingStageKey, {
 
 export interface MasterDataEntry {
   id: string;                    // 'md_' + uid()
-  category: 'material' | 'partNo' | 'client' | 'subAssembly' | 'gaNumber';
+  category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber';
   value: string;                 // nilai asli, contoh: "Plate SS304 6mm"
   normalizedValue: string;       // value.trim().toLowerCase(), untuk deteksi duplikat
   gaNumber?: string;             // opsional, kalau entry ini terkait GA Number tertentu (khusus category material)

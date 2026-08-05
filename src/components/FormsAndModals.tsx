@@ -131,15 +131,28 @@ export function FormsAndModals({
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="field-label">Work Order Code</label>
-                <input
-                  type="text" inputMode="text"
-                  value={projectsHook.pWorkOrder}
-                  onChange={(e) => projectsHook.setPWorkOrder(e.target.value)}
-                  placeholder=""
-                  className="input-field min-h-[44px] uppercase font-mono font-bold tracking-wide"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="field-label">Work Order Code</label>
+                  <input
+                    type="text" inputMode="text"
+                    value={projectsHook.pWorkOrder}
+                    onChange={(e) => projectsHook.setPWorkOrder(e.target.value)}
+                    placeholder=""
+                    className="input-field min-h-[44px] uppercase font-mono font-bold tracking-wide"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="field-label">Customer / Pelanggan</label>
+                  <MasterDataAutocomplete
+                    category="customer"
+                    value={projectsHook.pCustomer}
+                    onChange={(val) => projectsHook.setPCustomer(val)}
+                    placeholder="e.g. Chevron / Total / PT Austin"
+                    entries={masterDataEntries}
+                    className="input-field min-h-[44px]"
+                  />
+                </div>
               </div>
 
               <div className="space-y-1">

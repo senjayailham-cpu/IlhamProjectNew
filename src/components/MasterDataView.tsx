@@ -10,6 +10,7 @@ interface MasterDataViewProps {
 
 const CATEGORIES: { key: MasterDataEntry['category']; label: string }[] = [
   { key: 'gaNumber', label: 'GA Number' },
+  { key: 'customer', label: 'Customer' },
   { key: 'material', label: 'Material' },
   { key: 'partNo', label: 'Part No' },
   { key: 'subAssembly', label: 'Sub-Assembly' },

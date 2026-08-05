@@ -9,7 +9,7 @@ export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void,
-  onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>
+  onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>
 ) {
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -38,6 +38,7 @@ export function useProjects(
   // Form fields
   const [pName, setPName] = useState<string>('');
   const [pWorkOrder, setPWorkOrder] = useState<string>('');
+  const [pCustomer, setPCustomer] = useState<string>('');
   const [pGaNumber, setPGaNumber] = useState<string>('');
   const [pStatus, setPStatus] = useState<'active' | 'pending' | 'completed' | 'on-hold'>('active');
   const [pStart, setPStart] = useState<string>('');
@@ -70,6 +71,7 @@ export function useProjects(
     setEditingProjectId(null);
     setPName('');
     setPWorkOrder('');
+    setPCustomer('');
     setPGaNumber('');
     setPStatus('active');
     setPStart('');
@@ -89,6 +91,7 @@ export function useProjects(
     setEditingProjectId(pid);
     setPName(p.name);
     setPWorkOrder(p.client);
+    setPCustomer(p.customer || '');
     setPGaNumber(p.gaNumber || '');
     setPStatus(p.status as any);
     setPStart(p.start || '');
@@ -127,6 +130,12 @@ export function useProjects(
         console.error('Failed to register GA Number to master data:', err)
       );
     }
+    // Register Customer to Master Data for future autocomplete
+    if (addedProj.customer && onEnsureMasterData) {
+      onEnsureMasterData('customer', addedProj.customer).catch(err =>
+        console.error('Failed to register customer to master data:', err)
+      );
+    }
     logActivity('project_add',
       copiedAssemblies.length > 0
         ? `Added new project (copied structure from GA match)`
@@ -138,6 +147,7 @@ export function useProjects(
     // Reset individual form fields:
     setPName('');
     setPWorkOrder('');
+    setPCustomer('');
     setPGaNumber('');
     setPStatus('active');
     setPStart('');
@@ -229,6 +239,7 @@ export function useProjects(
           ...p,
           name: pName.trim(),
           client: wo,
+          customer: pCustomer.trim() || undefined,
           gaNumber: pGaNumber.trim().toUpperCase() || undefined,
           status: pStatus,
           start: pStart,
@@ -250,6 +261,12 @@ export function useProjects(
             console.error('Failed to register GA Number to master data:', err)
           );
         }
+        // Register Customer to Master Data for future autocomplete
+        if (updatedProj.customer && onEnsureMasterData) {
+          onEnsureMasterData('customer', updatedProj.customer).catch(err =>
+            console.error('Failed to register customer to master data:', err)
+          );
+        }
       }
       logActivity('project_edit', 'Edited project details', editingProjectId, pName.trim(), undefined, undefined, undefined, undefined, `Budget Hours: ${parsedBudget ?? 'N/A'}`);
       setProjectFormOpen(false);
@@ -261,6 +278,7 @@ export function useProjects(
     const normalizedGa = pGaNumber.trim().toUpperCase();
     const baseProjectData = {
       name: pName.trim(), client: wo,
+      customer: pCustomer.trim() || undefined,
       gaNumber: normalizedGa || undefined,
       status: pStatus, start: pStart, due: pDue,
       category: pCat, location: pLoc,
@@ -767,6 +785,8 @@ export function useProjects(
     setPName,
     pWorkOrder,
     setPWorkOrder,
+    pCustomer,
+    setPCustomer,
     pGaNumber,
     setPGaNumber,
     pStatus,

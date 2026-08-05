@@ -53,9 +53,10 @@ export function ProjectSearchSelector({
     return projects.filter(p => {
       const nameMatch = p.name.toLowerCase().includes(query);
       const clientMatch = p.client?.toLowerCase().includes(query);
+      const customerMatch = p.customer?.toLowerCase().includes(query);
       const gaMatch = p.gaNumber?.toLowerCase().includes(query);
       const targetMonthMatch = p.targetMonth?.toLowerCase().includes(query);
-      return nameMatch || clientMatch || gaMatch || targetMonthMatch;
+      return nameMatch || clientMatch || customerMatch || gaMatch || targetMonthMatch;
     });
   }, [projects, searchQuery]);
 
@@ -163,6 +164,12 @@ export function ProjectSearchSelector({
                     </span>
                     <span className="text-[10px] text-base-muted truncate mt-0.5 flex flex-wrap items-center gap-1.5">
                       <span>WO: {p.client || '—'}</span>
+                      {p.customer && (
+                        <>
+                          <span>·</span>
+                          <span className="text-emerald-500 font-semibold text-[9px] shrink-0">Cust: {p.customer}</span>
+                        </>
+                      )}
                       {p.gaNumber && (
                         <>
                           <span>·</span>
