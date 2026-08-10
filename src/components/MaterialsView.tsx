@@ -129,6 +129,7 @@ export default function MaterialsView({
 
   // Tab 2 — Material Requests State & Filters
   const [mrStatusFilter, setMrStatusFilter] = useState<string>('All');
+  const [mrProjectFilter, setMrProjectFilter] = useState<string>('All');
   const [isCreatingRequest, setIsCreatingRequest] = useState(false);
   
   // Create MR state
@@ -210,10 +211,15 @@ export default function MaterialsView({
 
   // Filtered Requests (newest first)
   const filteredRequests = useMemo(() => {
-    const sorted = [...materialRequests].sort((a, b) => b.requestedDate.localeCompare(a.requestedDate));
-    if (mrStatusFilter === 'All') return sorted;
-    return sorted.filter(r => r.status === mrStatusFilter);
-  }, [materialRequests, mrStatusFilter]);
+    let sorted = [...materialRequests].sort((a, b) => b.requestedDate.localeCompare(a.requestedDate));
+    if (mrStatusFilter !== 'All') {
+      sorted = sorted.filter(r => r.status === mrStatusFilter);
+    }
+    if (mrProjectFilter !== 'All') {
+      sorted = sorted.filter(r => r.projectId === mrProjectFilter);
+    }
+    return sorted;
+  }, [materialRequests, mrStatusFilter, mrProjectFilter]);
 
   // Filtered Consumption Logs (newest first)
   const filteredLogs = useMemo(() => {
@@ -444,6 +450,8 @@ export default function MaterialsView({
       return;
     }
 
+    const proj = projects.find(p => p.id === mrProjectId);
+
     // Verify lines
     const validLines: MaterialRequestLine[] = [];
     for (const line of mrLines) {
@@ -456,20 +464,40 @@ export default function MaterialsView({
         setMrError('Requested quantities must be greater than zero');
         return;
       }
-      const mat = materials.find(m => m.id === line.materialId);
-      if (!mat) {
-        setMrError('Selected material not found');
-        return;
+
+      let matName = '';
+      let matUnit: MaterialUnit = 'pcs';
+      let realMatId = line.materialId;
+
+      if (line.materialId.startsWith('mp_')) {
+        const mpId = line.materialId.replace('mp_', '');
+        const mpItem = proj?.materialProcessing?.find(m => m.id === mpId);
+        if (mpItem) {
+          matName = mpItem.materialName || mpItem.description || 'Project Part';
+          matUnit = (mpItem.unit as MaterialUnit) || 'pcs';
+        } else {
+          setMrError('Selected project material item not found');
+          return;
+        }
+      } else {
+        const mat = materials.find(m => m.id === line.materialId);
+        if (mat) {
+          matName = mat.name;
+          matUnit = mat.unit;
+        } else {
+          setMrError('Selected material not found');
+          return;
+        }
       }
+
       validLines.push({
-        materialId: line.materialId,
-        materialName: mat.name,
-        unit: mat.unit,
+        materialId: realMatId,
+        materialName: matName,
+        unit: matUnit,
         qtyRequested: qtyNum
       });
     }
 
-    const proj = projects.find(p => p.id === mrProjectId);
     const assem = proj?.assemblies.find(a => a.id === mrAssemblyId);
 
     isSubmittingRef.current = true;
@@ -1230,7 +1258,15 @@ export default function MaterialsView({
                   ) : (
                     <div className="space-y-2">
                       {mrLines.map((line, idx) => {
-                        const currentMat = materials.find(m => m.id === line.materialId);
+                        let selectedUnit = 'pcs';
+                        if (line.materialId.startsWith('mp_') && selectedMrProjectObj) {
+                          const mpId = line.materialId.replace('mp_', '');
+                          const mpItem = selectedMrProjectObj.materialProcessing?.find(m => m.id === mpId);
+                          if (mpItem && mpItem.unit) selectedUnit = mpItem.unit;
+                        } else {
+                          const currentMat = materials.find(m => m.id === line.materialId);
+                          if (currentMat) selectedUnit = currentMat.unit;
+                        }
 
                         return (
                           <div key={idx} className="flex items-center gap-3 bg-base-surface p-2 border border-base-border rounded-lg animate-fade-in">
@@ -1238,18 +1274,37 @@ export default function MaterialsView({
                               <select
                                 value={line.materialId}
                                 onChange={e => {
+                                  const val = e.target.value;
                                   const updated = [...mrLines];
-                                  updated[idx].materialId = e.target.value;
+                                  updated[idx].materialId = val;
+                                  if (val.startsWith('mp_') && selectedMrProjectObj) {
+                                    const mpId = val.replace('mp_', '');
+                                    const mpItem = selectedMrProjectObj.materialProcessing?.find(m => m.id === mpId);
+                                    if (mpItem && mpItem.qty) {
+                                      updated[idx].qty = String(mpItem.qty);
+                                    }
+                                  }
                                   setMrLines(updated);
                                 }}
                                 className="w-full bg-base-surface2 border border-base-border rounded px-2.5 py-1 text-xs outline-none focus:border-base-accent font-semibold text-base-text"
                               >
                                 <option value="">-- Select Material Item --</option>
-                                {materials.map(m => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name} ({m.category} — Stock: {m.currentStock} {m.unit})
-                                  </option>
-                                ))}
+                                {selectedMrProjectObj && selectedMrProjectObj.materialProcessing && selectedMrProjectObj.materialProcessing.length > 0 && (
+                                  <optgroup label={`📦 Project Items (${selectedMrProjectObj.name})`}>
+                                    {selectedMrProjectObj.materialProcessing.map(mp => (
+                                      <option key={'mp_' + mp.id} value={'mp_' + mp.id}>
+                                        {mp.materialName || mp.description} (WO: {mp.workOrder || selectedMrProjectObj.client || 'General'} — Req: {mp.qty} {mp.unit || 'pcs'})
+                                      </option>
+                                    ))}
+                                  </optgroup>
+                                )}
+                                <optgroup label="🏭 General Material Stock">
+                                  {materials.map(m => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} ({m.category} — Stock: {m.currentStock} {m.unit})
+                                    </option>
+                                  ))}
+                                </optgroup>
                               </select>
                             </div>
 
@@ -1267,7 +1322,7 @@ export default function MaterialsView({
                                 className="w-full bg-base-surface2 border border-base-border rounded px-2 py-1 text-xs outline-none text-right font-bold text-base-text font-mono"
                               />
                               <span className="text-[10px] font-bold uppercase text-base-muted select-none w-8">
-                                {currentMat ? currentMat.unit : 'pcs'}
+                                {selectedUnit}
                               </span>
                             </div>
 
@@ -1356,12 +1411,12 @@ export default function MaterialsView({
 
           {/* REQUESTS LIST FILTER BAR */}
           <div className="flex flex-col md:flex-row items-center justify-between gap-3 bg-base-surface border border-base-border p-3.5 rounded-xl shadow-xs">
-            <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
               <ListFilter className="h-4 w-4 text-base-muted" />
               <select
                 value={mrStatusFilter}
                 onChange={e => setMrStatusFilter(e.target.value)}
-                className="w-full sm:w-48 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                className="w-full sm:w-40 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
               >
                 <option value="All">All Statuses</option>
                 <option value="Draft">Draft</option>
@@ -1369,6 +1424,19 @@ export default function MaterialsView({
                 <option value="Approved">Approved</option>
                 <option value="Issued">Issued</option>
                 <option value="Rejected">Rejected</option>
+              </select>
+
+              <select
+                value={mrProjectFilter}
+                onChange={e => setMrProjectFilter(e.target.value)}
+                className="w-full sm:w-52 bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+              >
+                <option value="All">All Projects</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({p.client})
+                  </option>
+                ))}
               </select>
             </div>
 

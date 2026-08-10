@@ -85,7 +85,10 @@ service cloud.firestore {
       allow create: if isAdmin() || hasPermission('addProject');
       allow update: if isAdmin() || hasPermission('editProject') || (
         (hasPermission('updateTask')) && 
-        (incoming().diff(existing()).affectedKeys().hasOnly(['assemblies', 'notes', 'status', 'completedDate']) || incoming() == existing())
+        (incoming().diff(existing()).affectedKeys().hasOnly([
+          'assemblies', 'notes', 'status', 'completedDate',
+          'materialProcessing'
+        ]) || incoming() == existing())
       );
       allow delete: if isAdmin() || hasPermission('deleteProject');
     }

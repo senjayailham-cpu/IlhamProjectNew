@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { BomTemplate, BomItem, MaterialItem, MaterialProcessing, DrawingRevision, Project, User } from '../types';
 import jsPDF from 'jspdf';
 import { 
@@ -6,7 +6,7 @@ import {
   AlertTriangle, AlertCircle, X, Copy, Edit3, Archive, Trash2, Download, 
   ArrowUp, ArrowDown, ExternalLink, ChevronRight, Tag, Building2, Clock, 
   User as UserIcon, Box, FileSpreadsheet, Eye, Check, ShieldAlert,
-  Calculator, Sparkles, PieChart, Maximize2, ArrowRight
+  Calculator, Sparkles, PieChart, Maximize2, ArrowRight, Upload, FileUp, Layers3, Hash, FolderTree, Split
 } from 'lucide-react';
 
 interface BomViewProps {
@@ -23,7 +23,7 @@ interface BomViewProps {
   onDeleteBomTemplate: (id: string) => Promise<void>;
   onAddMaterialProcessing?: (
     projectId: string,
-    item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>
+    item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> | Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>[]
   ) => Promise<void>;
 }
 
@@ -54,7 +54,13 @@ export default function BomView({
   // Selected Template ID
   const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
 
-  // Table Grouping & Sorting
+  // Project Requirements & Unit Multiplier Toggle State
+  const [showProjectTotals, setShowProjectTotals] = useState<boolean>(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [customProjectUnits, setCustomProjectUnits] = useState<number | null>(null);
+
+  // Table Grouping, Stage Tabs & Sorting
+  const [selectedStageTab, setSelectedStageTab] = useState<string>('all');
   const [isGroupedByCategory, setIsGroupedByCategory] = useState(false);
   const [sortField, setSortField] = useState<keyof BomItem>('partNumber');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
@@ -104,6 +110,7 @@ export default function BomView({
     partNumber: '',
     description: '',
     material: '',
+    subAssembly: '',
     category: 'plate' as BomItem['category'],
     quantity: 1,
     unit: 'pcs' as BomItem['unit'],
@@ -116,11 +123,412 @@ export default function BomView({
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Import BOM Modal State
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [importTargetMode, setImportTargetMode] = useState<'new' | 'existing'>('new');
+  const [importRawText, setImportRawText] = useState('');
+  const [importFileName, setImportFileName] = useState('');
+  const [importTemplateInfo, setImportTemplateInfo] = useState({
+    name: '',
+    model: 'Ultima',
+    truckModel: '',
+    gaNumber: '',
+    version: 'v1'
+  });
+  const [parsedImportItems, setParsedImportItems] = useState<BomItem[]>([]);
+  const [importError, setImportError] = useState('');
+  const [isImporting, setIsImporting] = useState(false);
+
   // Generate to Material Processing Modal & Toast State
   const [isGenerateMpModalOpen, setIsGenerateMpModalOpen] = useState(false);
   const [skipDuplicates, setSkipDuplicates] = useState(true);
-  const [generateToast, setGenerateToast] = useState<{ show: boolean; count: number } | null>(null);
+  const [unitMultiplier, setUnitMultiplier] = useState<number>(1);
+  const [selectedModalProjectId, setSelectedModalProjectId] = useState<string>('');
+  const [mpCategoryScope, setMpCategoryScope] = useState<'process_only' | 'plates_structural' | 'all'>('process_only');
+  const [generateToast, setGenerateToast] = useState<{ show: boolean; count: number; projectName?: string } | null>(null);
   const [isGeneratingMp, setIsGeneratingMp] = useState(false);
+
+  // ─── PROCESS / DFX ANALYZER HELPER ─────────────────────────────────────────
+  const parseItemProcess = useCallback((item: BomItem) => {
+    const pros = (item?.pros || '').trim().toUpperCase();
+
+    // DFX with Bending (F DFX, L F DFX, LF DFX, F DXF, L F DXF, etc.)
+    const isFDfx = pros.includes('F DFX') || pros.includes('F.DFX') || pros.includes('F-DFX') || 
+                   pros.includes('F DXF') || pros.includes('F.DXF') || pros.includes('F-DXF') ||
+                   pros.includes('L F DFX') || pros.includes('L F DXF') || pros.includes('LF DFX') || pros.includes('LF DXF') ||
+                   pros.includes('L F.DFX') || pros.includes('L F.DXF') || pros.includes('L-F-DFX') || pros.includes('L-F-DXF') ||
+                   pros.startsWith('F ') || pros.endsWith(' F') || pros === 'F';
+
+    // Standard DFX/DXF (Cutting/Nesting only)
+    const isDfx = !isFDfx && (pros.includes('DFX') || pros.includes('DXF'));
+
+    const isBending = isFDfx || pros.includes('BEND') || pros.includes('FOLD') || pros.includes('FORM') || pros.includes('TEKUK') || pros.includes('PERIPAT');
+    const isCutting = isDfx || isFDfx || pros.includes('CUT') || pros.includes('LASER') || pros.includes('PLASMA') || pros.includes('OXY') || pros.includes('NEST') || pros.includes('POTONG');
+    const isMachining = pros.includes('DRILL') || pros.includes('MACH') || pros.includes('MILL') || pros.includes('LATHE') || pros.includes('TURN') || pros.includes('BUBUT') || pros.includes('TAP');
+
+    const hasExplicitProcess = isCutting || isBending || isMachining || (pros !== '' && pros !== '-' && pros !== '?' && pros !== 'NONE' && pros !== 'N/A' && pros !== 'NO' && pros !== '0');
+
+    let processLabel = item?.pros || '—';
+    let badgeColor = 'bg-base-surface2 text-base-muted border-base-border';
+
+    if (isFDfx) {
+      processLabel = item?.pros || 'F DFX';
+      badgeColor = 'bg-purple-500/15 text-purple-600 dark:text-purple-300 border-purple-500/30 font-black';
+    } else if (isDfx) {
+      processLabel = item?.pros || 'DFX';
+      badgeColor = 'bg-blue-500/15 text-blue-600 dark:text-blue-300 border-blue-500/30 font-bold';
+    } else if (isBending) {
+      processLabel = item?.pros || 'BENDING';
+      badgeColor = 'bg-amber-500/15 text-amber-600 dark:text-amber-300 border-amber-500/30 font-bold';
+    } else if (isMachining) {
+      processLabel = item?.pros || 'MACHINING';
+      badgeColor = 'bg-teal-500/15 text-teal-600 dark:text-teal-300 border-teal-500/30 font-bold';
+    } else if (hasExplicitProcess) {
+      processLabel = item?.pros;
+      badgeColor = 'bg-base-surface2 text-base-text border-base-border font-bold';
+    }
+
+    // ProcessingStageKey: 'nesting', 'cnc', 'bending', 'machining'
+    const activeStages: ('nesting' | 'cnc' | 'bending' | 'machining')[] = [];
+    
+    // Every DFX / DXF / F DFX / L F DFX / Cutting item MUST undergo Nesting and CNC
+    if (isCutting || isDfx || isFDfx) {
+      activeStages.push('nesting', 'cnc');
+    }
+    if (isBending || isFDfx) {
+      if (!activeStages.includes('bending')) activeStages.push('bending');
+    }
+    if (isMachining) {
+      if (!activeStages.includes('machining')) activeStages.push('machining');
+    }
+
+    if (activeStages.length === 0) {
+      activeStages.push('nesting', 'cnc');
+      if (item?.category === 'plate' || item?.category === 'structural') {
+        if (!activeStages.includes('bending')) activeStages.push('bending');
+      }
+    }
+
+    return {
+      pros,
+      hasExplicitProcess,
+      isDfx,
+      isFDfx,
+      isCutting,
+      isBending,
+      isMachining,
+      processLabel,
+      badgeColor,
+      activeStages
+    };
+  }, []);
+
+  // ─── BOM IMPORT PARSER ──────────────────────────────────────────────────
+  const parseBomText = (rawText: string): BomItem[] => {
+    if (!rawText || !rawText.trim()) return [];
+    const lines = rawText.split(/\r?\n/).filter(line => line.trim().length > 0);
+    if (lines.length === 0) return [];
+
+    const firstLine = lines[0];
+    let delimiter = ';';
+    if ((firstLine.match(/;/g) || []).length >= 2) {
+      delimiter = ';';
+    } else if ((firstLine.match(/\t/g) || []).length >= 2) {
+      delimiter = '\t';
+    } else if ((firstLine.match(/,/g) || []).length >= 2) {
+      delimiter = ',';
+    }
+
+    const cleanTokenStr = (val: string): string => {
+      if (!val) return '';
+      let s = val.trim();
+      // Remove outer quotes if wrapped
+      while ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'"))) {
+        if (s.length < 2) break;
+        s = s.slice(1, -1).trim();
+      }
+      // Replace doubled double-quotes "" with "
+      s = s.replace(/""/g, '"');
+      if (s === '-' || s === '?' || s === 'None' || s === 'null') return '';
+      return s.trim();
+    };
+
+    const parseCsvTokens = (lineStr: string): string[] => {
+      const tokens: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (let i = 0; i < lineStr.length; i++) {
+        const char = lineStr[i];
+        if (char === '"') {
+          if (inQuotes && i + 1 < lineStr.length && lineStr[i + 1] === '"') {
+            current += '"';
+            i++;
+          } else {
+            inQuotes = !inQuotes;
+          }
+        } else if (char === delimiter && !inQuotes) {
+          tokens.push(cleanTokenStr(current));
+          current = '';
+        } else {
+          current += char;
+        }
+      }
+      tokens.push(cleanTokenStr(current));
+      return tokens;
+    };
+
+    let startRowIndex = 0;
+    const headerTokens = parseCsvTokens(lines[0]).map(t => t.toUpperCase().trim());
+
+    const isHeader = headerTokens.some(h => {
+      const norm = h.replace(/[^A-Z0-9]/g, '');
+      return norm.includes('DRAWING') || norm.includes('PART') || norm.includes('REV') || 
+        norm.includes('DESC') || norm.includes('LENGTH') || norm.includes('WDTH') || 
+        norm.includes('WIDTH') || norm.includes('GRADE') || norm.includes('MATERIAL') || 
+        norm.includes('MASS') || norm.includes('QTY') || norm.includes('SUB') || norm.includes('PRO');
+    });
+
+    let colMap = {
+      partNumber: -1,
+      rev: -1,
+      description: -1,
+      lengthMm: -1,
+      widthMm: -1,
+      grade: -1,
+      material: -1,
+      weightPerUnit: -1,
+      pros: -1,
+      quantity: -1,
+      subAssembly: -1
+    };
+
+    if (isHeader) {
+      startRowIndex = 1;
+      headerTokens.forEach((h, idx) => {
+        const norm = h.replace(/[^A-Z0-9]/g, '');
+
+        // 1. Part Number / Drawing / Mark
+        if (norm.includes('DRAWINGPART') || norm.includes('PARTNUMBER') || norm.includes('PARTNO') || norm.includes('DRAWINGNO') || norm.includes('PIECEMARK') || norm === 'PART' || norm === 'PARTNO' || norm === 'ITEMNO' || norm === 'MARK') {
+          colMap.partNumber = idx;
+        } 
+        // 2. Revision
+        else if (norm === 'REV' || norm.includes('REVISION')) {
+          colMap.rev = idx;
+        } 
+        // 3. Sub Assembly / Stage / Section / Tahap
+        else if (norm.includes('SUBASSY') || norm.includes('SUBASSEMBLY') || norm.includes('ASSEMBLY') || norm.includes('STAGE') || norm.includes('TAHAP') || norm.includes('SECTION') || norm === 'SUB') {
+          colMap.subAssembly = idx;
+        } 
+        // 4. Material / Material Spec / Material Description / Bahan
+        else if (norm.includes('MATERIAL') || norm.includes('BAHAN') || (norm.includes('MAT') && !norm.includes('FORMAT')) || norm === 'SPEC' || norm.includes('SPECIFICATION')) {
+          colMap.material = idx;
+        } 
+        // 5. Part Description (ONLY if not a Material column)
+        else if (
+          (norm.includes('PARTDESC') || norm.includes('PARTDESCRIPTION') || norm.includes('ITEMDESC') || norm.includes('DESKRIPSI') || norm.includes('NAMAPART') || norm.includes('COMPONENT') || norm.includes('DESCRIPTION') || norm.includes('DESC') || norm === 'NAME' || norm === 'NAMA') &&
+          !norm.includes('MATERIAL') && !norm.includes('MAT') && !norm.includes('BAHAN')
+        ) {
+          colMap.description = idx;
+        } 
+        // 6. Grade / Mutu
+        else if (norm.includes('GRADE') || norm.includes('MUTU')) {
+          colMap.grade = idx;
+        } 
+        // 7. Length / Panjang
+        else if (norm.includes('LENGTH') || norm.includes('PANJANG') || norm === 'LEN' || norm === 'L') {
+          colMap.lengthMm = idx;
+        } 
+        // 8. Width / Lebar
+        else if (norm.includes('WDTH') || norm.includes('WIDTH') || norm.includes('LEBAR') || norm === 'W') {
+          colMap.widthMm = idx;
+        } 
+        // 9. Mass / Weight / Berat / Kg
+        else if (norm.includes('MASS') || norm.includes('WEIGHT') || norm.includes('BERAT') || norm === 'KG' || norm === 'MASSKG' || norm === 'WT') {
+          colMap.weightPerUnit = idx;
+        } 
+        // 10. Process / Pros
+        else if (norm.includes('PROS') || norm.includes('PROCES') || norm.includes('PROCESS')) {
+          colMap.pros = idx;
+        } 
+        // 11. Quantity
+        else if (norm.includes('QTY') || norm.includes('QUANTITY') || norm.includes('JUMLAH')) {
+          colMap.quantity = idx;
+        }
+      });
+    }
+
+    if (colMap.partNumber === -1) colMap.partNumber = 0;
+    if (colMap.description === -1) colMap.description = 2;
+    if (colMap.material === -1) colMap.material = 6;
+    if (colMap.quantity === -1) colMap.quantity = 9;
+
+    const items: BomItem[] = [];
+
+    for (let i = startRowIndex; i < lines.length; i++) {
+      const rowStr = lines[i].trim();
+      if (!rowStr) continue;
+
+      const tokens = parseCsvTokens(rowStr);
+      if (tokens.length < 2) continue;
+
+      const getVal = (idx: number) => (idx >= 0 && idx < tokens.length ? tokens[idx] : '').trim();
+
+      const rawPartNo = getVal(colMap.partNumber);
+      const rawRev = getVal(colMap.rev);
+      const rawDesc = getVal(colMap.description);
+      const rawLength = getVal(colMap.lengthMm);
+      const rawWidth = getVal(colMap.widthMm);
+      const rawGrade = getVal(colMap.grade);
+      const rawMat = getVal(colMap.material);
+      const rawWeight = getVal(colMap.weightPerUnit);
+      const rawPros = getVal(colMap.pros);
+      const rawQty = getVal(colMap.quantity);
+      const rawSubAssy = getVal(colMap.subAssembly);
+
+      if (!rawPartNo && !rawDesc && !rawMat) continue;
+
+      const cleanNum = (str: string) => {
+        if (!str || str === '-' || str === '?' || str === 'None') return 0;
+        const val = parseFloat(str.replace(',', '.'));
+        return isNaN(val) ? 0 : val;
+      };
+
+      const lengthNum = cleanNum(rawLength);
+      const widthNum = cleanNum(rawWidth);
+      const weightNum = cleanNum(rawWeight);
+      let qtyNum = Math.round(cleanNum(rawQty));
+      if (qtyNum <= 0) qtyNum = 1;
+
+      const cleanGrade = (rawGrade === '-' || rawGrade === '?') ? '' : rawGrade;
+      const cleanRev = (rawRev === '-' || rawRev === '?') ? '' : rawRev;
+      const cleanPros = (rawPros === '-' || rawPros === '?') ? '' : rawPros;
+
+      let dimStr = '';
+      if (lengthNum > 0 && widthNum > 0) {
+        dimStr = `${lengthNum} × ${widthNum} mm`;
+      } else if (lengthNum > 0) {
+        dimStr = `L:${lengthNum}mm`;
+      }
+
+      const finalDesc = rawDesc || rawPartNo || 'Part Item';
+      const finalMat = rawMat || (cleanGrade ? `Grade ${cleanGrade}` : 'Steel');
+
+      let cat: BomItem['category'] = 'plate';
+      const searchStr = `${finalMat} ${finalDesc} ${cleanPros}`.toUpperCase();
+      if (searchStr.includes('PL') || searchStr.includes('PLATE') || searchStr.includes('DXF') || searchStr.includes('AMS') || searchStr.includes('HARDOX') || searchStr.includes('BISALLOY') || searchStr.includes('SHEET')) {
+        cat = 'plate';
+      } else if (searchStr.includes('PIPE') || searchStr.includes('TUBE') || searchStr.includes('SQ BAR') || searchStr.includes('ROUND BAR') || searchStr.includes('ANGLE') || searchStr.includes('CHANNEL') || searchStr.includes('BEAM') || searchStr.includes('RB')) {
+        cat = 'structural';
+      } else if (searchStr.includes('BOLT') || searchStr.includes('NUT') || searchStr.includes('WASHER') || searchStr.includes('PLUG') || searchStr.includes('SOCKET') || searchStr.includes('HEX') || searchStr.includes('PIN')) {
+        cat = 'hardware';
+      } else {
+        cat = 'plate';
+      }
+
+      items.push({
+        id: 'item_' + Math.random().toString(36).substr(2, 9),
+        partNumber: rawPartNo || `PART-${items.length + 1}`,
+        description: finalDesc,
+        material: finalMat,
+        quantity: qtyNum,
+        unit: 'pcs',
+        dimensions: dimStr,
+        weightPerUnit: weightNum,
+        totalWeight: Math.round(weightNum * qtyNum * 100) / 100,
+        category: cat,
+        rev: cleanRev,
+        lengthMm: lengthNum > 0 ? lengthNum : undefined,
+        widthMm: widthNum > 0 ? widthNum : undefined,
+        grade: cleanGrade,
+        pros: cleanPros,
+        subAssembly: rawSubAssy || undefined
+      });
+    }
+
+    return items;
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      setImportRawText(text);
+      const items = parseBomText(text);
+      setParsedImportItems(items);
+      if (!importTemplateInfo.name) {
+        const baseName = file.name.replace(/\.[^/.]+$/, '');
+        setImportTemplateInfo(prev => ({ ...prev, name: `BOM — ${baseName}` }));
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleRawTextChange = (text: string) => {
+    setImportRawText(text);
+    const items = parseBomText(text);
+    setParsedImportItems(items);
+  };
+
+  const handleOpenImportModal = () => {
+    setImportError('');
+    setImportFileName('');
+    setImportRawText('');
+    setParsedImportItems([]);
+    setImportTemplateInfo({
+      name: selectedTemplate ? `${selectedTemplate.name} (Import)` : 'BOM Import GA',
+      model: selectedTemplate?.model || 'Ultima',
+      truckModel: selectedTemplate?.truckModel || '',
+      gaNumber: selectedTemplate?.gaNumber || '',
+      version: 'v1'
+    });
+    setImportTargetMode(selectedTemplate ? 'existing' : 'new');
+    setIsImportModalOpen(true);
+  };
+
+  const handleSaveImport = async () => {
+    if (parsedImportItems.length === 0) {
+      setImportError('Tidak ada data item BOM yang valid untuk diimport.');
+      return;
+    }
+    setIsImporting(true);
+    setImportError('');
+    try {
+      const calcTotalWeight = parsedImportItems.reduce((acc, it) => acc + (it.totalWeight || 0), 0);
+
+      if (importTargetMode === 'new') {
+        const newTemplateName = importTemplateInfo.name.trim() || `BOM GA: ${importTemplateInfo.gaNumber || 'Imported'}`;
+        await onAddBomTemplate({
+          name: newTemplateName,
+          model: importTemplateInfo.model || 'Ultima',
+          truckModel: importTemplateInfo.truckModel.trim() || undefined,
+          gaNumber: importTemplateInfo.gaNumber.trim() || undefined,
+          version: importTemplateInfo.version || 'v1',
+          status: 'active',
+          items: parsedImportItems,
+          totalEstWeight: calcTotalWeight,
+          notes: `Imported ${parsedImportItems.length} items from BOM file (${new Date().toLocaleDateString()})`
+        });
+      } else if (importTargetMode === 'existing' && selectedTemplate) {
+        const mergedItems = [...(selectedTemplate.items || []), ...parsedImportItems];
+        const newTotalWeight = mergedItems.reduce((acc, it) => acc + (it.totalWeight || 0), 0);
+        await onUpdateBomTemplate(selectedTemplate.id, {
+          items: mergedItems,
+          totalEstWeight: newTotalWeight
+        });
+      }
+      setIsImportModalOpen(false);
+      setImportRawText('');
+      setParsedImportItems([]);
+      setImportFileName('');
+    } catch (err: any) {
+      setImportError(err.message || 'Gagal menyimpan hasil import BOM.');
+    } finally {
+      setIsImporting(false);
+    }
+  };
 
   // Auto-select first active template on load if none selected
   const activeTemplates = useMemo(() => {
@@ -140,15 +548,51 @@ export default function BomView({
   // Eligible Items & Matching Project for Material Processing Generation
   const eligibleMpItems = useMemo(() => {
     if (!selectedTemplate || !selectedTemplate.items) return [];
-    return selectedTemplate.items.filter(
-      it => it.category === 'plate' || it.category === 'structural'
-    );
-  }, [selectedTemplate]);
+    if (mpCategoryScope === 'all') {
+      return selectedTemplate.items;
+    }
+    if (mpCategoryScope === 'plates_structural') {
+      return selectedTemplate.items.filter(it => {
+        if (!it) return false;
+        const cat = (it.category || '').toLowerCase().trim();
+        return ['plate', 'structural', 'plat', 'besi', 'pipe'].includes(cat) || cat === 'plate' || cat === 'structural';
+      });
+    }
+    // DEFAULT: 'process_only' (Hanya Part Berproses / DFX & F DFX)
+    return selectedTemplate.items.filter(it => {
+      if (!it) return false;
+      const procInfo = parseItemProcess(it);
+      return procInfo.hasExplicitProcess;
+    });
+  }, [selectedTemplate, mpCategoryScope, parseItemProcess]);
+
+  const dfxProcessCounts = useMemo(() => {
+    if (!selectedTemplate || !selectedTemplate.items) return { total: 0, withProcess: 0, fDfx: 0, dfx: 0, noProcess: 0 };
+    let withProcess = 0;
+    let fDfx = 0;
+    let dfx = 0;
+    selectedTemplate.items.forEach(it => {
+      if (!it) return;
+      const info = parseItemProcess(it);
+      if (info.hasExplicitProcess) {
+        withProcess++;
+        if (info.isFDfx) fDfx++;
+        else if (info.isDfx) dfx++;
+      }
+    });
+    return {
+      total: selectedTemplate.items.length,
+      withProcess,
+      fDfx,
+      dfx,
+      noProcess: selectedTemplate.items.length - withProcess
+    };
+  }, [selectedTemplate, parseItemProcess]);
 
   const canGenerateMatProcessing = Boolean(
-    selectedTemplate?.gaNumber && 
-    selectedTemplate.gaNumber.trim() !== '' && 
-    eligibleMpItems.length > 0
+    selectedTemplate && 
+    selectedTemplate.items && 
+    selectedTemplate.items.length > 0
   );
 
   const matchingProject = useMemo(() => {
@@ -157,23 +601,65 @@ export default function BomView({
     return projects.find(p => p.gaNumber?.trim().toUpperCase() === cleanGa) || null;
   }, [selectedTemplate?.gaNumber, projects]);
 
+  // Active Linked Project & Unit Multiplier Computation
+  const activeLinkedProject = useMemo(() => {
+    if (selectedProjectId) {
+      return projects.find(p => p.id === selectedProjectId) || null;
+    }
+    return matchingProject;
+  }, [selectedProjectId, projects, matchingProject]);
+
+  const resolvedTargetProject = useMemo(() => {
+    if (selectedModalProjectId) {
+      return projects.find(p => p.id === selectedModalProjectId) || null;
+    }
+    return activeLinkedProject || matchingProject || (projects.length > 0 ? projects[0] : null);
+  }, [selectedModalProjectId, activeLinkedProject, matchingProject, projects]);
+
+  const activeProjectUnits = useMemo(() => {
+    if (customProjectUnits !== null && customProjectUnits > 0) {
+      return customProjectUnits;
+    }
+    if (activeLinkedProject) {
+      if (activeLinkedProject.assemblies && activeLinkedProject.assemblies.length > 0) {
+        return activeLinkedProject.assemblies.length;
+      }
+      return 1;
+    }
+    return 1;
+  }, [customProjectUnits, activeLinkedProject]);
+
+  // Reset project override state & selected stage tab when selected template changes
+  React.useEffect(() => {
+    setSelectedProjectId(null);
+    setCustomProjectUnits(null);
+    setSelectedStageTab('all');
+  }, [selectedTemplate?.id]);
+
+  const handleOpenGenerateModal = () => {
+    if (!selectedTemplate) return;
+    const defaultProj = activeLinkedProject || matchingProject || (projects.length > 0 ? projects[0] : null);
+    setSelectedModalProjectId(defaultProj?.id || '');
+    setUnitMultiplier(activeProjectUnits || 1);
+    setIsGenerateMpModalOpen(true);
+  };
+
   const existingMpPartNos = useMemo(() => {
-    if (!selectedTemplate?.gaNumber) return new Set<string>();
-    const cleanGa = selectedTemplate.gaNumber.trim().toUpperCase();
-    const matchingProjId = matchingProject?.id;
+    const cleanGa = (selectedTemplate?.gaNumber || resolvedTargetProject?.gaNumber || '').trim().toUpperCase();
+    const targetProjId = resolvedTargetProject?.id;
 
     const set = new Set<string>();
     (materialProcessings || []).forEach(mp => {
       const mpGa = (mp.gaNumber || '').trim().toUpperCase();
       const mpProjId = mp.projectId;
-      if ((cleanGa && mpGa === cleanGa) || (matchingProjId && mpProjId === matchingProjId)) {
+      if ((cleanGa && mpGa === cleanGa) || (targetProjId && mpProjId === targetProjId)) {
         if (mp.partNo) {
-          set.add(mp.partNo.trim().toLowerCase());
+          set.add((mp.partNo || '').trim().toLowerCase());
         }
       }
     });
     return set;
-  }, [selectedTemplate?.gaNumber, matchingProject?.id, materialProcessings]);
+  }, [selectedTemplate?.gaNumber, resolvedTargetProject, materialProcessings]);
 
   const itemsToGenerate = useMemo(() => {
     if (!skipDuplicates) return eligibleMpItems;
@@ -188,39 +674,57 @@ export default function BomView({
     if (!selectedTemplate || !onAddMaterialProcessing) return;
     setIsGeneratingMp(true);
     try {
-      let createdCount = 0;
+      const targetProj = resolvedTargetProject;
+      const targetProjId = targetProj?.id || selectedProjectId || (projects[0]?.id || '');
+      const targetProjName = targetProj?.client || targetProj?.name || selectedTemplate.name;
+      const targetGaNumber = targetProj?.gaNumber || selectedTemplate.gaNumber || '';
+
+      const mult = Math.max(1, unitMultiplier || 1);
+      const itemsBatch: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'>[] = [];
+
       for (const item of itemsToGenerate) {
+        const totalQty = (item.quantity || 1) * mult;
+        const procInfo = parseItemProcess(item);
+        const activeStages = procInfo.activeStages;
+
         const mpItem: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt' | 'createdBy'> = {
-          projectId: matchingProject?.id || '',
-          projectName: matchingProject?.client || matchingProject?.name || selectedTemplate.name,
-          workOrder: matchingProject?.client || selectedTemplate.name,
-          gaNumber: selectedTemplate.gaNumber,
-          materialName: item.material || item.description || item.partNumber,
-          material: item.material,
-          grade: item.material,
-          partNo: item.partNumber,
-          description: item.description,
-          dimensions: item.dimensions || '',
-          qty: item.quantity,
-          unit: item.unit === 'pcs' ? 'pcs' : 'kg',
+          projectId: targetProjId,
+          projectName: targetProjName,
+          workOrder: targetProj?.client || selectedTemplate.name,
+          gaNumber: targetGaNumber,
+          materialName: item.description || item.partNumber || item.material || 'Part Description',
+          material: item.material || item.description || item.partNumber,
+          grade: item.grade || item.material || 'Standard Grade',
+          partNo: item.partNumber || '',
+          description: item.description || item.partNumber || '',
+          dimensions: item.dimensions || (item.lengthMm && item.widthMm ? `${item.lengthMm} × ${item.widthMm} mm` : ''),
+          lengthMm: item.lengthMm,
+          widthMm: item.widthMm,
           massKg: item.weightPerUnit || 0,
-          activeStages: ['nesting_cnc', 'bending', 'machining'],
+          qty: totalQty,
+          unit: item.unit === 'pcs' ? 'pcs' : 'kg',
+          assemblyName: item.subAssembly || item.category || 'Main Body',
+          activeStages: activeStages,
           stages: {
-            nesting_cnc: { pct: 0, status: 'pending' },
-            bending: { pct: 0, status: 'pending' },
-            machining: { pct: 0, status: 'pending' }
+            nesting: { pct: 0, status: activeStages.includes('nesting') ? 'pending' : 'skipped' },
+            cnc: { pct: 0, status: activeStages.includes('cnc') ? 'pending' : 'skipped' },
+            bending: { pct: 0, status: activeStages.includes('bending') ? 'pending' : 'skipped' },
+            machining: { pct: 0, status: activeStages.includes('machining') ? 'pending' : 'skipped' }
           },
           overallPct: 0,
           isCompleted: false,
           isStocked: false
         };
 
-        await onAddMaterialProcessing(matchingProject?.id || '', mpItem);
-        createdCount++;
+        itemsBatch.push(mpItem);
+      }
+
+      if (itemsBatch.length > 0) {
+        await onAddMaterialProcessing(targetProjId, itemsBatch);
       }
 
       setIsGenerateMpModalOpen(false);
-      setGenerateToast({ show: true, count: createdCount });
+      setGenerateToast({ show: true, count: itemsBatch.length, projectName: targetProjName });
     } catch (err) {
       console.error('Failed to generate Material Processing items:', err);
     } finally {
@@ -231,9 +735,9 @@ export default function BomView({
   // Sidebar Filtered List
   const filteredTemplates = useMemo(() => {
     return bomTemplates.filter(t => {
-      const q = searchQuery.trim().toLowerCase();
+      const q = (searchQuery || '').trim().toLowerCase();
       if (q) {
-        const matchName = t.name.toLowerCase().includes(q);
+        const matchName = (t.name || '').toLowerCase().includes(q);
         const matchModel = (t.model || '').toLowerCase().includes(q);
         const matchGA = (t.gaNumber || '').toLowerCase().includes(q);
         const matchTruck = (t.truckModel || '').toLowerCase().includes(q);
@@ -302,17 +806,21 @@ export default function BomView({
   }, [drawings]);
 
   // Stock Status Calculator Helper for an Item
-  const calculateStockStatus = (item: BomItem) => {
+  const calculateStockStatus = (item: BomItem, mult = 1) => {
     if (!item.material) return { status: 'none', label: '—', color: 'text-base-muted bg-base-surface2 border-base-border', currentStock: 0, requiredWeight: 0 };
 
-    const reqQty = item.quantity || 0;
-    const reqWeight = item.totalWeight || (reqQty * (item.weightPerUnit || 0));
+    const reqQty = (item.quantity || 0) * mult;
+    const baseWeight = item.totalWeight || ((item.quantity || 0) * (item.weightPerUnit || 0));
+    const reqWeight = baseWeight * mult;
 
     // Case-insensitive partial match on material name
-    const itemMatLower = item.material.trim().toLowerCase();
+    const itemMatLower = (item.material || '').trim().toLowerCase();
+    if (!itemMatLower) {
+      return { status: 'none', label: '—', color: 'text-base-muted bg-base-surface2 border-base-border', currentStock: 0, requiredWeight: reqWeight };
+    }
     const matchedMaterial = materials.find(m => {
-      const nameLower = m.name.toLowerCase();
-      return nameLower === itemMatLower || nameLower.includes(itemMatLower) || itemMatLower.includes(nameLower);
+      const nameLower = (m?.name || '').toLowerCase();
+      return nameLower && (nameLower === itemMatLower || nameLower.includes(itemMatLower) || itemMatLower.includes(nameLower));
     });
 
     if (!matchedMaterial) {
@@ -336,9 +844,10 @@ export default function BomView({
       return { shortageCount: 0, totalItems: 0, consumedInProcessing: 0, alertType: 'green' as 'green' | 'orange' | 'red' };
     }
 
+    const activeMult = showProjectTotals ? activeProjectUnits : 1;
     let shortageCount = 0;
     selectedTemplate.items.forEach(item => {
-      const res = calculateStockStatus(item);
+      const res = calculateStockStatus(item, activeMult);
       if (res.status === 'no_stock' || res.status === 'low_stock') {
         shortageCount++;
       }
@@ -347,9 +856,9 @@ export default function BomView({
     // Calculate material in processing for matching GA Number
     let consumedInProcessing = 0;
     if (selectedTemplate.gaNumber) {
-      const targetGa = selectedTemplate.gaNumber.trim().toLowerCase();
+      const targetGa = (selectedTemplate.gaNumber || '').trim().toLowerCase();
       materialProcessings.forEach(mp => {
-        if (mp.gaNumber && mp.gaNumber.trim().toLowerCase() === targetGa) {
+        if (mp.gaNumber && (mp.gaNumber || '').trim().toLowerCase() === targetGa) {
           consumedInProcessing += ((mp.qty || 0) * (mp.massKg || 1));
         }
       });
@@ -365,7 +874,7 @@ export default function BomView({
       consumedInProcessing,
       alertType
     };
-  }, [selectedTemplate, materials, materialProcessings]);
+  }, [selectedTemplate, materials, materialProcessings, showProjectTotals, activeProjectUnits]);
 
   // Model Badge Styling Helper
   const getModelBadgeStyle = (model: string) => {
@@ -479,6 +988,7 @@ export default function BomView({
         partNumber: item.partNumber,
         description: item.description,
         material: item.material,
+        subAssembly: item.subAssembly || '',
         category: item.category,
         quantity: item.quantity,
         unit: item.unit,
@@ -493,6 +1003,7 @@ export default function BomView({
         partNumber: '',
         description: '',
         material: '',
+        subAssembly: '',
         category: 'plate',
         quantity: 1,
         unit: 'pcs',
@@ -530,6 +1041,7 @@ export default function BomView({
       partNumber: itemFormData.partNumber.trim().toUpperCase(),
       description: itemFormData.description.trim(),
       material: itemFormData.material.trim(),
+      subAssembly: itemFormData.subAssembly.trim() || undefined,
       category: itemFormData.category,
       quantity: qty,
       unit: itemFormData.unit,
@@ -642,13 +1154,13 @@ export default function BomView({
   // Export CSV
   const handleExportCSV = () => {
     if (!selectedTemplate) return;
-    const headers = ['Part No', 'Description', 'Material', 'Category', 'Qty', 'Unit', 'Dimensions', 'Weight/pcs (kg)', 'Total Weight (kg)', 'Drawing Ref', 'Notes'];
+    const headers = ['Part No', 'Description', 'Material', 'Stage/Sub-Assy', 'Qty', 'Unit', 'Dimensions', 'Weight/pcs (kg)', 'Total Weight (kg)', 'Drawing Ref', 'Notes'];
     
     const rows = (selectedTemplate.items || []).map(it => [
       it.partNumber,
       `"${(it.description || '').replace(/"/g, '""')}"`,
       `"${(it.material || '').replace(/"/g, '""')}"`,
-      it.category,
+      `"${(it.subAssembly || it.category || 'Main Body').replace(/"/g, '""')}"`,
       it.quantity,
       it.unit,
       `"${(it.dimensions || '').replace(/"/g, '""')}"`,
@@ -697,7 +1209,7 @@ export default function BomView({
 
     // Simple table drawing logic
     let startY = 48;
-    const headers = ['#', 'Part No', 'Description', 'Material', 'Category', 'Qty', 'Unit', 'Dimensions', 'Wt/pcs (kg)', 'Total Wt (kg)', 'Drawing Ref'];
+    const headers = ['#', 'Part No', 'Description', 'Material', 'Stage/Sub-Assy', 'Qty', 'Unit', 'Dimensions', 'Wt/pcs (kg)', 'Total Wt (kg)', 'Drawing Ref'];
     const colWidths = [10, 28, 55, 35, 25, 12, 12, 35, 20, 22, 25];
 
     doc.setFillColor(240, 240, 240);
@@ -726,7 +1238,7 @@ export default function BomView({
         item.partNumber,
         item.description.length > 30 ? item.description.slice(0, 28) + '..' : item.description,
         item.material.length > 20 ? item.material.slice(0, 18) + '..' : item.material,
-        item.category,
+        item.subAssembly || item.category || 'Main Body',
         item.quantity.toString(),
         item.unit,
         item.dimensions || '-',
@@ -754,11 +1266,39 @@ export default function BomView({
     doc.save(filename.replace(/[^a-zA-Z0-9_-]/g, '_') + '.pdf');
   };
 
+  // Available Stage / Sub-Assembly Summary
+  const availableStages = useMemo(() => {
+    if (!selectedTemplate || !selectedTemplate.items) return [];
+
+    const stageMap: Record<string, { name: string; count: number; totalWeight: number }> = {};
+
+    selectedTemplate.items.forEach(item => {
+      const stageName = item.subAssembly?.trim() || item.category || 'Main Body';
+      const wt = item.totalWeight || ((item.quantity || 0) * (item.weightPerUnit || 0));
+
+      if (!stageMap[stageName]) {
+        stageMap[stageName] = { name: stageName, count: 0, totalWeight: 0 };
+      }
+      stageMap[stageName].count += 1;
+      stageMap[stageName].totalWeight += wt;
+    });
+
+    return Object.values(stageMap).sort((a, b) => b.totalWeight - a.totalWeight);
+  }, [selectedTemplate]);
+
   // Grouped / Sorted Items for Table Display
   const displayItems = useMemo(() => {
     if (!selectedTemplate || !selectedTemplate.items) return [];
 
     let itemsCopy = [...selectedTemplate.items];
+
+    // Filter by Stage / Sub-Assembly tab if not 'all'
+    if (selectedStageTab !== 'all') {
+      itemsCopy = itemsCopy.filter(item => {
+        const stageName = item.subAssembly?.trim() || item.category || 'Main Body';
+        return stageName.toLowerCase() === selectedStageTab.toLowerCase();
+      });
+    }
 
     // Sort items
     itemsCopy.sort((a, b) => {
@@ -774,25 +1314,18 @@ export default function BomView({
     });
 
     return itemsCopy;
-  }, [selectedTemplate, sortField, sortOrder]);
+  }, [selectedTemplate, sortField, sortOrder, selectedStageTab]);
 
-  // Items Grouped by Category
+  // Items Grouped by Stage / Sub-Assy
   const groupedItems = useMemo(() => {
     if (!isGroupedByCategory) return null;
 
-    const groups: Record<string, BomItem[]> = {
-      plate: [],
-      structural: [],
-      hardware: [],
-      welding_consumable: [],
-      paint: [],
-      other: []
-    };
+    const groups: Record<string, BomItem[]> = {};
 
     displayItems.forEach(item => {
-      const cat = item.category || 'other';
-      if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(item);
+      const key = item.subAssembly?.trim() || item.category || 'Main Body';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(item);
     });
 
     return groups;
@@ -818,15 +1351,24 @@ export default function BomView({
         {/* Top Control Box */}
         <div className="bg-base-surface border border-base-border p-4 rounded-xl shadow-card space-y-4">
           
-          {/* New Template Primary Button */}
+          {/* New Template Primary Button & Import Button */}
           {canEdit && (
-            <button
-              onClick={() => handleOpenTemplateModal()}
-              className="w-full py-2.5 px-4 bg-base-accent hover:bg-base-accent-hover text-white font-condensed font-bold uppercase tracking-wider text-xs rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
-            >
-              <Plus className="h-4 w-4" />
-              New BOM Template
-            </button>
+            <div className="grid grid-cols-1 gap-2">
+              <button
+                onClick={() => handleOpenTemplateModal()}
+                className="w-full py-2.5 px-4 bg-base-accent hover:bg-base-accent-hover text-white font-condensed font-bold uppercase tracking-wider text-xs rounded-lg shadow-sm flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Plus className="h-4 w-4" />
+                New BOM Template
+              </button>
+              <button
+                onClick={handleOpenImportModal}
+                className="w-full py-2 px-3 bg-base-surface2 hover:bg-base-border text-base-text border border-base-border font-condensed font-bold uppercase tracking-wider text-xs rounded-lg flex items-center justify-center gap-2 transition-all cursor-pointer"
+              >
+                <Upload className="h-4 w-4 text-base-accent" />
+                Import BOM (CSV/Excel)
+              </button>
+            </div>
           )}
 
           {/* Search Box */}
@@ -906,11 +1448,11 @@ export default function BomView({
                 <p className="text-xs font-condensed font-bold uppercase">No templates found</p>
               </div>
             ) : (
-              filteredTemplates.map(t => {
+              filteredTemplates.map((t, tIdx) => {
                 const isSelected = selectedTemplate?.id === t.id;
                 return (
                   <div
-                    key={t.id}
+                    key={t.id || `tpl_${tIdx}`}
                     onClick={() => setSelectedTemplateId(t.id)}
                     className={`p-3 cursor-pointer transition-all ${
                       isSelected 
@@ -988,6 +1530,23 @@ export default function BomView({
           </div>
         ) : (
           <>
+            {generateToast?.show && (
+              <div className="bg-base-green-dim/80 border border-base-green text-base-green p-3.5 rounded-xl flex items-center justify-between gap-3 shadow-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                <div className="flex items-center gap-2.5 text-xs font-medium">
+                  <Check className="h-5 w-5 shrink-0 bg-base-green text-white p-0.5 rounded-full" />
+                  <span>
+                    Berhasil meng-generate <strong>{generateToast.count} material items</strong> ke Material Processing untuk project <strong>{generateToast.projectName || 'Target Project'}</strong>!
+                  </span>
+                </div>
+                <button
+                  onClick={() => setGenerateToast(null)}
+                  className="p-1 hover:bg-base-green/20 rounded text-base-green cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+
             {/* Header Box */}
             <div className="bg-base-surface border border-base-border p-5 rounded-xl shadow-card space-y-4">
               
@@ -1077,13 +1636,19 @@ export default function BomView({
                   {canEdit && (
                     <>
                       <button
-                        onClick={() => setIsGenerateMpModalOpen(true)}
+                        onClick={handleOpenImportModal}
+                        className="px-3 py-1.5 border border-base-accent/40 bg-base-accent-dim/30 hover:bg-base-accent-dim/60 text-base-accent rounded-lg text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all cursor-pointer"
+                      >
+                        <Upload className="h-3.5 w-3.5" />
+                        Import BOM
+                      </button>
+
+                      <button
+                        onClick={handleOpenGenerateModal}
                         disabled={!canGenerateMatProcessing}
                         title={
-                          !selectedTemplate.gaNumber
-                            ? 'BOM template must have a GA Number'
-                            : !eligibleMpItems.length
-                            ? 'Template has no plate or structural items'
+                          !canGenerateMatProcessing
+                            ? 'BOM template has no items'
                             : 'Generate Material Processing items from this BOM'
                         }
                         className={`px-3 py-1.5 border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all ${
@@ -1156,6 +1721,155 @@ export default function BomView({
                   <p className="text-xs font-bold text-base-text mt-1 truncate">
                     {selectedTemplate.createdByName || 'System'}
                   </p>
+                </div>
+              </div>
+
+              {/* SCOPE & REQUIREMENT ANALYSIS CARD (Base 1 Unit vs Applied Project Requirements) */}
+              <div className="bg-base-bg border border-base-border rounded-xl p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-base-border">
+                  <div className="flex items-center gap-2">
+                    <Layers3 className="h-4 w-4 text-base-accent shrink-0" />
+                    <div>
+                      <h3 className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-text">
+                        BOM Scope & Requirement Breakdown
+                      </h3>
+                      <p className="text-[11px] text-base-muted">
+                        Distinction between base engineering template spec and total project requirements
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Toggle Switch */}
+                  <div className="flex items-center gap-1.5 bg-base-surface p-1 rounded-lg border border-base-border shrink-0 self-start sm:self-auto">
+                    <button
+                      onClick={() => setShowProjectTotals(false)}
+                      className={`px-3 py-1 rounded text-xs font-condensed font-bold uppercase transition-all cursor-pointer ${
+                        !showProjectTotals
+                          ? 'bg-base-surface2 text-base-text border border-base-border shadow-xs'
+                          : 'text-base-muted hover:text-base-text'
+                      }`}
+                    >
+                      Base Template (1 Unit)
+                    </button>
+                    <button
+                      onClick={() => setShowProjectTotals(true)}
+                      className={`px-3 py-1 rounded text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+                        showProjectTotals
+                          ? 'bg-base-accent text-white shadow-xs font-black'
+                          : 'text-base-muted hover:text-base-text'
+                      }`}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      Project Totals ({activeProjectUnits} {activeProjectUnits === 1 ? 'Unit' : 'Units'})
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                  {/* BASE BOM TEMPLATE DEFINITION */}
+                  <div className={`p-3.5 rounded-xl border transition-all ${
+                    !showProjectTotals ? 'bg-base-surface border-base-accent/50 shadow-xs ring-1 ring-base-accent/20' : 'bg-base-surface/50 border-base-border'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="px-2 py-0.5 bg-base-surface2 border border-base-border text-base-text rounded text-[10px] font-condensed font-extrabold uppercase flex items-center gap-1">
+                        <Box className="h-3 w-3 text-base-accent" />
+                        Base Definition (1 Unit)
+                      </span>
+                      <span className="text-[10px] font-mono text-base-muted">Engineering Standard</span>
+                    </div>
+
+                    <div className="space-y-1.5 pt-1">
+                      <div className="flex justify-between items-baseline text-xs">
+                        <span className="text-base-muted">Single Unit Scope:</span>
+                        <span className="font-mono font-bold text-base-text">1 Unit Specification</span>
+                      </div>
+                      <div className="flex justify-between items-baseline text-xs">
+                        <span className="text-base-muted">Base Component Parts:</span>
+                        <span className="font-mono font-bold text-base-text">{selectedTemplate.items?.length || 0} unique items</span>
+                      </div>
+                      <div className="flex justify-between items-baseline text-xs">
+                        <span className="text-base-muted">Manufacturing Required:</span>
+                        <span className="font-mono font-bold text-purple-600 dark:text-purple-300">
+                          {dfxProcessCounts.withProcess} parts ({dfxProcessCounts.fDfx} F DFX, {dfxProcessCounts.dfx} DFX)
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-baseline text-xs pt-1 border-t border-base-border/50">
+                        <span className="text-base-muted font-medium">Base Unit Est. Mass:</span>
+                        <span className="font-mono font-extrabold text-base-accent text-sm">
+                          {(selectedTemplate.totalEstWeight || 0).toLocaleString()} <span className="text-xs font-normal">kg</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* APPLIED PROJECT-LEVEL REQUIREMENTS */}
+                  <div className={`p-3.5 rounded-xl border transition-all ${
+                    showProjectTotals ? 'bg-base-surface border-base-accent shadow-xs ring-1 ring-base-accent/30' : 'bg-base-surface/50 border-base-border'
+                  }`}>
+                    <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 bg-base-accent-dim text-base-accent border border-base-accent/30 rounded text-[10px] font-condensed font-extrabold uppercase flex items-center gap-1">
+                        <Building2 className="h-3 w-3" />
+                        Applied Project Requirements
+                      </span>
+
+                      {/* Project Link status */}
+                      <div>
+                        {activeLinkedProject ? (
+                          <span className="text-[10px] font-condensed font-bold text-base-green bg-base-green-dim/50 px-2 py-0.5 rounded border border-base-green/30">
+                            Linked: GA {activeLinkedProject.gaNumber || selectedTemplate.gaNumber}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-condensed text-base-muted italic bg-base-surface2 px-1.5 py-0.5 rounded border border-base-border">
+                            Custom Project Scope
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-0.5">
+                      <div className="flex items-center justify-between text-xs gap-2">
+                        <span className="text-base-muted">Target Project:</span>
+                        <select
+                          value={selectedProjectId || (matchingProject?.id || '')}
+                          onChange={e => {
+                            setSelectedProjectId(e.target.value || null);
+                            setCustomProjectUnits(null);
+                          }}
+                          className="bg-base-bg border border-base-border px-2 py-0.5 rounded text-xs text-base-text max-w-[190px] truncate cursor-pointer font-medium"
+                        >
+                          <option value="">{matchingProject ? `Auto (GA: ${matchingProject.gaNumber} — ${matchingProject.client || matchingProject.name})` : 'Select Project...'}</option>
+                          {projects.map(p => (
+                            <option key={p.id} value={p.id}>
+                              {p.gaNumber ? `GA ${p.gaNumber}: ` : ''}{p.client || p.name} ({p.assemblies?.length || 1} units)
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="text-base-muted">Required Project Unit Count:</span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min={1}
+                            max={500}
+                            value={activeProjectUnits}
+                            onChange={e => setCustomProjectUnits(Math.max(1, parseInt(e.target.value) || 1))}
+                            className="w-16 bg-base-bg border border-base-border px-2 py-0.5 rounded text-right font-mono font-bold text-xs text-base-accent focus:outline-hidden focus:border-base-accent"
+                          />
+                          <span className="text-[11px] font-condensed uppercase font-bold text-base-muted">Units</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-between items-baseline text-xs pt-1 border-t border-base-border/50">
+                        <span className="text-base-muted font-medium">Total Project Mass Required:</span>
+                        <span className="font-mono font-extrabold text-base-accent text-sm">
+                          {((selectedTemplate.totalEstWeight || 0) * activeProjectUnits).toLocaleString()} <span className="text-xs font-normal">kg</span>
+                          <span className="text-[10px] font-normal text-base-muted ml-1">({activeProjectUnits} × {(selectedTemplate.totalEstWeight || 0).toLocaleString()} kg)</span>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -1377,25 +2091,113 @@ export default function BomView({
               </div>
             )}
 
+            {/* Stage / Sub-Assembly Group Tabs Navigation */}
+            {availableStages.length > 0 && (
+              <div className="bg-base-surface border border-base-border p-3.5 rounded-xl shadow-card space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-base-border/70">
+                  <div className="flex items-center gap-2 text-xs font-condensed font-extrabold uppercase tracking-wider text-base-text">
+                    <ListTree className="h-4 w-4 text-base-accent" />
+                    <span>Stage & Sub-Assembly Groups / Tabs</span>
+                    <span className="text-[10px] text-base-muted font-mono bg-base-surface2 px-1.5 py-0.5 rounded border border-base-border font-normal">
+                      {availableStages.length} Groups
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setIsGroupedByCategory(!isGroupedByCategory)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-bold uppercase border transition-all cursor-pointer ${
+                        isGroupedByCategory
+                          ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                          : 'bg-base-bg text-base-muted border-base-border hover:text-base-text'
+                      }`}
+                    >
+                      {isGroupedByCategory ? 'Grouped Accordion View' : 'Group by Stage'}
+                    </button>
+                    {selectedStageTab !== 'all' && (
+                      <button
+                        onClick={() => setSelectedStageTab('all')}
+                        className="text-xs font-condensed font-bold uppercase text-base-accent hover:underline cursor-pointer"
+                      >
+                        Reset Filter (Show All)
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tab Buttons */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-thin">
+                  {/* ALL STAGES TAB */}
+                  <button
+                    onClick={() => setSelectedStageTab('all')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer border ${
+                      selectedStageTab === 'all'
+                        ? 'bg-base-accent text-white border-base-accent shadow-xs font-black'
+                        : 'bg-base-bg text-base-text border-base-border hover:bg-base-surface2'
+                    }`}
+                  >
+                    <span>All Stages</span>
+                    <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                      selectedStageTab === 'all' ? 'bg-white/20 text-white font-bold' : 'bg-base-surface2 text-base-muted'
+                    }`}>
+                      {selectedTemplate?.items?.length || 0}
+                    </span>
+                  </button>
+
+                  {/* INDIVIDUAL STAGE TABS */}
+                  {availableStages.map(stage => {
+                    const isSelected = selectedStageTab.toLowerCase() === stage.name.toLowerCase();
+                    const totalBomsWeight = selectedTemplate?.totalEstWeight || 1;
+                    const pctOfTotal = Math.round((stage.totalWeight / (totalBomsWeight || 1)) * 100);
+                    const displayWeight = showProjectTotals ? stage.totalWeight * activeProjectUnits : stage.totalWeight;
+
+                    return (
+                      <button
+                        key={stage.name}
+                        onClick={() => setSelectedStageTab(stage.name)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-all whitespace-nowrap flex items-center gap-2 cursor-pointer border ${
+                          isSelected
+                            ? 'bg-base-accent text-white border-base-accent shadow-xs font-black'
+                            : 'bg-base-bg text-base-text border-base-border hover:bg-base-surface2'
+                        }`}
+                      >
+                        <FolderTree className="h-3.5 w-3.5 opacity-70" />
+                        <span>{stage.name}</span>
+                        <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
+                          isSelected ? 'bg-white/20 text-white font-bold' : 'bg-base-surface2 text-base-muted'
+                        }`}>
+                          {stage.count}
+                        </span>
+                        <span className={`text-[10px] font-mono ${isSelected ? 'text-white/90' : 'text-base-accent font-semibold'}`}>
+                          {displayWeight.toLocaleString()} kg ({pctOfTotal}%)
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* BOM Table Controls */}
-            <div className="bg-base-surface border border-base-border p-3.5 rounded-xl shadow-card flex items-center justify-between gap-3">
+            <div className="bg-base-surface border border-base-border p-3.5 rounded-xl shadow-card flex flex-wrap items-center justify-between gap-3">
               
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2.5 flex-wrap">
                 <h3 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text flex items-center gap-2">
                   <Box className="h-4 w-4 text-base-accent" />
-                  BOM Components & Materials
+                  BOM Components & Materials {selectedStageTab !== 'all' ? `— ${selectedStageTab}` : ''}
                 </h3>
 
-                {/* Group By Category Toggle */}
+                {/* Toggle Calculated Project Totals */}
                 <button
-                  onClick={() => setIsGroupedByCategory(!isGroupedByCategory)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-bold uppercase border transition-all cursor-pointer ${
-                    isGroupedByCategory
-                      ? 'bg-base-accent text-white border-base-accent'
-                      : 'bg-base-bg text-base-muted border-base-border hover:text-base-text'
+                  onClick={() => setShowProjectTotals(!showProjectTotals)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-bold uppercase border transition-all flex items-center gap-1.5 cursor-pointer ${
+                    showProjectTotals
+                      ? 'bg-base-accent text-white border-base-accent shadow-xs font-black'
+                      : 'bg-base-surface2 text-base-muted border-base-border hover:text-base-text'
                   }`}
                 >
-                  {isGroupedByCategory ? 'Categorized View' : 'Group by Category'}
+                  <Layers3 className="h-3.5 w-3.5" />
+                  {showProjectTotals ? `Showing Project Totals (${activeProjectUnits} Units)` : 'Show Project Totals'}
                 </button>
               </div>
 
@@ -1413,6 +2215,43 @@ export default function BomView({
 
             {/* Table Container */}
             <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden">
+              {/* Project Scope Active Banner */}
+              {showProjectTotals && (
+                <div className="bg-base-accent-dim/40 border-b border-base-accent/30 px-4 py-2.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-base-accent font-medium">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 shrink-0" />
+                    <span>
+                      <strong>Calculated Project Scope View Active:</strong> Quantities and weights below are calculated for <strong>{activeProjectUnits} {activeProjectUnits === 1 ? 'Unit' : 'Units'}</strong>
+                      {activeLinkedProject ? ` (${activeLinkedProject.client || activeLinkedProject.name} — GA: ${activeLinkedProject.gaNumber || selectedTemplate.gaNumber})` : ''}.
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowProjectTotals(false)}
+                    className="text-[11px] font-condensed font-bold uppercase underline hover:opacity-80 shrink-0 cursor-pointer ml-auto sm:ml-2"
+                  >
+                    Reset to 1 Unit Base
+                  </button>
+                </div>
+              )}
+
+              {/* Active Stage Tab Banner */}
+              {selectedStageTab !== 'all' && (
+                <div className="bg-base-accent-dim/30 border-b border-base-accent/20 px-4 py-2 flex items-center justify-between gap-2 text-xs text-base-text font-medium">
+                  <div className="flex items-center gap-2">
+                    <FolderTree className="h-4 w-4 text-base-accent shrink-0" />
+                    <span>
+                      Filtered Stage / Sub-Assembly: <strong className="text-base-accent font-extrabold uppercase">{selectedStageTab}</strong> ({displayItems.length} items)
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setSelectedStageTab('all')}
+                    className="text-[11px] font-condensed font-bold uppercase text-base-accent hover:underline cursor-pointer"
+                  >
+                    Clear Filter (Show All)
+                  </button>
+                </div>
+              )}
+
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                   <thead>
@@ -1421,12 +2260,18 @@ export default function BomView({
                       <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('partNumber')}>Part No</th>
                       <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('description')}>Description</th>
                       <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('material')}>Material</th>
-                      <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('category')}>Category</th>
-                      <th className="py-3 px-3 text-right cursor-pointer" onClick={() => handleSort('quantity')}>Qty</th>
+                      <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('pros')}>PROS (Process)</th>
+                      <th className="py-3 px-3 text-center cursor-pointer" onClick={() => handleSort('pros')}>Mfg. Required</th>
+                      <th className="py-3 px-3 cursor-pointer" onClick={() => handleSort('subAssembly')}>Stage / Sub-Assy</th>
+                      <th className="py-3 px-3 text-right cursor-pointer" onClick={() => handleSort('quantity')}>
+                        {showProjectTotals ? `Qty (${activeProjectUnits} Units)` : 'Qty'}
+                      </th>
                       <th className="py-3 px-3 text-center">Unit</th>
                       <th className="py-3 px-3">Dimensions</th>
                       <th className="py-3 px-3 text-right cursor-pointer" onClick={() => handleSort('weightPerUnit')}>Wt/pcs</th>
-                      <th className="py-3 px-3 text-right cursor-pointer" onClick={() => handleSort('totalWeight')}>Total Wt</th>
+                      <th className="py-3 px-3 text-right cursor-pointer" onClick={() => handleSort('totalWeight')}>
+                        {showProjectTotals ? `Project Wt (${activeProjectUnits} Units)` : 'Total Wt'}
+                      </th>
                       <th className="py-3 px-3">Drawing Ref</th>
                       <th className="py-3 px-3 text-center">Stock Status</th>
                       <th className="py-3 px-3 text-right">Actions</th>
@@ -1435,7 +2280,7 @@ export default function BomView({
                   <tbody className="divide-y divide-base-border text-xs">
                     {displayItems.length === 0 ? (
                       <tr>
-                        <td colSpan={13} className="text-center py-12 text-base-muted">
+                        <td colSpan={15} className="text-center py-12 text-base-muted">
                           <Box className="h-8 w-8 mx-auto mb-2 opacity-40" />
                           <p className="font-condensed font-bold uppercase tracking-wider">No BOM items in this template</p>
                           {canEdit && (
@@ -1454,37 +2299,109 @@ export default function BomView({
                         const catItems = catItemsRaw as BomItem[];
                         if (catItems.length === 0) return null;
                         const catTotalWeight = catItems.reduce((acc, it) => acc + (it.totalWeight || 0), 0);
+                        const scaledCatWeight = showProjectTotals ? catTotalWeight * activeProjectUnits : catTotalWeight;
 
                         return (
                           <React.Fragment key={catKey}>
                             {/* Category Header Row */}
                             <tr className="bg-base-surface2/90 font-condensed font-black text-xs uppercase tracking-wider text-base-text border-y border-base-border">
-                              <td colSpan={9} className="py-2 px-4 text-base-accent">
+                              <td colSpan={10} className="py-2 px-4 text-base-accent">
                                 {catKey.replace('_', ' ')} ({catItems.length} items)
                               </td>
                               <td className="py-2 px-3 text-right font-mono font-bold text-base-text">
-                                {catTotalWeight.toLocaleString()} kg
+                                {scaledCatWeight.toLocaleString()} kg
+                                {showProjectTotals && (
+                                  <span className="block text-[10px] font-normal text-base-muted">
+                                    ({catTotalWeight.toLocaleString()} kg/unit)
+                                  </span>
+                                )}
                               </td>
-                              <td colSpan={3} />
+                              <td colSpan={4} />
                             </tr>
 
                             {/* Items in Category */}
                             {catItems.map((item, idx) => {
-                              const stockRes = calculateStockStatus(item);
+                              const stockRes = calculateStockStatus(item, showProjectTotals ? activeProjectUnits : 1);
                               const isShortage = stockRes.status === 'no_stock' || stockRes.status === 'low_stock';
+                              const baseItemWeight = item.totalWeight || ((item.quantity || 0) * (item.weightPerUnit || 0));
 
                               return (
-                                <tr key={item.id} className={`hover:bg-base-surface2/60 transition-colors ${isShortage ? 'bg-base-red-dim/20' : ''}`}>
+                                <tr key={item.id ? `${item.id}_${idx}` : `cat_item_${idx}`} className={`hover:bg-base-surface2/60 transition-colors ${isShortage ? 'bg-base-red-dim/20' : ''}`}>
                                   <td className="py-2.5 px-3 text-center text-base-muted">{idx + 1}</td>
                                   <td className="py-2.5 px-3 font-mono font-bold text-base-accent">{item.partNumber}</td>
-                                  <td className="py-2.5 px-3 font-medium text-base-text">{item.description}</td>
+                                  <td className="py-2.5 px-3 font-medium text-base-text break-words max-w-[280px]" title={item.description}>{item.description}</td>
                                   <td className="py-2.5 px-3 text-base-text">{item.material}</td>
-                                  <td className="py-2.5 px-3 uppercase text-[10px] font-condensed font-bold text-base-muted">{item.category}</td>
-                                  <td className="py-2.5 px-3 text-right font-mono font-bold">{item.quantity}</td>
+                                  <td className="py-2.5 px-3">
+                                    {(() => {
+                                      const pInfo = parseItemProcess(item);
+                                      return (
+                                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap ${pInfo.badgeColor}`} title={`PROS: ${item.pros || '—'}`}>
+                                          {pInfo.processLabel}
+                                        </span>
+                                      );
+                                    })()}
+                                  </td>
+                                  <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                                    {(() => {
+                                      const pInfo = parseItemProcess(item);
+                                      if (pInfo.isFDfx) {
+                                        return (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-extrabold uppercase bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30" title="DFX + Bending required (Nesting, Cutting, Bending)">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse"></span>
+                                            YES (F DFX)
+                                          </span>
+                                        );
+                                      } else if (pInfo.isDfx) {
+                                        return (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-extrabold uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30" title="DFX Cutting required (Nesting & Cutting)">
+                                            <span className="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                                            YES (DFX)
+                                          </span>
+                                        );
+                                      } else if (pInfo.hasExplicitProcess) {
+                                        return (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-bold uppercase bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30" title={`Process required: ${pInfo.processLabel}`}>
+                                            <span className="h-1.5 w-1.5 rounded-full bg-teal-500"></span>
+                                            YES ({pInfo.processLabel})
+                                          </span>
+                                        );
+                                      } else {
+                                        return (
+                                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-medium uppercase bg-base-surface2 text-base-muted border border-base-border/60 opacity-80" title="Direct Purchase / Commercial Hardware / Stock item">
+                                            NO (Direct)
+                                          </span>
+                                        );
+                                      }
+                                    })()}
+                                  </td>
+                                  <td className="py-2.5 px-3 font-condensed font-bold text-xs text-base-text">
+                                    <span className="px-1.5 py-0.5 bg-base-surface2 border border-base-border rounded text-[10px] uppercase">
+                                      {item.subAssembly || item.category || 'Main Body'}
+                                    </span>
+                                  </td>
+                                  <td className="py-2.5 px-3 text-right font-mono font-bold">
+                                    {showProjectTotals ? (
+                                      <div>
+                                        <span className="text-base-accent font-black text-sm">{item.quantity * activeProjectUnits}</span>
+                                        <span className="block text-[10px] text-base-muted font-normal">({item.quantity}/unit)</span>
+                                      </div>
+                                    ) : (
+                                      item.quantity
+                                    )}
+                                  </td>
                                   <td className="py-2.5 px-3 text-center text-base-muted">{item.unit}</td>
                                   <td className="py-2.5 px-3 font-mono text-[11px] text-base-muted">{item.dimensions || '—'}</td>
                                   <td className="py-2.5 px-3 text-right font-mono">{item.weightPerUnit || 0}</td>
-                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-base-text">{(item.totalWeight || 0).toLocaleString()}</td>
+                                  <td className="py-2.5 px-3 text-right font-mono font-bold text-base-text">
+                                    {showProjectTotals ? (
+                                      <div>
+                                        <span className="text-base-text font-black">{(baseItemWeight * activeProjectUnits).toLocaleString()}</span>
+                                        <span className="block text-[10px] text-base-muted font-normal">({baseItemWeight.toLocaleString()} kg/unit)</span>
+                                      </div>
+                                    ) : (
+                                      baseItemWeight.toLocaleString()
+                                    )}
+                                  </td>
                                   <td className="py-2.5 px-3">
                                     {item.drawingRef ? (
                                       <button
@@ -1517,18 +2434,19 @@ export default function BomView({
                     ) : (
                       /* Render Standard Flat View */
                       displayItems.map((item, idx) => {
-                        const stockRes = calculateStockStatus(item);
+                        const stockRes = calculateStockStatus(item, showProjectTotals ? activeProjectUnits : 1);
                         const isShortage = stockRes.status === 'no_stock' || stockRes.status === 'low_stock';
+                        const baseItemWeight = item.totalWeight || ((item.quantity || 0) * (item.weightPerUnit || 0));
 
                         return (
-                          <tr key={item.id} className={`hover:bg-base-surface2/60 transition-colors ${isShortage ? 'bg-base-red-dim/20' : ''}`}>
+                          <tr key={item.id ? `${item.id}_${idx}` : `item_${idx}`} className={`hover:bg-base-surface2/60 transition-colors ${isShortage ? 'bg-base-red-dim/20' : ''}`}>
                             <td className="py-2.5 px-3 text-center text-base-muted">{idx + 1}</td>
                             
                             <td className="py-2.5 px-3 font-mono font-bold text-base-accent whitespace-nowrap">
                               {item.partNumber}
                             </td>
 
-                            <td className="py-2.5 px-3 font-medium text-base-text max-w-[180px] truncate" title={item.description}>
+                            <td className="py-2.5 px-3 font-medium text-base-text break-words max-w-[280px]" title={item.description}>
                               {item.description}
                             </td>
 
@@ -1536,13 +2454,65 @@ export default function BomView({
                               {item.material}
                             </td>
 
-                            <td className="py-2.5 px-3 uppercase text-[10px] font-condensed font-bold text-base-muted">
-                              {item.category}
+                            <td className="py-2.5 px-3">
+                              {(() => {
+                                const pInfo = parseItemProcess(item);
+                                return (
+                                  <span className={`px-2 py-0.5 rounded text-[10px] font-mono border whitespace-nowrap ${pInfo.badgeColor}`} title={`PROS: ${item.pros || '—'}`}>
+                                    {pInfo.processLabel}
+                                  </span>
+                                );
+                              })()}
                             </td>
 
-                            {/* Qty (Inline Edit) */}
+                            <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                              {(() => {
+                                const pInfo = parseItemProcess(item);
+                                if (pInfo.isFDfx) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-extrabold uppercase bg-purple-500/15 text-purple-700 dark:text-purple-300 border border-purple-500/30" title="DFX + Bending required (Nesting, Cutting, Bending)">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-purple-500 animate-pulse"></span>
+                                      YES (F DFX)
+                                    </span>
+                                  );
+                                } else if (pInfo.isDfx) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-extrabold uppercase bg-blue-500/15 text-blue-700 dark:text-blue-300 border border-blue-500/30" title="DFX Cutting required (Nesting & Cutting)">
+                                      <span className="h-1.5 w-1.5 rounded-full bg-blue-500"></span>
+                                      YES (DFX)
+                                    </span>
+                                  );
+                                } else if (pInfo.hasExplicitProcess) {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-bold uppercase bg-teal-500/15 text-teal-700 dark:text-teal-300 border border-teal-500/30" title={`Process required: ${pInfo.processLabel}`}>
+                                      <span className="h-1.5 w-1.5 rounded-full bg-teal-500"></span>
+                                      YES ({pInfo.processLabel})
+                                    </span>
+                                  );
+                                } else {
+                                  return (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-condensed font-medium uppercase bg-base-surface2 text-base-muted border border-base-border/60 opacity-80" title="Direct Purchase / Commercial Hardware / Stock item">
+                                      NO (Direct)
+                                    </span>
+                                  );
+                                }
+                              })()}
+                            </td>
+
+                            <td className="py-2.5 px-3 font-condensed font-bold text-xs text-base-text">
+                              <span className="px-1.5 py-0.5 bg-base-surface2 border border-base-border rounded text-[10px] uppercase">
+                                {item.subAssembly || item.category || 'Main Body'}
+                              </span>
+                            </td>
+
+                            {/* Qty (Inline Edit or Project Multiplied) */}
                             <td className="py-2.5 px-3 text-right font-mono font-bold">
-                              {editingCell?.itemId === item.id && editingCell?.field === 'quantity' ? (
+                              {showProjectTotals ? (
+                                <div>
+                                  <span className="text-base-accent font-black text-sm">{item.quantity * activeProjectUnits}</span>
+                                  <span className="block text-[10px] text-base-muted font-normal">({item.quantity}/unit)</span>
+                                </div>
+                              ) : editingCell?.itemId === item.id && editingCell?.field === 'quantity' ? (
                                 <input
                                   type="number"
                                   autoFocus
@@ -1595,7 +2565,14 @@ export default function BomView({
                             </td>
 
                             <td className="py-2.5 px-3 text-right font-mono font-bold text-base-text">
-                              {(item.totalWeight || 0).toLocaleString()}
+                              {showProjectTotals ? (
+                                <div>
+                                  <span className="text-base-text font-black">{((item.totalWeight || (item.quantity * (item.weightPerUnit || 0))) * activeProjectUnits).toLocaleString()}</span>
+                                  <span className="block text-[10px] text-base-muted font-normal">({baseItemWeight.toLocaleString()} kg/unit)</span>
+                                </div>
+                              ) : (
+                                baseItemWeight.toLocaleString()
+                              )}
                             </td>
 
                             {/* Drawing Ref */}
@@ -1666,14 +2643,26 @@ export default function BomView({
                   <tfoot>
                     <tr className="bg-base-surface2 border-t-2 border-base-border text-xs font-condensed font-extrabold uppercase text-base-text">
                       <td colSpan={5} className="py-3 px-3">
-                        Total Components Summary: {selectedTemplate.items ? selectedTemplate.items.length : 0} Items
+                        {showProjectTotals 
+                          ? `Project Total Summary (${activeProjectUnits} Units): ${selectedTemplate.items ? selectedTemplate.items.length : 0} Unique Parts`
+                          : `Base Template Summary (1 Unit): ${selectedTemplate.items ? selectedTemplate.items.length : 0} Parts`
+                        }
                       </td>
                       <td className="py-3 px-3 text-right font-mono font-black text-base-accent">
-                        {selectedTemplate.items ? selectedTemplate.items.reduce((acc, it) => acc + (it.quantity || 0), 0) : 0}
+                        {selectedTemplate.items 
+                          ? (selectedTemplate.items.reduce((acc, it) => acc + (it.quantity || 0), 0) * (showProjectTotals ? activeProjectUnits : 1)) 
+                          : 0
+                        }
+                        {showProjectTotals && <span className="block text-[9px] text-base-muted font-normal">total pcs</span>}
                       </td>
                       <td colSpan={3} />
                       <td className="py-3 px-3 text-right font-mono font-black text-base-accent">
-                        {(selectedTemplate.totalEstWeight || 0).toLocaleString()} kg
+                        {((selectedTemplate.totalEstWeight || 0) * (showProjectTotals ? activeProjectUnits : 1)).toLocaleString()} kg
+                        {showProjectTotals && (
+                          <span className="block text-[9px] text-base-muted font-normal">
+                            ({(selectedTemplate.totalEstWeight || 0).toLocaleString()} kg / unit)
+                          </span>
+                        )}
                       </td>
                       <td colSpan={3} />
                     </tr>
@@ -1831,14 +2820,14 @@ export default function BomView({
                   className="w-full bg-base-bg border border-base-border px-3 py-2 rounded-lg text-xs font-mono font-bold text-base-text focus:outline-none focus:border-base-accent"
                 />
                 <datalist id="ga-numbers-list">
-                  {availableGaNumbers.map(ga => (
-                    <option key={ga} value={ga} />
+                  {availableGaNumbers.map((ga, idx) => (
+                    <option key={`ga_${ga}_${idx}`} value={ga} />
                   ))}
                 </datalist>
 
                 {/* Preview Linked Project */}
                 {templateFormData.gaNumber && (() => {
-                  const matchedProj = projects.find(p => p.gaNumber?.toLowerCase() === templateFormData.gaNumber.trim().toLowerCase());
+                  const matchedProj = projects.find(p => (p.gaNumber || '').toLowerCase() === (templateFormData.gaNumber || '').trim().toLowerCase());
                   return matchedProj ? (
                     <p className="text-[11px] text-base-green font-bold mt-1 flex items-center gap-1">
                       <Check className="h-3 w-3" />
@@ -1932,7 +2921,7 @@ export default function BomView({
 
                 <div>
                   <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1 block">
-                    Category *
+                    Category / Type *
                   </label>
                   <select
                     value={itemFormData.category}
@@ -1947,6 +2936,20 @@ export default function BomView({
                     <option value="other">Other Component</option>
                   </select>
                 </div>
+              </div>
+
+              {/* Stage / Sub-Assembly */}
+              <div>
+                <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1 block">
+                  Stage / Sub-Assembly
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Body Assembly, Floor Assembly"
+                  value={itemFormData.subAssembly}
+                  onChange={e => setItemFormData({ ...itemFormData, subAssembly: e.target.value })}
+                  className="w-full bg-base-bg border border-base-border px-3 py-2 rounded-lg text-xs text-base-text focus:outline-none focus:border-base-accent"
+                />
               </div>
 
               {/* Description */}
@@ -1979,8 +2982,8 @@ export default function BomView({
                   required
                 />
                 <datalist id="materials-list">
-                  {availableMaterials.map(m => (
-                    <option key={m} value={m} />
+                  {availableMaterials.map((m, idx) => (
+                    <option key={`mat_${m}_${idx}`} value={m} />
                   ))}
                 </datalist>
                 <p className="text-[10px] text-base-muted mt-1">
@@ -2076,8 +3079,8 @@ export default function BomView({
                   className="w-full bg-base-bg border border-base-border px-3 py-2 rounded-lg text-xs font-mono text-base-text focus:outline-none focus:border-base-accent"
                 />
                 <datalist id="drawings-list">
-                  {availableDrawings.map(d => (
-                    <option key={d.number} value={d.number}>
+                  {availableDrawings.map((d, idx) => (
+                    <option key={`dwg_${d.number}_${idx}`} value={d.number}>
                       {d.label}
                     </option>
                   ))}
@@ -2306,10 +3309,285 @@ export default function BomView({
         </div>
       )}
 
+      {/* ════════════════════════════════════════════════════════════════════
+          MODAL IMPORT BOM (CSV / EXCEL / TEXT)
+         ════════════════════════════════════════════════════════════════════ */}
+      {isImportModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-2xl max-w-4xl w-full overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="px-6 py-4 border-b border-base-border flex items-center justify-between bg-base-surface2/70">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-base-accent-dim rounded-lg text-base-accent">
+                  <Upload className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="font-condensed font-black text-base uppercase text-base-text">
+                    Import BOM dari File (CSV / Excel / Text)
+                  </h3>
+                  <p className="text-xs text-base-muted">
+                    Upload file CSV/Excel atau paste text tabel BOM perusahaan Anda
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsImportModalOpen(false)}
+                className="p-1.5 hover:bg-base-surface rounded-lg text-base-muted hover:text-base-text transition-colors cursor-pointer"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 overflow-y-auto space-y-5">
+              {importError && (
+                <div className="p-3 bg-red-500/10 border border-red-500/30 text-red-500 rounded-lg text-xs flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
+                  <span>{importError}</span>
+                </div>
+              )}
+
+              {/* Target Mode Selector */}
+              <div className="p-4 bg-base-bg border border-base-border rounded-xl space-y-3">
+                <label className="text-xs font-condensed font-extrabold uppercase tracking-wider text-base-muted block">
+                  1. Pilih Tujuan Import
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+                    importTargetMode === 'new'
+                      ? 'bg-base-accent-dim/30 border-base-accent text-base-text'
+                      : 'bg-base-surface border-base-border text-base-muted hover:text-base-text'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="importTargetMode"
+                      checked={importTargetMode === 'new'}
+                      onChange={() => setImportTargetMode('new')}
+                      className="mt-0.5 accent-base-accent h-4 w-4"
+                    />
+                    <div>
+                      <span className="font-condensed font-bold uppercase text-xs block text-base-text">
+                        Buat BOM Template Baru
+                      </span>
+                      <span className="text-[11px] text-base-muted block">
+                        Membuat dokumen BOM Template baru berdasarkan GA Number dan nama yang diinput.
+                      </span>
+                    </div>
+                  </label>
+
+                  <label className={`p-3 rounded-lg border cursor-pointer transition-all flex items-start gap-3 ${
+                    !selectedTemplate ? 'opacity-50 cursor-not-allowed' : ''
+                  } ${
+                    importTargetMode === 'existing'
+                      ? 'bg-base-accent-dim/30 border-base-accent text-base-text'
+                      : 'bg-base-surface border-base-border text-base-muted hover:text-base-text'
+                  }`}>
+                    <input
+                      type="radio"
+                      name="importTargetMode"
+                      disabled={!selectedTemplate}
+                      checked={importTargetMode === 'existing'}
+                      onChange={() => setImportTargetMode('existing')}
+                      className="mt-0.5 accent-base-accent h-4 w-4"
+                    />
+                    <div>
+                      <span className="font-condensed font-bold uppercase text-xs block text-base-text">
+                        Tambahkan ke BOM Aktif ({selectedTemplate ? selectedTemplate.name : 'Belum Ada Template'})
+                      </span>
+                      <span className="text-[11px] text-base-muted block">
+                        Menggabungkan item yang diimport ke template BOM yang sedang dibuka.
+                      </span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Template Info Inputs if creating new */}
+                {importTargetMode === 'new' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
+                    <div>
+                      <label className="text-[10px] font-condensed font-bold uppercase text-base-muted block mb-1">
+                        Nama BOM Template <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: BOM Body Assembly GA11111"
+                        value={importTemplateInfo.name}
+                        onChange={e => setImportTemplateInfo({ ...importTemplateInfo, name: e.target.value })}
+                        className="w-full bg-base-surface border border-base-border px-3 py-1.5 rounded-lg text-xs text-base-text focus:outline-none focus:border-base-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-condensed font-bold uppercase text-base-muted block mb-1">
+                        GA Number <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: GA11111"
+                        value={importTemplateInfo.gaNumber}
+                        onChange={e => setImportTemplateInfo({ ...importTemplateInfo, gaNumber: e.target.value })}
+                        className="w-full bg-base-surface border border-base-border px-3 py-1.5 rounded-lg text-xs text-base-text font-mono uppercase focus:outline-none focus:border-base-accent"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-condensed font-bold uppercase text-base-muted block mb-1">
+                        Model Product
+                      </label>
+                      <select
+                        value={importTemplateInfo.model}
+                        onChange={e => setImportTemplateInfo({ ...importTemplateInfo, model: e.target.value })}
+                        className="w-full bg-base-surface border border-base-border px-3 py-1.5 rounded-lg text-xs text-base-text focus:outline-none focus:border-base-accent cursor-pointer"
+                      >
+                        <option value="Ultima">Austin Ultima</option>
+                        <option value="HPT">Austin HPT</option>
+                        <option value="JEC">Austin JEC</option>
+                        <option value="Other">Other Model</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Upload or Paste Area */}
+              <div className="p-4 bg-base-bg border border-base-border rounded-xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-condensed font-extrabold uppercase tracking-wider text-base-muted">
+                    2. File BOM atau Paste Data Text
+                  </label>
+                  <span className="text-[11px] text-base-muted">Format didukung: CSV (; / , / TAB), TXT, TSV</span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* File Upload Box */}
+                  <div className="border-2 border-dashed border-base-border hover:border-base-accent/50 rounded-xl p-4 text-center flex flex-col items-center justify-center bg-base-surface transition-colors cursor-pointer relative">
+                    <input
+                      type="file"
+                      accept=".csv,.txt,.tsv,.xlsx"
+                      onChange={handleFileUpload}
+                      className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    />
+                    <FileUp className="h-8 w-8 text-base-accent mb-2" />
+                    <p className="text-xs font-condensed font-bold uppercase text-base-text">
+                      Klik untuk Pilih File BOM
+                    </p>
+                    <p className="text-[10px] text-base-muted mt-1">
+                      {importFileName ? `File dipilih: ${importFileName}` : 'Format: DRAWING PART NUMBER;REV;DESCRIPTION;LENGTH;WDTH;GRADE;MATERIAL;MASS KG;PROS;QTY;SUB ASSY'}
+                    </p>
+                  </div>
+
+                  {/* Paste Text Area */}
+                  <div>
+                    <textarea
+                      rows={5}
+                      placeholder="Atau paste langsung isi CSV / Excel BOM di sini... Contoh:&#10;DRAWING PART NUMBER;REV;PART DESCRIPTION;LENGTH;WDTH;GRADE;MATERIAL DESCRIPTION;MASS KG;PRO'S;QTY;SUB ASSY&#10;66679;B;12T RATED LIFT LUG;265;160;350;36PL MS;7;DXF;2;Body Assembly"
+                      value={importRawText}
+                      onChange={e => handleRawTextChange(e.target.value)}
+                      className="w-full bg-base-surface border border-base-border p-2.5 rounded-xl text-xs font-mono text-base-text focus:outline-none focus:border-base-accent resize-none h-full"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Preview Table */}
+              {parsedImportItems.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-condensed font-extrabold uppercase text-base-text flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-base-green" />
+                      Preview Hasil Import ({parsedImportItems.length} Item Terdeteksi)
+                    </h4>
+                    <div className="flex items-center gap-3 text-xs font-mono">
+                      <span className="text-base-muted">
+                        Total Estimasi Berat: <strong className="text-base-accent font-bold">
+                          {parsedImportItems.reduce((sum, item) => sum + (item.totalWeight || 0), 0).toLocaleString()} kg
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="border border-base-border rounded-xl overflow-hidden max-h-64 overflow-y-auto text-xs bg-base-surface">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase text-base-muted sticky top-0 z-10">
+                        <tr>
+                          <th className="p-2 text-center">#</th>
+                          <th className="p-2">Stage / Sub-Assy</th>
+                          <th className="p-2">Part No</th>
+                          <th className="p-2 text-center">Rev</th>
+                          <th className="p-2">Part Description</th>
+                          <th className="p-2">Dimensi (L×W)</th>
+                          <th className="p-2">Grade</th>
+                          <th className="p-2">Material</th>
+                          <th className="p-2">Process</th>
+                          <th className="p-2 text-right">Mass (kg)</th>
+                          <th className="p-2 text-right">Qty</th>
+                          <th className="p-2 text-right">Total Wt</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-base-border/50 text-xs font-mono">
+                        {parsedImportItems.map((item, idx) => (
+                          <tr key={item.id ? `${item.id}_${idx}` : `imp_${idx}`} className="hover:bg-base-surface2/40">
+                            <td className="p-2 text-center text-base-muted">{idx + 1}</td>
+                            <td className="p-2 text-base-text truncate max-w-[120px] font-sans font-medium" title={item.subAssembly}>
+                              {item.subAssembly || 'Main Body'}
+                            </td>
+                            <td className="p-2 font-bold text-base-accent">{item.partNumber}</td>
+                            <td className="p-2 text-center text-base-muted">{item.rev || '-'}</td>
+                            <td className="p-2 text-base-text font-sans break-words max-w-[240px]" title={item.description}>
+                              {item.description}
+                            </td>
+                            <td className="p-2 text-base-muted text-[11px]">{item.dimensions || '—'}</td>
+                            <td className="p-2 text-base-text">{item.grade || '—'}</td>
+                            <td className="p-2 text-base-text font-sans font-medium">{item.material}</td>
+                            <td className="p-2 text-base-muted">{item.pros || '—'}</td>
+                            <td className="p-2 text-right text-base-text">{item.weightPerUnit || 0}</td>
+                            <td className="p-2 text-right font-bold text-base-accent">{item.quantity}</td>
+                            <td className="p-2 text-right font-bold text-base-text">{(item.totalWeight || 0).toLocaleString()}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3.5 border-t border-base-border bg-base-surface2/50 flex items-center justify-between">
+              <span className="text-xs text-base-muted">
+                {parsedImportItems.length > 0 ? `Siap mengimport ${parsedImportItems.length} item BOM` : 'Silakan pilih file atau paste text CSV BOM'}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsImportModalOpen(false)}
+                  className="px-4 py-2 border border-base-border text-base-text hover:bg-base-surface2 rounded-lg font-condensed font-bold text-xs uppercase cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveImport}
+                  disabled={parsedImportItems.length === 0 || isImporting}
+                  className="px-5 py-2 bg-base-accent hover:bg-base-accent-hover disabled:bg-base-border text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                >
+                  {isImporting ? (
+                    <span>Menyimpan Import...</span>
+                  ) : (
+                    <>
+                      <Upload className="h-4 w-4" />
+                      <span>Simpan & Import {parsedImportItems.length} Item BOM</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Generate to Material Processing Confirmation Modal */}
       {isGenerateMpModalOpen && selectedTemplate && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-base-surface border border-base-border rounded-xl shadow-2xl max-w-2xl w-full overflow-hidden flex flex-col max-h-[90vh] animate-in fade-in zoom-in-95 duration-150">
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-2xl max-w-3xl w-full overflow-hidden flex flex-col max-h-[92vh] animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-base-border flex items-center justify-between bg-base-surface2/50">
               <div className="flex items-center gap-2">
@@ -2321,7 +3599,7 @@ export default function BomView({
                     Generate to Material Processing
                   </h3>
                   <p className="text-xs text-base-muted font-mono">
-                    GA Number: <strong className="text-base-accent">{selectedTemplate.gaNumber}</strong> • Template: {selectedTemplate.name}
+                    GA Number: <strong className="text-base-accent">{selectedTemplate.gaNumber || 'N/A'}</strong> • Template: {selectedTemplate.name}
                   </p>
                 </div>
               </div>
@@ -2335,50 +3613,197 @@ export default function BomView({
 
             {/* Modal Body */}
             <div className="p-5 overflow-y-auto space-y-4">
-              {/* Matching Project Banner */}
-              {matchingProject ? (
-                <div className="p-3 bg-base-accent-dim/30 border border-base-accent/20 rounded-lg flex items-center justify-between text-xs">
-                  <div>
-                    <span className="text-base-muted uppercase text-[10px] font-condensed font-bold block">Matched Registered Project</span>
-                    <strong className="text-base-text font-bold text-sm">{matchingProject.client || matchingProject.name}</strong>
-                    <span className="text-base-muted ml-2">WO: {matchingProject.client}</span>
-                  </div>
-                  <span className="px-2 py-0.5 bg-base-green-dim text-base-green rounded text-[10px] font-condensed font-bold uppercase">
-                    Connected
-                  </span>
+              {/* Target Project Selection */}
+              <div className="p-3.5 bg-base-surface2/80 border border-base-border rounded-xl space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs font-condensed font-extrabold uppercase text-base-text flex items-center gap-1.5">
+                    <Building2 className="h-4 w-4 text-base-accent" />
+                    Target Destination Project
+                  </label>
+                  {resolvedTargetProject && (
+                    <span className="px-2 py-0.5 bg-base-green-dim text-base-green rounded text-[10px] font-condensed font-bold uppercase">
+                      Selected: GA {resolvedTargetProject.gaNumber || 'Custom'}
+                    </span>
+                  )}
                 </div>
-              ) : (
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg text-xs flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0" />
-                  <span>No active registered project matches GA <strong>{selectedTemplate.gaNumber}</strong>. Items will be created in Material Processing under GA {selectedTemplate.gaNumber}.</span>
-                </div>
-              )}
 
-              {/* Duplicate Checkbox */}
-              <div className="flex items-center gap-2.5 p-3 bg-base-surface2/60 border border-base-border rounded-lg text-xs">
-                <input
-                  type="checkbox"
-                  id="skipDupesCheck"
-                  checked={skipDuplicates}
-                  onChange={(e) => setSkipDuplicates(e.target.checked)}
-                  className="rounded border-base-border text-base-accent focus:ring-base-accent h-4 w-4 cursor-pointer"
-                />
-                <label htmlFor="skipDupesCheck" className="text-base-text font-medium cursor-pointer select-none">
-                  Skip items already in Material Processing for this GA
-                </label>
-                {existingMpPartNos.size > 0 && (
-                  <span className="ml-auto text-[10px] text-base-muted font-mono bg-base-surface border border-base-border px-1.5 py-0.5 rounded">
-                    {existingMpPartNos.size} part(s) existing
-                  </span>
-                )}
+                <select
+                  value={selectedModalProjectId}
+                  onChange={e => setSelectedModalProjectId(e.target.value)}
+                  className="w-full bg-base-surface border border-base-border rounded-lg p-2 text-xs text-base-text font-medium focus:outline-none focus:border-base-accent"
+                >
+                  {projects.length === 0 ? (
+                    <option value="">-- No Projects Found (Will auto-create) --</option>
+                  ) : (
+                    projects.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.client || p.name} (GA: {p.gaNumber || 'No GA'}) — {p.assemblies?.length || 1} Units
+                      </option>
+                    ))
+                  )}
+                </select>
+                <p className="text-[11px] text-base-muted">
+                  Material Processing items will be generated directly into this project's cutting & fabrication queue.
+                </p>
+              </div>
+
+              {/* Multiplier Quantity Field */}
+              <div className="p-4 bg-base-accent-dim/20 border border-base-accent/30 rounded-xl space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <label className="text-xs font-condensed font-extrabold uppercase text-base-text flex items-center gap-1.5">
+                      <Hash className="h-4 w-4 text-base-accent" />
+                      Jumlah Unit Project (Multiplier Qty)
+                    </label>
+                    <p className="text-[11px] text-base-muted">
+                      Contoh: Jika membuat project <strong>8 Unit</strong>, isi 8. Qty material per unit akan dikalikan 8 secara otomatis.
+                    </p>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <input
+                      type="number"
+                      min={1}
+                      max={100}
+                      value={unitMultiplier}
+                      onChange={e => setUnitMultiplier(Math.max(1, parseInt(e.target.value) || 1))}
+                      className="w-20 bg-base-surface border-2 border-base-accent p-1.5 rounded-lg text-sm font-mono font-bold text-center text-base-text focus:outline-none"
+                    />
+                    <span className="text-xs font-condensed font-bold uppercase text-base-accent">Unit Project</span>
+                  </div>
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1.5 pt-1">
+                  <span className="text-[10px] font-condensed font-bold uppercase text-base-muted mr-1">Preset Unit:</span>
+                  {[1, 2, 4, 6, 8, 10, 12, 16].map(u => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setUnitMultiplier(u)}
+                      className={`px-2 py-0.5 rounded text-[11px] font-mono font-bold border transition-all cursor-pointer ${
+                        unitMultiplier === u
+                          ? 'bg-base-accent text-white border-base-accent'
+                          : 'bg-base-surface text-base-muted border-base-border hover:text-base-text hover:bg-base-surface2'
+                      }`}
+                    >
+                      {u} Unit
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Process Info & Category Scope */}
+              <div className="space-y-3">
+                {/* DFX / F DFX Process Breakdown Banner */}
+                <div className="p-3.5 bg-base-surface2 border border-base-border rounded-xl space-y-2 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-condensed font-extrabold uppercase text-base-text text-xs flex items-center gap-1.5">
+                      <Sparkles className="h-4 w-4 text-purple-500" />
+                      Analisis Spesifikasi Proses (PROS / DFX / F DFX)
+                    </span>
+                    <span className="text-[11px] font-mono text-base-muted">
+                      Total Template: <strong>{dfxProcessCounts.total} Part</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+                    <div className="p-2 bg-purple-500/10 border border-purple-500/20 rounded-lg text-center">
+                      <span className="text-[10px] font-condensed font-bold uppercase text-purple-600 dark:text-purple-400 block">F DFX (Cut + Bend)</span>
+                      <strong className="text-sm font-mono text-purple-700 dark:text-purple-300 font-black">{dfxProcessCounts.fDfx} Part</strong>
+                    </div>
+                    <div className="p-2 bg-blue-500/10 border border-blue-500/20 rounded-lg text-center">
+                      <span className="text-[10px] font-condensed font-bold uppercase text-blue-600 dark:text-blue-400 block">DFX (Cutting Only)</span>
+                      <strong className="text-sm font-mono text-blue-700 dark:text-blue-300 font-bold">{dfxProcessCounts.dfx} Part</strong>
+                    </div>
+                    <div className="p-2 bg-base-green-dim/60 border border-base-green/20 rounded-lg text-center">
+                      <span className="text-[10px] font-condensed font-bold uppercase text-base-green block">Total Part Berproses</span>
+                      <strong className="text-sm font-mono text-base-green font-bold">{dfxProcessCounts.withProcess} Part</strong>
+                    </div>
+                    <div className="p-2 bg-base-surface border border-base-border rounded-lg text-center opacity-80">
+                      <span className="text-[10px] font-condensed font-bold uppercase text-base-muted block">Tanpa DFX (Di-Exclude)</span>
+                      <strong className="text-sm font-mono text-base-muted font-bold">{dfxProcessCounts.noProcess} Part</strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Category Scope & Duplicate Checkbox */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {/* Category Scope Selector */}
+                  <div className="p-3 bg-base-surface2/60 border border-base-border rounded-lg space-y-1.5 text-xs">
+                    <label className="font-condensed font-bold uppercase text-base-text text-[11px] block">
+                      Scope Item Yang Digenerate
+                    </label>
+                    <div className="grid grid-cols-3 gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setMpCategoryScope('process_only')}
+                        className={`py-1.5 px-1.5 rounded text-[10px] font-condensed font-extrabold uppercase border cursor-pointer transition-all text-center ${
+                          mpCategoryScope === 'process_only'
+                            ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                            : 'bg-base-surface text-base-muted border-base-border hover:text-base-text'
+                        }`}
+                        title="Hanya memasukkan part yang memiliki kode proses DFX atau F DFX (Direkomendasikan)"
+                      >
+                        Hanya DFX / F DFX ({dfxProcessCounts.withProcess})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMpCategoryScope('plates_structural')}
+                        className={`py-1.5 px-1.5 rounded text-[10px] font-condensed font-bold uppercase border cursor-pointer transition-all text-center ${
+                          mpCategoryScope === 'plates_structural'
+                            ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                            : 'bg-base-surface text-base-muted border-base-border hover:text-base-text'
+                        }`}
+                      >
+                        Plate & Structural
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMpCategoryScope('all')}
+                        className={`py-1.5 px-1.5 rounded text-[10px] font-condensed font-bold uppercase border cursor-pointer transition-all text-center ${
+                          mpCategoryScope === 'all'
+                            ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                            : 'bg-base-surface text-base-muted border-base-border hover:text-base-text'
+                        }`}
+                      >
+                        Semua BOM ({dfxProcessCounts.total})
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Duplicate Checkbox */}
+                  <div className="flex items-center gap-2.5 p-3 bg-base-surface2/60 border border-base-border rounded-lg text-xs">
+                    <input
+                      type="checkbox"
+                      id="skipDupesCheck"
+                      checked={skipDuplicates}
+                      onChange={(e) => setSkipDuplicates(e.target.checked)}
+                      className="rounded border-base-border text-base-accent focus:ring-base-accent h-4 w-4 cursor-pointer"
+                    />
+                    <div className="flex-1">
+                      <label htmlFor="skipDupesCheck" className="text-base-text font-medium cursor-pointer select-none block">
+                        Skip Duplicate Items
+                      </label>
+                      <span className="text-[10px] text-base-muted font-mono">
+                        {existingMpPartNos.size} part sudah ada di antrean Material Processing
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Items Preview Table */}
               <div>
                 <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-xs font-condensed font-bold uppercase text-base-text">
-                    Items Preview ({itemsToGenerate.length} of {eligibleMpItems.length} Plate & Structural)
+                  <h4 className="text-xs font-condensed font-bold uppercase text-base-text flex items-center gap-1.5">
+                    Items Preview ({itemsToGenerate.length} dari {eligibleMpItems.length} item berproses dipilih)
                   </h4>
+                  {mpCategoryScope === 'process_only' && (
+                    <span className="text-[10px] text-base-green font-condensed font-bold uppercase bg-base-green-dim/60 px-2 py-0.5 rounded border border-base-green/20">
+                      ✓ Filter Aktif: Hanya Part DFX & F DFX
+                    </span>
+                  )}
                 </div>
 
                 <div className="border border-base-border rounded-lg overflow-hidden max-h-56 overflow-y-auto text-xs">
@@ -2386,10 +3811,11 @@ export default function BomView({
                     <thead className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase text-base-muted sticky top-0">
                       <tr>
                         <th className="p-2">Part No</th>
+                        <th className="p-2">PROS (CAD / Spec)</th>
                         <th className="p-2">Material / Grade</th>
-                        <th className="p-2">Category</th>
-                        <th className="p-2 text-right">Qty</th>
-                        <th className="p-2">Unit</th>
+                        <th className="p-2">Sub Assembly</th>
+                        <th className="p-2 text-right">Qty/Unit</th>
+                        <th className="p-2 text-right">Total Qty ({unitMultiplier} Unit)</th>
                         <th className="p-2 text-right">Wt/pcs (kg)</th>
                         <th className="p-2 text-center">Status</th>
                       </tr>
@@ -2397,27 +3823,36 @@ export default function BomView({
                     <tbody className="divide-y divide-base-border/50">
                       {eligibleMpItems.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-4 text-center text-base-muted">
-                            No plate or structural items found in this BOM template.
+                          <td colSpan={8} className="p-6 text-center text-base-muted">
+                            <p className="font-condensed font-bold uppercase tracking-wider text-xs">Tidak ada item yang memenuhi kriteria filter</p>
+                            <p className="text-[11px] mt-1">Coba ganti filter scope di atas ke "Plate & Structural" atau "Semua BOM".</p>
                           </td>
                         </tr>
                       ) : (
-                        eligibleMpItems.map((item) => {
+                        eligibleMpItems.map((item, idx) => {
+                          const procInfo = parseItemProcess(item);
                           const isDupe = (item.partNumber || '') && existingMpPartNos.has(item.partNumber.trim().toLowerCase());
                           const isSkipped = skipDuplicates && isDupe;
 
                           return (
-                            <tr key={item.id} className={isSkipped ? 'opacity-40 bg-base-surface2/30' : 'hover:bg-base-surface2/40'}>
+                            <tr key={item.id ? `${item.id}_${idx}` : `mp_${idx}`} className={isSkipped ? 'opacity-40 bg-base-surface2/30' : 'hover:bg-base-surface2/40'}>
                               <td className="p-2 font-mono font-bold text-base-text">{item.partNumber || '-'}</td>
-                              <td className="p-2 text-base-text">{item.material || '-'}</td>
-                              <td className="p-2 uppercase text-[10px] font-condensed font-bold text-base-muted">{item.category}</td>
-                              <td className="p-2 text-right font-mono text-base-text">{item.quantity}</td>
-                              <td className="p-2 text-base-muted">{item.unit}</td>
+                              <td className="p-2">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-mono border ${procInfo.badgeColor}`}>
+                                  {procInfo.processLabel}
+                                </span>
+                              </td>
+                              <td className="p-2 text-base-text">{item.material || item.description || '-'}</td>
+                              <td className="p-2 text-base-muted">{item.subAssembly || item.category || '-'}</td>
+                              <td className="p-2 text-right font-mono text-base-muted">{item.quantity}</td>
+                              <td className="p-2 text-right font-mono font-bold text-base-accent">
+                                {item.quantity * Math.max(1, unitMultiplier)} {item.unit || 'pcs'}
+                              </td>
                               <td className="p-2 text-right font-mono text-base-text">{item.weightPerUnit || 0}</td>
                               <td className="p-2 text-center">
                                 {isSkipped ? (
                                   <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-500 text-[9px] font-condensed font-bold uppercase rounded">
-                                    Skipped (Exists)
+                                    Skipped
                                   </span>
                                 ) : (
                                   <span className="px-1.5 py-0.5 bg-base-green-dim text-base-green text-[9px] font-condensed font-bold uppercase rounded">
@@ -2436,29 +3871,36 @@ export default function BomView({
             </div>
 
             {/* Modal Footer */}
-            <div className="px-5 py-3 border-t border-base-border bg-base-surface2/30 flex items-center justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setIsGenerateMpModalOpen(false)}
-                className="px-4 py-2 border border-base-border text-base-text hover:bg-base-surface2 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleGenerateMaterialProcessing}
-                disabled={itemsToGenerate.length === 0 || isGeneratingMp}
-                className="px-4 py-2 bg-base-accent hover:bg-base-accent-hover disabled:bg-base-border text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-              >
-                {isGeneratingMp ? (
-                  <span>Generating...</span>
-                ) : (
-                  <>
-                    <Layers className="h-3.5 w-3.5" />
-                    <span>Generate {itemsToGenerate.length} Items</span>
-                  </>
-                )}
-              </button>
+            <div className="px-5 py-3 border-t border-base-border bg-base-surface2/30 flex items-center justify-between">
+              <span className="text-xs text-base-muted">
+                Total material: <strong className="text-base-accent font-bold">
+                  {itemsToGenerate.reduce((acc, it) => acc + (it.quantity * Math.max(1, unitMultiplier)), 0)} pcs
+                </strong> untuk {unitMultiplier} unit project
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsGenerateMpModalOpen(false)}
+                  className="px-4 py-2 border border-base-border text-base-text hover:bg-base-surface2 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateMaterialProcessing}
+                  disabled={itemsToGenerate.length === 0 || isGeneratingMp}
+                  className="px-4 py-2 bg-base-accent hover:bg-base-accent-hover disabled:bg-base-border text-white font-condensed font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                >
+                  {isGeneratingMp ? (
+                    <span>Generating...</span>
+                  ) : (
+                    <>
+                      <Layers className="h-3.5 w-3.5" />
+                      <span>Generate {itemsToGenerate.length} Material Types ({unitMultiplier} Units)</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
         </div>

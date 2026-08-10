@@ -43,6 +43,7 @@ interface MaterialProcessingViewProps {
   onAdd: (projectId: string, item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateStage: (projectId: string, mpId: string, stage: ProcessingStageKey, data: Partial<ProcessingStage>) => void;
   onDelete: (projectId: string, id: string) => void;
+  onDeleteAll?: (targetProjectId?: string, itemIdsToDelete?: string[]) => void;
   setDeleteConfirm?: (state: any) => void;
   masterDataEntries: MasterDataEntry[];
   onEnsureMasterData: (category: 'material' | 'partNo' | 'client' | 'subAssembly', value: string, gaNumber?: string) => Promise<void>;
@@ -117,6 +118,7 @@ export default function MaterialProcessingView({
   onAdd,
   onUpdateStage,
   onDelete,
+  onDeleteAll,
   setDeleteConfirm,
   masterDataEntries = [],
   onEnsureMasterData,
@@ -283,15 +285,38 @@ export default function MaterialProcessingView({
     return currentUser?.role !== 'admin' && currentUser?.role !== 'manager';
   }, [currentUser]);
 
+  // Sub-Assembly filter & grouping states
+  const [selectedSubAssyFilter, setSelectedSubAssyFilter] = useState<string>('');
+  const [groupBySubAssy, setGroupBySubAssy] = useState<boolean>(true);
+  const [collapsedSubAssies, setCollapsedSubAssies] = useState<Record<string, boolean>>({});
+
+  const toggleCollapseSubAssy = (subAssy: string) => {
+    setCollapsedSubAssies(prev => ({ ...prev, [subAssy]: !prev[subAssy] }));
+  };
+
+  // Available Sub-Assemblies list for dropdown filter
+  const availableSubAssemblies = useMemo(() => {
+    const set = new Set<string>();
+    materialProcessings.forEach(mp => {
+      if (selectedProjectId && mp.projectId !== selectedProjectId) return;
+      if (mp.assemblyName) set.add(mp.assemblyName);
+    });
+    return Array.from(set).sort();
+  }, [materialProcessings, selectedProjectId]);
+
   // Filtered materials
   const filteredProcessings = useMemo(() => {
     return materialProcessings.filter(mp => {
+      const q = (searchQuery || '').toLowerCase();
       const matchSearch =
-        mp.materialName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (mp.partNo || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (mp.description || '').toLowerCase().includes(searchQuery.toLowerCase());
+        (mp.materialName || '').toLowerCase().includes(q) ||
+        (mp.partNo || '').toLowerCase().includes(q) ||
+        (mp.description || '').toLowerCase().includes(q) ||
+        (mp.material || '').toLowerCase().includes(q) ||
+        (mp.assemblyName || '').toLowerCase().includes(q);
       
       const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
+      const matchSubAssy = selectedSubAssyFilter ? mp.assemblyName === selectedSubAssyFilter : true;
       
       let matchMonth = true;
       if (selectedMonthFilter) {
@@ -299,9 +324,93 @@ export default function MaterialProcessingView({
         matchMonth = proj ? normalizeMonth(proj.targetMonth) === selectedMonthFilter : false;
       }
       
-      return matchSearch && matchProject && matchMonth;
+      return matchSearch && matchProject && matchSubAssy && matchMonth;
     });
-  }, [materialProcessings, searchQuery, selectedProjectId, selectedMonthFilter, projects]);
+  }, [materialProcessings, searchQuery, selectedProjectId, selectedSubAssyFilter, selectedMonthFilter, projects]);
+
+  // Group processings by Sub-Assembly
+  const groupedProcessings = useMemo(() => {
+    const map: Record<string, MaterialProcessing[]> = {};
+    filteredProcessings.forEach(mp => {
+      const name = (typeof mp.assemblyName === 'string' && mp.assemblyName.trim()) ? mp.assemblyName.trim() : 'General / Main Assembly';
+      if (!map[name]) map[name] = [];
+      map[name].push(mp);
+    });
+    return map;
+  }, [filteredProcessings]);
+
+  // Selected items state for bulk deletion / selection
+  const [selectedItemIds, setSelectedItemIds] = useState<string[]>([]);
+
+  const handleToggleSelectAll = () => {
+    if (selectedItemIds.length === filteredProcessings.length && filteredProcessings.length > 0) {
+      setSelectedItemIds([]);
+    } else {
+      setSelectedItemIds(filteredProcessings.map(item => item.id));
+    }
+  };
+
+  const handleToggleSelectItem = (id: string) => {
+    setSelectedItemIds(prev =>
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const handleDeleteAll = () => {
+    if (isReadOnly) return;
+
+    const currentProjectObj = selectedProjectId ? projects.find(p => p.id === selectedProjectId) : null;
+    const projectName = currentProjectObj ? currentProjectObj.name : 'Semua Project';
+
+    let itemsToDelete = filteredProcessings;
+    let isSelectionMode = false;
+
+    if (selectedItemIds.length > 0) {
+      itemsToDelete = filteredProcessings.filter(mp => selectedItemIds.includes(mp.id));
+      isSelectionMode = true;
+    }
+
+    if (itemsToDelete.length === 0) {
+      alert('Tidak ada item material processing yang dapat dihapus.');
+      return;
+    }
+
+    const confirmTitle = isSelectionMode
+      ? `Hapus ${itemsToDelete.length} Item Material Processing`
+      : `Hapus Semua Material Processing (${itemsToDelete.length} Item)`;
+
+    const confirmMessage = isSelectionMode
+      ? `Apakah Anda yakin ingin menghapus ${itemsToDelete.length} item material processing yang dipilih?`
+      : selectedProjectId
+        ? `Apakah Anda yakin ingin menghapus SEMUA (${itemsToDelete.length}) item material processing di project "${projectName}"?`
+        : searchQuery || selectedMonthFilter
+          ? `Apakah Anda yakin ingin menghapus SEMUA (${itemsToDelete.length}) item material processing yang terfilter?`
+          : `Apakah Anda yakin ingin menghapus SEMUA (${itemsToDelete.length}) item material processing dari SELURUH project?`;
+
+    const doDelete = () => {
+      const ids = itemsToDelete.map(item => item.id);
+      if (onDeleteAll) {
+        onDeleteAll(selectedProjectId || undefined, ids);
+      } else {
+        itemsToDelete.forEach(item => onDelete(item.projectId, item.id));
+      }
+      setSelectedItemIds([]);
+    };
+
+    if (setDeleteConfirm) {
+      setDeleteConfirm({
+        isOpen: true,
+        title: confirmTitle,
+        message: confirmMessage,
+        onConfirm: () => {
+          doDelete();
+          setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+        }
+      });
+    } else if (confirm(confirmMessage)) {
+      doDelete();
+    }
+  };
 
   // Copy BOM From Same GA Number states and logic
   const [showCopyBomModal, setShowCopyBomModal] = useState(false);
@@ -312,11 +421,11 @@ export default function MaterialProcessingView({
   }, [projects, selectedProjectId]);
 
   const gaMatchCandidates = useMemo(() => {
-    if (!currentProject?.gaNumber) return [];
+    const curGa = (currentProject?.gaNumber || '').trim().toUpperCase();
+    if (!curGa) return [];
     return projects.filter(p =>
       p.id !== currentProject.id &&
-      p.gaNumber &&
-      p.gaNumber.trim().toUpperCase() === currentProject.gaNumber!.trim().toUpperCase() &&
+      (p.gaNumber || '').trim().toUpperCase() === curGa &&
       ((p.materialProcessing?.length || 0) > 0 || (p.assemblies?.length || 0) > 0)
     );
   }, [projects, currentProject]);
@@ -694,11 +803,21 @@ export default function MaterialProcessingView({
     if (!updatingStageInfo) return;
 
     const { mp, stageKey } = updatingStageInfo;
+    let finalPct = Number(stagePct);
+    let finalStatus = stageStatus;
+
+    if (finalPct >= 100) {
+      finalPct = 100;
+      if (finalStatus !== 'skipped') finalStatus = 'done';
+    } else if (finalStatus === 'done') {
+      finalPct = 100;
+    }
+
     onUpdateStage(mp.projectId, mp.id, stageKey, {
-      pct: Number(stagePct),
-      status: stageStatus,
+      pct: finalPct,
+      status: finalStatus,
       startDate: stageStartDate || undefined,
-      doneDate: stageStatus === 'done' ? stageDoneDate || new Date().toISOString().slice(0, 10) : stageDoneDate || undefined,
+      doneDate: finalStatus === 'done' ? stageDoneDate || new Date().toISOString().slice(0, 10) : stageDoneDate || undefined,
       operator: stageOperator.trim() || currentUser.name,
       notes: stageNotes.trim() || undefined
     });
@@ -797,6 +916,20 @@ export default function MaterialProcessingView({
               >
                 <Clipboard className="h-4 w-4 text-base-accent" /> Paste Cutting List
               </button>
+              {filteredProcessings.length > 0 && (
+                <button
+                  onClick={handleDeleteAll}
+                  className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 font-condensed font-bold uppercase rounded-lg border border-red-500/30 transition duration-200 flex items-center gap-1.5 cursor-pointer text-sm"
+                  title={selectedItemIds.length > 0 ? `Hapus ${selectedItemIds.length} item pilihan` : "Hapus semua material processing"}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  {selectedItemIds.length > 0 
+                    ? `Hapus Pilihan (${selectedItemIds.length})` 
+                    : selectedProjectId 
+                      ? `Hapus Semua di Project` 
+                      : `Hapus Semua (${filteredProcessings.length})`}
+                </button>
+              )}
             </>
           )}
           <button
@@ -979,6 +1112,37 @@ export default function MaterialProcessingView({
                 })}
               </select>
             </div>
+
+            {/* Sub-Assembly Filter Dropdown */}
+            <div className="flex items-center gap-1.5 bg-base-surface2 border border-base-border rounded-lg px-2.5 py-1 text-sm text-base-text font-condensed">
+              <Layers className="h-4 w-4 text-base-accent" />
+              <select
+                value={selectedSubAssyFilter}
+                onChange={e => setSelectedSubAssyFilter(e.target.value)}
+                className="bg-transparent border-none text-base-text focus:outline-none cursor-pointer pr-1 text-xs font-bold uppercase max-w-[150px] sm:max-w-[200px] truncate"
+              >
+                <option value="" className="bg-base-surface text-base-text">All Sub-Assemblies</option>
+                {availableSubAssemblies.map(subName => (
+                  <option key={subName} value={subName} className="bg-base-surface text-base-text">
+                    {subName}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Group by Sub-Assy Toggle */}
+            <button
+              onClick={() => setGroupBySubAssy(prev => !prev)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-condensed font-bold uppercase transition cursor-pointer ${
+                groupBySubAssy
+                  ? 'bg-base-accent/20 border-base-accent text-base-accent shadow-sm'
+                  : 'bg-base-surface2 border-base-border text-base-muted hover:text-base-text'
+              }`}
+              title="Toggle category grouping per Sub Assembly"
+            >
+              <Layers className="h-3.5 w-3.5" />
+              <span>{groupBySubAssy ? 'Grouped: Sub-Assy' : 'Flat View'}</span>
+            </button>
           </div>
         </div>
       </div>
@@ -988,9 +1152,21 @@ export default function MaterialProcessingView({
           <table className="w-full border-collapse text-left min-w-[1000px]">
                   <thead>
                     <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-10">
+                      {!isReadOnly && (
+                        <th className="py-2.5 px-3 w-10 text-center">
+                          <input
+                            type="checkbox"
+                            checked={filteredProcessings.length > 0 && selectedItemIds.length === filteredProcessings.length}
+                            onChange={handleToggleSelectAll}
+                            className="accent-red-500 h-4 w-4 cursor-pointer align-middle"
+                            title="Select All / Deselect All"
+                          />
+                        </th>
+                      )}
                       <th className="py-2.5 px-3 min-w-[150px]">Project</th>
                       <th className="py-2.5 px-3 min-w-[100px]">{gaNumberLabel}</th>
-                      <th className="py-2.5 px-3 min-w-[180px]">Material Name & Part No</th>
+                      <th className="py-2.5 px-3 min-w-[130px]">Sub-Assy</th>
+                      <th className="py-2.5 px-3 min-w-[200px]">Part Description & Part No</th>
                       <th className="py-2.5 px-2 text-center w-20">Length (mm)</th>
                       <th className="py-2.5 px-2 text-center w-20">Width (mm)</th>
                       <th className="py-2.5 px-2 text-center w-20">Grade</th>
@@ -1014,173 +1190,262 @@ export default function MaterialProcessingView({
                   <tbody className="divide-y divide-base-border/40 text-xs">
                     {filteredProcessings.length === 0 ? (
                        <tr>
-                        <td colSpan={14} className="py-12 text-center text-base-muted">
+                        <td colSpan={(isReadOnly ? 11 : 13) + stageKeys.length} className="py-12 text-center text-base-muted">
                            No materials found matching filters.
                          </td>
-                       </tr>
-                     ) : (
-                       filteredProcessings.map((mp) => {
-                         return (
-                           <tr key={mp.id} className="hover:bg-base-surface2/25 transition-colors h-[38px]">
-                             {/* Project Column */}
-                             <td className="py-1 px-3 max-w-[150px] truncate" title={mp.projectName}>
-                               <div className="font-semibold text-base-text truncate">
-                                 {mp.projectName}
+                        </tr>
+                     ) : (() => {
+                        const totalColSpan = (isReadOnly ? 11 : 13) + stageKeys.length;
+
+                        const renderRow = (mp: MaterialProcessing) => {
+                          const isItemSelected = selectedItemIds.includes(mp.id);
+                          return (
+                            <tr key={mp.id} className={`transition-colors h-[38px] ${isItemSelected ? 'bg-red-500/10' : 'hover:bg-base-surface2/25'}`}>
+                              {/* Checkbox Column */}
+                              {!isReadOnly && (
+                                <td className="py-1 px-3 text-center">
+                                  <input
+                                    type="checkbox"
+                                    checked={isItemSelected}
+                                    onChange={() => handleToggleSelectItem(mp.id)}
+                                    className="accent-red-500 h-4 w-4 cursor-pointer align-middle"
+                                  />
+                                </td>
+                              )}
+                              {/* Project Column */}
+                              <td className="py-1 px-3 max-w-[150px] truncate" title={mp.projectName}>
+                                <div className="font-semibold text-base-text truncate">
+                                  {mp.projectName}
+                                </div>
+                                <div className="text-[10px] text-base-muted font-mono truncate">
+                                  WO: {mp.workOrder}
+                                </div>
+                              </td>
+
+                              {/* GA No Column */}
+                              <td className="py-1 px-3 font-mono text-[10px] text-base-muted font-bold">
+                                {mp.gaNumber || '—'}
+                              </td>
+
+                              {/* Sub-Assy Column */}
+                              <td className="py-1 px-3 max-w-[130px] truncate" title={mp.assemblyName || 'General / Main Body'}>
+                                <span className="inline-block px-2 py-0.5 rounded bg-base-surface2 border border-base-border text-[10px] font-condensed font-bold text-base-accent truncate max-w-full">
+                                  {mp.assemblyName || 'Main Body'}
+                                </span>
+                              </td>
+
+                             {/* Material Name + Part No Column */}
+                             <td className="py-1 px-3">
+                               <div className="font-bold text-base-text truncate" title={mp.materialName || mp.description}>
+                                 {mp.materialName || mp.description || 'Unnamed Part'}
                                </div>
-                               <div className="text-[10px] text-base-muted font-mono truncate">
-                                 WO: {mp.workOrder}
+                               <div className="flex items-center gap-2 text-[10px] text-base-muted font-mono truncate">
+                                 {mp.partNo && <span>Part: <strong className="text-base-text">{mp.partNo}</strong></span>}
+                                 {mp.material && mp.material !== mp.materialName && (
+                                   <span className="text-base-accent/90">Mat: {mp.material}</span>
+                                 )}
+                                 {!mp.partNo && !mp.material && <span>No Part No</span>}
                                </div>
                              </td>
 
-                             {/* GA No Column */}
-                             <td className="py-1 px-3 font-mono text-[10px] text-base-muted font-bold">
-                               {mp.gaNumber || '—'}
+                             {/* Length */}
+                             <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                               {mp.lengthMm !== undefined ? `${mp.lengthMm} mm` : '—'}
                              </td>
 
-                            {/* Material Name + Part No Column */}
-                            <td className="py-1 px-3">
-                              <div className="font-bold text-base-text truncate" title={mp.materialName}>
-                                {mp.materialName}
-                              </div>
-                              <div className="text-[10px] text-base-muted font-mono truncate">
-                                {mp.partNo ? `Part: ${mp.partNo}` : 'No Part No'}
-                              </div>
-                            </td>
+                             {/* Width */}
+                             <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                               {mp.widthMm !== undefined ? `${mp.widthMm} mm` : '—'}
+                             </td>
 
-                            {/* Length */}
-                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
-                              {mp.lengthMm !== undefined ? `${mp.lengthMm} mm` : '—'}
-                            </td>
+                             {/* Grade */}
+                             <td className="py-1 px-2 text-center text-base-text font-medium font-mono">
+                               {mp.grade || '—'}
+                             </td>
 
-                            {/* Width */}
-                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
-                              {mp.widthMm !== undefined ? `${mp.widthMm} mm` : '—'}
-                            </td>
+                             {/* Mass */}
+                             <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
+                               {mp.massKg !== undefined ? `${mp.massKg} kg` : '—'}
+                             </td>
 
-                            {/* Grade */}
-                            <td className="py-1 px-2 text-center text-base-text font-medium font-mono">
-                              {mp.grade || '—'}
-                            </td>
+                             {/* Qty Column */}
+                             <td className="py-1 px-3 text-center font-bold text-base-text font-mono">
+                               {mp.qty} <span className="text-[10px] font-normal text-base-muted">{mp.unit}</span>
+                             </td>
 
-                            {/* Mass */}
-                            <td className="py-1 px-2 text-center font-mono text-base-text font-medium">
-                              {mp.massKg !== undefined ? `${mp.massKg} kg` : '—'}
-                            </td>
+                             {/* Stage Columns */}
+                             {stageKeys.map(stageKey => {
+                               const activeStagesList = (mp.activeStages || []).flatMap(s => (s as string) === 'nesting_cnc' ? ['nesting', 'cnc'] : [s]);
+                               const isApp = activeStagesList.includes(stageKey);
+                               const sd = mp.stages[stageKey] || ((stageKey === 'nesting' || stageKey === 'cnc') ? (mp.stages as any)?.nesting_cnc : undefined);
+                               if (!isApp) {
+                                 return (
+                                   <td
+                                     key={stageKey}
+                                     className="py-1 px-3 text-center text-base-muted bg-base-surface2/20 text-xs select-none"
+                                   >
+                                     —
+                                   </td>
+                                 );
+                               }
 
-                            {/* Qty Column */}
-                            <td className="py-1 px-3 text-center font-bold text-base-text font-mono">
-                              {mp.qty} <span className="text-[10px] font-normal text-base-muted">{mp.unit}</span>
-                            </td>
+                               const pct = sd?.pct ?? 0;
+                               const status = sd?.status ?? 'pending';
 
-                            {/* Stage Columns */}
-                            {stageKeys.map(stageKey => {
-                              const isApp = mp.activeStages.includes(stageKey);
-                              const sd = mp.stages[stageKey];
-                              if (!isApp) {
-                                return (
-                                  <td
-                                    key={stageKey}
-                                    className="py-1 px-3 text-center text-base-muted bg-base-surface2/20 text-xs select-none"
-                                  >
-                                    —
-                                  </td>
-                                );
-                              }
+                               let cellBgClass = "";
+                               if (status === 'done') {
+                                 cellBgClass = "bg-emerald-500/10 text-emerald-500";
+                               } else if (status === 'in-progress') {
+                                 cellBgClass = "bg-amber-500/10 text-amber-500";
+                               } else if (status === 'skipped') {
+                                 cellBgClass = "bg-neutral-800/10 text-base-muted";
+                               }
 
-                              const pct = sd?.pct ?? 0;
-                              const status = sd?.status ?? 'pending';
+                               return (
+                                 <td key={stageKey} className={`py-1 px-3 text-center transition-colors ${cellBgClass}`}>
+                                   <div className="flex items-center justify-center gap-1">
+                                     <input
+                                       type="number"
+                                       min="0"
+                                       max="100"
+                                       value={pct}
+                                       disabled={isReadOnly}
+                                       onChange={(e) => {
+                                         const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                         let nextStatus: ProcessingStatus = 'in-progress';
+                                         if (val === 100) nextStatus = 'done';
+                                         else if (val === 0) nextStatus = 'pending';
+                                         
+                                         onUpdateStage(mp.projectId, mp.id, stageKey, {
+                                           pct: val,
+                                           status: nextStatus,
+                                           operator: sd?.operator || currentUser.name
+                                         });
+                                       }}
+                                       onBlur={(e) => {
+                                         const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                         let nextStatus: ProcessingStatus = 'in-progress';
+                                         if (val === 100) nextStatus = 'done';
+                                         else if (val === 0) nextStatus = 'pending';
 
-                              let cellBgClass = "";
-                              if (status === 'done') {
-                                cellBgClass = "bg-emerald-500/10 text-emerald-500";
-                              } else if (status === 'in-progress') {
-                                cellBgClass = "bg-amber-500/10 text-amber-500";
-                              } else if (status === 'skipped') {
-                                cellBgClass = "bg-neutral-800/10 text-base-muted";
-                              }
+                                         onUpdateStage(mp.projectId, mp.id, stageKey, {
+                                           pct: val,
+                                           status: nextStatus,
+                                           operator: sd?.operator || currentUser.name
+                                         });
+                                       }}
+                                       className="w-12 px-1 py-0.5 bg-base-bg text-base-text border border-base-border hover:border-base-border2 rounded text-xs font-semibold text-center focus:border-base-accent focus:outline-none"
+                                     />
+                                     <span className="text-[10px] text-base-muted font-bold mr-1">%</span>
+                                     
+                                     <button
+                                       type="button"
+                                       onClick={() => handleOpenUpdateStage(mp, stageKey)}
+                                       className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded transition cursor-pointer"
+                                       title="Edit Operator, Dates & Remarks"
+                                     >
+                                       <FileText className="h-3.5 w-3.5" />
+                                     </button>
+                                   </div>
+                                 </td>
+                               );
+                             })}
 
-                              return (
-                                <td key={stageKey} className={`py-1 px-3 text-center transition-colors ${cellBgClass}`}>
-                                  <div className="flex items-center justify-center gap-1">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      value={pct}
-                                      disabled={isReadOnly}
-                                      onChange={(e) => {
-                                        const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
-                                        let nextStatus: ProcessingStatus = 'in-progress';
-                                        if (val === 100) nextStatus = 'done';
-                                        else if (val === 0) nextStatus = 'pending';
-                                        
-                                        onUpdateStage(mp.projectId, mp.id, stageKey, {
-                                          pct: val,
-                                          status: nextStatus,
-                                          operator: sd?.operator || currentUser.name
-                                        });
-                                      }}
-                                      className="w-12 px-1 py-0.5 bg-base-bg text-base-text border border-base-border hover:border-base-border2 rounded text-xs font-semibold text-center focus:border-base-accent focus:outline-none"
-                                    />
-                                    <span className="text-[10px] text-base-muted font-bold mr-1">%</span>
-                                    
+                             {/* Overall % Column */}
+                             <td className="py-1 px-3">
+                               <div className="text-center font-bold font-mono text-base-text text-xs">
+                                 {mp.overallPct}%
+                               </div>
+                               <div className="w-full bg-base-surface3 rounded-full h-1 overflow-hidden mt-1">
+                                 <div
+                                   className="h-full bg-base-accent rounded-full transition-all duration-300"
+                                   style={{ width: `${mp.overallPct}%` }}
+                                 />
+                               </div>
+                             </td>
+
+                             {/* Action Column */}
+                             {!isReadOnly && (
+                               <td className="py-1 px-3 text-center">
+                                 <button
+                                   type="button"
+                                   onClick={() => {
+                                     if (setDeleteConfirm) {
+                                       setDeleteConfirm({
+                                         isOpen: true,
+                                         title: 'Delete Material Processing',
+                                         message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
+                                         onConfirm: () => {
+                                           onDelete(mp.projectId, mp.id);
+                                           setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                         }
+                                       });
+                                     } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
+                                       onDelete(mp.projectId, mp.id);
+                                     }
+                                   }}
+                                   className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition cursor-pointer"
+                                   title="Delete Material"
+                                 >
+                                   <Trash2 className="h-3.5 w-3.5" />
+                                 </button>
+                               </td>
+                             )}
+                           </tr>
+                         );
+                        };
+
+                        if (!groupBySubAssy) {
+                          return filteredProcessings.map(renderRow);
+                        }
+
+                        return Object.entries(groupedProcessings).map(([subAssyName, subItems]) => {
+                          const isCollapsed = collapsedSubAssies[subAssyName];
+                          const totalQty = subItems.reduce((sum, item) => sum + (item.qty || 0), 0);
+                          const totalMass = subItems.reduce((sum, item) => sum + ((item.massKg || 0) * (item.qty || 1)), 0);
+
+                          return (
+                            <React.Fragment key={`subassy-${subAssyName}`}>
+                              {/* Sub-Assy Category Header Row */}
+                              <tr className="bg-base-surface2/90 font-condensed font-black text-xs uppercase tracking-wider text-base-text border-y border-base-border sticky top-[37px] z-10">
+                                <td colSpan={totalColSpan} className="py-2 px-3 bg-base-surface2/95">
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
                                     <button
                                       type="button"
-                                      onClick={() => handleOpenUpdateStage(mp, stageKey)}
-                                      className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded transition cursor-pointer"
-                                      title="Edit Operator, Dates & Remarks"
+                                      onClick={() => toggleCollapseSubAssy(subAssyName)}
+                                      className="flex items-center gap-2 cursor-pointer text-left focus:outline-none group"
                                     >
-                                      <FileText className="h-3.5 w-3.5" />
+                                      {isCollapsed ? (
+                                        <ChevronRight className="h-4 w-4 text-base-accent group-hover:scale-110 transition-transform" />
+                                      ) : (
+                                        <ChevronDown className="h-4 w-4 text-base-accent group-hover:scale-110 transition-transform" />
+                                      )}
+                                      <span className="text-base-accent font-extrabold text-xs sm:text-sm tracking-wide">
+                                        SUB-ASSY: {subAssyName}
+                                      </span>
+                                      <span className="px-2 py-0.5 rounded-full bg-base-surface3 border border-base-border text-[10px] text-base-text font-mono font-bold">
+                                        {subItems.length} {subItems.length === 1 ? 'part' : 'parts'}
+                                      </span>
                                     </button>
+                                    <div className="flex items-center gap-4 text-[11px] font-mono text-base-muted">
+                                      <span>Total Qty: <strong className="text-base-text">{totalQty} pcs</strong></span>
+                                      {totalMass > 0 && (
+                                        <span>
+                                          Total Weight:{' '}
+                                          <strong className="text-base-text">
+                                            {totalMass.toFixed(1)} kg
+                                          </strong>
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
-                              );
-                            })}
-
-                            {/* Overall % Column */}
-                            <td className="py-1 px-3">
-                              <div className="text-center font-bold font-mono text-base-text text-xs">
-                                {mp.overallPct}%
-                              </div>
-                              <div className="w-full bg-base-surface3 rounded-full h-1 overflow-hidden mt-1">
-                                <div
-                                  className="h-full bg-base-accent rounded-full transition-all duration-300"
-                                  style={{ width: `${mp.overallPct}%` }}
-                                />
-                              </div>
-                            </td>
-
-                            {/* Action Column */}
-                            {!isReadOnly && (
-                              <td className="py-1 px-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (setDeleteConfirm) {
-                                      setDeleteConfirm({
-                                        isOpen: true,
-                                        title: 'Delete Material Processing',
-                                        message: `Are you sure you want to permanently delete the tracking for "${mp.materialName}"?`,
-                                        onConfirm: () => {
-                                          onDelete(mp.projectId, mp.id);
-                                          setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
-                                        }
-                                      });
-                                    } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
-                                      onDelete(mp.projectId, mp.id);
-                                    }
-                                  }}
-                                  className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition cursor-pointer"
-                                  title="Delete Material"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </button>
-                              </td>
-                            )}
-                          </tr>
-                         );
-                       })
-                     )}
+                              </tr>
+                              {!isCollapsed && subItems.map(renderRow)}
+                            </React.Fragment>
+                          );
+                        });
+                      })()}
                   </tbody>
                 </table>
               </div>
@@ -1242,11 +1507,11 @@ export default function MaterialProcessingView({
                   </select>
                 </div>
 
-                {/* Material Name */}
+                {/* Part Description / Name */}
                 <div className="col-span-2 space-y-1">
                   <div className="flex items-center justify-between">
                     <label className="text-xs text-base-muted font-condensed font-bold uppercase tracking-wider">
-                      Material Name *
+                      Part Description / Name *
                     </label>
                     <span className="px-2 py-0.5 text-[10px] font-mono font-bold bg-base-surface3 border border-base-border text-base-text rounded-md">
                       GA: {formGaNumber || '—'}
@@ -1256,7 +1521,7 @@ export default function MaterialProcessingView({
                     category="material"
                     value={formMaterialName}
                     onChange={setFormMaterialName}
-                    placeholder="e.g. Plate SS304 6mm"
+                    placeholder="e.g. COVER PLATE TOP / BRACKET MOUNTING"
                     entries={masterDataEntries}
                     required
                     className="bg-base-surface2 border border-base-border text-base-text text-sm rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-base-accent"

@@ -788,62 +788,97 @@ function AppContent() {
 
   const handleAddMaterialProcessing = async (
     projectId: string,
-    item: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>
+    itemOrItems: Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'> | Omit<MaterialProcessing, 'id' | 'createdAt' | 'updatedAt'>[]
   ) => {
-    const now = new Date().toISOString();
-    const newItem: MaterialProcessing = {
-      ...item,
-      id: 'mp_' + uid(),
-      createdAt: now,
-      updatedAt: now,
-    };
-    
-    // Check if the added item is already completed / 100% and not yet stocked
-    if ((newItem.overallPct === 100 || newItem.isCompleted) && !newItem.isStocked) {
-      const existingMat = materials.find(
-        m => m.name.trim().toLowerCase() === newItem.materialName.trim().toLowerCase()
-      );
+    const rawItems = Array.isArray(itemOrItems) ? itemOrItems : [itemOrItems];
+    if (rawItems.length === 0) return;
 
-      if (existingMat) {
-        const newStock = existingMat.currentStock + newItem.qty;
-        setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
-        await saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
-        logActivity('material_edit' as any, `Added ${newItem.qty} ${newItem.unit || 'pcs'} of ${newItem.materialName} to stock (Material Processing Completed)`);
-      } else {
-        const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
-        const unitLower = (newItem.unit || 'pcs').toLowerCase() as any;
-        const unit: MaterialUnit = units.includes(unitLower) ? unitLower : 'pcs';
-
-        const newMat: MaterialItem = {
-          id: 'mat_' + uid(),
-          name: newItem.materialName.trim(),
-          category: 'Other',
-          unit,
-          currentStock: newItem.qty,
-          minStock: 0,
-          createdAt: now,
-          updatedAt: now
-        };
-
-        setMaterials(prev => [newMat, ...prev]);
-        await saveItem('materials', newMat);
-        logActivity('material_add' as any, `Created new stock item ${newItem.materialName} with ${newItem.qty} ${unit} (Material Processing Completed)`);
-      }
-      newItem.isStocked = true;
+    let proj = projects.find(p => p.id === projectId);
+    if (!proj && rawItems[0]?.projectId) {
+      proj = projects.find(p => p.id === rawItems[0].projectId);
     }
-
-    const proj = projects.find(p => p.id === projectId);
+    if (!proj && rawItems[0]?.gaNumber) {
+      const cleanGa = (rawItems[0].gaNumber || '').trim().toUpperCase();
+      proj = projects.find(p => p.gaNumber && (p.gaNumber || '').trim().toUpperCase() === cleanGa);
+    }
+    if (!proj && projects.length > 0) {
+      proj = projects[0];
+    }
     if (!proj) return;
-    const currentList = proj.materialProcessing || [];
-    const updatedMPs = [newItem, ...currentList];
 
-    setProjects(prev => prev.map(p => p.id === projectId ? { ...p, materialProcessing: updatedMPs } : p));
+    const targetProjectId = proj.id;
+    const now = new Date().toISOString();
+
+    const createdItems: MaterialProcessing[] = rawItems.map((item, idx) => {
+      const newItem: MaterialProcessing = {
+        ...item,
+        id: 'mp_' + uid() + '_' + idx,
+        projectId: targetProjectId,
+        projectName: proj!.client || proj!.name,
+        gaNumber: item.gaNumber || proj!.gaNumber || '',
+        createdBy: item.createdBy || currentUser?.name || 'System',
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      // Check if the added item is already completed / 100% and not yet stocked
+      if ((newItem.overallPct === 100 || newItem.isCompleted) && !newItem.isStocked) {
+        const existingMat = materials.find(
+          m => (m?.name || '').trim().toLowerCase() === (newItem.materialName || newItem.description || '').trim().toLowerCase()
+        );
+
+        if (existingMat) {
+          const newStock = existingMat.currentStock + newItem.qty;
+          setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
+          saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
+        } else {
+          const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
+          const unitLower = (newItem.unit || 'pcs').toLowerCase() as any;
+          const unit: MaterialUnit = units.includes(unitLower) ? unitLower : 'pcs';
+
+          const newMat: MaterialItem = {
+            id: 'mat_' + uid() + '_' + idx,
+            name: (newItem.materialName || newItem.description || 'Unnamed Part').trim(),
+            category: 'Other',
+            unit,
+            currentStock: newItem.qty,
+            minStock: 0,
+            createdAt: now,
+            updatedAt: now
+          };
+
+          setMaterials(prev => [newMat, ...prev]);
+          saveItem('materials', newMat);
+        }
+        newItem.isStocked = true;
+      }
+
+      return newItem;
+    });
+
+    let finalUpdatedList: MaterialProcessing[] = [];
+
+    setProjects(prevProjects => {
+      return prevProjects.map(p => {
+        if (p.id === targetProjectId) {
+          const existingList = p.materialProcessing || [];
+          const combined = [...createdItems, ...existingList];
+          finalUpdatedList = combined;
+          return { ...p, materialProcessing: combined };
+        }
+        return p;
+      });
+    });
+
     verifyMarkChanged();
 
     try {
-      await saveItem('projects', { id: projectId, materialProcessing: updatedMPs });
+      if (finalUpdatedList.length === 0) {
+        finalUpdatedList = [...createdItems, ...(proj.materialProcessing || [])];
+      }
+      await saveItem('projects', { id: targetProjectId, materialProcessing: finalUpdatedList });
       logActivity('task_add' as any,
-        `Added processing: ${newItem.materialName} → ${newItem.projectName}`);
+        `Added ${createdItems.length} material processing item(s) → ${proj.client || proj.name}`);
     } catch (err) {
       console.error("Error adding material processing:", err);
       handleFirestoreError(err, OperationType.WRITE, 'projects');
@@ -862,79 +897,126 @@ function AppContent() {
     const currentList = proj.materialProcessing || [];
 
     let updatedMpName = '';
-    let updatedItem = null as MaterialProcessing | null;
+    let updatedItem: MaterialProcessing | null = null;
 
     const updatedMPs = currentList.map(mp => {
       if (mp.id !== mpId) return mp;
-      updatedMpName = mp.materialName;
+      updatedMpName = mp.materialName || mp.description || 'Unnamed Part';
       const existingStage = mp.stages[stageKey];
+
+      let newPct = stageData.pct ?? existingStage?.pct ?? 0;
+      let newStatus = stageData.status ?? existingStage?.status ?? 'pending';
+
+      if (newPct >= 100) {
+        newPct = 100;
+        if (newStatus !== 'skipped') newStatus = 'done';
+      } else if (newStatus === 'done') {
+        newPct = 100;
+      }
+
       const updatedStage: ProcessingStage = {
-        pct: 0,
-        status: 'pending',
         ...existingStage,
-        ...stageData
+        ...stageData,
+        pct: newPct,
+        status: newStatus,
       };
+
       const updatedStages: Partial<Record<ProcessingStageKey, ProcessingStage>> = {
         ...mp.stages,
         [stageKey]: updatedStage
       };
-      // Recompute overallPct
-      const activePcts = mp.activeStages.map(k =>
-        updatedStages[k]?.status === 'skipped' ? 100 : (updatedStages[k]?.pct ?? 0)
-      );
-      const overallPct = activePcts.length > 0
-        ? Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length)
-        : 0;
-      const isCompleted = mp.activeStages.every(
-        k => updatedStages[k]?.status === 'done' || updatedStages[k]?.status === 'skipped'
-      );
-      const itemAfterStage = { ...mp, stages: updatedStages, overallPct, isCompleted, updatedAt: now };
-      updatedItem = itemAfterStage as MaterialProcessing;
+
+      // Expand activeStages (e.g. handle legacy 'nesting_cnc' or empty)
+      const rawActiveStages = mp.activeStages && mp.activeStages.length > 0
+        ? mp.activeStages
+        : (['nesting', 'cnc', 'bending', 'machining'] as ProcessingStageKey[]);
+
+      const expandedActiveStages = Array.from(
+        new Set(
+          rawActiveStages.flatMap(s => (s as string) === 'nesting_cnc' ? ['nesting', 'cnc'] : [s])
+        )
+      ) as ProcessingStageKey[];
+
+      if (!expandedActiveStages.includes(stageKey)) {
+        expandedActiveStages.push(stageKey);
+      }
+
+      const allDone = expandedActiveStages.length > 0 &&
+        expandedActiveStages.every(k => {
+          const st = updatedStages[k];
+          if (!st) return false;
+          return st.status === 'done' || st.status === 'skipped' || (st.pct ?? 0) >= 100;
+        });
+
+      const activePcts = expandedActiveStages.map(k => {
+        const st = updatedStages[k];
+        if (!st) return null;
+        if (st.status === 'done' || st.status === 'skipped') return 100;
+        return st.pct ?? 0;
+      }).filter((v): v is number => v !== null);
+
+      const overallPct = activePcts.length === 0
+        ? 0
+        : (allDone
+            ? 100
+            : Math.round(activePcts.reduce((a, b) => a + b, 0) / activePcts.length));
+
+      const isCompleted = overallPct === 100 || allDone;
+
+      const itemAfterStage: MaterialProcessing = {
+        ...mp,
+        activeStages: expandedActiveStages,
+        stages: updatedStages,
+        overallPct,
+        isCompleted,
+        updatedAt: now
+      };
+
+      updatedItem = itemAfterStage;
       return itemAfterStage;
     });
 
-    // Check if the updated item just completed (overallPct === 100 or isCompleted === true) and is not already stocked
+    // Check if item is 100% completed or isCompleted, and not yet stocked
     if (updatedItem && (updatedItem.overallPct === 100 || updatedItem.isCompleted) && !updatedItem.isStocked) {
+      const matNameClean = (updatedItem.materialName || updatedItem.description || '').trim();
       const existingMat = materials.find(
-        m => m.name.trim().toLowerCase() === updatedItem!.materialName.trim().toLowerCase()
+        m => (m?.name || '').trim().toLowerCase() === matNameClean.toLowerCase()
       );
 
       if (existingMat) {
         // Increment stock
-        const newStock = existingMat.currentStock + updatedItem.qty;
-        // Update locally
+        const newStock = existingMat.currentStock + (updatedItem.qty || 1);
         setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
-        // Save to DB
         await saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
-        logActivity('material_edit' as any, `Added ${updatedItem.qty} ${updatedItem.unit || 'pcs'} of ${updatedItem.materialName} to stock (Material Processing Completed)`);
+        logActivity('material_edit' as any, `Added ${updatedItem.qty} ${updatedItem.unit || 'pcs'} of ${matNameClean} to stock (Material Processing Completed)`);
       } else {
-        // Create new MaterialItem
+        // Create new MaterialItem in Stock
         const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
         const unitLower = (updatedItem.unit || 'pcs').toLowerCase() as any;
         const unit: MaterialUnit = units.includes(unitLower) ? unitLower : 'pcs';
 
         const newMat: MaterialItem = {
           id: 'mat_' + uid(),
-          name: updatedItem.materialName.trim(),
+          name: matNameClean || 'Processed Part',
           category: 'Other',
           unit,
-          currentStock: updatedItem.qty,
+          currentStock: updatedItem.qty || 1,
           minStock: 0,
+          location: `WO: ${updatedItem.workOrder || proj.client}`,
+          notes: `Auto-stocked from Material Processing (${proj.name})`,
           createdAt: now,
           updatedAt: now
         };
 
-        // Add locally
         setMaterials(prev => [newMat, ...prev]);
-        // Save to DB
         await saveItem('materials', newMat);
-        logActivity('material_add' as any, `Created new stock item ${updatedItem.materialName} with ${updatedItem.qty} ${unit} (Material Processing Completed)`);
+        logActivity('material_add' as any, `Created stock item "${newMat.name}" with ${updatedItem.qty} ${unit} (Material Processing Completed)`);
       }
 
       // Mark the material processing as stocked!
       updatedItem.isStocked = true;
       updatedItem.updatedAt = now;
-      
+
       // Update in updatedMPs array
       const finalMPs = updatedMPs.map(mp => mp.id === mpId ? updatedItem! : mp);
 
@@ -944,7 +1026,7 @@ function AppContent() {
       try {
         await saveItem('projects', { id: projectId, materialProcessing: finalMPs });
         logActivity('task_progress' as any,
-          `Completed Material Processing & Stocked: ${updatedMpName}`);
+          `Completed Material Processing & Added to Stock: ${updatedMpName} (100%)`);
       } catch (err) {
         console.error("Error saving project material processing complete:", err);
         handleFirestoreError(err, OperationType.WRITE, 'projects');
@@ -979,6 +1061,62 @@ function AppContent() {
     } catch (err) {
       console.error("Error deleting material processing:", err);
       handleFirestoreError(err, OperationType.WRITE, 'projects');
+    }
+  };
+
+  const handleDeleteAllMaterialProcessing = async (targetProjectId?: string, itemIdsToDelete?: string[]) => {
+    if (itemIdsToDelete && itemIdsToDelete.length > 0) {
+      const idSet = new Set(itemIdsToDelete);
+      const updatedProjects = projects.map(p => {
+        if (!p.materialProcessing || p.materialProcessing.length === 0) return p;
+        const filtered = p.materialProcessing.filter(mp => !idSet.has(mp.id));
+        return { ...p, materialProcessing: filtered };
+      });
+      setProjects(updatedProjects);
+      verifyMarkChanged();
+      try {
+        const changedProjects = updatedProjects.filter((p, idx) => {
+          const orig = projects[idx];
+          return (orig.materialProcessing?.length || 0) !== (p.materialProcessing?.length || 0);
+        });
+        for (const p of changedProjects) {
+          await saveItem('projects', { id: p.id, materialProcessing: p.materialProcessing });
+        }
+        logActivity('task_progress' as any, `Deleted ${itemIdsToDelete.length} Material Processing items`);
+      } catch (err) {
+        console.error("Error deleting material processing items:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'projects');
+      }
+    } else if (targetProjectId) {
+      const proj = projects.find(p => p.id === targetProjectId);
+      if (!proj) return;
+      const count = proj.materialProcessing?.length || 0;
+      const updatedProjects = projects.map(p => p.id === targetProjectId ? { ...p, materialProcessing: [] } : p);
+      setProjects(updatedProjects);
+      verifyMarkChanged();
+      try {
+        await saveItem('projects', { id: targetProjectId, materialProcessing: [] });
+        logActivity('task_progress' as any, `Deleted all ${count} Material Processing items in project ${proj.name}`);
+      } catch (err) {
+        console.error("Error deleting all material processing for project:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'projects');
+      }
+    } else {
+      const totalCount = projects.reduce((acc, p) => acc + (p.materialProcessing?.length || 0), 0);
+      const updatedProjects = projects.map(p => ({ ...p, materialProcessing: [] }));
+      setProjects(updatedProjects);
+      verifyMarkChanged();
+      try {
+        for (const p of updatedProjects) {
+          if (p.materialProcessing !== undefined) {
+            await saveItem('projects', { id: p.id, materialProcessing: [] });
+          }
+        }
+        logActivity('task_progress' as any, `Deleted all ${totalCount} Material Processing items across all projects`);
+      } catch (err) {
+        console.error("Error deleting all material processing:", err);
+        handleFirestoreError(err, OperationType.WRITE, 'projects');
+      }
     }
   };
 
@@ -1427,6 +1565,7 @@ function AppContent() {
                       onAdd={handleAddMaterialProcessing}
                       onUpdateStage={handleUpdateProcessingStage}
                       onDelete={handleDeleteMaterialProcessing}
+                      onDeleteAll={handleDeleteAllMaterialProcessing}
                       setDeleteConfirm={setDeleteConfirm}
                       masterDataEntries={masterData.entries}
                       onEnsureMasterData={masterData.ensureEntry}

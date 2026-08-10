@@ -82,10 +82,10 @@ export function useMasterData(enabled: boolean) {
   };
 
   const getSuggestions = (category: MasterDataEntry['category'], query: string): MasterDataEntry[] => {
-    if (!query.trim()) return [];
+    if (!query || typeof query !== 'string' || !query.trim()) return [];
     const lowerQuery = query.toLowerCase().trim();
     return entries
-      .filter((e) => e.category === category && e.value.toLowerCase().includes(lowerQuery))
+      .filter((e) => e.category === category && (e.value || '').toLowerCase().includes(lowerQuery))
       .sort((a, b) => {
         if (b.usageCount !== a.usageCount) {
           return b.usageCount - a.usageCount;

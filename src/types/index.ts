@@ -540,17 +540,23 @@ export interface DrawingRevision {
 
 export interface BomItem {
   id: string;
-  partNumber: string;        // contoh: "AB-FP-001"
-  description: string;       // contoh: "Floor Plate Main"
-  material: string;          // contoh: "Bisalloy 400", "Hardox 450", "MS Plate"
+  partNumber: string;        // contoh: "AB-FP-001" or "66679"
+  description: string;       // contoh: "Floor Plate Main" or "12T RATED LIFT LUG"
+  material: string;          // contoh: "Bisalloy 400", "Hardox 450", "36PL MS"
   quantity: number;
   unit: 'pcs' | 'kg' | 'm' | 'm2' | 'set';
-  dimensions?: string;       // contoh: "6000×2000×12mm" (free text)
+  dimensions?: string;       // contoh: "265×160mm" (free text)
   weightPerUnit?: number;    // kg per pcs/unit
   totalWeight?: number;      // kalkulasi otomatis: weightPerUnit × quantity
   drawingRef?: string;       // referensi nomor drawing (linked ke DrawingRevision)
   category: 'plate' | 'structural' | 'hardware' | 'welding_consumable' | 'paint' | 'other';
   notes?: string;
+  rev?: string;              // contoh: "A", "B"
+  lengthMm?: number;         // panjang part dalam mm (contoh: 265)
+  widthMm?: number;          // lebar part dalam mm (contoh: 160)
+  grade?: string;            // grade material (contoh: "350", "AMS140")
+  pros?: string;             // proses/cad spec (contoh: "DXF", "F DXF")
+  subAssembly?: string;      // nama sub assembly (contoh: "Body Assembly", "Floor Assembly")
 }
 
 export interface BomTemplate {

@@ -206,11 +206,21 @@ export function SpotlightProcessingTab({
     e.preventDefault();
     if (!updatingStage) return;
 
+    let finalPct = Number(stagePct);
+    let finalStatus = stageStatus;
+
+    if (finalPct >= 100) {
+      finalPct = 100;
+      if (finalStatus !== 'skipped') finalStatus = 'done';
+    } else if (finalStatus === 'done') {
+      finalPct = 100;
+    }
+
     onUpdateStage(updatingStage.mp.id, updatingStage.stageKey, {
-      pct: Number(stagePct),
-      status: stageStatus,
+      pct: finalPct,
+      status: finalStatus,
       startDate: stageStartDate || undefined,
-      doneDate: stageStatus === 'done' ? stageDoneDate || new Date().toISOString().slice(0, 10) : stageDoneDate || undefined,
+      doneDate: finalStatus === 'done' ? stageDoneDate || new Date().toISOString().slice(0, 10) : stageDoneDate || undefined,
       operator: stageOperator.trim() || currentUser?.name || 'Operator',
       notes: stageNotes.trim() || undefined
     });
