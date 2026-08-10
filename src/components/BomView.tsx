@@ -597,8 +597,8 @@ export default function BomView({
 
   const matchingProject = useMemo(() => {
     if (!selectedTemplate?.gaNumber) return null;
-    const cleanGa = selectedTemplate.gaNumber.trim().toUpperCase();
-    return projects.find(p => p.gaNumber?.trim().toUpperCase() === cleanGa) || null;
+    const cleanGa = String(selectedTemplate.gaNumber || '').trim().toUpperCase();
+    return projects.find(p => String(p.gaNumber || '').trim().toUpperCase() === cleanGa) || null;
   }, [selectedTemplate?.gaNumber, projects]);
 
   // Active Linked Project & Unit Multiplier Computation
@@ -645,16 +645,17 @@ export default function BomView({
   };
 
   const existingMpPartNos = useMemo(() => {
-    const cleanGa = (selectedTemplate?.gaNumber || resolvedTargetProject?.gaNumber || '').trim().toUpperCase();
+    const cleanGa = String(selectedTemplate?.gaNumber || resolvedTargetProject?.gaNumber || '').trim().toUpperCase();
     const targetProjId = resolvedTargetProject?.id;
 
     const set = new Set<string>();
     (materialProcessings || []).forEach(mp => {
-      const mpGa = (mp.gaNumber || '').trim().toUpperCase();
+      if (!mp) return;
+      const mpGa = String(mp.gaNumber || '').trim().toUpperCase();
       const mpProjId = mp.projectId;
       if ((cleanGa && mpGa === cleanGa) || (targetProjId && mpProjId === targetProjId)) {
         if (mp.partNo) {
-          set.add((mp.partNo || '').trim().toLowerCase());
+          set.add(String(mp.partNo || '').trim().toLowerCase());
         }
       }
     });
@@ -664,7 +665,8 @@ export default function BomView({
   const itemsToGenerate = useMemo(() => {
     if (!skipDuplicates) return eligibleMpItems;
     return eligibleMpItems.filter(item => {
-      const pNo = (item.partNumber || '').trim().toLowerCase();
+      if (!item) return false;
+      const pNo = String(item.partNumber || '').trim().toLowerCase();
       if (!pNo) return true;
       return !existingMpPartNos.has(pNo);
     });
@@ -814,12 +816,13 @@ export default function BomView({
     const reqWeight = baseWeight * mult;
 
     // Case-insensitive partial match on material name
-    const itemMatLower = (item.material || '').trim().toLowerCase();
+    const itemMatLower = String(item.material || '').trim().toLowerCase();
     if (!itemMatLower) {
       return { status: 'none', label: '—', color: 'text-base-muted bg-base-surface2 border-base-border', currentStock: 0, requiredWeight: reqWeight };
     }
-    const matchedMaterial = materials.find(m => {
-      const nameLower = (m?.name || '').toLowerCase();
+    const matchedMaterial = (materials || []).find(m => {
+      if (!m) return false;
+      const nameLower = String(m.name || '').toLowerCase();
       return nameLower && (nameLower === itemMatLower || nameLower.includes(itemMatLower) || itemMatLower.includes(nameLower));
     });
 
@@ -847,6 +850,7 @@ export default function BomView({
     const activeMult = showProjectTotals ? activeProjectUnits : 1;
     let shortageCount = 0;
     selectedTemplate.items.forEach(item => {
+      if (!item) return;
       const res = calculateStockStatus(item, activeMult);
       if (res.status === 'no_stock' || res.status === 'low_stock') {
         shortageCount++;
@@ -856,9 +860,9 @@ export default function BomView({
     // Calculate material in processing for matching GA Number
     let consumedInProcessing = 0;
     if (selectedTemplate.gaNumber) {
-      const targetGa = (selectedTemplate.gaNumber || '').trim().toLowerCase();
-      materialProcessings.forEach(mp => {
-        if (mp.gaNumber && (mp.gaNumber || '').trim().toLowerCase() === targetGa) {
+      const targetGa = String(selectedTemplate.gaNumber || '').trim().toLowerCase();
+      (materialProcessings || []).forEach(mp => {
+        if (mp && mp.gaNumber && String(mp.gaNumber || '').trim().toLowerCase() === targetGa) {
           consumedInProcessing += ((mp.qty || 0) * (mp.massKg || 1));
         }
       });
@@ -1273,7 +1277,8 @@ export default function BomView({
     const stageMap: Record<string, { name: string; count: number; totalWeight: number }> = {};
 
     selectedTemplate.items.forEach(item => {
-      const stageName = item.subAssembly?.trim() || item.category || 'Main Body';
+      if (!item) return;
+      const stageName = String(item.subAssembly || item.category || 'Main Body').trim();
       const wt = item.totalWeight || ((item.quantity || 0) * (item.weightPerUnit || 0));
 
       if (!stageMap[stageName]) {
@@ -1295,8 +1300,9 @@ export default function BomView({
     // Filter by Stage / Sub-Assembly tab if not 'all'
     if (selectedStageTab !== 'all') {
       itemsCopy = itemsCopy.filter(item => {
-        const stageName = item.subAssembly?.trim() || item.category || 'Main Body';
-        return stageName.toLowerCase() === selectedStageTab.toLowerCase();
+        if (!item) return false;
+        const stageName = String(item.subAssembly || item.category || 'Main Body').trim();
+        return stageName.toLowerCase() === String(selectedStageTab || '').toLowerCase();
       });
     }
 
@@ -2146,7 +2152,7 @@ export default function BomView({
 
                   {/* INDIVIDUAL STAGE TABS */}
                   {availableStages.map(stage => {
-                    const isSelected = selectedStageTab.toLowerCase() === stage.name.toLowerCase();
+                    const isSelected = String(selectedStageTab || '').toLowerCase() === String(stage?.name || '').toLowerCase();
                     const totalBomsWeight = selectedTemplate?.totalEstWeight || 1;
                     const pctOfTotal = Math.round((stage.totalWeight / (totalBomsWeight || 1)) * 100);
                     const displayWeight = showProjectTotals ? stage.totalWeight * activeProjectUnits : stage.totalWeight;
@@ -2827,7 +2833,7 @@ export default function BomView({
 
                 {/* Preview Linked Project */}
                 {templateFormData.gaNumber && (() => {
-                  const matchedProj = projects.find(p => (p.gaNumber || '').toLowerCase() === (templateFormData.gaNumber || '').trim().toLowerCase());
+                  const matchedProj = projects.find(p => String(p?.gaNumber || '').toLowerCase() === String(templateFormData?.gaNumber || '').trim().toLowerCase());
                   return matchedProj ? (
                     <p className="text-[11px] text-base-green font-bold mt-1 flex items-center gap-1">
                       <Check className="h-3 w-3" />
@@ -3831,7 +3837,7 @@ export default function BomView({
                       ) : (
                         eligibleMpItems.map((item, idx) => {
                           const procInfo = parseItemProcess(item);
-                          const isDupe = (item.partNumber || '') && existingMpPartNos.has(item.partNumber.trim().toLowerCase());
+                          const isDupe = Boolean(item?.partNumber) && existingMpPartNos.has(String(item.partNumber || '').trim().toLowerCase());
                           const isSkipped = skipDuplicates && isDupe;
 
                           return (
