@@ -1,4 +1,4 @@
-import { Project, Assembly, Task, Dependency } from '../types';
+import { Project, Assembly, Task, Dependency, BomTemplate, BomItem, MaterialProcessing, ProcessingStageKey } from '../types';
 import { uid } from './helpers';
 
 export function shiftDate(dateStr: string | undefined, days: number): string | undefined {
@@ -143,4 +143,131 @@ export function calculateFinishFromStart(
   const d = String(start.getDate()).padStart(2, '0');
   return `${y}-${m}-${d}`;
 }
+
+export function buildStructureFromBomTemplate(
+  template: BomTemplate,
+  projectId: string,
+  projectName: string,
+  workOrder: string,
+  gaNumber?: string,
+  startDate?: string,
+  dueDate?: string
+): { assemblies: Assembly[]; materials: MaterialProcessing[] } {
+  const items = template.items || [];
+  const start = startDate || new Date().toISOString().slice(0, 10);
+  const finish = dueDate || start;
+
+  // Group items by subAssembly (or fallback to item category / 'Main Assembly')
+  const subAssyGroups = new Map<string, BomItem[]>();
+  items.forEach(item => {
+    const rawSub = (item.subAssembly || '').trim();
+    const groupName = rawSub || (item.category ? item.category.toUpperCase() : 'MAIN ASSEMBLY');
+    const list = subAssyGroups.get(groupName) || [];
+    list.push(item);
+    subAssyGroups.set(groupName, list);
+  });
+
+  const assemblies: Assembly[] = [];
+  const materials: MaterialProcessing[] = [];
+
+  const defaultTaskTemplates = [
+    { name: 'Material Preparation & Cutting', diff: 1 },
+    { name: 'Bending & Machining Parts', diff: 2 },
+    { name: 'Sub-Assembly Fit-up & Tack Welding', diff: 3 },
+    { name: 'Full Welding & Distortion Control', diff: 3 },
+    { name: 'Inspection & NDT Quality Check', diff: 2 },
+    { name: 'Painting & Final Touch-up', diff: 1 }
+  ];
+
+  subAssyGroups.forEach((groupItems, subAssyName) => {
+    const asmId = 'asm_' + uid();
+
+    // Create Tasks for this Assembly
+    const tasks: Task[] = defaultTaskTemplates.map(t => ({
+      id: 'tsk_' + uid(),
+      name: t.name,
+      difficulty: t.diff,
+      pct: 0,
+      done: false,
+      date: start,
+      finishDate: finish
+    }));
+
+    assemblies.push({
+      id: asmId,
+      name: subAssyName,
+      start: start,
+      finish: finish,
+      tasks: tasks,
+      notes: `Generated automatically from BOM Template: ${template.name} (${groupItems.length} items)`
+    });
+
+    // Create MaterialProcessing for each item in this group
+    groupItems.forEach(item => {
+      const activeStages: ProcessingStageKey[] = [];
+      const prosUpper = (item.pros || '').toUpperCase();
+      const catLower = (item.category || '').toLowerCase();
+
+      if (prosUpper.includes('DXF') || catLower === 'plate' || item.lengthMm || item.widthMm) {
+        activeStages.push('nesting');
+      }
+      if (prosUpper.includes('CNC') || prosUpper.includes('CUT') || catLower === 'plate' || activeStages.includes('nesting')) {
+        activeStages.push('cnc');
+      }
+      if (prosUpper.includes('BEND') || prosUpper.includes('FORM')) {
+        activeStages.push('bending');
+      }
+      if (prosUpper.includes('MACH') || prosUpper.includes('MILL') || prosUpper.includes('LATHE') || catLower === 'structural') {
+        activeStages.push('machining');
+      }
+      if (activeStages.length === 0) {
+        activeStages.push('nesting', 'cnc');
+      }
+
+      const stagesRecord: any = {};
+      activeStages.forEach(stg => {
+        stagesRecord[stg] = { pct: 0, status: 'pending', operator: '', notes: '' };
+      });
+      ['nesting', 'cnc', 'bending', 'machining'].forEach(stg => {
+        if (!stagesRecord[stg]) {
+          stagesRecord[stg] = { pct: 0, status: 'skipped', operator: '', notes: '' };
+        }
+      });
+
+      const mpItem: MaterialProcessing = {
+        id: 'mp_' + uid(),
+        projectId: projectId,
+        projectName: projectName,
+        workOrder: workOrder,
+        gaNumber: gaNumber || template.gaNumber || '',
+        materialName: item.description || item.partNumber || item.material || 'Part Item',
+        material: item.material || item.description || item.partNumber || 'Plate MS',
+        grade: item.grade || item.material || 'Standard Grade',
+        partNo: item.partNumber || '',
+        description: item.description || item.partNumber || '',
+        dimensions: item.dimensions || (item.lengthMm && item.widthMm ? `${item.lengthMm} × ${item.widthMm} mm` : ''),
+        lengthMm: item.lengthMm,
+        widthMm: item.widthMm,
+        massKg: item.weightPerUnit || 0,
+        qty: item.quantity || 1,
+        unit: item.unit === 'pcs' ? 'pcs' : 'kg',
+        assemblyId: asmId,
+        assemblyName: subAssyName,
+        activeStages: activeStages,
+        stages: stagesRecord,
+        overallPct: 0,
+        isCompleted: false,
+        isStocked: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: 'System (BOM Template)'
+      };
+
+      materials.push(mpItem);
+    });
+  });
+
+  return { assemblies, materials };
+}
+
 

@@ -18,7 +18,12 @@ import {
   AlertCircle,
   Layers,
   Calendar,
-  User as UserIcon
+  User as UserIcon,
+  Package,
+  CheckCircle2,
+  Clock,
+  PieChart,
+  TrendingUp
 } from 'lucide-react';
 
 interface SpotlightProcessingTabProps {
@@ -104,6 +109,125 @@ export function SpotlightProcessingTab({
   const projectMaterials = useMemo(() => {
     return materialProcessings.filter(mp => mp.projectId === project.id);
   }, [materialProcessings, project.id]);
+
+  // Assembly Filter State
+  const [selectedAssemblyFilter, setSelectedAssemblyFilter] = useState<string>('all');
+
+  // Assembly BOM Summaries calculation
+  const assemblySummaries = useMemo(() => {
+    const asms = project.assemblies || [];
+    const asmMap = new Map<string, MaterialProcessing[]>();
+    const unlinkedItems: MaterialProcessing[] = [];
+
+    projectMaterials.forEach(mp => {
+      const matchedAsm = asms.find(
+        a => (mp.assemblyId && a.id === mp.assemblyId) ||
+             (mp.assemblyName && a.name.trim().toLowerCase() === mp.assemblyName.trim().toLowerCase())
+      );
+      if (matchedAsm) {
+        const existing = asmMap.get(matchedAsm.id) || [];
+        existing.push(mp);
+        asmMap.set(matchedAsm.id, existing);
+      } else {
+        unlinkedItems.push(mp);
+      }
+    });
+
+    const list = asms.map(asm => {
+      const items = asmMap.get(asm.id) || [];
+      const totalQty = items.reduce((sum, item) => sum + (item.qty || 0), 0);
+      const completedCount = items.filter(item => item.isCompleted || item.overallPct >= 100).length;
+      const avgProgress = items.length > 0
+        ? Math.round(items.reduce((sum, item) => sum + (item.overallPct || 0), 0) / items.length)
+        : 0;
+
+      return {
+        id: asm.id,
+        name: asm.name,
+        itemCount: items.length,
+        totalQty,
+        completedCount,
+        avgProgress
+      };
+    });
+
+    if (unlinkedItems.length > 0) {
+      const totalQty = unlinkedItems.reduce((sum, item) => sum + (item.qty || 0), 0);
+      const completedCount = unlinkedItems.filter(item => item.isCompleted || item.overallPct >= 100).length;
+      const avgProgress = Math.round(
+        unlinkedItems.reduce((sum, item) => sum + (item.overallPct || 0), 0) / unlinkedItems.length
+      );
+
+      list.push({
+        id: 'unlinked',
+        name: 'General / Unlinked',
+        itemCount: unlinkedItems.length,
+        totalQty,
+        completedCount,
+        avgProgress
+      });
+    }
+
+    return list;
+  }, [project.assemblies, projectMaterials]);
+
+  // Filtered materials based on selected assembly
+  const filteredMaterials = useMemo(() => {
+    if (selectedAssemblyFilter === 'all') return projectMaterials;
+    const asms = project.assemblies || [];
+    return projectMaterials.filter(mp => {
+      const matched = asms.find(
+        a => (mp.assemblyId && a.id === mp.assemblyId) ||
+             (mp.assemblyName && a.name.trim().toLowerCase() === mp.assemblyName.trim().toLowerCase())
+      );
+      if (selectedAssemblyFilter === 'unlinked') {
+        return !matched;
+      }
+      return matched?.id === selectedAssemblyFilter;
+    });
+  }, [projectMaterials, selectedAssemblyFilter, project.assemblies]);
+
+  // Overall Processing Statistics (% Selesai, % Sedang Proses, % Total Progress)
+  const overallStats = useMemo(() => {
+    const totalItems = projectMaterials.length;
+    if (totalItems === 0) {
+      return {
+        overallPct: 0,
+        completedCount: 0,
+        completedPct: 0,
+        inProgressCount: 0,
+        inProgressPct: 0,
+        pendingCount: 0,
+        pendingPct: 0,
+        totalQty: 0
+      };
+    }
+
+    const totalPctSum = projectMaterials.reduce((sum, item) => sum + (item.overallPct || 0), 0);
+    const overallPct = Math.round(totalPctSum / totalItems);
+
+    const completedCount = projectMaterials.filter(
+      item => item.isCompleted || (item.overallPct || 0) >= 100
+    ).length;
+    const inProgressCount = projectMaterials.filter(
+      item => !item.isCompleted && (item.overallPct || 0) > 0 && (item.overallPct || 0) < 100
+    ).length;
+    const pendingCount = projectMaterials.filter(
+      item => (item.overallPct || 0) === 0
+    ).length;
+    const totalQty = projectMaterials.reduce((sum, item) => sum + (item.qty || 0), 0);
+
+    return {
+      overallPct,
+      completedCount,
+      completedPct: Math.round((completedCount / totalItems) * 100),
+      inProgressCount,
+      inProgressPct: Math.round((inProgressCount / totalItems) * 100),
+      pendingCount,
+      pendingPct: Math.round((pendingCount / totalItems) * 100),
+      totalQty
+    };
+  }, [projectMaterials]);
 
   // Handle stage checkbox toggle in add form
   const handleStageToggle = (stageKey: ProcessingStageKey) => {
@@ -261,6 +385,78 @@ export function SpotlightProcessingTab({
             <span>{showQuickAdd ? 'Hide Quick Form' : 'Quick Add Material'}</span>
           </button>
         )}
+      </div>
+
+      {/* OVERALL MATERIAL PROCESSING PROGRESS KPI CARDS */}
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        {/* Total Overall Progress Card */}
+        <div className="sm:col-span-1 bg-base-surface2 border border-base-border/80 rounded-xl p-3.5 flex flex-col justify-between space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted flex items-center gap-1">
+              <TrendingUp className="h-3.5 w-3.5 text-base-accent" /> Total Progress MP
+            </span>
+            <span className="text-[10px] font-mono text-base-muted">{projectMaterials.length} items</span>
+          </div>
+          <div>
+            <div className="text-2xl font-black font-mono text-base-text">
+              {overallStats.overallPct}<span className="text-sm font-bold text-base-accent">%</span>
+            </div>
+            <div className="w-full bg-base-surface3 rounded-full h-1.5 mt-1.5 overflow-hidden">
+              <div
+                className="h-full bg-base-accent rounded-full transition-all duration-300"
+                style={{ width: `${overallStats.overallPct}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Selesai / Siap (100%) Card */}
+        <div className="bg-base-surface2 border border-base-border/80 rounded-xl p-3.5 flex flex-col justify-between space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-emerald-500 flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Selesai / Siap
+            </span>
+            <span className="text-[10px] font-mono font-bold text-emerald-500 bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
+              {overallStats.completedPct}%
+            </span>
+          </div>
+          <div className="text-xl font-bold font-mono text-base-text">
+            {overallStats.completedCount} <span className="text-xs font-normal text-base-muted">item</span>
+          </div>
+          <p className="text-[9.5px] text-base-muted">Telah mencapai 100% progress</p>
+        </div>
+
+        {/* Sedang Proses Card */}
+        <div className="bg-base-surface2 border border-base-border/80 rounded-xl p-3.5 flex flex-col justify-between space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-amber-500 flex items-center gap-1">
+              <Clock className="h-3.5 w-3.5" /> Sedang Proses
+            </span>
+            <span className="text-[10px] font-mono font-bold text-amber-500 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+              {overallStats.inProgressPct}%
+            </span>
+          </div>
+          <div className="text-xl font-bold font-mono text-base-text">
+            {overallStats.inProgressCount} <span className="text-xs font-normal text-base-muted">item</span>
+          </div>
+          <p className="text-[9.5px] text-base-muted">Dalam tahap pengerjaan (1% - 99%)</p>
+        </div>
+
+        {/* Belum Mulai Card */}
+        <div className="bg-base-surface2 border border-base-border/80 rounded-xl p-3.5 flex flex-col justify-between space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted flex items-center gap-1">
+              <PieChart className="h-3.5 w-3.5" /> Belum Mulai
+            </span>
+            <span className="text-[10px] font-mono font-bold text-base-muted bg-base-surface3 px-1.5 py-0.5 rounded border border-base-border/50">
+              {overallStats.pendingPct}%
+            </span>
+          </div>
+          <div className="text-xl font-bold font-mono text-base-text">
+            {overallStats.pendingCount} <span className="text-xs font-normal text-base-muted">item</span>
+          </div>
+          <p className="text-[9.5px] text-base-muted">Masih 0% / belum diproses</p>
+        </div>
       </div>
 
       {/* QUICK INLINE FORM */}
@@ -423,6 +619,97 @@ export function SpotlightProcessingTab({
         </form>
       )}
 
+      {/* ASSEMBLY BOM PROCESSING SUMMARY */}
+      <div className="bg-base-surface2 border border-base-border rounded-xl p-4 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="flex items-center gap-2">
+            <Package className="h-4.5 w-4.5 text-base-accent" />
+            <div>
+              <h5 className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-text">
+                Assembly BOM Processing Summary ({assemblySummaries.length} Assemblies)
+              </h5>
+              <p className="text-[10px] text-base-muted">
+                Jumlah item material dan total progress pengerjaan per assembly
+              </p>
+            </div>
+          </div>
+          {selectedAssemblyFilter !== 'all' && (
+            <button
+              onClick={() => setSelectedAssemblyFilter('all')}
+              className="text-[10px] font-condensed font-bold uppercase text-base-accent hover:underline flex items-center gap-1 cursor-pointer bg-base-accent/10 border border-base-accent/20 px-2.5 py-1 rounded-md"
+            >
+              <span>✕ Show All ({projectMaterials.length} Items)</span>
+            </button>
+          )}
+        </div>
+
+        {assemblySummaries.length === 0 ? (
+          <div className="text-xs text-base-muted italic py-3 text-center bg-base-surface rounded-lg border border-base-border/40">
+            Belum ada assembly / data material processing untuk project ini.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+            {assemblySummaries.map(asm => {
+              const isSelected = selectedAssemblyFilter === asm.id;
+              const progressColor =
+                asm.avgProgress >= 100
+                  ? 'bg-emerald-500'
+                  : asm.avgProgress > 0
+                  ? 'bg-amber-500'
+                  : 'bg-base-border';
+
+              return (
+                <div
+                  key={asm.id}
+                  onClick={() => setSelectedAssemblyFilter(prev => (prev === asm.id ? 'all' : asm.id))}
+                  className={`p-3 rounded-lg border transition-all cursor-pointer flex flex-col justify-between space-y-2.5 ${
+                    isSelected
+                      ? 'bg-base-accent/10 border-base-accent ring-1 ring-base-accent'
+                      : 'bg-base-surface border-base-border/60 hover:border-base-border hover:bg-base-surface3/40'
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <span className="font-bold text-xs text-base-text truncate block leading-tight" title={asm.name}>
+                        {asm.name}
+                      </span>
+                    </div>
+                    <span className="px-1.5 py-0.5 rounded text-[9px] font-mono font-bold shrink-0 bg-base-surface2 text-base-muted border border-base-border/50">
+                      {asm.itemCount} item{asm.itemCount !== 1 ? 's' : ''} ({asm.totalQty} pcs)
+                    </span>
+                  </div>
+
+                  <div>
+                    <div className="flex items-center justify-between text-[10px] font-mono mb-1">
+                      <span className="text-base-muted font-sans text-[9.5px]">
+                        Selesai: <strong className="text-base-text font-mono">{asm.completedCount}/{asm.itemCount}</strong>
+                      </span>
+                      <span
+                        className={`font-bold ${
+                          asm.avgProgress >= 100
+                            ? 'text-emerald-500'
+                            : asm.avgProgress > 0
+                            ? 'text-amber-500'
+                            : 'text-base-muted'
+                        }`}
+                      >
+                        {asm.avgProgress}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-base-surface3 rounded-full h-1.5 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all duration-300 ${progressColor}`}
+                        style={{ width: `${asm.avgProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* TRACKED MATERIALS LIST */}
       <div className="overflow-x-auto rounded-lg border border-base-border bg-base-surface shadow-sm">
         <table className="w-full text-left border-collapse min-w-[750px]">
@@ -447,14 +734,16 @@ export function SpotlightProcessingTab({
             </tr>
           </thead>
           <tbody className="divide-y divide-base-border text-xs">
-            {projectMaterials.length === 0 ? (
+            {filteredMaterials.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-3 py-8 text-center text-base-muted">
-                  No materials tracked for this project's shop floor yet.
+                <td colSpan={5 + stageKeys.length} className="px-3 py-8 text-center text-base-muted">
+                  {projectMaterials.length === 0
+                    ? "No materials tracked for this project's shop floor yet."
+                    : "No materials match the selected assembly filter."}
                 </td>
               </tr>
             ) : (
-              projectMaterials.map((mp, idx) => {
+              filteredMaterials.map((mp, idx) => {
                 const compl = mp.isCompleted;
                 const overdue = isOverdue(mp);
 

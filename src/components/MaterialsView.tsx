@@ -38,6 +38,7 @@ import {
 interface MaterialsViewProps {
   materials: MaterialItem[];
   materialRequests: MaterialRequest[];
+  consumptionLogs?: MaterialConsumptionLog[];
   projects: Project[];
   currentUser: User;
   onAddMaterial: (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
@@ -51,6 +52,8 @@ interface MaterialsViewProps {
     extra?: { approvedBy?: string; rejectedReason?: string; issuedBy?: string }
   ) => void;
   onDeleteMaterialRequest: (id: string) => void;
+  onAddConsumptionLog?: (log: Omit<MaterialConsumptionLog, 'id'>) => Promise<void>;
+  setDeleteConfirm?: (state: any) => void;
 }
 
 const CATEGORIES: MaterialCategory[] = [
@@ -75,6 +78,7 @@ const UNITS: MaterialUnit[] = [
 export default function MaterialsView({
   materials = [],
   materialRequests = [],
+  consumptionLogs = [],
   projects = [],
   currentUser,
   onAddMaterial,
@@ -83,11 +87,49 @@ export default function MaterialsView({
   onDeleteMaterial,
   onAddMaterialRequest,
   onUpdateMaterialRequestStatus,
-  onDeleteMaterialRequest
+  onDeleteMaterialRequest,
+  onAddConsumptionLog,
+  setDeleteConfirm
 }: MaterialsViewProps) {
   const isSubmittingRef = useRef<boolean>(false);
   const [isBusy, setIsBusy] = useState(false);
-  const consumptionLogs: any[] = [];
+
+  // Delete confirm modal state (internal fallback)
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
+
+  const handleDeleteClick = (title: string, message: string, action: () => void) => {
+    if (setDeleteConfirm) {
+      setDeleteConfirm({
+        isOpen: true,
+        title,
+        message,
+        onConfirm: () => {
+          action();
+          setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+        }
+      });
+    } else {
+      setDeleteConfirmModal({
+        isOpen: true,
+        title,
+        message,
+        onConfirm: () => {
+          action();
+          setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }));
+        }
+      });
+    }
+  };
 
   // Navigation tabs
   const [activeTab, setActiveTab] = useState<'stock' | 'requests' | 'logs'>('stock');
@@ -98,7 +140,7 @@ export default function MaterialsView({
   }, [currentUser]);
 
   const canManageMaterials = useMemo(() => {
-    return can(currentUser, 'manageMaterials');
+    return can(currentUser, 'manageMaterials') || currentUser?.role === 'admin' || currentUser?.role === 'manager';
   }, [currentUser]);
 
   const canRequestMaterial = useMemo(() => {
@@ -119,6 +161,7 @@ export default function MaterialsView({
 
   // Add material form state
   const [newMatName, setNewMatName] = useState('');
+  const [newMatPartNumber, setNewMatPartNumber] = useState('');
   const [newMatCategory, setNewMatCategory] = useState<MaterialCategory>('Other');
   const [newMatUnit, setNewMatUnit] = useState<MaterialUnit>('pcs');
   const [newMatCurrentStock, setNewMatCurrentStock] = useState('0');
@@ -202,9 +245,12 @@ export default function MaterialsView({
   const filteredMaterials = useMemo(() => {
     return materials.filter(m => {
       if (m.category !== 'Other') return false;
-      const matchSearch = m.name.toLowerCase().includes(stockSearch.toLowerCase()) || 
-                          (m.location && m.location.toLowerCase().includes(stockSearch.toLowerCase())) ||
-                          (m.notes && m.notes.toLowerCase().includes(stockSearch.toLowerCase()));
+      const q = stockSearch.toLowerCase().trim();
+      if (!q) return true;
+      const matchSearch = m.name.toLowerCase().includes(q) || 
+                          (m.partNumber && m.partNumber.toLowerCase().includes(q)) ||
+                          (m.location && m.location.toLowerCase().includes(q)) ||
+                          (m.notes && m.notes.toLowerCase().includes(q));
       return matchSearch;
     });
   }, [materials, stockSearch]);
@@ -233,17 +279,18 @@ export default function MaterialsView({
 
   const handleDownloadTemplate = () => {
     try {
-      const headers = ['Name', 'Category', 'Unit', 'Current Stock', 'Min Stock', 'Location', 'Notes'];
+      const headers = ['Name', 'Part Number', 'Category', 'Unit', 'Current Stock', 'Min Stock', 'Location', 'Notes'];
       const sampleRows = [
-        ['Welding Wire ER70S-6 1.2mm', 'Welding Consumable', 'kg', 50, 10, 'Rack A-1', 'For MIG welding'],
-        ['Safety Helmet', 'PPE', 'pcs', 20, 5, 'Storage Room', 'Full face shield type'],
-        ['Thinner NC', 'Paint & Chemical', 'liter', 15, 3, 'Chemical Cabinet', 'Flammable — store safely'],
+        ['Welding Wire ER70S-6 1.2mm', 'WW-ER70S6-12', 'Welding Consumable', 'kg', 50, 10, 'Rack A-1', 'For MIG welding'],
+        ['Safety Helmet', 'PPE-HLM-01', 'PPE', 'pcs', 20, 5, 'Storage Room', 'Full face shield type'],
+        ['Thinner NC', 'PAINT-THN-NC', 'Paint & Chemical', 'liter', 15, 3, 'Chemical Cabinet', 'Flammable — store safely'],
       ];
-      const cols = [{ wch: 35 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 35 }];
+      const cols = [{ wch: 35 }, { wch: 20 }, { wch: 25 }, { wch: 10 }, { wch: 15 }, { wch: 12 }, { wch: 20 }, { wch: 35 }];
 
       const guideHeaders = ['Column', 'Required', 'Format', 'Description'];
       const guideRows = [
         ['Name', 'Yes', 'Text', 'Material name, must be unique'],
+        ['Part Number', 'No', 'Text', 'Drawing or catalog Part Number (e.g. PN-10293)'],
         ['Category', 'Yes', 'Text', 'Must be one of: Welding Consumable, PPE, Tools & Equipment, Paint & Chemical, Other'],
         ['Unit', 'Yes', 'Text', 'Must be one of: kg, pcs, roll, liter, meter, box, set'],
         ['Current Stock', 'Yes', 'Number', 'Current quantity in stock (number only, no unit)'],
@@ -302,6 +349,7 @@ export default function MaterialsView({
 
         const first = rows[0] as any;
         const kName     = findKey(first, 'name', 'material name', 'nama', 'item');
+        const kPartNo   = findKey(first, 'part number', 'partnumber', 'part no', 'partno', 'no. part', 'part_number', 'no part');
         const kCat      = findKey(first, 'category', 'kategori', 'type', 'tipe');
         const kUnit     = findKey(first, 'unit', 'satuan', 'uom');
         const kCurrent  = findKey(first, 'current stock', 'currentstock', 'stock', 'qty', 'quantity', 'stok');
@@ -347,6 +395,7 @@ export default function MaterialsView({
 
           validImport.push({
             name,
+            partNumber: kPartNo ? row[kPartNo]?.toString().trim() : undefined,
             category: matchedCat as MaterialCategory,
             unit: matchedUnit as MaterialUnit,
             currentStock: rawCurrent,
@@ -402,6 +451,7 @@ export default function MaterialsView({
 
     onAddMaterial({
       name: newMatName.trim(),
+      partNumber: newMatPartNumber.trim() || undefined,
       category: 'Other',
       unit: newMatUnit,
       currentStock: currentStockNum,
@@ -412,6 +462,7 @@ export default function MaterialsView({
 
     // Reset Form
     setNewMatName('');
+    setNewMatPartNumber('');
     setNewMatCategory('Other');
     setNewMatUnit('pcs');
     setNewMatCurrentStock('0');
@@ -532,7 +583,7 @@ export default function MaterialsView({
     }, 800);
   };
 
-  const handleManualLogSubmit = () => {
+  const handleManualLogSubmit = async () => {
     if (isSubmittingRef.current) return;
 
     if (!logDate) {
@@ -581,20 +632,21 @@ export default function MaterialsView({
     const proj = projects.find(p => p.id === logProjectId);
     const assem = proj?.assemblies.find(a => a.id === logAssemblyId);
 
-    // Manual log tracking is now handled in ConsumableView
-    console.log('Manual consumption logged locally in console:', {
-      date: logDate,
-      materialId: logMaterialId,
-      materialName: mat.name,
-      unit: mat.unit,
-      qtyUsed: qtyNum,
-      projectId: logProjectId,
-      projectName: proj?.name || 'Unknown Project',
-      assemblyId: logAssemblyId || undefined,
-      assemblyName: assem?.name || undefined,
-      issuedBy: currentUser?.name || 'Admin',
-      notes: finalNotes || undefined
-    });
+    if (onAddConsumptionLog) {
+      await onAddConsumptionLog({
+        date: logDate,
+        materialId: logMaterialId,
+        materialName: mat.name,
+        unit: mat.unit,
+        qtyUsed: qtyNum,
+        projectId: logProjectId,
+        projectName: proj?.name || 'Unknown Project',
+        assemblyId: logAssemblyId || undefined,
+        assemblyName: assem?.name || undefined,
+        issuedBy: currentUser?.name || 'Admin',
+        notes: finalNotes || undefined
+      });
+    }
 
     // Reset Form
     setLogMaterialId('');
@@ -828,7 +880,7 @@ export default function MaterialsView({
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2">
+                <div>
                   <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
                     Material Name <span className="text-red-500">*</span>
                   </label>
@@ -839,6 +891,19 @@ export default function MaterialsView({
                     value={newMatName}
                     onChange={e => setNewMatName(e.target.value)}
                     className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-base-muted mb-1 font-condensed">
+                    Part Number / Part No
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="e.g. PN-10293 or AB-FP-001"
+                    value={newMatPartNumber}
+                    onChange={e => setNewMatPartNumber(e.target.value)}
+                    className="w-full bg-base-surface2 border border-base-border rounded-lg px-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text font-mono"
                   />
                 </div>
 
@@ -953,7 +1018,7 @@ export default function MaterialsView({
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-base-muted pointer-events-none" />
                 <input
                   type="text"
-                  placeholder="Filter stock by name..."
+                  placeholder="Search stock by name, part number, location..."
                   value={stockSearch}
                   onChange={e => setStockSearch(e.target.value)}
                   className="w-full bg-base-surface2 border border-base-border rounded-lg pl-9 pr-3 py-2 text-xs focus:border-base-accent outline-none font-semibold text-base-text"
@@ -1016,19 +1081,20 @@ export default function MaterialsView({
             <table className="w-full text-left border-collapse text-xs min-w-[900px]">
               <thead>
                 <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
-                  <th className="px-3 py-2.5 w-[30%]">Material Name</th>
-                  <th className="px-3 py-2.5 w-[12%]">Unit</th>
-                  <th className="px-3 py-2.5 w-[12%] text-right">Current Stock</th>
-                  <th className="px-3 py-2.5 w-[12%] text-right">Min Stock Threshold</th>
-                  <th className="px-3 py-2.5 w-[15%]">Location</th>
-                  <th className="px-3 py-2.5 w-[19%]">Notes</th>
-                  <th className="px-3 py-2.5 w-[8%] text-center">Actions</th>
+                  <th className="px-3 py-2.5 w-[22%]">Material Name</th>
+                  <th className="px-3 py-2.5 w-[14%]">Part Number</th>
+                  <th className="px-3 py-2.5 w-[9%]">Unit</th>
+                  <th className="px-3 py-2.5 w-[11%] text-right">Current Stock</th>
+                  <th className="px-3 py-2.5 w-[11%] text-right">Min Stock Threshold</th>
+                  <th className="px-3 py-2.5 w-[12%]">Location</th>
+                  <th className="px-3 py-2.5 w-[15%]">Notes</th>
+                  <th className="px-3 py-2.5 w-[6%] text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
                 {filteredMaterials.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center text-base-muted italic">
+                    <td colSpan={8} className="px-6 py-12 text-center text-base-muted italic">
                       No stock materials found matching current filters. Click "Add Material" above to initialize stock items.
                     </td>
                   </tr>
@@ -1061,9 +1127,27 @@ export default function MaterialsView({
                             placeholder="Material Name"
                             className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none font-bold text-base-text text-xs focus:ring-1 focus:ring-amber-500"
                           />
+                          {m.projectName && (
+                            <div className="px-3 pb-1 -mt-1">
+                              <span className="text-[10px] text-base-muted font-mono">
+                                📦 {m.projectName}
+                              </span>
+                            </div>
+                          )}
                         </td>
 
-                        {/* 2. Unit */}
+                        {/* 2. Part Number */}
+                        <td className="p-0 border-r border-base-border">
+                          <input
+                            type="text"
+                            value={m.partNumber || ''}
+                            onChange={(e) => handleFieldChange('partNumber', e.target.value)}
+                            placeholder="Part No..."
+                            className="w-full h-9 px-3 py-1 bg-transparent hover:bg-base-surface2/40 focus:bg-base-surface border-none outline-none font-mono font-bold text-base-accent text-xs focus:ring-1 focus:ring-amber-500"
+                          />
+                        </td>
+
+                        {/* 3. Unit */}
                         <td className="p-0 border-r border-base-border">
                           <select
                             value={m.unit}
@@ -1076,7 +1160,7 @@ export default function MaterialsView({
                           </select>
                         </td>
 
-                        {/* 3. Current Stock */}
+                        {/* 4. Current Stock */}
                         <td className="p-0 border-r border-base-border">
                           <input
                             type="number"
@@ -1089,7 +1173,7 @@ export default function MaterialsView({
                           />
                         </td>
 
-                        {/* 4. Min Stock */}
+                        {/* 5. Min Stock */}
                         <td className="p-0 border-r border-base-border">
                           <input
                             type="number"
@@ -1100,7 +1184,7 @@ export default function MaterialsView({
                           />
                         </td>
 
-                        {/* 5. Location */}
+                        {/* 6. Location */}
                         <td className="p-0 border-r border-base-border">
                           <input
                             type="text"
@@ -1111,7 +1195,7 @@ export default function MaterialsView({
                           />
                         </td>
 
-                        {/* 6. Notes */}
+                        {/* 7. Notes */}
                         <td className="p-0 border-r border-base-border">
                           <input
                             type="text"
@@ -1128,9 +1212,11 @@ export default function MaterialsView({
                             <button
                               type="button"
                               onClick={() => {
-                                if (confirm(`Are you sure you want to delete ${m.name}?`)) {
-                                  onDeleteMaterial(m.id);
-                                }
+                                handleDeleteClick(
+                                  'Delete Material Stock Item',
+                                  `Are you sure you want to permanently delete "${m.name}" (${m.partNumber ? `PN: ${m.partNumber}` : 'No Part No.'}) from inventory?`,
+                                  () => onDeleteMaterial(m.id)
+                                );
                               }}
                               className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition-colors cursor-pointer"
                               title="Delete Item"
@@ -1301,7 +1387,7 @@ export default function MaterialsView({
                                 <optgroup label="🏭 General Material Stock">
                                   {materials.map(m => (
                                     <option key={m.id} value={m.id}>
-                                      {m.name} ({m.category} — Stock: {m.currentStock} {m.unit})
+                                      {m.partNumber ? `[${m.partNumber}] ` : ''}{m.name} ({m.category} — Stock: {m.currentStock} {m.unit})
                                     </option>
                                   ))}
                                 </optgroup>
@@ -1591,7 +1677,11 @@ export default function MaterialsView({
                                   <button
                                     type="button"
                                     onClick={() => {
-                                      onDeleteMaterialRequest(mr.id);
+                                      handleDeleteClick(
+                                        'Delete Material Request',
+                                        `Are you sure you want to delete Material Request "${mr.mrNo}"?`,
+                                        () => onDeleteMaterialRequest(mr.id)
+                                      );
                                     }}
                                     className="p-1 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
                                     title="Delete MR"
@@ -1667,7 +1757,7 @@ export default function MaterialsView({
                     <option value="">-- Choose Material --</option>
                     {materials.map(m => (
                       <option key={m.id} value={m.id}>
-                        {m.name} ({m.unit} — Current Stock: {m.currentStock})
+                        {m.partNumber ? `[${m.partNumber}] ` : ''}{m.name} ({m.unit} — Current Stock: {m.currentStock})
                       </option>
                     ))}
                   </select>
@@ -1904,6 +1994,43 @@ export default function MaterialsView({
                 )}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* Internal Delete Confirmation Modal Fallback */}
+      {deleteConfirmModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-fade-in">
+          <div className="bg-base-surface border border-base-border rounded-xl shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center gap-3 text-red-500">
+              <div className="p-2 bg-red-500/10 rounded-lg">
+                <AlertTriangle className="h-6 w-6" />
+              </div>
+              <h3 className="text-lg font-bold font-condensed uppercase tracking-tight text-base-text">
+                {deleteConfirmModal.title}
+              </h3>
+            </div>
+            <p className="text-sm text-base-muted">
+              {deleteConfirmModal.message}
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2 border-t border-base-border">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmModal(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-base-surface2 hover:bg-base-surface3 text-base-text rounded-lg text-xs font-bold uppercase transition-all cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  deleteConfirmModal.onConfirm();
+                }}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-xs font-bold uppercase transition-all shadow-xs cursor-pointer"
+              >
+                Delete Permanently
+              </button>
+            </div>
           </div>
         </div>
       )}

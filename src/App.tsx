@@ -260,7 +260,7 @@ function AppContent() {
   const { orgSettings, saveSettings, applyTemplate } = orgSettingsHook;
 
   // Setup sub-hooks and project contexts
-  const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm, masterData.ensureEntry);
+  const projectsHook = useProjects(logActivity, verifyMarkChanged, setDeleteConfirm, masterData.ensureEntry, bomTemplates);
   const { projects, setProjects } = projectsHook;
 
   const employeesHook = useEmployees(verifyMarkChanged, setDeleteConfirm);
@@ -823,14 +823,22 @@ function AppContent() {
 
       // Check if the added item is already completed / 100% and not yet stocked
       if ((newItem.overallPct === 100 || newItem.isCompleted) && !newItem.isStocked) {
-        const existingMat = materials.find(
-          m => (m?.name || '').trim().toLowerCase() === (newItem.materialName || newItem.description || '').trim().toLowerCase()
-        );
+        const itemMatName = (newItem.materialName || newItem.description || '').trim().toLowerCase();
+        const itemPartNo = (newItem.partNo || '').trim().toLowerCase();
+        const existingMat = materials.find(m => {
+          const mName = (m?.name || '').trim().toLowerCase();
+          const mPart = (m?.partNumber || '').trim().toLowerCase();
+          return (itemMatName && mName === itemMatName) || (itemPartNo && mPart === itemPartNo);
+        });
 
         if (existingMat) {
           const newStock = existingMat.currentStock + newItem.qty;
-          setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
-          saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
+          const updates: Partial<MaterialItem> = { currentStock: newStock, updatedAt: now };
+          if (!existingMat.partNumber && newItem.partNo) {
+            updates.partNumber = newItem.partNo.trim();
+          }
+          setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, ...updates } : m));
+          saveItem('materials', { id: existingMat.id, ...updates });
         } else {
           const units: MaterialUnit[] = ['kg', 'pcs', 'roll', 'liter', 'meter', 'box', 'set'];
           const unitLower = (newItem.unit || 'pcs').toLowerCase() as any;
@@ -839,6 +847,7 @@ function AppContent() {
           const newMat: MaterialItem = {
             id: 'mat_' + uid() + '_' + idx,
             name: (newItem.materialName || newItem.description || 'Unnamed Part').trim(),
+            partNumber: newItem.partNo ? newItem.partNo.trim() : undefined,
             category: 'Other',
             unit,
             currentStock: newItem.qty,
@@ -870,12 +879,13 @@ function AppContent() {
       });
     });
 
-    verifyMarkChanged();
+    if (finalUpdatedList.length === 0) {
+      finalUpdatedList = [...createdItems, ...(proj.materialProcessing || [])];
+    }
 
     try {
-      if (finalUpdatedList.length === 0) {
-        finalUpdatedList = [...createdItems, ...(proj.materialProcessing || [])];
-      }
+      // Force re-read dari Firestore setelah save berhasil
+      // supaya Spotlight langsung dapat data terbaru
       await saveItem('projects', { id: targetProjectId, materialProcessing: finalUpdatedList });
       logActivity('task_add' as any,
         `Added ${createdItems.length} material processing item(s) → ${proj.client || proj.name}`);
@@ -883,6 +893,8 @@ function AppContent() {
       console.error("Error adding material processing:", err);
       handleFirestoreError(err, OperationType.WRITE, 'projects');
     }
+
+    verifyMarkChanged();
   };
 
   const handleUpdateProcessingStage = async (
@@ -944,16 +956,16 @@ function AppContent() {
       const allDone = expandedActiveStages.length > 0 &&
         expandedActiveStages.every(k => {
           const st = updatedStages[k];
-          if (!st) return false;
+          if (!st) return false; // belum pernah diupdate = pct 0 = belum done
           return st.status === 'done' || st.status === 'skipped' || (st.pct ?? 0) >= 100;
         });
 
       const activePcts = expandedActiveStages.map(k => {
         const st = updatedStages[k];
-        if (!st) return null;
+        if (!st) return 0; // stage belum pernah diupdate = 0%, BUKAN dikecualikan
         if (st.status === 'done' || st.status === 'skipped') return 100;
         return st.pct ?? 0;
-      }).filter((v): v is number => v !== null);
+      });
 
       const overallPct = activePcts.length === 0
         ? 0
@@ -979,15 +991,31 @@ function AppContent() {
     // Check if item is 100% completed or isCompleted, and not yet stocked
     if (updatedItem && (updatedItem.overallPct === 100 || updatedItem.isCompleted) && !updatedItem.isStocked) {
       const matNameClean = (updatedItem.materialName || updatedItem.description || '').trim();
-      const existingMat = materials.find(
-        m => (m?.name || '').trim().toLowerCase() === matNameClean.toLowerCase()
-      );
+      const itemPartNoClean = (updatedItem.partNo || '').trim();
+      const existingMat = materials.find(m => {
+        const mName = (m?.name || '').trim().toLowerCase();
+        const mPart = (m?.partNumber || '').trim().toLowerCase();
+        const nameMatch = (matNameClean && mName === matNameClean.toLowerCase()) ||
+                          (itemPartNoClean && mPart === itemPartNoClean.toLowerCase());
+        const projectMatch = m.projectId === projectId;
+        return nameMatch && projectMatch;
+      });
 
       if (existingMat) {
         // Increment stock
         const newStock = existingMat.currentStock + (updatedItem.qty || 1);
-        setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, currentStock: newStock, updatedAt: now } : m));
-        await saveItem('materials', { id: existingMat.id, currentStock: newStock, updatedAt: now });
+        const updates: Partial<MaterialItem> = { 
+          currentStock: newStock, 
+          updatedAt: now,
+          projectId: projectId,
+          projectName: proj.name,
+          workOrder: updatedItem.workOrder || proj.client
+        };
+        if (!existingMat.partNumber && itemPartNoClean) {
+          updates.partNumber = itemPartNoClean;
+        }
+        setMaterials(prev => prev.map(m => m.id === existingMat.id ? { ...m, ...updates } : m));
+        await saveItem('materials', { id: existingMat.id, ...updates });
         logActivity('material_edit' as any, `Added ${updatedItem.qty} ${updatedItem.unit || 'pcs'} of ${matNameClean} to stock (Material Processing Completed)`);
       } else {
         // Create new MaterialItem in Stock
@@ -998,12 +1026,16 @@ function AppContent() {
         const newMat: MaterialItem = {
           id: 'mat_' + uid(),
           name: matNameClean || 'Processed Part',
+          partNumber: itemPartNoClean || undefined,
+          projectId: projectId,
+          projectName: proj.name,
+          workOrder: updatedItem.workOrder || proj.client,
           category: 'Other',
           unit,
           currentStock: updatedItem.qty || 1,
           minStock: 0,
-          location: `WO: ${updatedItem.workOrder || proj.client}`,
-          notes: `Auto-stocked from Material Processing (${proj.name})`,
+          location: `${proj.name} — WO: ${updatedItem.workOrder || proj.client}`,
+          notes: `Auto-stocked from Material Processing — Project: ${proj.name}`,
           createdAt: now,
           updatedAt: now
         };
@@ -1523,6 +1555,7 @@ function AppContent() {
                   onAddMaterial={handleAddMaterial}
                   onUpdateMaterial={handleUpdateMaterial}
                   onDeleteMaterial={handleDeleteMaterial}
+                  setDeleteConfirm={setDeleteConfirm}
                 />
               )}
 
@@ -1541,6 +1574,7 @@ function AppContent() {
                 <MaterialsView
                   materials={materials}
                   materialRequests={materialRequests}
+                  consumptionLogs={consumptionLogs}
                   projects={projects}
                   currentUser={currentUser}
                   onAddMaterial={handleAddMaterial}
@@ -1550,6 +1584,8 @@ function AppContent() {
                   onAddMaterialRequest={handleAddMaterialRequest}
                   onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
                   onDeleteMaterialRequest={handleDeleteMaterialRequest}
+                  onAddConsumptionLog={handleAddConsumptionLog}
+                  setDeleteConfirm={setDeleteConfirm}
                 />
               )}
 
@@ -1788,6 +1824,8 @@ function AppContent() {
 
       {/* Modal and forms center */}
       <FormsAndModals
+        projects={projects}
+        bomTemplates={bomTemplates}
         orgSettings={orgSettings}
         authHook={authHook}
         projectsHook={projectsHook}

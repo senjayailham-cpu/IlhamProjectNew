@@ -297,11 +297,20 @@ export default function MaterialProcessingView({
   // Available Sub-Assemblies list for dropdown filter
   const availableSubAssemblies = useMemo(() => {
     const set = new Set<string>();
+    let hasGeneral = false;
     materialProcessings.forEach(mp => {
       if (selectedProjectId && mp.projectId !== selectedProjectId) return;
-      if (mp.assemblyName) set.add(mp.assemblyName);
+      if (mp.assemblyName && mp.assemblyName.trim()) {
+        set.add(mp.assemblyName.trim());
+      } else {
+        hasGeneral = true;
+      }
     });
-    return Array.from(set).sort();
+    const list = Array.from(set).sort();
+    if (hasGeneral) {
+      list.unshift('General / Main Assembly');
+    }
+    return list;
   }, [materialProcessings, selectedProjectId]);
 
   // Filtered materials
@@ -313,10 +322,17 @@ export default function MaterialProcessingView({
         (mp.partNo || '').toLowerCase().includes(q) ||
         (mp.description || '').toLowerCase().includes(q) ||
         (mp.material || '').toLowerCase().includes(q) ||
-        (mp.assemblyName || '').toLowerCase().includes(q);
+        (mp.assemblyName || '').toLowerCase().includes(q) ||
+        (mp.projectName || '').toLowerCase().includes(q) ||
+        (mp.gaNumber || '').toLowerCase().includes(q) ||
+        (mp.workOrder || '').toLowerCase().includes(q);
       
       const matchProject = selectedProjectId ? mp.projectId === selectedProjectId : true;
-      const matchSubAssy = selectedSubAssyFilter ? mp.assemblyName === selectedSubAssyFilter : true;
+      const matchSubAssy = selectedSubAssyFilter
+        ? (selectedSubAssyFilter === 'General / Main Assembly'
+            ? (!mp.assemblyName || mp.assemblyName.trim() === '' || mp.assemblyName === 'General / Main Assembly')
+            : mp.assemblyName === selectedSubAssyFilter)
+        : true;
       
       let matchMonth = true;
       if (selectedMonthFilter) {
@@ -407,7 +423,7 @@ export default function MaterialProcessingView({
           setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
         }
       });
-    } else if (confirm(confirmMessage)) {
+    } else {
       doDelete();
     }
   };
@@ -452,12 +468,12 @@ export default function MaterialProcessingView({
     const items = monthAndProjFilteredProcessings;
     const total = items.length;
     const inProgress = items.filter(
-      mp => !mp.isCompleted && mp.overallPct > 0
+      mp => !mp.isCompleted && (mp.overallPct || 0) > 0 && (mp.overallPct || 0) < 100
     ).length;
-    const completed = items.filter(mp => mp.isCompleted).length;
+    const completed = items.filter(mp => mp.isCompleted || (mp.overallPct || 0) === 100).length;
     const avgProgress =
       total > 0
-        ? Math.round(items.reduce((sum, mp) => sum + mp.overallPct, 0) / total)
+        ? Math.round(items.reduce((sum, mp) => sum + (mp.overallPct || 0), 0) / total)
         : 0;
 
     return { total, inProgress, completed, avgProgress };
@@ -465,8 +481,9 @@ export default function MaterialProcessingView({
 
   // Check if a row has overdue stages (in progress & no update in 7 days)
   const isOverdue = (mp: MaterialProcessing) => {
-    if (mp.isCompleted) return false;
-    const hasInProgress = mp.activeStages.some(
+    if (mp.isCompleted || (mp.overallPct || 0) === 100) return false;
+    const rawActive = (mp.activeStages && mp.activeStages.length > 0) ? mp.activeStages : stageKeys;
+    const hasInProgress = rawActive.some(
       k => mp.stages[k]?.status === 'in-progress'
     );
     if (!hasInProgress) return false;
@@ -863,7 +880,11 @@ export default function MaterialProcessingView({
       const stageAverages: Record<string, number> = {};
       stageKeys.forEach(stage => {
         stageAverages[stage] = 0;
-        const stageItems = items.filter(mp => mp.activeStages.includes(stage));
+        const stageItems = items.filter(mp => {
+          const rawActive = (mp.activeStages && mp.activeStages.length > 0) ? mp.activeStages : stageKeys;
+          const activeList = rawActive.flatMap(s => (s as string) === 'nesting_cnc' ? ['nesting', 'cnc'] : [s]);
+          return activeList.includes(stage as ProcessingStageKey);
+        });
         const sum = stageItems.reduce((s, m) => s + (m.stages[stage]?.pct ?? 0), 0);
         stageAverages[stage] = stageItems.length > 0 ? Math.round(sum / stageItems.length) : 0;
       });
@@ -1190,12 +1211,12 @@ export default function MaterialProcessingView({
                   <tbody className="divide-y divide-base-border/40 text-xs">
                     {filteredProcessings.length === 0 ? (
                        <tr>
-                        <td colSpan={(isReadOnly ? 11 : 13) + stageKeys.length} className="py-12 text-center text-base-muted">
+                        <td colSpan={(isReadOnly ? 10 : 12) + stageKeys.length} className="py-12 text-center text-base-muted">
                            No materials found matching filters.
                          </td>
                         </tr>
                      ) : (() => {
-                        const totalColSpan = (isReadOnly ? 11 : 13) + stageKeys.length;
+                        const totalColSpan = (isReadOnly ? 10 : 12) + stageKeys.length;
 
                         const renderRow = (mp: MaterialProcessing) => {
                           const isItemSelected = selectedItemIds.includes(mp.id);
@@ -1275,8 +1296,9 @@ export default function MaterialProcessingView({
 
                              {/* Stage Columns */}
                              {stageKeys.map(stageKey => {
-                               const activeStagesList = (mp.activeStages || []).flatMap(s => (s as string) === 'nesting_cnc' ? ['nesting', 'cnc'] : [s]);
-                               const isApp = activeStagesList.includes(stageKey);
+                               const rawActive = (mp.activeStages && mp.activeStages.length > 0) ? mp.activeStages : stageKeys;
+                               const activeStagesList = rawActive.flatMap(s => (s as string) === 'nesting_cnc' ? ['nesting', 'cnc'] : [s]);
+                               const isApp = activeStagesList.includes(stageKey as ProcessingStageKey);
                                const sd = mp.stages[stageKey] || ((stageKey === 'nesting' || stageKey === 'cnc') ? (mp.stages as any)?.nesting_cnc : undefined);
                                if (!isApp) {
                                  return (
@@ -1380,7 +1402,7 @@ export default function MaterialProcessingView({
                                            setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
                                          }
                                        });
-                                     } else if (confirm('Are you sure you want to delete this material processing tracking?')) {
+                                     } else {
                                        onDelete(mp.projectId, mp.id);
                                      }
                                    }}

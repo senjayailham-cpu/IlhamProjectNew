@@ -57,6 +57,7 @@ interface ConsumableViewProps {
   onUpdateMaterial?: (id: string, updates: Partial<MaterialItem>) => void;
   onDeleteMaterial?: (id: string) => void;
   orgSettings?: any;
+  setDeleteConfirm?: (state: any) => void;
 }
 
 const getPositionColorClass = (position?: string) => {
@@ -85,7 +86,8 @@ export default function ConsumableView({
   onAddMaterial,
   onUpdateMaterial,
   onDeleteMaterial,
-  orgSettings
+  orgSettings,
+  setDeleteConfirm
 }: ConsumableViewProps) {
 
   const canManageConsumables = can(currentUser, 'manageWireLog'); 
@@ -2399,7 +2401,17 @@ export default function ConsumableView({
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        if (confirm(`Are you sure you want to delete ${m.name}?`)) {
+                                        if (setDeleteConfirm) {
+                                          setDeleteConfirm({
+                                            isOpen: true,
+                                            title: 'Delete Consumable Item',
+                                            message: `Are you sure you want to delete "${m.name}"?`,
+                                            onConfirm: () => {
+                                              onDeleteMaterial(m.id);
+                                              setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+                                            }
+                                          });
+                                        } else {
                                           onDeleteMaterial(m.id);
                                         }
                                       }}

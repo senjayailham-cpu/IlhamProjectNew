@@ -332,6 +332,10 @@ export type MaterialRequestUrgency = 'Normal' | 'Urgent' | 'Critical';
 export interface MaterialItem {
   id: string;
   name: string;
+  partNumber?: string;
+  projectId?: string;
+  projectName?: string;
+  workOrder?: string;
   category: MaterialCategory;
   unit: MaterialUnit;
   currentStock: number;

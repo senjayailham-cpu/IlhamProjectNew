@@ -677,7 +677,12 @@ export default function BomView({
     setIsGeneratingMp(true);
     try {
       const targetProj = resolvedTargetProject;
-      const targetProjId = targetProj?.id || selectedProjectId || (projects[0]?.id || '');
+      const targetProjId = targetProj?.id || selectedProjectId || '';
+      if (!targetProjId) {
+        alert('Pilih project target terlebih dahulu sebelum generate Material Processing.');
+        setIsGeneratingMp(false);
+        return;
+      }
       const targetProjName = targetProj?.client || targetProj?.name || selectedTemplate.name;
       const targetGaNumber = targetProj?.gaNumber || selectedTemplate.gaNumber || '';
 

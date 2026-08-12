@@ -1,16 +1,18 @@
 import React from 'react';
-import { BookOpen, LogOut, Save, Trash2, Key } from 'lucide-react';
+import { BookOpen, LogOut, Save, Trash2, Key, Sparkles } from 'lucide-react';
 import TimesheetModal from './TimesheetModal';
 import DepModal from './DepModal';
 import { can as canUtil } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 import { useFirestore } from '../hooks';
 import { ErrorBoundary } from './ErrorBoundary';
-import { MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry, OrgSettings } from '../types';
+import { Project, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry, OrgSettings, BomTemplate } from '../types';
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import SpotlightModal from './SpotlightModal';
 
 interface FormsAndModalsProps {
+  projects?: Project[];
+  bomTemplates?: BomTemplate[];
   authHook: ReturnType<typeof import('../hooks/useAuth').useAuth>;
   projectsHook: ReturnType<typeof import('../hooks/useProjects').useProjects>;
   employeesHook: ReturnType<typeof import('../hooks/useEmployees').useEmployees>;
@@ -37,6 +39,8 @@ interface FormsAndModalsProps {
 }
 
 export function FormsAndModals({
+  projects,
+  bomTemplates = [],
   authHook,
   projectsHook,
   employeesHook,
@@ -60,6 +64,16 @@ export function FormsAndModals({
   const { currentUser } = authHook;
   const can = (perm: any) => canUtil(currentUser, perm);
   const { saveItem } = useFirestore();
+
+  const selectedBom = bomTemplates.find(b => b.id === projectsHook.pSelectedBomId);
+  const selectedBomSummary = selectedBom ? (() => {
+    const subAssies = new Set((selectedBom.items || []).map(i => (i.subAssembly || '').trim() || i.category || 'MAIN ASSEMBLY'));
+    return {
+      itemCount: selectedBom.items?.length || 0,
+      subAssyCount: subAssies.size,
+      taskCount: subAssies.size * 6
+    };
+  })() : null;
 
   const gaNumberLabel = orgSettings?.terminology?.gaNumberLabel || 'GA Number';
   const categoryOptions = React.useMemo(() => {
@@ -169,6 +183,61 @@ export function FormsAndModals({
                   Identitas jenis produk/desain. Project dengan ID/GA sama = desain & material sama, walau nama project berbeda.
                 </p>
               </div>
+
+              {!projectsHook.editingProjectId && (
+                <div className="space-y-1.5 p-3 rounded-xl bg-base-100/90 border border-base-accent/30 shadow-xs">
+                  <label className="field-label flex items-center justify-between">
+                    <span className="text-base-text font-bold flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5 text-base-accent" /> Gunakan Template BOM (Auto-Generate Material & Task)
+                    </span>
+                    {projectsHook.pSelectedBomId && (
+                      <span className="text-[10px] text-base-accent font-mono font-bold bg-base-accent/15 px-2 py-0.5 rounded-full">
+                        BOM Selected
+                      </span>
+                    )}
+                  </label>
+                  <select
+                    value={projectsHook.pSelectedBomId || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value;
+                      projectsHook.setPSelectedBomId(selectedId);
+                      if (selectedId && bomTemplates) {
+                        const foundBom = bomTemplates.find(b => b.id === selectedId);
+                        if (foundBom) {
+                          if (!projectsHook.pGaNumber && foundBom.gaNumber) {
+                            projectsHook.setPGaNumber(foundBom.gaNumber);
+                          }
+                          if (!projectsHook.pName && foundBom.name) {
+                            projectsHook.setPName(foundBom.name);
+                          }
+                        }
+                      }
+                    }}
+                    className="select-field min-h-[44px]"
+                  >
+                    <option value="">-- Tanpa Template BOM (Kosong) --</option>
+                    {(bomTemplates || []).map(b => (
+                      <option key={b.id} value={b.id}>
+                        {b.gaNumber ? `[${b.gaNumber}] ` : ''}{b.name} ({b.items?.length || 0} items)
+                      </option>
+                    ))}
+                  </select>
+                  {selectedBomSummary ? (
+                    <div className="p-2.5 rounded-lg bg-base-accent/10 border border-base-accent/25 text-[11px] text-base-text space-y-1">
+                      <div className="font-bold flex items-center gap-1 text-base-accent">
+                        ⚡ Generasi Otomatis dari BOM
+                      </div>
+                      <p className="text-[10.5px] text-base-muted leading-relaxed font-normal">
+                        Memilih template ini akan otomatis membuat <strong className="text-base-text font-semibold">{selectedBomSummary.subAssyCount} Sub-Assembly</strong>, <strong className="text-base-text font-semibold">{selectedBomSummary.taskCount} Tasks</strong>, dan <strong className="text-base-text font-semibold">{selectedBomSummary.itemCount} Material Processing Items</strong> langsung di Project Spotlight!
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-[10px] text-base-muted italic font-normal">
+                      Pilih BOM template untuk otomatis menghasilkan list material processing dan task per sub-assembly di Project Spotlight.
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-1">
@@ -606,7 +675,7 @@ export function FormsAndModals({
           isOpen={projectsHook.spotlightOpen}
           onClose={() => projectsHook.setSpotlightOpen(false)}
           projectId={projectsHook.spotlightProjectId}
-          projects={projectsHook.projects}
+          projects={projects || projectsHook.projects}
           timesheets={timesheets}
           wireLogs={wireLogs}
           consumptionLogs={consumptionLogs}

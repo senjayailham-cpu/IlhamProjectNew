@@ -1,7 +1,7 @@
 import { useState } from 'react';
-import { Project, Assembly, Task, MaterialProcessing } from '../types';
+import { Project, Assembly, Task, MaterialProcessing, BomTemplate } from '../types';
 import { uid, calcPct } from '../utils';
-import { buildCopiedStructure } from '../utils/copyStructureUtils';
+import { buildCopiedStructure, buildStructureFromBomTemplate } from '../utils/copyStructureUtils';
 import { useFirestore } from './useFirestore';
 import { propagateAllSchedules } from '../utils/projectUtils';
 
@@ -9,7 +9,8 @@ export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void,
-  onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>
+  onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>,
+  bomTemplates?: BomTemplate[]
 ) {
   const [projects, setProjects] = useState<Project[]>([]);
 
@@ -49,6 +50,7 @@ export function useProjects(
   const [pBudgetHours, setPBudgetHours] = useState<string>('');
   const [pTargetMonth, setPTargetMonth] = useState<string>('');
   const [pPriority, setPPriority] = useState<'low' | 'medium' | 'high'>('medium');
+  const [pSelectedBomId, setPSelectedBomId] = useState<string>('');
 
   const [aName, setAName] = useState<string>('');
   const [aStart, setAStart] = useState<string>('');
@@ -82,6 +84,7 @@ export function useProjects(
     setPBudgetHours('');
     setPTargetMonth('');
     setPPriority('medium');
+    setPSelectedBomId('');
     setProjectFormOpen(true);
   };
 
@@ -102,6 +105,7 @@ export function useProjects(
     setPBudgetHours(p.budgetHours !== undefined ? String(p.budgetHours) : '');
     setPTargetMonth(p.targetMonth || '');
     setPPriority(p.priority || 'medium');
+    setPSelectedBomId('');
     setProjectFormOpen(true);
   };
 
@@ -110,12 +114,23 @@ export function useProjects(
     copiedAssemblies: Assembly[],
     copiedMaterials: MaterialProcessing[] = []
   ) => {
+    const newProjId = uid();
+    // Ensure all copied/generated materials carry correct projectId and metadata
+    const fixedMaterials = copiedMaterials.map(m => ({
+      ...m,
+      id: m.id || ('mp_' + uid()),
+      projectId: newProjId,
+      projectName: baseData.name,
+      workOrder: baseData.client,
+      gaNumber: baseData.gaNumber || m.gaNumber || ''
+    }));
+
     const addedProj: Project = {
-      id: uid(),
+      id: newProjId,
       ...baseData,
       created: new Date().toISOString().slice(0, 10),
       assemblies: copiedAssemblies,
-      materialProcessing: copiedMaterials,
+      materialProcessing: fixedMaterials,
       completedDate: baseData.status === 'completed'
         ? new Date().toISOString().slice(0, 10) : null,
       originalDue: baseData.due || undefined,
@@ -138,7 +153,7 @@ export function useProjects(
     }
     logActivity('project_add',
       copiedAssemblies.length > 0
-        ? `Added new project (copied structure from GA match)`
+        ? `Added new project (${fixedMaterials.length} MP items & ${copiedAssemblies.length} assemblies generated from BOM/GA)`
         : 'Added new project',
       addedProj.id, addedProj.name, undefined, undefined, undefined, undefined,
       `Loc: ${addedProj.location}, Budget: ${baseData.budgetHours ?? 'N/A'}`
@@ -158,6 +173,7 @@ export function useProjects(
     setPBudgetHours('');
     setPTargetMonth('');
     setPPriority('medium');
+    setPSelectedBomId('');
     verifyMarkChanged();
     return addedProj;
   };
@@ -286,6 +302,25 @@ export function useProjects(
       targetMonth: pTargetMonth || '', priority: pPriority,
     };
 
+    // NEW project — check if BOM template selected
+    const chosenBom = pSelectedBomId && bomTemplates ? bomTemplates.find(b => b.id === pSelectedBomId) : null;
+    let generatedAsms: Assembly[] = [];
+    let generatedMaterials: MaterialProcessing[] = [];
+
+    if (chosenBom) {
+      const result = buildStructureFromBomTemplate(
+        chosenBom,
+        'temp',
+        pName.trim(),
+        wo,
+        normalizedGa || chosenBom.gaNumber || '',
+        pStart,
+        pDue
+      );
+      generatedAsms = result.assemblies;
+      generatedMaterials = result.materials;
+    }
+
     if (normalizedGa) {
       const matches = projects.filter(p =>
         p.gaNumber && p.gaNumber.trim().toUpperCase() === normalizedGa
@@ -299,8 +334,8 @@ export function useProjects(
       }
     }
 
-    // No GA match — create immediately
-    createProjectNow(baseProjectData, []);
+    // No GA match — create immediately with generated assemblies & materials from BOM if selected
+    createProjectNow(baseProjectData, generatedAsms, generatedMaterials);
   };
 
   const deleteProjectDetails = (pid: string) => {
@@ -807,6 +842,8 @@ export function useProjects(
     setPTargetMonth,
     pPriority,
     setPPriority,
+    pSelectedBomId,
+    setPSelectedBomId,
     aName,
     setAName,
     aStart,
