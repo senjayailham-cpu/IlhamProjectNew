@@ -181,9 +181,11 @@ export function useProjects(
   const handleGaConfirmCopy = (sourceProject: Project, calculatedFinish: string) => {
     if (!pendingNewProjectData) return;
 
+    const { _generatedAsms, _generatedMaterials, ...cleanPendingData } = pendingNewProjectData;
+
     // Override the due date with the auto-calculated finish
     const finalProjectData = {
-      ...pendingNewProjectData,
+      ...cleanPendingData,
       due: calculatedFinish,
     };
 
@@ -228,7 +230,8 @@ export function useProjects(
 
   const handleGaCreateEmpty = () => {
     if (!pendingNewProjectData) return;
-    createProjectNow(pendingNewProjectData, []);
+    const { _generatedAsms, _generatedMaterials, ...cleanPendingData } = pendingNewProjectData;
+    createProjectNow(cleanPendingData, _generatedAsms || [], _generatedMaterials || []);
     setGaMatchModalOpen(false);
     setGaMatchCandidates([]);
     setPendingNewProjectData(null);
@@ -328,7 +331,11 @@ export function useProjects(
       if (matches.length > 0) {
         // Show modal instead of creating immediately
         setGaMatchCandidates(matches);
-        setPendingNewProjectData(baseProjectData);
+        setPendingNewProjectData({
+          ...baseProjectData,
+          _generatedAsms: generatedAsms,
+          _generatedMaterials: generatedMaterials
+        });
         setGaMatchModalOpen(true);
         return; // STOP — wait for user decision
       }
