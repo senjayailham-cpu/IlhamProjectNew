@@ -142,40 +142,25 @@ export function GanttPage({
       </div>
 
       {/* Main Gantt View Section */}
-      {projectsInMonth.length > 0 ? (
-        <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs">
-          <GanttView 
-            projects={projectsInMonth} 
-            onUpdateProject={handleUpdateProject} 
-            onOpenDepModal={onOpenDepModal} 
-            depModalOpen={depModalOpen}
-            depModalRowKey={externalRowKey || undefined}
-            onCloseDepModal={onCloseDepModal}
-            currentUser={currentUser}
-            orgSettings={orgSettings}
-            prefs={prefs}
-            onSetPref={onSetPref}
-          />
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-base-border/50 rounded-xl p-12 text-center bg-base-surface/40">
-          <div className="h-12 w-12 rounded-full bg-base-accent-dim flex items-center justify-center text-base-accent mb-4">
-            <AlertCircle className="h-6 w-6" />
-          </div>
-          <h3 className="font-condensed font-extrabold text-base text-base-text uppercase tracking-wider">No Projects Found</h3>
-          <p className="text-xs text-base-muted font-sans mt-1 max-w-sm">
-            There are currently no projects scheduled for {new Date(parseInt(selectedMonth.split('-')[0]), parseInt(selectedMonth.split('-')[1]) - 1, 1).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })}.
-          </p>
-          {!includeCompleted && hiddenCompletedCount > 0 && (
-            <button
-              onClick={() => setIncludeCompleted(true)}
-              className="mt-2 text-xs text-base-accent hover:underline cursor-pointer font-semibold"
-            >
-              {hiddenCompletedCount} completed/archived project(s) hidden — click to show
-            </button>
-          )}
-        </div>
-      )}
+      <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs">
+        <GanttView 
+          projects={projectsInMonth} 
+          onUpdateProject={handleUpdateProject} 
+          onOpenDepModal={onOpenDepModal} 
+          depModalOpen={depModalOpen}
+          depModalRowKey={externalRowKey || undefined}
+          onCloseDepModal={onCloseDepModal}
+          currentUser={currentUser}
+          orgSettings={orgSettings}
+          prefs={prefs}
+          onSetPref={onSetPref}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          availableMonths={availableMonths}
+          includeCompleted={includeCompleted}
+          setIncludeCompleted={setIncludeCompleted}
+        />
+      </div>
     </div>
   );
 }

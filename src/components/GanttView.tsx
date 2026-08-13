@@ -118,7 +118,8 @@ import {
   Sparkles,
   Flame,
   Undo2,
-  Redo2
+  Redo2,
+  Monitor
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -361,6 +362,11 @@ interface GanttViewProps {
     ganttShowResourceLoad?: boolean;
   };
   onSetPref?: (key: string, value: any) => void;
+  selectedMonth?: string;
+  setSelectedMonth?: (month: string) => void;
+  availableMonths?: string[];
+  includeCompleted?: boolean;
+  setIncludeCompleted?: (inc: boolean) => void;
 }
 
 interface GanttRow {
@@ -817,7 +823,12 @@ export default function GanttView({
   currentUser,
   orgSettings,
   prefs,
-  onSetPref
+  onSetPref,
+  selectedMonth,
+  setSelectedMonth,
+  availableMonths,
+  includeCompleted,
+  setIncludeCompleted
 }: GanttViewProps) {
   const allowedToEdit = can(currentUser ?? null, 'editGanttSchedule');
 
@@ -1205,6 +1216,57 @@ export default function GanttView({
     }
   }, [cascadedTaskIds]);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  // Auto browser fullscreen event listener
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const isNativeFullscreen = Boolean(
+        document.fullscreenElement ||
+        (document as any).webkitFullscreenElement ||
+        (document as any).mozFullScreenElement ||
+        (document as any).msFullscreenElement
+      );
+      if (!isNativeFullscreen) {
+        setIsFullscreen(false);
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+    };
+  }, []);
+
+  const handleEnterFullscreen = async () => {
+    try {
+      const elem = document.documentElement;
+      if (elem.requestFullscreen) {
+        await elem.requestFullscreen();
+      } else if ((elem as any).webkitRequestFullscreen) {
+        await (elem as any).webkitRequestFullscreen();
+      } else if ((elem as any).msRequestFullscreen) {
+        await (elem as any).msRequestFullscreen();
+      }
+    } catch (err) {
+      console.log('Fullscreen request handled:', err);
+    }
+    setIsFullscreen(true);
+  };
+
+  const handleExitFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else if ((document as any).webkitFullscreenElement) {
+        await (document as any).webkitExitFullscreen();
+      }
+    } catch (err) {
+      console.log('Exit fullscreen error:', err);
+    }
+    setIsFullscreen(false);
+  };
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [statusPopoverRowId, setStatusPopoverRowId] = useState<string | null>(null);
@@ -3322,10 +3384,125 @@ export default function GanttView({
     + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
     + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + colStatusWidth;
 
+  if (!isFullscreen) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center border border-base-border rounded-2xl p-8 sm:p-12 text-center bg-base-surface shadow-xs my-2 relative overflow-hidden">
+        {/* Background ambient glow decoration */}
+        <div className="absolute -top-24 -right-24 w-72 h-72 bg-base-accent/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-base-accent/5 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 max-w-xl flex flex-col items-center">
+          {/* Glowing Icon Box */}
+          <div className="h-16 w-16 rounded-2xl bg-base-accent/15 border border-base-accent/30 flex items-center justify-center text-base-accent mb-5 shadow-xs">
+            <Maximize2 className="h-8 w-8 animate-pulse" />
+          </div>
+
+          {/* Title & Badge */}
+          <h2 className="font-condensed font-black text-2xl sm:text-3xl tracking-tight text-base-text uppercase">
+            Project Schedule & Gantt Timeline
+          </h2>
+
+          <div className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-base-accent/10 border border-base-accent/20 text-base-accent text-xs font-condensed font-bold uppercase tracking-wider">
+            <Monitor className="h-3.5 w-3.5" />
+            <span>Wajib Mode Full Screen (Mandatory Fullscreen)</span>
+          </div>
+
+          {/* Target Month Selector on Gate Screen */}
+          {setSelectedMonth && availableMonths && (
+            <div className="mt-5 w-full bg-base-surface2 border border-base-border rounded-xl p-3.5 flex flex-wrap items-center justify-center gap-3">
+              <div className="flex items-center gap-2">
+                <label htmlFor="gate-month-select" className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider shrink-0">
+                  Target Month:
+                </label>
+                <div className="relative shrink-0">
+                  <select
+                    id="gate-month-select"
+                    value={selectedMonth || 'ALL'}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="appearance-none bg-base-surface hover:bg-base-surface2 border border-base-border rounded-lg pl-3 pr-8 py-1.5 text-xs font-bold text-base-text font-condensed uppercase tracking-wide cursor-pointer focus:outline-none focus:ring-1 focus:ring-base-accent transition-all min-w-[200px]"
+                  >
+                    <option value="ALL">ALL PROJECTS (SEMUA PROYEK)</option>
+                    {availableMonths.map((m) => {
+                      const [yr, mo] = m.split('-').map(Number);
+                      const date = new Date(yr, mo - 1, 1);
+                      const label = isNaN(date.getTime()) ? m : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+                      return (
+                        <option key={m} value={m}>
+                          {label}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-base-muted text-[10px]">
+                    ▼
+                  </div>
+                </div>
+              </div>
+
+              {setIncludeCompleted && (
+                <label className="flex items-center gap-2 text-xs font-condensed font-bold text-base-muted uppercase tracking-wider cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={!!includeCompleted}
+                    onChange={(e) => setIncludeCompleted(e.target.checked)}
+                    className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
+                  />
+                  Include Completed/Archived
+                </label>
+              )}
+            </div>
+          )}
+
+          {/* Explanation */}
+          <p className="text-xs sm:text-sm text-base-muted font-sans mt-4 leading-relaxed max-w-md">
+            Untuk analisis timeline, alur keterkaitan task (<em>dependencies</em>), serta S-Curve secara presisi tanpa hambatan ruang, Project Schedule wajib dibuka dalam mode <strong>Layar Penuh (Full Screen)</strong>.
+          </p>
+
+          {/* Feature Highlights */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-6 mb-8 text-left">
+            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
+              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
+                <BarChart3 className="h-4 w-4 text-base-accent" />
+                <span>Full Timeline</span>
+              </div>
+              <p className="text-[11px] text-base-muted mt-1">Bebas hambatan scroll & visualisasi luas</p>
+            </div>
+            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
+              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
+                <Layers className="h-4 w-4 text-base-accent" />
+                <span>Interactive Drag</span>
+              </div>
+              <p className="text-[11px] text-base-muted mt-1">Ubah durasi & jadwal langsung di grafik</p>
+            </div>
+            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
+              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
+                <Sparkles className="h-4 w-4 text-base-accent" />
+                <span>Dependencies</span>
+              </div>
+              <p className="text-[11px] text-base-muted mt-1">Hubungkan alur antar sub-assembly presisi</p>
+            </div>
+          </div>
+
+          {/* Action Button */}
+          <button
+            type="button"
+            onClick={handleEnterFullscreen}
+            className="group flex items-center justify-center gap-3 px-8 py-3.5 bg-[#9b1c2e] hover:bg-[#7a1624] text-white rounded-xl font-condensed font-black uppercase tracking-wider text-sm shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
+          >
+            <Maximize2 className="h-5 w-5 transition-transform group-hover:scale-110" />
+            <span>Buka Project Schedule (Full Screen)</span>
+          </button>
+
+          <p className="text-[11px] text-base-muted mt-3">
+            Klik tombol di atas untuk membuka jadwal proyek dalam mode Layar Penuh.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex flex-col bg-base-bg text-base-text transition-all duration-200 ${
-      isFullscreen ? 'fixed inset-0 z-50 p-6 flex flex-col overflow-hidden h-screen bg-base-bg' : 'w-full'
-    }`}>
+    <div className="fixed inset-0 z-[200] p-4 sm:p-6 flex flex-col overflow-hidden h-screen w-screen bg-base-bg text-base-text transition-all duration-200">
       {/* TOOLBAR PANEL */}
       <div className="flex flex-col gap-3 pb-4 border-b border-base-border mb-4 sticky top-0 bg-base-bg/95 z-30 backdrop-blur-xs">
         {/* Row 1: Title, Info, and Close Button */}
@@ -3343,18 +3520,69 @@ export default function GanttView({
               </span>
             )}
           </div>
-          {onClose && (
-            <button 
-              onClick={onClose} 
-              className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/30 h-[34px]"
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleExitFullscreen}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider text-base-accent hover:text-white bg-base-accent/10 hover:bg-base-accent border border-base-accent/30 transition-all rounded-lg cursor-pointer shrink-0"
+              title="Keluar dari mode Layar Penuh"
             >
-              Close
+              <Minimize2 className="h-3.5 w-3.5" />
+              <span>Keluar Full Screen</span>
             </button>
-          )}
+            {onClose && (
+              <button 
+                onClick={onClose} 
+                className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/30 h-[34px]"
+              >
+                Close
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Row 2: Action Controls (stable, overflow-visible container, wraps on small screens) */}
         <div className="flex items-center gap-3 text-xs overflow-visible py-1 w-full flex-wrap shrink-0">
+          {/* Target Month Selector inside Fullscreen Toolbar */}
+          {setSelectedMonth && availableMonths && (
+            <div className="flex items-center gap-1.5 bg-base-surface border border-base-border rounded-xl px-2.5 py-1 h-[34px] shrink-0 shadow-2xs">
+              <span className="text-[10px] font-condensed font-bold uppercase text-base-accent shrink-0 flex items-center gap-1">
+                <Calendar className="h-3.5 w-3.5" />
+                <span>Target Month:</span>
+              </span>
+              <select
+                value={selectedMonth || 'ALL'}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="bg-transparent text-xs font-condensed font-bold uppercase tracking-wide text-base-text outline-none cursor-pointer min-w-[150px]"
+              >
+                <option value="ALL" className="bg-base-surface text-base-text">ALL PROJECTS (SEMUA PROYEK)</option>
+                {availableMonths.map((m) => {
+                  const [yr, mo] = m.split('-').map(Number);
+                  const date = new Date(yr, mo - 1, 1);
+                  const label = isNaN(date.getTime()) ? m : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+                  return (
+                    <option key={m} value={m} className="bg-base-surface text-base-text">
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+          )}
+
+          {setIncludeCompleted && (
+            <label className="flex items-center gap-1.5 px-2.5 py-1 bg-base-surface border border-base-border rounded-xl h-[34px] text-[10px] font-condensed font-bold text-base-muted hover:text-base-text uppercase tracking-wider cursor-pointer select-none shrink-0 shadow-2xs">
+              <input
+                type="checkbox"
+                checked={!!includeCompleted}
+                onChange={(e) => setIncludeCompleted(e.target.checked)}
+                className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
+              />
+              <span>Include Completed</span>
+            </label>
+          )}
+
+          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
           {/* Main View Tab Switcher: Gantt vs Lookahead */}
           <div className="relative flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             <button
@@ -3773,14 +4001,14 @@ export default function GanttView({
 
           {/* Layout & File Export Actions */}
           <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
-            {/* Fullscreen */}
+            {/* Fullscreen Exit */}
             <button 
-              onClick={() => setIsFullscreen(!isFullscreen)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer shrink-0"
-              title="Toggle Fullscreen view"
+              onClick={handleExitFullscreen}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-accent hover:bg-base-accent/15 transition-colors cursor-pointer shrink-0"
+              title="Keluar dari Fullscreen"
             >
-              {isFullscreen ? <Minimize2 className="h-3 w-3 shrink-0" /> : <Maximize2 className="h-3 w-3 shrink-0" />}
-              <span>{isFullscreen ? 'Exit' : 'Full'}</span>
+              <Minimize2 className="h-3 w-3 shrink-0" />
+              <span>Keluar Full Screen</span>
             </button>
 
             <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />

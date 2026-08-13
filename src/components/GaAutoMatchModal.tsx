@@ -35,15 +35,18 @@ export function GaAutoMatchModal({
     }
   }, [isOpen, matchedProjects]);
 
+  const effectiveStart = pendingProjectData?.start || pendingProjectData?.due || new Date().toISOString().slice(0, 10);
+
   const sourceDuration = useMemo(() => {
     if (!selectedSource) return 0;
     return calculateProjectDuration(selectedSource);
   }, [selectedSource]);
 
   const calculatedFinish = useMemo(() => {
-    if (!selectedSource || !pendingProjectData?.start) return null;
-    return calculateFinishFromStart(pendingProjectData.start, sourceDuration);
-  }, [selectedSource, pendingProjectData, sourceDuration]);
+    if (!selectedSource) return pendingProjectData?.due || effectiveStart;
+    const fin = calculateFinishFromStart(effectiveStart, sourceDuration);
+    return fin || pendingProjectData?.due || effectiveStart;
+  }, [selectedSource, effectiveStart, sourceDuration, pendingProjectData]);
 
   if (!isOpen) return null;
 
@@ -157,8 +160,8 @@ export function GaAutoMatchModal({
             </button>
             <button
               type="button"
-              onClick={() => selectedSource && calculatedFinish && onConfirmCopy(selectedSource, calculatedFinish)}
-              disabled={!selectedSource || !calculatedFinish}
+              onClick={() => selectedSource && onConfirmCopy(selectedSource, calculatedFinish || pendingProjectData?.due || effectiveStart)}
+              disabled={!selectedSource}
               className="px-4 py-2 bg-base-accent text-white rounded-lg text-xs font-condensed font-bold uppercase disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer hover:bg-base-accent2 transition-colors"
             >
               Buat & Salin Struktur

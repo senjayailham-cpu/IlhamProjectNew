@@ -197,15 +197,20 @@ export function useProjects(
     // Override the due date with the auto-calculated finish
     const finalProjectData = {
       ...cleanPendingData,
-      due: calculatedFinish,
+      due: calculatedFinish || cleanPendingData.due || cleanPendingData.start || new Date().toISOString().slice(0, 10),
     };
 
     // Build a temp target for date-offset calculation
     const tempTarget = { ...finalProjectData, id: 'temp', assemblies: [] } as Project;
-    const copiedAssemblies = buildCopiedStructure(sourceProject, tempTarget);
+    let copiedAssemblies = buildCopiedStructure(sourceProject, tempTarget);
+
+    // Fallback assemblies if sourceProject had none but BOM template generated assemblies
+    if ((!copiedAssemblies || copiedAssemblies.length === 0) && _generatedAsms && _generatedAsms.length > 0) {
+      copiedAssemblies = _generatedAsms;
+    }
 
     // Copy material processing items (reset stage progress)
-    const copiedMaterials: MaterialProcessing[] = (sourceProject.materialProcessing || [])
+    let copiedMaterials: MaterialProcessing[] = (sourceProject.materialProcessing || [])
       .map(item => {
         const resetStages: any = {};
         (item.activeStages || []).forEach(key => {
@@ -222,17 +227,12 @@ export function useProjects(
         };
       });
 
-    const newProj = createProjectNow(finalProjectData, copiedAssemblies, copiedMaterials);
-    // Fix projectId/projectName/workOrder references in copied materials
-    if (newProj) {
-      const fixedMaterials = copiedMaterials.map(m => ({
-        ...m, projectId: newProj.id, projectName: newProj.name, workOrder: newProj.client,
-      }));
-      setProjects(prev => prev.map(p =>
-        p.id === newProj.id ? { ...p, materialProcessing: fixedMaterials } : p
-      ));
-      saveItem('projects', { id: newProj.id, materialProcessing: fixedMaterials });
+    // Fallback materials if sourceProject had none but BOM template generated materials
+    if ((!copiedMaterials || copiedMaterials.length === 0) && _generatedMaterials && _generatedMaterials.length > 0) {
+      copiedMaterials = _generatedMaterials;
     }
+
+    createProjectNow(finalProjectData, copiedAssemblies, copiedMaterials);
 
     setGaMatchModalOpen(false);
     setGaMatchCandidates([]);
@@ -316,8 +316,17 @@ export function useProjects(
       targetMonth: pTargetMonth || '', priority: pPriority,
     };
 
-    // NEW project — check if BOM template selected
-    const chosenBom = pSelectedBomId && bomTemplates ? bomTemplates.find(b => b.id === pSelectedBomId) : null;
+    // Retrieve BOM templates from props or Zustand store
+    const effectiveBomTemplates = (bomTemplates && bomTemplates.length > 0)
+      ? bomTemplates
+      : useAppStore.getState().bomTemplates;
+
+    // Check if BOM template is selected explicitly or matched by GA Number
+    let chosenBom = pSelectedBomId && effectiveBomTemplates ? effectiveBomTemplates.find(b => b.id === pSelectedBomId) : null;
+    if (!chosenBom && normalizedGa && effectiveBomTemplates) {
+      chosenBom = effectiveBomTemplates.find(b => b.gaNumber && b.gaNumber.trim().toUpperCase() === normalizedGa) || null;
+    }
+
     let generatedAsms: Assembly[] = [];
     let generatedMaterials: MaterialProcessing[] = [];
 
@@ -335,13 +344,51 @@ export function useProjects(
       generatedMaterials = result.materials;
     }
 
+    // Retrieve projects from local state or Zustand store
+    const effectiveProjects = (projects && projects.length > 0)
+      ? projects
+      : useAppStore.getState().projects;
+
     if (normalizedGa) {
-      const matches = projects.filter(p =>
+      const projectMatches = (effectiveProjects || []).filter(p =>
         p.gaNumber && p.gaNumber.trim().toUpperCase() === normalizedGa
       );
-      if (matches.length > 0) {
+
+      const candidateProjects = [...projectMatches];
+
+      // Also check if any BOM template matches GA Number to offer as structure candidate
+      const matchingBomTemplates = (effectiveBomTemplates || []).filter(b =>
+        b.gaNumber && b.gaNumber.trim().toUpperCase() === normalizedGa
+      );
+
+      matchingBomTemplates.forEach(bom => {
+        const pseudoId = 'bom_candidate_' + bom.id;
+        if (!candidateProjects.some(cp => cp.id === pseudoId || cp.id === bom.id)) {
+          const bomStruct = buildStructureFromBomTemplate(
+            bom,
+            pseudoId,
+            `Template: ${bom.name}`,
+            wo,
+            normalizedGa,
+            pStart,
+            pDue
+          );
+          candidateProjects.push({
+            id: pseudoId,
+            name: `BOM Template: ${bom.name}${bom.model ? ` (${bom.model})` : ''}`,
+            client: wo,
+            gaNumber: normalizedGa,
+            status: 'active',
+            assemblies: bomStruct.assemblies,
+            materialProcessing: bomStruct.materials,
+            created: bom.createdAt || new Date().toISOString().slice(0, 10),
+          } as Project);
+        }
+      });
+
+      if (candidateProjects.length > 0) {
         // Show modal instead of creating immediately
-        setGaMatchCandidates(matches);
+        setGaMatchCandidates(candidateProjects);
         setPendingNewProjectData({
           ...baseProjectData,
           _generatedAsms: generatedAsms,
@@ -352,7 +399,7 @@ export function useProjects(
       }
     }
 
-    // No GA match — create immediately with generated assemblies & materials from BOM if selected
+    // No GA match — create immediately with generated assemblies & materials from BOM if selected/matched
     createProjectNow(baseProjectData, generatedAsms, generatedMaterials);
   };
 
