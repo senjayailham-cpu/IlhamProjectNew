@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { User, Project, Assembly, Task, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
+import { useAppStore, useUIStore } from '../store';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
 import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2 } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
@@ -54,13 +55,13 @@ const STATUS_COLORS = {
 };
 
 export default function SpotlightModal({
-  isOpen,
-  onClose,
-  projectId,
-  projects,
-  timesheets,
-  wireLogs = [],
-  consumptionLogs = [],
+  isOpen: propIsOpen,
+  onClose: propOnClose,
+  projectId: propProjectId,
+  projects: propProjects,
+  timesheets: propTimesheets,
+  wireLogs: propWireLogs = [],
+  consumptionLogs: propConsumptionLogs = [],
   onAddMaterialProcessing,
   onUpdateProcessingStage,
   onDeleteMaterialProcessing,
@@ -71,11 +72,30 @@ export default function SpotlightModal({
   canAddTaskInline = true,
   canAddDifficulty = true,
   canDeleteTask = true,
-  currentUser = null,
+  currentUser: propUser = null,
   canEditProjectParams = true,
   selectedMonth,
   onOpenDepModal
 }: SpotlightModalProps) {
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeWireLogs = useAppStore((s) => s.wireLogs);
+  const storeConsumptionLogs = useAppStore((s) => s.consumptionLogs);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const storeIsSpotlightOpen = useUIStore((s) => s.isSpotlightOpen);
+  const storeSpotlightProjectId = useUIStore((s) => s.spotlightProjectId);
+  const storeCloseSpotlight = useUIStore((s) => s.closeSpotlight);
+
+  const isOpen = propIsOpen !== undefined ? propIsOpen : storeIsSpotlightOpen;
+  const onClose = propOnClose || storeCloseSpotlight;
+  const projectId = propProjectId || storeSpotlightProjectId;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const wireLogs = propWireLogs?.length ? propWireLogs : storeWireLogs;
+  const consumptionLogs = propConsumptionLogs?.length ? propConsumptionLogs : storeConsumptionLogs;
+  const currentUser = propUser || storeCurrentUser;
+
   const isAdmin = currentUser?.role === 'admin';
   const [activeTab, setActiveTab] = useState<'overview' | 'assemblies' | 'processing'>('overview');
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});

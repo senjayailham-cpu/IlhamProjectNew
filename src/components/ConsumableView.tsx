@@ -35,14 +35,15 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { can } from '../utils/permissions';
+import { useAppStore } from '../store';
 
 interface ConsumableViewProps {
-  wireLogs: WireLog[];
-  consumptionLogs: MaterialConsumptionLog[];
-  materials: MaterialItem[];
-  projects: Project[];
-  employees: Employee[];
-  currentUser: User;
+  wireLogs?: WireLog[];
+  consumptionLogs?: MaterialConsumptionLog[];
+  materials?: MaterialItem[];
+  projects?: Project[];
+  employees?: Employee[];
+  currentUser?: User;
   materialRequests?: MaterialRequest[];
   onDeleteWireLog: (id: string) => void;
   onAddMaterialRequest?: (mr: Omit<MaterialRequest, 'id' | 'mrNo'>) => void;
@@ -71,13 +72,13 @@ const getPositionColorClass = (position?: string) => {
 };
 
 export default function ConsumableView({
-  wireLogs = [],
-  consumptionLogs = [],
-  materials = [],
-  projects = [],
-  employees = [],
-  currentUser,
-  materialRequests = [],
+  wireLogs: propWireLogs = [],
+  consumptionLogs: propConsumptionLogs = [],
+  materials: propMaterials = [],
+  projects: propProjects = [],
+  employees: propEmployees = [],
+  currentUser: propUser,
+  materialRequests: propMaterialRequests = [],
   onDeleteWireLog,
   onAddMaterialRequest,
   onUpdateMaterialRequestStatus,
@@ -89,6 +90,21 @@ export default function ConsumableView({
   orgSettings,
   setDeleteConfirm
 }: ConsumableViewProps) {
+  const storeWireLogs = useAppStore((s) => s.wireLogs);
+  const storeConsumptionLogs = useAppStore((s) => s.consumptionLogs);
+  const storeMaterials = useAppStore((s) => s.materials);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+  const storeMaterialRequests = useAppStore((s) => s.materialRequests);
+
+  const wireLogs = propWireLogs?.length ? propWireLogs : storeWireLogs;
+  const consumptionLogs = propConsumptionLogs?.length ? propConsumptionLogs : storeConsumptionLogs;
+  const materials = propMaterials?.length ? propMaterials : storeMaterials;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const currentUser = propUser || storeCurrentUser || { id: '', name: 'Guest', role: 'Viewer' as any };
+  const materialRequests = propMaterialRequests?.length ? propMaterialRequests : storeMaterialRequests;
 
   const canManageConsumables = can(currentUser, 'manageWireLog'); 
   const canDeleteConsumable = can(currentUser, 'deleteWireLog');

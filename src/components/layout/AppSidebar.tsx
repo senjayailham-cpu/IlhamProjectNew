@@ -1,5 +1,6 @@
 import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
+import { useAppStore, useUIStore } from '../../store';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
   LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp
@@ -32,12 +33,12 @@ interface AppSidebarProps {
   sidebarCollapsed: boolean;
   toggleSidebar: () => void;
   allowedTabs: { id: string; label: string; icon: string; access: any }[];
-  activeTab: string;
-  setActiveTab: (id: string) => void;
+  activeTab?: string;
+  setActiveTab?: (id: string) => void;
   sectionGroups: { title: string; items: string[] }[];
-  projects: Project[];
-  problemReports: ProblemReport[];
-  inspections: InspectionRequest[];
+  projects?: Project[];
+  problemReports?: ProblemReport[];
+  inspections?: InspectionRequest[];
   currentUser: User;
   onLogout: () => void;
   onChangePassword: () => void;
@@ -47,16 +48,29 @@ export function AppSidebar({
   sidebarCollapsed,
   toggleSidebar,
   allowedTabs,
-  activeTab,
-  setActiveTab,
+  activeTab: propActiveTab,
+  setActiveTab: propSetActiveTab,
   sectionGroups,
-  projects,
-  problemReports,
-  inspections,
+  projects: propProjects,
+  problemReports: propProblemReports,
+  inspections: propInspections,
   currentUser,
   onLogout,
   onChangePassword,
 }: AppSidebarProps) {
+  // Read state directly from Zustand stores with fallback to props (dual-read)
+  const storeActiveTab = useUIStore((s) => s.activeTab);
+  const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
+
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeProblemReports = useAppStore((s) => s.problemReports);
+  const storeInspections = useAppStore((s) => s.inspections);
+
+  const activeTab = propActiveTab || storeActiveTab;
+  const setActiveTab = propSetActiveTab || storeSetActiveTab;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const problemReports = propProblemReports?.length ? propProblemReports : storeProblemReports;
+  const inspections = propInspections?.length ? propInspections : storeInspections;
   return (
     <aside className={`hidden md:flex flex-col bg-base-surface border-r border-base-border fixed top-0 bottom-0 left-0 z-40 select-none transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-64'}`}>
       

@@ -4,6 +4,7 @@ import { uid, calcPct } from '../utils';
 import { buildCopiedStructure, buildStructureFromBomTemplate } from '../utils/copyStructureUtils';
 import { useFirestore } from './useFirestore';
 import { propagateAllSchedules } from '../utils/projectUtils';
+import { useAppStore } from '../store';
 
 export function useProjects(
   logActivity: (type: any, action: string, projId?: string, projName?: string, asmName?: string, task?: string, oldP?: number, newP?: number, details?: string) => void,
@@ -12,7 +13,17 @@ export function useProjects(
   onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>,
   bomTemplates?: BomTemplate[]
 ) {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjectsState] = useState<Project[]>([]);
+
+  const setProjects = (action: React.SetStateAction<Project[]>) => {
+    setProjectsState((prev) => {
+      const next = typeof action === 'function' ? (action as (p: Project[]) => Project[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setProjects(next);
+      });
+      return next;
+    });
+  };
 
   // Modals / forms states
   const [projectFormOpen, setProjectFormOpen] = useState<boolean>(false);

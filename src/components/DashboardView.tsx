@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
+import { useAppStore, useUIStore } from '../store';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
 import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders, Gauge, Target, MapPin } from 'lucide-react';
@@ -18,12 +19,12 @@ import {
 } from 'recharts';
 
 interface DashboardViewProps {
-  projects: Project[];
-  timesheets: TimesheetEntry[];
-  employees: Employee[];
-  selectedMonth: string;
-  setSelectedMonth: (val: string) => void;
-  openSpotlight: (id: string) => void;
+  projects?: Project[];
+  timesheets?: TimesheetEntry[];
+  employees?: Employee[];
+  selectedMonth?: string;
+  setSelectedMonth?: (val: string) => void;
+  openSpotlight?: (id: string) => void;
   materials?: MaterialItem[];
   materialRequests?: MaterialRequest[];
   problemReports?: ProblemReport[];
@@ -52,18 +53,43 @@ const getOverdueTasksCount = (p: Project, todayStr: string): number => {
 };
 
 export default function DashboardView({
-  projects,
-  timesheets,
-  employees,
-  selectedMonth,
-  setSelectedMonth,
-  openSpotlight,
-  materials = [],
-  materialRequests = [],
-  problemReports = [],
-  inspections = [],
-  setActiveTab,
+  projects: propProjects,
+  timesheets: propTimesheets,
+  employees: propEmployees,
+  selectedMonth: propSelectedMonth,
+  setSelectedMonth: propSetSelectedMonth,
+  openSpotlight: propOpenSpotlight,
+  materials: propMaterials = [],
+  materialRequests: propMaterialRequests = [],
+  problemReports: propProblemReports = [],
+  inspections: propInspections = [],
+  setActiveTab: propSetActiveTab,
 }: DashboardViewProps) {
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeMaterials = useAppStore((s) => s.materials);
+  const storeMaterialRequests = useAppStore((s) => s.materialRequests);
+  const storeProblemReports = useAppStore((s) => s.problemReports);
+  const storeInspections = useAppStore((s) => s.inspections);
+
+  const storeSelectedMonth = useUIStore((s) => s.selectedMonth);
+  const storeSetSelectedMonth = useUIStore((s) => s.setSelectedMonth);
+  const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
+  const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const materials = propMaterials?.length ? propMaterials : storeMaterials;
+  const materialRequests = propMaterialRequests?.length ? propMaterialRequests : storeMaterialRequests;
+  const problemReports = propProblemReports?.length ? propProblemReports : storeProblemReports;
+  const inspections = propInspections?.length ? propInspections : storeInspections;
+
+  const selectedMonth = propSelectedMonth || storeSelectedMonth;
+  const setSelectedMonth = propSetSelectedMonth || storeSetSelectedMonth;
+  const openSpotlight = propOpenSpotlight || storeOpenSpotlight;
+  const setActiveTab = propSetActiveTab || storeSetActiveTab;
   const materialProcessings = useMemo(() => {
     return projects.flatMap(p => p.materialProcessing || []);
   }, [projects]);

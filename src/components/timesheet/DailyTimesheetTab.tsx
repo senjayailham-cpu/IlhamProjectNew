@@ -2,6 +2,7 @@ import React from 'react';
 import { TimesheetEntry, Employee, Project, User } from '../../types';
 import { can } from '../../utils/permissions';
 import { fmtHrs } from '../../utils/projectUtils';
+import { useAppStore } from '../../store';
 import * as XLSX from 'xlsx';
 import { 
   Clock, 
@@ -24,9 +25,9 @@ const STATUS_PILLS = {
 };
 
 export interface DailyTimesheetTabProps {
-  timesheets: TimesheetEntry[];
-  employees: Employee[];
-  projects: Project[];
+  timesheets?: TimesheetEntry[];
+  employees?: Employee[];
+  projects?: Project[];
   timesheetDate: string;
   curDay: number;
   curMonth: number;
@@ -64,8 +65,8 @@ export interface DailyTimesheetTabProps {
 }
 
 export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
-  employees,
-  projects,
+  employees: propEmployees,
+  projects: propProjects,
   timesheetDate,
   curDay,
   curMonth,
@@ -98,9 +99,17 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   setProjectFilter,
   employeeFilter,
   setEmployeeFilter,
-  currentUser,
+  currentUser: propUser,
   onNavigateToManpower
 }) => {
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const currentUser = propUser || storeCurrentUser;
+
   const canManageTimesheet = can(currentUser as any, 'manageTimesheet');
   const canDeleteTimesheet = can(currentUser as any, 'deleteTimesheet');
 

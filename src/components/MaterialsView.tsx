@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { can } from '../utils/permissions';
+import { useAppStore } from '../store';
 import {
   MaterialItem,
   MaterialRequest,
@@ -36,11 +37,11 @@ import {
 } from 'lucide-react';
 
 interface MaterialsViewProps {
-  materials: MaterialItem[];
-  materialRequests: MaterialRequest[];
+  materials?: MaterialItem[];
+  materialRequests?: MaterialRequest[];
   consumptionLogs?: MaterialConsumptionLog[];
-  projects: Project[];
-  currentUser: User;
+  projects?: Project[];
+  currentUser?: User;
   onAddMaterial: (item: Omit<MaterialItem, 'id' | 'createdAt' | 'updatedAt'>) => void;
   onUpdateMaterialStock: (id: string, newStock: number) => void;
   onUpdateMaterial?: (id: string, updates: Partial<MaterialItem>) => void;
@@ -76,11 +77,11 @@ const UNITS: MaterialUnit[] = [
 ];
 
 export default function MaterialsView({
-  materials = [],
-  materialRequests = [],
-  consumptionLogs = [],
-  projects = [],
-  currentUser,
+  materials: propMaterials = [],
+  materialRequests: propMaterialRequests = [],
+  consumptionLogs: propConsumptionLogs = [],
+  projects: propProjects = [],
+  currentUser: propUser,
   onAddMaterial,
   onUpdateMaterialStock,
   onUpdateMaterial,
@@ -91,6 +92,18 @@ export default function MaterialsView({
   onAddConsumptionLog,
   setDeleteConfirm
 }: MaterialsViewProps) {
+  const storeMaterials = useAppStore((s) => s.materials);
+  const storeMaterialRequests = useAppStore((s) => s.materialRequests);
+  const storeConsumptionLogs = useAppStore((s) => s.consumptionLogs);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const materials = propMaterials?.length ? propMaterials : storeMaterials;
+  const materialRequests = propMaterialRequests?.length ? propMaterialRequests : storeMaterialRequests;
+  const consumptionLogs = propConsumptionLogs?.length ? propConsumptionLogs : storeConsumptionLogs;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const currentUser = propUser || storeCurrentUser || { id: '', name: 'Guest', role: 'Viewer' as any };
+
   const isSubmittingRef = useRef<boolean>(false);
   const [isBusy, setIsBusy] = useState(false);
 

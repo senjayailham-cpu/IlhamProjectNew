@@ -58,7 +58,8 @@ const permissionMeta = [
   { id: 'deleteWireLog', label: 'Delete Consumable Log Entries', desc: 'Allows permanent deletion of consumable log entries' },
   { id: 'editGanttSchedule', label: 'Edit Gantt Schedule', desc: 'Allows dragging, resizing, and rescheduling tasks in the Gantt chart' },
   { id: 'manageManpowerBoard', label: 'Manage Manpower Board', desc: 'Allows assigning and reassigning employees on the Manpower Board' },
-  { id: 'manageMasterData', label: 'Manage Master Data', desc: 'Allows deleting and merging GA Number, Material, Part No, and Sub-Assembly master data entries' }
+  { id: 'manageMasterData', label: 'Manage Master Data', desc: 'Allows deleting and merging GA Number, Material, Part No, and Sub-Assembly master data entries' },
+  { id: 'manageBom', label: 'Manage BOM Master Templates', desc: 'Allows drafting, editing, importing excel, and deleting BOM master templates' }
 ];
 
 export default function UsersAccessView({

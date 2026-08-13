@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Project, InspectionRequest, UserRoleType, User, OrgSettings } from '../types';
+import { useAppStore } from '../store';
 import { can } from '../utils/permissions';
 import { 
   ClipboardCheck, 
@@ -21,9 +22,9 @@ import {
 } from 'lucide-react';
 
 interface InspectionViewProps {
-  projects: Project[];
-  inspections: InspectionRequest[];
-  currentUser: User | null;
+  projects?: Project[];
+  inspections?: InspectionRequest[];
+  currentUser?: User | null;
   onAddInspection: (ins: Omit<InspectionRequest, 'id' | 'rfiNo'>) => void;
   onUpdateInspectionStatus: (
     id: string, 
@@ -37,14 +38,21 @@ interface InspectionViewProps {
 }
 
 export default function InspectionView({
-  projects,
-  inspections,
-  currentUser,
+  projects: propProjects,
+  inspections: propInspections,
+  currentUser: propUser,
   onAddInspection,
   onUpdateInspectionStatus,
   onDeleteInspection,
   orgSettings
 }: InspectionViewProps) {
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeInspections = useAppStore((s) => s.inspections);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const inspections = propInspections?.length ? propInspections : storeInspections;
+  const currentUser = propUser || storeCurrentUser;
   const inspectionTypeList = React.useMemo(() => {
     if (orgSettings?.inspectionTypes && orgSettings.inspectionTypes.length > 0) {
       return orgSettings.inspectionTypes.map((item: any, idx: number) => {

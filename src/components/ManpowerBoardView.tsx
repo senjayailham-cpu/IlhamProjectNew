@@ -17,28 +17,38 @@ import {
 } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { TimesheetEntry, Employee, Project, User } from '../types/index';
+import { useAppStore } from '../store';
 import { can } from '../utils/permissions';
 import { calcPct, fmtHrs } from '../utils/projectUtils';
 
 interface ManpowerBoardViewProps {
-  timesheets: TimesheetEntry[];
-  employees:  Employee[];
-  projects:   Project[];
+  timesheets?: TimesheetEntry[];
+  employees?: Employee[];
+  projects?: Project[];
   initialDate?: string;
-  currentUser: User | null;
+  currentUser?: User | null;
   onNavigateToTimesheet?: (date?: string) => void;
   openAddTimesheet?: () => void;
 }
 
 export default function ManpowerBoardView({
-  timesheets,
-  employees,
-  projects,
+  timesheets: propTimesheets,
+  employees: propEmployees,
+  projects: propProjects,
   initialDate,
-  currentUser,
+  currentUser: propUser,
   onNavigateToTimesheet,
   openAddTimesheet
 }: ManpowerBoardViewProps) {
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const currentUser = propUser || storeCurrentUser;
   const canManageManpowerBoard = can(currentUser, 'manageManpowerBoard');
 
   const [selectedDate, setSelectedDate] = useState(

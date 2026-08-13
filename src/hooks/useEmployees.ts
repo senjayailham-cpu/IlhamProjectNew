@@ -2,12 +2,23 @@ import { useState } from 'react';
 import { Employee } from '../types';
 import { uid } from '../utils';
 import { useFirestore } from './useFirestore';
+import { useAppStore } from '../store';
 
 export function useEmployees(
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void
 ) {
-  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employees, setEmployeesState] = useState<Employee[]>([]);
+
+  const setEmployees = (action: React.SetStateAction<Employee[]>) => {
+    setEmployeesState((prev) => {
+      const next = typeof action === 'function' ? (action as (e: Employee[]) => Employee[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setEmployees(next);
+      });
+      return next;
+    });
+  };
   const [empModalOpen, setEmpModalOpen] = useState<boolean>(false);
   const [editingEmpId, setEditingEmpId] = useState<string | null>(null);
 

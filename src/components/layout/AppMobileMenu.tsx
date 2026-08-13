@@ -1,5 +1,6 @@
 import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
+import { useAppStore, useUIStore } from '../../store';
 import ThemeToggle from '../ThemeToggle';
 import { 
   Menu, X, Folder, Key, LogOut,
@@ -30,34 +31,52 @@ const IconMap: Record<string, React.ComponentType<any>> = {
 };
 
 interface AppMobileMenuProps {
-  mobileMenuOpen: boolean;
-  setMobileMenuOpen: (open: boolean) => void;
+  mobileMenuOpen?: boolean;
+  setMobileMenuOpen?: (open: boolean) => void;
   allowedTabs: { id: string; label: string; icon: string; access: any }[];
-  activeTab: string;
-  setActiveTab: (id: string) => void;
+  activeTab?: string;
+  setActiveTab?: (id: string) => void;
   sectionGroups: { title: string; items: string[] }[];
-  projects: Project[];
-  problemReports: ProblemReport[];
-  inspections: InspectionRequest[];
+  projects?: Project[];
+  problemReports?: ProblemReport[];
+  inspections?: InspectionRequest[];
   currentUser: User;
   onLogout: () => void;
   onChangePassword: () => void;
 }
 
 export function AppMobileMenu({
-  mobileMenuOpen,
-  setMobileMenuOpen,
+  mobileMenuOpen: propMobileMenuOpen,
+  setMobileMenuOpen: propSetMobileMenuOpen,
   allowedTabs,
-  activeTab,
-  setActiveTab,
+  activeTab: propActiveTab,
+  setActiveTab: propSetActiveTab,
   sectionGroups,
-  projects,
-  problemReports,
-  inspections,
+  projects: propProjects,
+  problemReports: propProblemReports,
+  inspections: propInspections,
   currentUser,
   onLogout,
   onChangePassword,
 }: AppMobileMenuProps) {
+  // Read state directly from Zustand stores with fallback to props (dual-read)
+  const storeMobileMenuOpen = useUIStore((s) => s.mobileMenuOpen);
+  const storeSetMobileMenuOpen = useUIStore((s) => s.setMobileMenuOpen);
+  const storeActiveTab = useUIStore((s) => s.activeTab);
+  const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
+
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeProblemReports = useAppStore((s) => s.problemReports);
+  const storeInspections = useAppStore((s) => s.inspections);
+
+  const mobileMenuOpen = propMobileMenuOpen !== undefined ? propMobileMenuOpen : storeMobileMenuOpen;
+  const setMobileMenuOpen = propSetMobileMenuOpen || storeSetMobileMenuOpen;
+  const activeTab = propActiveTab || storeActiveTab;
+  const setActiveTab = propSetActiveTab || storeSetActiveTab;
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const problemReports = propProblemReports?.length ? propProblemReports : storeProblemReports;
+  const inspections = propInspections?.length ? propInspections : storeInspections;
   return (
     <>
       {/* MOBILE TOP HEADER BAR */}

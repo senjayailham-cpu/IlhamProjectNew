@@ -23,19 +23,20 @@ import {
 } from 'lucide-react';
 import { DailyTimesheetTab } from './timesheet/DailyTimesheetTab';
 import { PerformanceReportTab } from './timesheet/PerformanceReportTab';
+import { useAppStore } from '../store';
 
 interface TimesheetViewProps {
-  timesheets: TimesheetEntry[];
-  employees: Employee[];
-  projects: Project[];
-  timesheetDate: string;
-  setTimesheetDate: (date: string) => void;
-  openAddTimesheet: () => void;
-  openEditTimesheet: (id: string) => void;
-  deleteTsEntry: (id: string) => void;
-  exportTimesheetDaily: () => void;
+  timesheets?: TimesheetEntry[];
+  employees?: Employee[];
+  projects?: Project[];
+  timesheetDate?: string;
+  setTimesheetDate?: (date: string) => void;
+  openAddTimesheet?: () => void;
+  openEditTimesheet?: (id: string) => void;
+  deleteTsEntry?: (id: string) => void;
+  exportTimesheetDaily?: () => void;
   openSpotlight?: (pid: string) => void;
-  currentUser: User | null;
+  currentUser?: User | null;
   onNavigateToManpower?: (date?: string) => void;
 }
 
@@ -47,19 +48,29 @@ const STATUS_PILLS = {
 };
 
 export default function TimesheetView({
-  timesheets,
-  employees,
-  projects,
-  timesheetDate,
+  timesheets: propTimesheets,
+  employees: propEmployees,
+  projects: propProjects,
+  timesheetDate: propTimesheetDate,
   setTimesheetDate,
-  openAddTimesheet,
-  openEditTimesheet,
-  deleteTsEntry,
-  exportTimesheetDaily,
+  openAddTimesheet = () => {},
+  openEditTimesheet = () => {},
+  deleteTsEntry = () => {},
+  exportTimesheetDaily = () => {},
   openSpotlight,
-  currentUser,
+  currentUser: propUser,
   onNavigateToManpower
 }: TimesheetViewProps) {
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const currentUser = propUser || storeCurrentUser;
+  const timesheetDate = propTimesheetDate || new Date().toISOString().slice(0, 10);
   // Navigation between Daily Log and Monthly/Weekly Reporting
   const [activeSegment, setActiveSegment] = useState<'daily' | 'reporting'>('daily');
   

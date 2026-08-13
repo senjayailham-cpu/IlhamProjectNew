@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { ProblemReport, Project, Employee, UserRoleType, OrgSettings } from '../types';
+import { useAppStore, useUIStore } from '../store';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
@@ -28,13 +29,13 @@ import {
 
 interface Focus24ViewProps {
   orgSettings?: OrgSettings;
-  problemReports: ProblemReport[];
-  projects: Project[];
-  employees: Employee[];
-  currentUser: { name: string; role: UserRoleType } | null;
-  onAddProblemReport: (report: Omit<ProblemReport, 'id' | 'date'>) => void;
-  onUpdateProblemStatus: (id: string, status: 'Open' | 'Resolved', resolutionNote?: string) => void;
-  onDeleteProblemReport: (id: string) => void;
+  problemReports?: ProblemReport[];
+  projects?: Project[];
+  employees?: Employee[];
+  currentUser?: { name: string; role: UserRoleType } | null;
+  onAddProblemReport?: (report: Omit<ProblemReport, 'id' | 'date'>) => void;
+  onUpdateProblemStatus?: (id: string, status: 'Open' | 'Resolved', resolutionNote?: string) => void;
+  onDeleteProblemReport?: (id: string) => void;
   openSpotlight?: (pid: string) => void;
 }
 
@@ -85,15 +86,27 @@ const CATEGORY_STYLES = {
 
 export default function Focus24View({
   orgSettings,
-  problemReports,
-  projects,
-  employees,
-  currentUser,
+  problemReports: propProblemReports,
+  projects: propProjects,
+  employees: propEmployees,
+  currentUser: propUser,
   onAddProblemReport,
   onUpdateProblemStatus,
   onDeleteProblemReport,
-  openSpotlight
+  openSpotlight: propOpenSpotlight
 }: Focus24ViewProps) {
+  const storeProblemReports = useAppStore((s) => s.problemReports);
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
+
+  const problemReports = propProblemReports?.length ? propProblemReports : storeProblemReports;
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const currentUser = propUser || storeCurrentUser;
+  const openSpotlight = propOpenSpotlight || storeOpenSpotlight;
   // Navigation & Search/Filter states
   const [showSubmitForm, setShowSubmitForm] = useState<boolean>(false);
   const [filterCategory, setFilterCategory] = useState<string>('All');

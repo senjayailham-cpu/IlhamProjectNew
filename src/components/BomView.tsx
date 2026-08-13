@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { BomTemplate, BomItem, MaterialItem, MaterialProcessing, DrawingRevision, Project, User } from '../types';
+import { can } from '../utils/permissions';
 import jsPDF from 'jspdf';
 import { 
   ListTree, Plus, Search, Filter, Layers, FileText, CheckCircle2, 
@@ -42,9 +43,8 @@ export default function BomView({
   onAddMaterialProcessing
 }: BomViewProps) {
   // Permission checks
-  const normalizedRole = (currentUser?.role || '').toLowerCase();
-  const canEdit = ['admin', 'manager', 'coordinator', 'project control', 'project_control'].includes(normalizedRole);
-  const canDelete = ['admin', 'manager'].includes(normalizedRole);
+  const canEdit = can(currentUser, 'manageBom');
+  const canDelete = can(currentUser, 'manageBom') && ['admin', 'manager'].includes((currentUser?.role || '').toLowerCase());
 
   // State Filters (Sidebar)
   const [searchQuery, setSearchQuery] = useState('');

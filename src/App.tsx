@@ -7,11 +7,12 @@ import { uid, cleanFirestoreData, handleFirestoreError, OperationType, sha256 } 
 
 // Firebase imports
 import { db, auth } from './services/firebase';
-import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction } from 'firebase/firestore';
+import { collection, doc, setDoc, getDoc, onSnapshot, runTransaction, query, orderBy, limit, CollectionReference, Query } from 'firebase/firestore';
 
 // Custom Hooks & Subcomponents
 import { AuthProvider, useAuth, useProjects, useEmployees, useTimesheets, useFirestore, useMasterData, useOrgSettings } from './hooks';
 import { useUserPreferences } from './hooks/useUserPreferences';
+import { useAppStore, useUIStore } from './store';
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
 import { GaAutoMatchModal } from './components/GaAutoMatchModal';
@@ -159,16 +160,88 @@ function AppContent() {
   const toggleSidebar = () => setPref('sidebarCollapsed', !sidebarCollapsed);
   const [mobileMenuOpen, setMobileMenuOpen] = useState<boolean>(false);
 
-  // Wrap state setters for direct local updates if needed, but snapshots set these directly.
-  const setActivities = setRealActivities;
-  const setProblemReports = setRealProblemReports;
-  const setInspections = setRealInspections;
-  const setWireLogs = setRealWireLogs;
-  const setMaterials = setRealMaterials;
-  const setMaterialRequests = setRealMaterialRequests;
-  const setConsumptionLogs = setRealConsumptionLogs;
-  const setDrawings = setRealDrawings;
-  const setBomTemplates = setRealBomTemplates;
+  // Wrap state setters for direct local updates to both local state and useAppStore
+  const setActivities = (action: React.SetStateAction<ActivityLog[]>) => {
+    setRealActivities((prev) => {
+      const next = typeof action === 'function' ? (action as (a: ActivityLog[]) => ActivityLog[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setActivities(next);
+      });
+      return next;
+    });
+  };
+  const setProblemReports = (action: React.SetStateAction<ProblemReport[]>) => {
+    setRealProblemReports((prev) => {
+      const next = typeof action === 'function' ? (action as (p: ProblemReport[]) => ProblemReport[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setProblemReports(next);
+      });
+      return next;
+    });
+  };
+  const setInspections = (action: React.SetStateAction<InspectionRequest[]>) => {
+    setRealInspections((prev) => {
+      const next = typeof action === 'function' ? (action as (i: InspectionRequest[]) => InspectionRequest[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setInspections(next);
+      });
+      return next;
+    });
+  };
+  const setWireLogs = (action: React.SetStateAction<WireLog[]>) => {
+    setRealWireLogs((prev) => {
+      const next = typeof action === 'function' ? (action as (w: WireLog[]) => WireLog[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setWireLogs(next);
+      });
+      return next;
+    });
+  };
+  const setMaterials = (action: React.SetStateAction<MaterialItem[]>) => {
+    setRealMaterials((prev) => {
+      const next = typeof action === 'function' ? (action as (m: MaterialItem[]) => MaterialItem[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setMaterials(next);
+      });
+      return next;
+    });
+  };
+  const setMaterialRequests = (action: React.SetStateAction<MaterialRequest[]>) => {
+    setRealMaterialRequests((prev) => {
+      const next = typeof action === 'function' ? (action as (mr: MaterialRequest[]) => MaterialRequest[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setMaterialRequests(next);
+      });
+      return next;
+    });
+  };
+  const setConsumptionLogs = (action: React.SetStateAction<MaterialConsumptionLog[]>) => {
+    setRealConsumptionLogs((prev) => {
+      const next = typeof action === 'function' ? (action as (c: MaterialConsumptionLog[]) => MaterialConsumptionLog[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setConsumptionLogs(next);
+      });
+      return next;
+    });
+  };
+  const setDrawings = (action: React.SetStateAction<DrawingRevision[]>) => {
+    setRealDrawings((prev) => {
+      const next = typeof action === 'function' ? (action as (d: DrawingRevision[]) => DrawingRevision[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setDrawings(next);
+      });
+      return next;
+    });
+  };
+  const setBomTemplates = (action: React.SetStateAction<BomTemplate[]>) => {
+    setRealBomTemplates((prev) => {
+      const next = typeof action === 'function' ? (action as (b: BomTemplate[]) => BomTemplate[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setBomTemplates(next);
+      });
+      return next;
+    });
+  };
 
   // Local states for custom search filters
   const [projectSearchQuery, setProjectSearchQuery] = useState<string>('');
@@ -212,7 +285,32 @@ function AppContent() {
     } else {
       setLastSavedLabel('All synced online');
     }
+    useAppStore.setState({ isOffline, lastSavedLabel: isOffline ? 'OFFLINE MODE (Cached)' : 'All synced online' });
   }, [isOffline]);
+
+  // Sync Current User with Zustand App Store
+  useEffect(() => {
+    useAppStore.setState({ currentUser, users });
+  }, [currentUser, users]);
+
+  // UI Store Bidirectional Navigation Sync
+  const storeActiveTab = useUIStore((s) => s.activeTab);
+  useEffect(() => {
+    if (storeActiveTab && storeActiveTab !== activeTab) {
+      setActiveTab(storeActiveTab);
+    }
+  }, [storeActiveTab]);
+
+  useEffect(() => {
+    useUIStore.setState({
+      activeTab,
+      mobileMenuOpen,
+      selectedMonth,
+      reportDate,
+      projectSearchQuery,
+      currentTabMonthFilter
+    });
+  }, [activeTab, mobileMenuOpen, selectedMonth, reportDate, projectSearchQuery, currentTabMonthFilter]);
 
   const { saveItem, removeItem, saveBatch } = useFirestore();
 
@@ -393,9 +491,14 @@ function AppContent() {
           }
         }
 
-        const listenToCollection = (colName: string, stateSetter: (data: any) => void) => {
+        const listenToCollection = (
+          colName: string,
+          stateSetter: (data: any) => void,
+          queryFn?: (colRef: CollectionReference) => Query
+        ) => {
           const colRef = collection(db, colName);
-          const unsub = onSnapshot(colRef, (snapshot) => {
+          const q = queryFn ? queryFn(colRef) : colRef;
+          const unsub = onSnapshot(q, (snapshot) => {
             const list: any[] = [];
             const seenIds = new Set<string>();
             snapshot.forEach((d) => {
@@ -416,6 +519,22 @@ function AppContent() {
               list.push(data);
             });
             stateSetter(list);
+
+            // Sync to Zustand Store for global real-time access
+            const store = useAppStore.getState();
+            if (colName === 'projects') store.setProjects(list);
+            else if (colName === 'employees') store.setEmployees(list);
+            else if (colName === 'timesheets') store.setTimesheets(list);
+            else if (colName === 'activities') store.setActivities(list);
+            else if (colName === 'problemReports') store.setProblemReports(list);
+            else if (colName === 'inspections') store.setInspections(list);
+            else if (colName === 'users') store.setUsers(list);
+            else if (colName === 'wireLogs') store.setWireLogs(list);
+            else if (colName === 'materials') store.setMaterials(list);
+            else if (colName === 'materialRequests') store.setMaterialRequests(list);
+            else if (colName === 'consumptionLogs') store.setConsumptionLogs(list);
+            else if (colName === 'drawings') store.setDrawings(list);
+            else if (colName === 'bomTemplates') store.setBomTemplates(list);
           }, (error) => {
             console.error(`Firestore real-time error on ${colName}:`, error);
             handleFirestoreError(error, OperationType.LIST, colName);
@@ -426,16 +545,24 @@ function AppContent() {
         listenToCollection('projects', setProjects);
         listenToCollection('employees', setEmployees);
         listenToCollection('timesheets', setTimesheets);
-        listenToCollection('activities', setActivities);
-        listenToCollection('problemReports', setProblemReports);
+        listenToCollection('activities', setActivities, (colRef) =>
+          query(colRef, orderBy('ts', 'desc'), limit(100))
+        );
+        listenToCollection('problemReports', setProblemReports, (colRef) =>
+          query(colRef, orderBy('date', 'desc'), limit(150))
+        );
         listenToCollection('inspections', setInspections);
         if (currentUser.role === 'admin') {
           listenToCollection('users', setUsers);
         }
-        listenToCollection('wireLogs', setWireLogs);
+        listenToCollection('wireLogs', setWireLogs, (colRef) =>
+          query(colRef, orderBy('date', 'desc'), limit(200))
+        );
         listenToCollection('materials', setMaterials);
         listenToCollection('materialRequests', setMaterialRequests);
-        listenToCollection('consumptionLogs', setConsumptionLogs);
+        listenToCollection('consumptionLogs', setConsumptionLogs, (colRef) =>
+          query(colRef, orderBy('date', 'desc'), limit(300))
+        );
         listenToCollection('drawings', setDrawings);
         listenToCollection('bomTemplates', setBomTemplates);
       } catch (err) {
@@ -1376,6 +1503,7 @@ function AppContent() {
           activities={activities}
           employees={employees}
           materials={materials}
+          bomTemplates={bomTemplates}
           setActiveTab={setActiveTab}
           readNotificationIds={prefs.readNotificationIds || []}
           onMarkRead={(ids) => setPref('readNotificationIds', ids)}

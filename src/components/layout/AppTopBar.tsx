@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { User, Project, TimesheetEntry, ActivityLog, Employee, MaterialItem } from '../../types';
+import { User, Project, TimesheetEntry, ActivityLog, Employee, MaterialItem, BomTemplate } from '../../types';
+import { useAppStore, useUIStore } from '../../store';
 import ThemeToggle from '../ThemeToggle';
 import { 
   Download, 
@@ -19,7 +20,8 @@ import {
   Command,
   Layers,
   Sparkles,
-  Award
+  Award,
+  ListTree
 } from 'lucide-react';
 
 interface AppTopBarProps {
@@ -36,17 +38,18 @@ interface AppTopBarProps {
   activities: ActivityLog[];
   employees?: Employee[];
   materials?: MaterialItem[];
+  bomTemplates?: BomTemplate[];
   setActiveTab?: (tab: string) => void;
   openSpotlight?: (id: string) => void;
   readNotificationIds?: string[];
   onMarkRead?: (ids: string[]) => void;
 }
 
-type SearchCategory = 'all' | 'projects' | 'personnel' | 'materials';
+type SearchCategory = 'all' | 'projects' | 'personnel' | 'materials' | 'bom';
 
 interface SearchResultItem {
   id: string;
-  type: 'project' | 'employee' | 'material';
+  type: 'project' | 'employee' | 'material' | 'bom';
   title: string;
   subtitle: string;
   badge?: string;
@@ -56,23 +59,47 @@ interface SearchResultItem {
 
 export function AppTopBar({
   activeTabLabel,
-  currentUser,
+  currentUser: propUser,
   onLogout,
   onDownload,
   onChangePassword,
   sidebarCollapsed,
-  isOffline,
+  isOffline: propIsOffline,
   canExport,
   onExportCSV,
-  projects,
-  activities,
-  employees = [],
-  materials = [],
-  setActiveTab,
-  openSpotlight,
+  projects: propProjects,
+  activities: propActivities,
+  employees: propEmployees,
+  materials: propMaterials,
+  bomTemplates: propBomTemplates,
+  setActiveTab: propSetActiveTab,
+  openSpotlight: propOpenSpotlight,
   readNotificationIds,
   onMarkRead,
 }: AppTopBarProps) {
+  // Pull fallback values directly from Zustand stores
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeActivities = useAppStore((s) => s.activities);
+  const storeEmployees = useAppStore((s) => s.employees);
+  const storeMaterials = useAppStore((s) => s.materials);
+  const storeBomTemplates = useAppStore((s) => s.bomTemplates);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+  const storeIsOffline = useAppStore((s) => s.isOffline);
+
+  const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
+  const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const activities = propActivities?.length ? propActivities : storeActivities;
+  const employees = propEmployees?.length ? propEmployees : storeEmployees;
+  const materials = propMaterials?.length ? propMaterials : storeMaterials;
+  const bomTemplates = propBomTemplates?.length ? propBomTemplates : storeBomTemplates;
+  const currentUser = propUser || storeCurrentUser;
+  const isOffline = propIsOffline !== undefined ? propIsOffline : storeIsOffline;
+
+  const setActiveTab = propSetActiveTab || storeSetActiveTab;
+  const openSpotlight = propOpenSpotlight || storeOpenSpotlight;
+
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<SearchCategory>('all');
@@ -103,14 +130,15 @@ export function AppTopBar({
       projects.forEach(p => {
         const matchesName = (p.name || '').toLowerCase().includes(query);
         const matchesClient = (p.client || '').toLowerCase().includes(query);
+        const matchesGa = (p.gaNumber || '').toLowerCase().includes(query);
         const matchesAssemblies = p.assemblies?.some(a => (a.name || '').toLowerCase().includes(query));
         
-        if (matchesName || matchesClient || matchesAssemblies) {
+        if (matchesName || matchesClient || matchesGa || matchesAssemblies) {
           list.push({
             id: `proj_${p.id}`,
             type: 'project',
             title: p.name,
-            subtitle: `Work Order: ${p.client} • ${p.assemblies?.length || 0} Assemblies`,
+            subtitle: `Work Order: ${p.client} ${p.gaNumber ? `• GA: ${p.gaNumber}` : ''} • ${p.assemblies?.length || 0} Assemblies`,
             badge: (p.status || '').toUpperCase(),
             badgeColor: p.status === 'completed' ? 'bg-base-green-dim text-base-green' : p.status === 'active' ? 'bg-base-blue-dim text-base-blue' : 'bg-base-accent-dim text-base-accent',
             data: p
@@ -164,8 +192,36 @@ export function AppTopBar({
       });
     }
 
+    // 4. BOM Templates & Items search
+    if (activeCategory === 'all' || activeCategory === 'bom') {
+      bomTemplates.forEach(t => {
+        const matchesName = (t.name || '').toLowerCase().includes(query);
+        const matchesGa = (t.gaNumber || '').toLowerCase().includes(query);
+        const matchesModel = (t.model || '').toLowerCase().includes(query);
+        const matchesDesc = (t.notes || '').toLowerCase().includes(query);
+        const matchesItems = t.items?.some(i => 
+          (i.partNumber || '').toLowerCase().includes(query) ||
+          (i.description || '').toLowerCase().includes(query) ||
+          (i.material || '').toLowerCase().includes(query) ||
+          (i.subAssembly || '').toLowerCase().includes(query)
+        );
+
+        if (matchesName || matchesGa || matchesModel || matchesDesc || matchesItems) {
+          list.push({
+            id: `bom_${t.id}`,
+            type: 'bom',
+            title: t.name,
+            subtitle: `GA: ${t.gaNumber || 'N/A'} • Model: ${t.model || 'Standard'} • ${t.items?.length || 0} Parts`,
+            badge: `${t.items?.length || 0} ITEMS`,
+            badgeColor: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+            data: t
+          });
+        }
+      });
+    }
+
     return list;
-  }, [searchQuery, activeCategory, projects, employees, materials]);
+  }, [searchQuery, activeCategory, projects, employees, materials, bomTemplates]);
 
   // Auto-select first item on search change
   useEffect(() => {
@@ -337,7 +393,7 @@ export function AppTopBar({
 
             {/* Category Tabs */}
             <div className="px-6 py-2.5 border-b border-base-border bg-base-surface/50 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
-              {(['all', 'projects', 'personnel', 'materials'] as SearchCategory[]).map((cat) => (
+              {(['all', 'projects', 'personnel', 'materials', 'bom'] as SearchCategory[]).map((cat) => (
                 <button
                   key={cat}
                   onClick={() => {
@@ -354,6 +410,7 @@ export function AppTopBar({
                   {cat === 'projects' && 'Projects'}
                   {cat === 'personnel' && 'Personnel'}
                   {cat === 'materials' && 'Material Inventory'}
+                  {cat === 'bom' && 'BOM / Templates'}
                 </button>
               ))}
             </div>
@@ -422,6 +479,7 @@ export function AppTopBar({
                               {item.type === 'project' && <Folder className="h-4 w-4" />}
                               {item.type === 'employee' && <Users className="h-4 w-4" />}
                               {item.type === 'material' && <Package className="h-4 w-4" />}
+                              {item.type === 'bom' && <ListTree className="h-4 w-4 text-purple-400" />}
                             </div>
                             <div className="min-w-0">
                               <p className="font-bold text-xs text-base-text truncate">{item.title}</p>
@@ -461,6 +519,7 @@ export function AppTopBar({
                         {selectedItem.type === 'project' && <Folder className="h-6 w-6 text-base-accent" />}
                         {selectedItem.type === 'employee' && <Users className="h-6 w-6 text-base-blue" />}
                         {selectedItem.type === 'material' && <Package className="h-6 w-6 text-emerald-500" />}
+                        {selectedItem.type === 'bom' && <ListTree className="h-6 w-6 text-purple-400" />}
                       </div>
                       <div className="min-w-0 flex-1 space-y-1">
                         <span className="text-[9px] font-condensed font-black tracking-widest text-base-muted uppercase bg-base-surface border border-base-border px-2 py-0.5 rounded-md">
@@ -683,6 +742,84 @@ export function AppTopBar({
                               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
                             >
                               <span>Navigate to Material inventory</span>
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 4. BOM SPECIFIC VIEW */}
+                      {selectedItem.type === 'bom' && (
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 gap-3.5 text-xs">
+                            <div>
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">GA Number</p>
+                              <p className="font-mono font-bold text-purple-400 mt-1 bg-base-surface2 border border-purple-500/20 rounded px-2 py-1">
+                                {selectedItem.data.gaNumber || 'N/A'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">Model Type</p>
+                              <p className="font-bold text-base-text mt-1 bg-base-surface2 border border-base-border rounded px-2 py-1">
+                                {selectedItem.data.model || 'Standard'}
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">Total Parts / Items</p>
+                              <p className="font-mono font-bold text-sm mt-1 bg-base-surface2 border border-base-border rounded px-2 py-1 text-base-text">
+                                {selectedItem.data.items?.length || 0} items
+                              </p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">Estimated Total Mass</p>
+                              <p className="font-mono font-bold text-sm mt-1 bg-base-surface2 border border-base-border rounded px-2 py-1 text-base-accent">
+                                {(selectedItem.data.items || []).reduce((acc: number, cur: any) => acc + (Number(cur.weightPerUnit || 0) * Number(cur.quantity || 1)), 0).toLocaleString()} kg
+                              </p>
+                            </div>
+                          </div>
+
+                          {selectedItem.data.notes && (
+                            <div className="border-t border-base-border pt-3.5 space-y-1">
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">BOM Remarks / Notes</p>
+                              <p className="text-xs text-base-text bg-base-surface3 border border-base-border p-2 rounded-lg italic">
+                                "{selectedItem.data.notes}"
+                              </p>
+                            </div>
+                          )}
+
+                          {/* BOM Items Preview */}
+                          {selectedItem.data.items?.length > 0 && (
+                            <div className="border-t border-base-border pt-3.5 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">Sample Parts Preview</p>
+                                <span className="text-[9px] text-base-muted font-mono">Top {Math.min(5, selectedItem.data.items.length)} of {selectedItem.data.items.length}</span>
+                              </div>
+                              <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                                {selectedItem.data.items.slice(0, 5).map((item: any, idx: number) => (
+                                  <div key={idx} className="flex items-center justify-between text-[11px] p-2 bg-base-surface3 border border-base-border rounded-lg">
+                                    <div className="min-w-0 flex-1 pr-2">
+                                      <p className="font-mono font-bold text-base-text truncate">{item.partNumber}</p>
+                                      <p className="text-[10px] text-base-muted truncate">{item.description} ({item.subAssembly || 'General'})</p>
+                                    </div>
+                                    <div className="text-right shrink-0 font-mono">
+                                      <p className="font-bold text-base-accent">{item.quantity} {item.unit || 'pcs'}</p>
+                                      <p className="text-[9px] text-base-muted">{item.material || 'N/A'}</p>
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {setActiveTab && (
+                            <button
+                              onClick={() => {
+                                setActiveTab('bom');
+                                setIsSearchOpen(false);
+                              }}
+                              className="w-full py-2.5 bg-purple-600 hover:bg-purple-500 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
+                            >
+                              <span>Navigate to BOM Master Templates</span>
                               <ChevronRight className="h-4 w-4" />
                             </button>
                           )}

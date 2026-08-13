@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ActivityLog, Project, TimesheetEntry, InspectionRequest, ProblemReport } from '../types';
 import { calcPct, esc } from '../utils/projectUtils';
+import { useAppStore, useUIStore } from '../store';
 import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2, FileCheck, AlertTriangle } from 'lucide-react';
 import { db } from '../services/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
@@ -16,13 +17,13 @@ import {
 } from 'recharts';
 
 interface DailyReportViewProps {
-  projects: Project[];
-  activityLogs: ActivityLog[];
-  reportDate: string;
-  setReportDate: (date: string) => void;
-  clearActivityLogs: () => void;
-  openPrintView: () => void;
-  timesheets: TimesheetEntry[];
+  projects?: Project[];
+  activityLogs?: ActivityLog[];
+  reportDate?: string;
+  setReportDate?: (date: string) => void;
+  clearActivityLogs?: () => void;
+  openPrintView?: () => void;
+  timesheets?: TimesheetEntry[];
 }
 
 const ACT_ICONS: Record<string, { label: string; color: string; bg: string }> = {
@@ -39,20 +40,40 @@ const ACT_ICONS: Record<string, { label: string; color: string; bg: string }> = 
 };
 
 export default function DailyReportView({
-  projects,
-  activityLogs,
-  reportDate,
-  setReportDate,
-  clearActivityLogs,
-  openPrintView,
-  timesheets
+  projects: propProjects,
+  activityLogs: propActivityLogs,
+  reportDate: propReportDate,
+  setReportDate: propSetReportDate,
+  clearActivityLogs = () => {},
+  openPrintView = () => {},
+  timesheets: propTimesheets
 }: DailyReportViewProps) {
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeActivityLogs = useAppStore((s) => s.activities);
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeInspections = useAppStore((s) => s.inspections);
+  const storeProblemReports = useAppStore((s) => s.problemReports);
+
+  const storeReportDate = useUIStore((s) => s.reportDate);
+  const storeSetReportDate = useUIStore((s) => s.setReportDate);
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const activityLogs = propActivityLogs?.length ? propActivityLogs : storeActivityLogs;
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const reportDate = propReportDate || storeReportDate;
+  const setReportDate = propSetReportDate || storeSetReportDate;
+
   const [userCollapsed, setUserCollapsed] = useState<Record<string, boolean>>({});
   const [trendPeriod, setTrendPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [attendanceMetric, setAttendanceMetric] = useState<'hours' | 'headcount'>('hours');
 
   const [inspections, setInspections] = useState<InspectionRequest[]>([]);
   const [problemReports, setProblemReports] = useState<ProblemReport[]>([]);
+
+  useEffect(() => {
+    if (storeInspections.length > 0) setInspections(storeInspections);
+    if (storeProblemReports.length > 0) setProblemReports(storeProblemReports);
+  }, [storeInspections, storeProblemReports]);
 
   useEffect(() => {
     const unsubInspections = onSnapshot(collection(db, 'inspections'), (snapshot) => {

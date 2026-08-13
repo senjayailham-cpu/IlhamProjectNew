@@ -2,12 +2,23 @@ import { useState } from 'react';
 import { TimesheetEntry } from '../types';
 import { uid } from '../utils';
 import { useFirestore } from './useFirestore';
+import { useAppStore } from '../store';
 
 export function useTimesheets(
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void
 ) {
-  const [timesheets, setTimesheets] = useState<TimesheetEntry[]>([]);
+  const [timesheets, setTimesheetsState] = useState<TimesheetEntry[]>([]);
+
+  const setTimesheets = (action: React.SetStateAction<TimesheetEntry[]>) => {
+    setTimesheetsState((prev) => {
+      const next = typeof action === 'function' ? (action as (ts: TimesheetEntry[]) => TimesheetEntry[])(prev) : action;
+      queueMicrotask(() => {
+        useAppStore.getState().setTimesheets(next);
+      });
+      return next;
+    });
+  };
   const [timesheetDate, setTimesheetDate] = useState<string>(() => {
     return new Date().toISOString().slice(0, 10);
   });

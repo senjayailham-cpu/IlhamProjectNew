@@ -6,6 +6,7 @@ import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from '
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
+import { useAppStore, useUIStore } from '../store';
 import { can as canUtil } from '../utils/permissions';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
@@ -102,21 +103,21 @@ function getProjectCriticalPath(p: Project, allProjects: Project[]) {
 }
 
 interface ProjectsPageProps {
-  projects: Project[];
-  timesheets: TimesheetEntry[];
-  wireLogs: WireLog[];
+  projects?: Project[];
+  timesheets?: TimesheetEntry[];
+  wireLogs?: WireLog[];
   consumptionLogs?: MaterialConsumptionLog[];
-  projectSearchQuery: string;
-  setProjectSearchQuery: (query: string) => void;
-  currentTabMonthFilter: string;
-  setCurrentTabMonthFilter: (month: string) => void;
-  openAddProject: () => void;
-  openEditProjectForm: (pid: string) => void;
-  openAssemblyAddForm: (pid: string) => void;
-  setSpotlightProjectId: (id: string | null) => void;
-  setSpotlightOpen: (open: boolean) => void;
-  archiveProject: (pid: string) => void;
-  unarchiveProject: (pid: string) => void;
+  projectSearchQuery?: string;
+  setProjectSearchQuery?: (query: string) => void;
+  currentTabMonthFilter?: string;
+  setCurrentTabMonthFilter?: (month: string) => void;
+  openAddProject?: () => void;
+  openEditProjectForm?: (pid: string) => void;
+  openAssemblyAddForm?: (pid: string) => void;
+  setSpotlightProjectId?: (id: string | null) => void;
+  setSpotlightOpen?: (open: boolean) => void;
+  archiveProject?: (pid: string) => void;
+  unarchiveProject?: (pid: string) => void;
   importProjectsExcel?: (projects: Project[]) => void;
   deleteProjectDetails?: (pid: string) => void;
   deleteProjectsExceptTarget?: (targetWorkOrder: string) => void;
@@ -137,21 +138,21 @@ interface ProjectsPageProps {
 }
 
 export function ProjectsPage({
-  projects,
-  timesheets,
-  wireLogs,
-  consumptionLogs = [],
-  projectSearchQuery,
-  setProjectSearchQuery,
-  currentTabMonthFilter,
-  setCurrentTabMonthFilter,
-  openAddProject,
-  openEditProjectForm,
-  openAssemblyAddForm,
-  setSpotlightProjectId,
-  setSpotlightOpen,
-  archiveProject,
-  unarchiveProject,
+  projects: propProjects,
+  timesheets: propTimesheets,
+  wireLogs: propWireLogs,
+  consumptionLogs: propConsumptionLogs = [],
+  projectSearchQuery: propProjectSearchQuery,
+  setProjectSearchQuery: propSetProjectSearchQuery,
+  currentTabMonthFilter: propCurrentTabMonthFilter,
+  setCurrentTabMonthFilter: propSetCurrentTabMonthFilter,
+  openAddProject = () => {},
+  openEditProjectForm = () => {},
+  openAssemblyAddForm = () => {},
+  setSpotlightProjectId = () => {},
+  setSpotlightOpen = () => {},
+  archiveProject = () => {},
+  unarchiveProject = () => {},
   importProjectsExcel,
   deleteProjectDetails,
   deleteProjectsExceptTarget,
@@ -165,7 +166,29 @@ export function ProjectsPage({
   prefs,
   onSetPref
 }: ProjectsPageProps) {
-  const { currentUser } = useAuth();
+  const { currentUser: authUser } = useAuth();
+  const storeProjects = useAppStore((s) => s.projects);
+  const storeTimesheets = useAppStore((s) => s.timesheets);
+  const storeWireLogs = useAppStore((s) => s.wireLogs);
+  const storeConsumptionLogs = useAppStore((s) => s.consumptionLogs);
+  const storeCurrentUser = useAppStore((s) => s.currentUser);
+
+  const storeProjectSearchQuery = useUIStore((s) => s.projectSearchQuery);
+  const storeSetProjectSearchQuery = useUIStore((s) => s.setProjectSearchQuery);
+  const storeCurrentTabMonthFilter = useUIStore((s) => s.currentTabMonthFilter);
+  const storeSetCurrentTabMonthFilter = useUIStore((s) => s.setCurrentTabMonthFilter);
+
+  const projects = propProjects?.length ? propProjects : storeProjects;
+  const timesheets = propTimesheets?.length ? propTimesheets : storeTimesheets;
+  const wireLogs = propWireLogs?.length ? propWireLogs : storeWireLogs;
+  const consumptionLogs = propConsumptionLogs?.length ? propConsumptionLogs : storeConsumptionLogs;
+  const currentUser = authUser || storeCurrentUser;
+
+  const projectSearchQuery = propProjectSearchQuery !== undefined ? propProjectSearchQuery : storeProjectSearchQuery;
+  const setProjectSearchQuery = propSetProjectSearchQuery || storeSetProjectSearchQuery;
+  const currentTabMonthFilter = propCurrentTabMonthFilter !== undefined ? propCurrentTabMonthFilter : storeCurrentTabMonthFilter;
+  const setCurrentTabMonthFilter = propSetCurrentTabMonthFilter || storeSetCurrentTabMonthFilter;
+
   const can = (perm: any) => canUtil(currentUser, perm);
 
   const [projectFilterTab, setProjectFilterTab] = React.useState<string>(() => {
