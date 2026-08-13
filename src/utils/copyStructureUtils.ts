@@ -170,35 +170,15 @@ export function buildStructureFromBomTemplate(
   const assemblies: Assembly[] = [];
   const materials: MaterialProcessing[] = [];
 
-  const defaultTaskTemplates = [
-    { name: 'Material Preparation & Cutting', diff: 1 },
-    { name: 'Bending & Machining Parts', diff: 2 },
-    { name: 'Sub-Assembly Fit-up & Tack Welding', diff: 3 },
-    { name: 'Full Welding & Distortion Control', diff: 3 },
-    { name: 'Inspection & NDT Quality Check', diff: 2 },
-    { name: 'Painting & Final Touch-up', diff: 1 }
-  ];
-
   subAssyGroups.forEach((groupItems, subAssyName) => {
     const asmId = 'asm_' + uid();
-
-    // Create Tasks for this Assembly
-    const tasks: Task[] = defaultTaskTemplates.map(t => ({
-      id: 'tsk_' + uid(),
-      name: t.name,
-      difficulty: t.diff,
-      pct: 0,
-      done: false,
-      date: start,
-      finishDate: finish
-    }));
 
     assemblies.push({
       id: asmId,
       name: subAssyName,
       start: start,
       finish: finish,
-      tasks: tasks,
+      tasks: [],
       notes: `Generated automatically from BOM Template: ${template.name} (${groupItems.length} items)`
     });
 
