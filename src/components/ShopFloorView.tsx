@@ -4,6 +4,7 @@ import { useAppStore, useUIStore } from '../store';
 import { calcPct, calcTaskCounts } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
 import Focus24View from './Focus24View';
+import ShiftHandoverSection from './shopfloor/ShiftHandoverSection';
 import { 
   Clock, 
   TrendingUp, 
@@ -131,6 +132,9 @@ export default function ShopFloorView({
           <span>Exit Shop Floor</span>
         </button>
       </div>
+
+      {/* Shift Handover Pinboard Banner (Coordinators note & status for next shift) */}
+      <ShiftHandoverSection currentUser={currentUser} />
 
       {/* 2. Four Big Action Touch Cards (min-h ~64-80px, high contrast, tablet-friendly) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">

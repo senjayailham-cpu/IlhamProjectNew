@@ -224,6 +224,19 @@ export interface ProblemReport {
   resolvedBy?: string;
 }
 
+export interface ShiftHandoverNote {
+  id: string;
+  note: string;
+  authorName: string;
+  authorRole?: string;
+  targetShift: string;
+  priority: 'normal' | 'important' | 'urgent';
+  createdAt: string;
+  isPinned: boolean;
+  station?: string;
+  acknowledgedBy?: string[];
+}
+
 export interface InspectionRequest {
   id: string;
   rfiNo: string;
