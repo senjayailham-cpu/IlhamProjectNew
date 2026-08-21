@@ -19,10 +19,12 @@ import {
   CheckCircle2,
   XCircle,
   HelpCircle,
-  FileSpreadsheet
+  FileSpreadsheet,
+  FolderKanban
 } from 'lucide-react';
 import { DailyTimesheetTab } from './timesheet/DailyTimesheetTab';
 import { PerformanceReportTab } from './timesheet/PerformanceReportTab';
+import { ProjectHoursAllTimeTab } from './timesheet/ProjectHoursAllTimeTab';
 import { useAppStore } from '../store';
 
 interface TimesheetViewProps {
@@ -71,8 +73,8 @@ export default function TimesheetView({
   const projects = propProjects?.length ? propProjects : storeProjects;
   const currentUser = propUser || storeCurrentUser;
   const timesheetDate = propTimesheetDate || new Date().toISOString().slice(0, 10);
-  // Navigation between Daily Log and Monthly/Weekly Reporting
-  const [activeSegment, setActiveSegment] = useState<'daily' | 'reporting'>('daily');
+  // Navigation between Daily Log, Project Hours (All Time), and Monthly/Weekly Reporting
+  const [activeSegment, setActiveSegment] = useState<'daily' | 'alltime' | 'reporting'>('daily');
   
   // Search & Filter states for daily log
   const [searchQuery, setSearchQuery] = useState('');
@@ -514,11 +516,11 @@ export default function TimesheetView({
     <div className="space-y-6">
       
       {/* SECTION TABS HEADER */}
-      <div className="flex border-b border-base-border justify-between items-center bg-base-surface/50 p-1.5 rounded-lg border">
-        <div className="flex gap-1.5">
+      <div className="flex flex-col sm:flex-row border-b border-base-border justify-between items-stretch sm:items-center bg-base-surface/50 p-1.5 rounded-lg border gap-2">
+        <div className="flex gap-1.5 flex-wrap">
           <button
             onClick={() => setActiveSegment('daily')}
-            className={`px-4 py-2 rounded-md font-condensed font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 py-2 rounded-md font-condensed font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
               activeSegment === 'daily'
                 ? 'bg-base-accent text-white shadow-md'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
@@ -527,9 +529,27 @@ export default function TimesheetView({
             <Clock className="w-3.5 h-3.5" />
             <span>Daily Log Sheet</span>
           </button>
+
+          <button
+            onClick={() => setActiveSegment('alltime')}
+            className={`px-3.5 py-2 rounded-md font-condensed font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+              activeSegment === 'alltime'
+                ? 'bg-base-accent text-white shadow-md'
+                : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
+            }`}
+          >
+            <FolderKanban className="w-3.5 h-3.5" />
+            <span>Project Hours (All Time)</span>
+            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+              activeSegment === 'alltime' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+            }`}>
+              {sortedWOs.length}
+            </span>
+          </button>
+
           <button
             onClick={() => setActiveSegment('reporting')}
-            className={`px-4 py-2 rounded-md font-condensed font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
+            className={`px-3.5 py-2 rounded-md font-condensed font-black text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-2 ${
               activeSegment === 'reporting'
                 ? 'bg-base-accent text-white shadow-md'
                 : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
@@ -590,6 +610,20 @@ export default function TimesheetView({
           setEmployeeFilter={setEmployeeFilter}
           currentUser={currentUser}
           onNavigateToManpower={onNavigateToManpower}
+          onNavigateToProjectHours={() => setActiveSegment('alltime')}
+        />
+      ) : activeSegment === 'alltime' ? (
+        <ProjectHoursAllTimeTab
+          timesheets={timesheets}
+          employees={employees}
+          projects={projects}
+          currentUser={currentUser}
+          openSpotlight={openSpotlight}
+          openEditTimesheet={openEditTimesheet}
+          onNavigateToDaily={(date) => {
+            setTimesheetDate?.(date);
+            setActiveSegment('daily');
+          }}
         />
       ) : (
         <PerformanceReportTab

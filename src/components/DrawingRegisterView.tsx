@@ -7,9 +7,9 @@ import {
 } from 'lucide-react';
 
 interface DrawingRegisterViewProps {
-  drawings: DrawingRevision[];
-  projects: Project[];
-  currentUser: User;
+  drawings?: DrawingRevision[];
+  projects?: Project[];
+  currentUser?: User | null;
   onAddDrawing: (drawing: Omit<DrawingRevision, 'id' | 'uploadedAt' | 'uploadedBy' | 'uploadedByName' | 'status'> & { revision: string }) => Promise<void>;
   onReviseDrawing: (oldDrawingId: string, newDrawing: Omit<DrawingRevision, 'id' | 'uploadedAt' | 'uploadedBy' | 'uploadedByName' | 'status'> & { revision: string }) => Promise<void>;
   onVoidDrawing: (id: string) => Promise<void>;
@@ -17,8 +17,8 @@ interface DrawingRegisterViewProps {
 }
 
 export default function DrawingRegisterView({
-  drawings,
-  projects,
+  drawings = [],
+  projects = [],
   currentUser,
   onAddDrawing,
   onReviseDrawing,
@@ -79,38 +79,45 @@ export default function DrawingRegisterView({
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const safeDrawings = Array.isArray(drawings) ? drawings : [];
+  const safeProjects = Array.isArray(projects) ? projects : [];
+
   // Unique Drawing Numbers for Autocomplete
   const existingDrawingNumbers = useMemo(() => {
     const set = new Set<string>();
-    drawings.forEach(d => set.add(d.drawingNumber));
+    safeDrawings.forEach(d => {
+      if (d?.drawingNumber) set.add(d.drawingNumber);
+    });
     return Array.from(set).sort();
-  }, [drawings]);
+  }, [safeDrawings]);
 
   // Unique Drawing Titles map by Drawing Number
   const existingTitleByNumber = useMemo(() => {
     const map = new Map<string, string>();
-    drawings.forEach(d => {
-      if (!map.has(d.drawingNumber) || d.status === 'active') {
-        map.set(d.drawingNumber, d.title);
+    safeDrawings.forEach(d => {
+      if (d?.drawingNumber) {
+        if (!map.has(d.drawingNumber) || d.status === 'active') {
+          map.set(d.drawingNumber, d.title || '');
+        }
       }
     });
     return map;
-  }, [drawings]);
+  }, [safeDrawings]);
 
   // Statistics calculation
   const stats = useMemo(() => {
-    const totalDrawings = drawings.length;
-    const activeCount = drawings.filter(d => d.status === 'active').length;
+    const totalDrawings = safeDrawings.length;
+    const activeCount = safeDrawings.filter(d => d.status === 'active').length;
     
     // Superseded this month
     const currentMonthPrefix = new Date().toISOString().slice(0, 7);
-    const supersededThisMonth = drawings.filter(
+    const supersededThisMonth = safeDrawings.filter(
       d => d.status === 'superseded' && d.uploadedAt && d.uploadedAt.startsWith(currentMonthPrefix)
     ).length;
 
     // Projects with active drawings
     const activeProjects = new Set(
-      drawings.filter(d => d.status === 'active' && d.projectId).map(d => d.projectId)
+      safeDrawings.filter(d => d.status === 'active' && d.projectId).map(d => d.projectId)
     );
 
     return {
@@ -119,16 +126,16 @@ export default function DrawingRegisterView({
       supersededThisMonth,
       activeProjectsCount: activeProjects.size
     };
-  }, [drawings]);
+  }, [safeDrawings]);
 
   // Filtered List for Table
   const filteredDrawings = useMemo(() => {
-    return drawings.filter(d => {
+    return safeDrawings.filter(d => {
       // Search Filter
       const q = searchQuery.trim().toLowerCase();
       if (q) {
-        const matchNo = d.drawingNumber.toLowerCase().includes(q);
-        const matchTitle = d.title.toLowerCase().includes(q);
+        const matchNo = (d.drawingNumber || '').toLowerCase().includes(q);
+        const matchTitle = (d.title || '').toLowerCase().includes(q);
         const matchProj = (d.projectName || '').toLowerCase().includes(q);
         if (!matchNo && !matchTitle && !matchProj) return false;
       }
@@ -149,8 +156,8 @@ export default function DrawingRegisterView({
       }
 
       return true;
-    }).sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-  }, [drawings, searchQuery, statusFilter, disciplineFilter, projectFilter]);
+    }).sort((a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime());
+  }, [safeDrawings, searchQuery, statusFilter, disciplineFilter, projectFilter]);
 
   // Helpers for Revision Badge Color
   const getRevisionBadgeStyle = (rev: string) => {
@@ -211,7 +218,7 @@ export default function DrawingRegisterView({
     const existingTitle = existingTitleByNumber.get(upperNum) || existingTitleByNumber.get(num);
     
     // Find latest active drawing with this number to prefill discipline/project
-    const existing = drawings.find(d => d.drawingNumber.toUpperCase() === upperNum && d.status === 'active');
+    const existing = safeDrawings.find(d => (d.drawingNumber || '').toUpperCase() === upperNum && d.status === 'active');
 
     setFormData(prev => ({
       ...prev,
@@ -244,7 +251,7 @@ export default function DrawingRegisterView({
       return;
     }
 
-    const selectedProj = projects.find(p => p.id === formData.projectId);
+    const selectedProj = safeProjects.find(p => p.id === formData.projectId);
 
     const payload = {
       drawingNumber: cleanNumber,
@@ -259,9 +266,9 @@ export default function DrawingRegisterView({
     };
 
     // Check if drawingNumber + revision already exists as 'active'
-    const activeDuplicate = drawings.find(
-      d => d.drawingNumber.toUpperCase() === cleanNumber &&
-           d.revision.toUpperCase() === cleanRev &&
+    const activeDuplicate = safeDrawings.find(
+      d => (d.drawingNumber || '').toUpperCase() === cleanNumber &&
+           (d.revision || '').toUpperCase() === cleanRev &&
            d.status === 'active'
     );
 
@@ -276,8 +283,8 @@ export default function DrawingRegisterView({
     }
 
     // If this is a revision of an existing active drawing with the same drawingNumber
-    const currentActiveDrawing = drawings.find(
-      d => d.drawingNumber.toUpperCase() === cleanNumber && d.status === 'active'
+    const currentActiveDrawing = safeDrawings.find(
+      d => (d.drawingNumber || '').toUpperCase() === cleanNumber && d.status === 'active'
     );
 
     setIsSubmitting(true);
@@ -327,10 +334,10 @@ export default function DrawingRegisterView({
   // Revision History for Detail View
   const revisionHistory = useMemo(() => {
     if (!selectedDrawing) return [];
-    return drawings
-      .filter(d => d.drawingNumber.toUpperCase() === selectedDrawing.drawingNumber.toUpperCase())
-      .sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
-  }, [drawings, selectedDrawing]);
+    return safeDrawings
+      .filter(d => (d.drawingNumber || '').toUpperCase() === (selectedDrawing.drawingNumber || '').toUpperCase())
+      .sort((a, b) => new Date(b.uploadedAt || 0).getTime() - new Date(a.uploadedAt || 0).getTime());
+  }, [safeDrawings, selectedDrawing]);
 
   return (
     <div className="flex flex-col lg:flex-row gap-6">

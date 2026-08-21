@@ -3,7 +3,7 @@ import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { useAppStore, useUIStore } from '../../store';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -61,6 +61,8 @@ export function AppSidebar({
   // Read state directly from Zustand stores with fallback to props (dual-read)
   const storeActiveTab = useUIStore((s) => s.activeTab);
   const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
+  const shopFloorMode = useUIStore((s) => s.shopFloorMode);
+  const toggleShopFloorMode = useUIStore((s) => s.toggleShopFloorMode);
 
   const storeProjects = useAppStore((s) => s.projects);
   const storeProblemReports = useAppStore((s) => s.problemReports);
@@ -128,8 +130,6 @@ export function AppSidebar({
                 const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
                 const hasCountsArc = t.id === 'archive';
                 const arcCount = projects.filter(p => p.isArchived).length;
-                const hascountsProb = t.id === 'focus24';
-                const openProbCount = problemReports.filter(r => r.status === 'Open').length;
                 const hasCountsInsp = t.id === 'inspections';
                 const pendingInspCount = inspections.filter(ins => ins.status === 'Requested').length;
 
@@ -137,15 +137,12 @@ export function AppSidebar({
                 let badgeBg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
                 if (hasCountsComp) {
                   badgeCount = compCount;
-                  badgeBg = 'bg-base-green/10 text-base-green border border-base-green/20';
+                  badgeBg = 'bg-base-ok-dim text-base-ok border border-base-ok/20';
                 } else if (hasCountsArc) {
                   badgeCount = arcCount;
-                } else if (hascountsProb) {
-                  badgeCount = openProbCount;
-                  badgeBg = 'bg-red-500 text-white animate-pulse';
                 } else if (hasCountsInsp) {
                   badgeCount = pendingInspCount;
-                  badgeBg = 'bg-amber-500/10 text-amber-500 border border-amber-500/20';
+                  badgeBg = 'bg-base-warn-dim text-base-warn border border-base-warn/20';
                 }
 
                 return (
@@ -164,7 +161,7 @@ export function AppSidebar({
                     <div className="relative flex items-center">
                       <IconComponent className="h-4 w-4 shrink-0" />
                       {sidebarCollapsed && badgeCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 border border-base-surface animate-pulse" />
+                        <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-base-danger border border-base-surface animate-pulse" />
                       )}
                     </div>
 
@@ -213,17 +210,34 @@ export function AppSidebar({
               </div>
             </div>
             <div className="flex items-center justify-between border-t border-base-border/50 pt-2 text-[10px] font-condensed uppercase tracking-wider font-extrabold select-none">
+              {(currentUser.role === 'coordinator' || currentUser.role === 'admin' || currentUser.allowedFeatures?.includes('shopfloor')) && (
+                <button 
+                  onClick={() => {
+                    toggleShopFloorMode();
+                    if (!shopFloorMode) {
+                      setActiveTab('shopfloor');
+                    }
+                  }} 
+                  className={`flex items-center gap-1 cursor-pointer transition-colors ${
+                    shopFloorMode ? 'text-base-warn font-black' : 'text-base-muted hover:text-base-warn'
+                  }`}
+                  title={shopFloorMode ? "Exit Shop Floor Mode" : "Switch to Shop Floor Tablet Mode"}
+                >
+                  <Factory className="h-3 w-3" />
+                  <span>{shopFloorMode ? 'Exit SF' : 'Shop Floor'}</span>
+                </button>
+              )}
               <button 
                 onClick={onChangePassword} 
                 className="flex items-center gap-1 text-base-muted hover:text-base-accent cursor-pointer"
                 title="Change Security Configuration"
               >
                 <Key className="h-3 w-3" />
-                <span>Config Key</span>
+                <span>Config</span>
               </button>
               <button 
                 onClick={onLogout} 
-                className="flex items-center gap-1 text-base-muted hover:text-base-red cursor-pointer"
+                className="flex items-center gap-1 text-base-muted hover:text-base-danger cursor-pointer"
                 title="Disconnect Workspace"
               >
                 <LogOut className="h-3 w-3" />
@@ -241,6 +255,22 @@ export function AppSidebar({
               </div>
             </div>
             <div className="flex flex-col gap-1.5 select-none">
+              {(currentUser.role === 'coordinator' || currentUser.role === 'admin' || currentUser.allowedFeatures?.includes('shopfloor')) && (
+                <button 
+                  onClick={() => {
+                    toggleShopFloorMode();
+                    if (!shopFloorMode) {
+                      setActiveTab('shopfloor');
+                    }
+                  }} 
+                  className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+                    shopFloorMode ? 'bg-base-warn text-white' : 'hover:bg-base-surface2 text-base-muted hover:text-base-warn'
+                  }`} 
+                  title={shopFloorMode ? "Exit Shop Floor Mode" : "Switch to Shop Floor Tablet Mode"}
+                >
+                  <Factory className="h-3.5 w-3.5" />
+                </button>
+              )}
               <button 
                 onClick={onChangePassword} 
                 className="p-1.5 rounded-lg hover:bg-base-surface2 text-base-muted hover:text-base-accent transition-colors cursor-pointer" 

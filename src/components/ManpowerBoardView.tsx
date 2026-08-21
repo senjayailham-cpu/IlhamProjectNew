@@ -251,8 +251,16 @@ export default function ManpowerBoardView({
         craftTotals.set(c.craft, (craftTotals.get(c.craft) || 0) + c.count);
       });
     });
-    return { totalOnSite, totalHours, craftTotals };
-  }, [boardData]);
+
+    let relevantEmployees = employees;
+    if (selectedCraft !== 'All') {
+      relevantEmployees = employees.filter(e => normalizePosition(e.position) === selectedCraft);
+    }
+    const totalCapacity = relevantEmployees.length * 8;
+    const utilizationPct = totalCapacity > 0 ? (totalHours / totalCapacity) * 100 : 0;
+
+    return { totalOnSite, totalHours, craftTotals, totalCapacity, utilizationPct };
+  }, [boardData, employees, selectedCraft]);
 
   // Available labor totals
   const availableSummary = useMemo(() => {
@@ -655,6 +663,24 @@ export default function ManpowerBoardView({
               <span className="text-xs text-base-muted">avg daily output / emp</span>
             </div>
             <div className="w-px h-4 bg-base-border hidden sm:block" />
+            
+            {/* Workshop Utilization Progress */}
+            <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end">
+                <span className="text-[9px] font-condensed font-bold uppercase text-base-muted leading-none">Workshop Utilization</span>
+                <span className="text-sm font-condensed font-bold text-base-text leading-tight mt-0.5">
+                  {summary.utilizationPct.toFixed(1)}%
+                </span>
+              </div>
+              <div className="w-24 h-2.5 bg-base-surface border border-base-border rounded-full overflow-hidden flex relative" title={`${summary.totalHours}h / ${summary.totalCapacity}h max`}>
+                <div 
+                  className={`h-full transition-all duration-500 ${summary.utilizationPct >= 80 ? 'bg-base-green' : summary.utilizationPct >= 50 ? 'bg-base-accent' : 'bg-amber-500'}`} 
+                  style={{ width: `${Math.min(100, summary.utilizationPct)}%` }} 
+                />
+              </div>
+            </div>
+            <div className="w-px h-4 bg-base-border hidden sm:block" />
+
             <div className="flex items-center gap-2 flex-wrap flex-1">
               {(Array.from(summary.craftTotals.entries()) as [string, number][])
                 .sort(([, a], [, b]) => b - a)

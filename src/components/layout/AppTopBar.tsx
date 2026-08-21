@@ -21,7 +21,8 @@ import {
   Layers,
   Sparkles,
   Award,
-  ListTree
+  ListTree,
+  Factory
 } from 'lucide-react';
 
 interface AppTopBarProps {
@@ -88,6 +89,8 @@ export function AppTopBar({
 
   const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
   const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
+  const shopFloorMode = useUIStore((s) => s.shopFloorMode);
+  const toggleShopFloorMode = useUIStore((s) => s.toggleShopFloorMode);
 
   const projects = propProjects?.length ? propProjects : storeProjects;
   const activities = propActivities?.length ? propActivities : storeActivities;
@@ -213,7 +216,7 @@ export function AppTopBar({
             title: t.name,
             subtitle: `GA: ${t.gaNumber || 'N/A'} • Model: ${t.model || 'Standard'} • ${t.items?.length || 0} Parts`,
             badge: `${t.items?.length || 0} ITEMS`,
-            badgeColor: 'bg-purple-500/10 text-purple-400 border border-purple-500/20',
+            badgeColor: 'bg-base-info-dim text-base-info border border-base-info/20',
             data: t
           });
         }
@@ -311,7 +314,7 @@ export function AppTopBar({
           </div>
 
           {isOffline && (
-            <span className="px-2 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-red-500/15 text-red-500 border border-red-500/30 tracking-wider animate-pulse">
+            <span className="px-2 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-danger-dim text-base-danger border border-base-danger/30 tracking-wider animate-pulse">
               OFFLINE (CACHE ACTIVE)
             </span>
           )}
@@ -344,10 +347,31 @@ export function AppTopBar({
 
           <ThemeToggle />
           
+          {/* Shop Floor Mode Toggle (Restricted to coordinator & admin) */}
+          {(currentUser?.role === 'coordinator' || currentUser?.role === 'admin' || currentUser?.allowedFeatures?.includes('shopfloor')) && (
+            <button 
+              onClick={() => {
+                toggleShopFloorMode();
+                if (!shopFloorMode) {
+                  setActiveTab('shopfloor');
+                }
+              }}
+              className={`px-3 py-1.5 border font-condensed font-extrabold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs transition-all ${
+                shopFloorMode 
+                  ? 'bg-base-warn text-white border-base-warn hover:bg-base-warn/90 font-black' 
+                  : 'bg-base-warn-dim hover:bg-base-warn/20 text-base-warn border-base-warn/30'
+              }`}
+              title={shopFloorMode ? "Exit Shop Floor Mode" : "Switch to Shop Floor Tablet Mode"}
+            >
+              <Factory className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">{shopFloorMode ? 'Exit Shop Floor' : 'Shop Floor'}</span>
+            </button>
+          )}
+
           {canExport && (
             <button 
               onClick={onExportCSV} 
-              className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 transition-all font-condensed font-extrabold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
+              className="px-3 py-1.5 bg-base-ok-dim hover:bg-base-ok hover:text-white border border-base-ok/20 text-base-ok transition-all font-condensed font-extrabold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
               title="Download consolidated spreadsheets"
             >
               <Download className="h-3.5 w-3.5" />
@@ -479,7 +503,7 @@ export function AppTopBar({
                               {item.type === 'project' && <Folder className="h-4 w-4" />}
                               {item.type === 'employee' && <Users className="h-4 w-4" />}
                               {item.type === 'material' && <Package className="h-4 w-4" />}
-                              {item.type === 'bom' && <ListTree className="h-4 w-4 text-purple-400" />}
+                              {item.type === 'bom' && <ListTree className="h-4 w-4 text-base-info" />}
                             </div>
                             <div className="min-w-0">
                               <p className="font-bold text-xs text-base-text truncate">{item.title}</p>
@@ -517,9 +541,9 @@ export function AppTopBar({
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-base-surface border border-base-border flex items-center justify-center text-base-accent shadow-sm shrink-0">
                         {selectedItem.type === 'project' && <Folder className="h-6 w-6 text-base-accent" />}
-                        {selectedItem.type === 'employee' && <Users className="h-6 w-6 text-base-blue" />}
-                        {selectedItem.type === 'material' && <Package className="h-6 w-6 text-emerald-500" />}
-                        {selectedItem.type === 'bom' && <ListTree className="h-6 w-6 text-purple-400" />}
+                        {selectedItem.type === 'employee' && <Users className="h-6 w-6 text-base-info" />}
+                        {selectedItem.type === 'material' && <Package className="h-6 w-6 text-base-ok" />}
+                        {selectedItem.type === 'bom' && <ListTree className="h-6 w-6 text-base-info" />}
                       </div>
                       <div className="min-w-0 flex-1 space-y-1">
                         <span className="text-[9px] font-condensed font-black tracking-widest text-base-muted uppercase bg-base-surface border border-base-border px-2 py-0.5 rounded-md">
@@ -663,8 +687,8 @@ export function AppTopBar({
                           )}
 
                           {selectedItem.data.isExEmployee && (
-                            <div className="border-t border-base-border pt-3.5 p-3 bg-red-500/5 border border-red-500/20 rounded-lg space-y-1.5">
-                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-red-500">Resignation Dossier</p>
+                            <div className="border-t border-base-border pt-3.5 p-3 bg-base-danger-dim border border-base-danger/20 rounded-lg space-y-1.5">
+                              <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-danger">Resignation Dossier</p>
                               <p className="text-[11px] text-base-text font-semibold">Resigned Date: <span className="font-mono">{selectedItem.data.resignDate || 'N/A'}</span></p>
                               <p className="text-xs text-base-muted italic">Reason: "{selectedItem.data.resignReason || 'Not detailed.'}"</p>
                             </div>
@@ -676,7 +700,7 @@ export function AppTopBar({
                                 setActiveTab('employees');
                                 setIsSearchOpen(false);
                               }}
-                              className="w-full py-2.5 bg-base-blue hover:bg-base-blue/90 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
+                              className="w-full py-2.5 bg-base-info hover:bg-base-info/90 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
                             >
                               <span>Navigate to Employees Management</span>
                               <ChevronRight className="h-4 w-4" />
@@ -704,7 +728,7 @@ export function AppTopBar({
                             <div>
                               <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">Current Stock Level</p>
                               <p className={`font-mono font-bold text-sm mt-1 bg-base-surface2 border rounded px-2 py-1 ${
-                                selectedItem.data.currentStock <= selectedItem.data.minStock ? 'text-base-red border-base-red/20' : 'text-base-green border-base-border'
+                                selectedItem.data.currentStock <= selectedItem.data.minStock ? 'text-base-danger border-base-danger/20' : 'text-base-ok border-base-border'
                               }`}>
                                 {selectedItem.data.currentStock} {selectedItem.data.unit}
                               </p>
@@ -739,7 +763,7 @@ export function AppTopBar({
                                 setActiveTab('materials');
                                 setIsSearchOpen(false);
                               }}
-                              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
+                              className="w-full py-2.5 bg-base-ok hover:bg-base-ok/90 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer mt-2"
                             >
                               <span>Navigate to Material inventory</span>
                               <ChevronRight className="h-4 w-4" />
@@ -754,7 +778,7 @@ export function AppTopBar({
                           <div className="grid grid-cols-2 gap-3.5 text-xs">
                             <div>
                               <p className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">GA Number</p>
-                              <p className="font-mono font-bold text-purple-400 mt-1 bg-base-surface2 border border-purple-500/20 rounded px-2 py-1">
+                              <p className="font-mono font-bold text-base-info mt-1 bg-base-surface2 border border-base-info/20 rounded px-2 py-1">
                                 {selectedItem.data.gaNumber || 'N/A'}
                               </p>
                             </div>

@@ -937,6 +937,7 @@ export function useProjects(
     setCopyKeepClient,
     openAddProject,
     openEditProjectForm,
+    openEditProject: openEditProjectForm,
     saveProjectForm,
     deleteProjectDetails,
     deleteProjectsExceptTarget,

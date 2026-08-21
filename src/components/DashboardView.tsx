@@ -1,21 +1,22 @@
 import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
 import { useAppStore, useUIStore } from '../store';
+import { getAuth } from 'firebase/auth';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders, Gauge, Target, MapPin } from 'lucide-react';
+import { calcProjectRiskScore } from '../utils/riskScore';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders, Gauge, Target, MapPin, Activity } from 'lucide-react';
 import {
-  ResponsiveContainer,
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
   RadialBarChart,
   RadialBar,
-  PolarAngleAxis
+  PolarAngleAxis,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  CartesianGrid
 } from 'recharts';
 
 interface DashboardViewProps {
@@ -97,9 +98,9 @@ export default function DashboardView({
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
   const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | 'ai-command-center' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
-  const [sCurveView, setSCurveView] = useState<'month' | 'quarter'>('month');
   const [showProjectScopeTable, setShowProjectScopeTable] = useState<boolean>(false);
   const [gaugeFilter, setGaugeFilter] = useState<'active' | 'all' | 'overdue' | 'completed'>('active');
+  const [burndownMode, setBurndownMode] = useState<'tasks' | 'hours'>('tasks');
 
   const handleToggleProjectScope = () => {
     setShowProjectScopeTable(prev => {
@@ -137,36 +138,40 @@ export default function DashboardView({
     return null;
   };
 
+  const CustomBurndownTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const dataPoint = payload[0].payload;
+      return (
+        <div className="bg-base-surface border border-base-border p-3 rounded-xl shadow-modal text-xs font-condensed font-bold border-l-4 border-l-base-accent min-w-[120px] space-y-1">
+          <p className="text-base-text uppercase tracking-wider text-[10px] text-base-muted">Hari {dataPoint.day}</p>
+          {payload.map((entry: any, index: number) => {
+            if (entry.value === null || entry.value === undefined) return null;
+            return (
+              <div key={index} className="flex items-center justify-between gap-4">
+                <span className="flex items-center gap-1.5 font-semibold text-base-muted">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.color }} />
+                  {entry.name}:
+                </span>
+                <span className="text-base-text font-mono">{entry.value} {burndownMode === 'tasks' ? 'pts' : 'hrs'}</span>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+    return null;
+  };
+
   // --------------------------------------------------------------------------
   // DYNAMIC CUMULATIVE TREND DATA (S-CURVE) & ANALYTICS CALCULATION
   // --------------------------------------------------------------------------
-  const { 
-    trendData, 
-    targetProjs, 
-    variance, 
-    dailyRate, 
-    remainingPct, 
-    forecastDateStr 
-  } = useMemo(() => {
+  const targetProjs = useMemo(() => {
     const parts = selectedMonth.split('-');
     const yearStr = parts[0] || '2026';
     const monthStr = parts[1] || '06';
-    const yr = parseInt(yearStr, 10);
-    const mo = parseInt(monthStr, 10);
 
     const targetMonths: string[] = [];
-    if (sCurveView === 'quarter') {
-      const quarter = Math.ceil(mo / 3);
-      targetMonths.push(
-        `${yearStr}-${String((quarter - 1) * 3 + 1).padStart(2, '0')}`,
-        `${yearStr}-${String((quarter - 1) * 3 + 2).padStart(2, '0')}`,
-        `${yearStr}-${String((quarter - 1) * 3 + 3).padStart(2, '0')}`
-      );
-    } else {
-      targetMonths.push(selectedMonth);
-    }
-
-    const todayStr = new Date().toISOString().slice(0, 10);
+    targetMonths.push(selectedMonth);
 
     // Filter projects matching current dashboard scope and selected period
     const targetProjsList = projects.filter(p => {
@@ -186,187 +191,8 @@ export default function DashboardView({
       });
     });
 
-    const getInterpolatedPct = (
-      dateStr: string,
-      startStr: string,
-      endStr: string,
-      startPct: number,
-      endPct: number
-    ): number => {
-      const tStart = new Date(startStr).getTime();
-      const tEnd = new Date(endStr).getTime();
-      const tCurrent = new Date(dateStr).getTime();
-      if (isNaN(tStart) || isNaN(tEnd) || isNaN(tCurrent)) return endPct;
-      if (tCurrent <= tStart) return startPct;
-      if (tCurrent >= tEnd) return endPct;
-      const ratio = (tCurrent - tStart) / (tEnd - tStart);
-      return startPct + ratio * (endPct - startPct);
-    };
-
-    const datesList: Array<{ dateStr: string; label: string }> = [];
-    targetMonths.forEach(m => {
-      const [y, moStr] = m.split('-');
-      const yrVal = parseInt(y, 10);
-      const moVal = parseInt(moStr, 10);
-      const totalDaysInMonth = new Date(yrVal, moVal, 0).getDate();
-      for (let d = 1; d <= totalDaysInMonth; d++) {
-        const dayPad = String(d).padStart(2, '0');
-        datesList.push({
-          dateStr: `${y}-${moStr}-${dayPad}`,
-          label: `${dayPad} ${moStr}`
-        });
-      }
-    });
-
-    const list: Array<{
-      day: string;
-      actual: number | null;
-      planned: number;
-    }> = [];
-
-    if (targetProjsList.length === 0) {
-      // Return beautiful fallback placeholder slope if there are no registered projects
-      datesList.forEach((item, index) => {
-        const defaultVal = Math.round(((index + 1) / datesList.length) * 100);
-        const isFuture = item.dateStr > todayStr;
-        list.push({
-          day: item.label,
-          actual: isFuture ? null : Math.round(defaultVal * 0.9),
-          planned: defaultVal
-        });
-      });
-    } else {
-      datesList.forEach((item) => {
-        const dateStr = item.dateStr;
-        let totalActual = 0;
-        let totalPlanned = 0;
-        const isFuture = dateStr > todayStr;
-
-        targetProjsList.forEach(p => {
-          const pStart = p.start || `${targetMonths[0]}-01`;
-          const pDue = p.due || `${targetMonths[targetMonths.length - 1]}-28`;
-          
-          // Flatten all tasks across all assemblies for the project
-          const projectTasks: any[] = [];
-          (p.assemblies || []).forEach(asm => {
-            (asm.tasks || []).forEach(t => {
-              projectTasks.push(t);
-            });
-          });
-
-          let plannedValue = 0;
-
-          // HARD GUARD: a project cannot have any planned progress before its own
-          // start date, and must be considered 100% planned once past its due date.
-          // This ensures the Planned Baseline line always starts exactly at 0% on
-          // the project's start date, regardless of any inconsistent task-level data.
-          if (dateStr < pStart) {
-            plannedValue = 0;
-          } else if (dateStr >= pDue) {
-            plannedValue = 100;
-          } else if (projectTasks.length === 0) {
-            plannedValue = getInterpolatedPct(dateStr, pStart, pDue, 0, 100);
-          } else {
-            let totalProjDifficulty = 0;
-            let weightedPlannedSum = 0;
-
-            projectTasks.forEach(t => {
-              const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
-              totalProjDifficulty += difficulty;
-
-              // Clamp task dates to stay within the project's own baseline/schedule window,
-              // so a task's individual date data can never push progress outside the
-              // project's own [pStart, pDue] boundaries.
-              let tStart = t.date || pStart;
-              let tFinish = t.finishDate || tStart;
-              if (tStart < pStart) tStart = pStart;
-              if (tFinish > pDue) tFinish = pDue;
-              if (tFinish < tStart) tFinish = tStart;
-
-              if (dateStr >= tFinish) {
-                weightedPlannedSum += 100 * difficulty;
-              } else if (dateStr < tStart) {
-                weightedPlannedSum += 0 * difficulty;
-              } else {
-                const taskPct = getInterpolatedPct(dateStr, tStart, tFinish, 0, 100);
-                weightedPlannedSum += taskPct * difficulty;
-              }
-            });
-
-            plannedValue = totalProjDifficulty > 0 ? (weightedPlannedSum / totalProjDifficulty) : 0;
-          }
-          totalPlanned += plannedValue;
-
-          // Actual trajectory curve based on historic milestones or progress interpolation up to today
-          let actualValue = 0;
-          const currentPct = calcPct(p);
-          const actualStart = p.start || `${targetMonths[0]}-01`;
-
-          if (p.status === 'completed' && p.completedDate) {
-            if (dateStr >= p.completedDate) {
-              actualValue = 100;
-            } else {
-              actualValue = getInterpolatedPct(dateStr, actualStart, p.completedDate, 0, 100);
-            }
-          } else {
-            if (dateStr >= todayStr) {
-              actualValue = currentPct;
-            } else {
-              actualValue = getInterpolatedPct(dateStr, actualStart, todayStr, 0, currentPct);
-            }
-          }
-          totalActual += actualValue;
-        });
-
-        const avgPlanned = Math.round(totalPlanned / targetProjsList.length);
-        const avgActual = isFuture ? null : Math.round(totalActual / targetProjsList.length);
-
-        list.push({
-          day: item.label,
-          actual: avgActual,
-          planned: avgPlanned
-        });
-      });
-    }
-
-    // Analytics calculations
-    const latestActualEntry = [...list].reverse().find(d => d.actual !== null);
-    const actualVal = latestActualEntry ? latestActualEntry.actual ?? 0 : 0;
-    const plannedVal = latestActualEntry ? latestActualEntry.planned ?? 0 : 0;
-    const varianceVal = actualVal - plannedVal;
-
-    // Elapsed days from the start of the period to the last recorded actual progress day
-    const firstDateStr = datesList[0]?.dateStr;
-    const lastActualDateStr = latestActualEntry ? datesList[list.indexOf(latestActualEntry)]?.dateStr : todayStr;
-    
-    let elapsedDays = 1;
-    if (firstDateStr && lastActualDateStr) {
-      const fDate = new Date(firstDateStr);
-      const lDate = new Date(lastActualDateStr);
-      const elapsedMs = lDate.getTime() - fDate.getTime();
-      elapsedDays = Math.max(1, Math.ceil(elapsedMs / (1000 * 60 * 60 * 24)));
-    }
-
-    const dailyRateVal = elapsedDays > 0 ? actualVal / elapsedDays : 0;
-    const remainingPctVal = Math.max(0, 100 - actualVal);
-    const remainingDaysVal = dailyRateVal > 0 ? Math.ceil(remainingPctVal / dailyRateVal) : null;
-    
-    let forecastDateStrVal = 'N/A';
-    if (remainingDaysVal !== null && remainingDaysVal !== Infinity && remainingDaysVal >= 0) {
-      const forecastDate = new Date();
-      forecastDate.setDate(forecastDate.getDate() + remainingDaysVal);
-      forecastDateStrVal = forecastDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-    }
-
-    return {
-      trendData: list,
-      targetProjs: targetProjsList,
-      variance: varianceVal,
-      dailyRate: dailyRateVal,
-      remainingPct: remainingPctVal,
-      forecastDateStr: forecastDateStrVal
-    };
-  }, [projects, selectedMonth, dashLoc, sCurveView]);
+    return targetProjsList;
+  }, [projects, selectedMonth, dashLoc]);
 
   // --------------------------------------------------------------------------
   // DYNAMIC OVERDUE BLOCKER & DEPENDENCY ALERT CALCULATIONS
@@ -647,7 +473,352 @@ export default function DashboardView({
     });
   }, [filteredProjects, gaugeFilter]);
 
+  const burndownData = useMemo(() => {
+    // 1. Scope projects: !isArchived
+    const burndownProjects = filteredProjects.filter(p => !p.isArchived);
+
+    // 2. Month days count
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    const year = parseInt(yearStr, 10) || 2026;
+    const month = parseInt(monthStr, 10) || 6;
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // 3. Determine 'today' in the context of selected month
+    const today = new Date();
+    const currentYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    let todayDay = daysInMonth;
+    if (selectedMonth === currentYM) {
+      todayDay = Math.min(today.getDate(), daysInMonth);
+    } else if (selectedMonth > currentYM) {
+      todayDay = 1;
+    }
+
+    // --- MODE 1: TASKS (preferred effort points) ---
+    // Setiap task: weight = difficulty || 1
+    // remaining = sum over tasks of weight * (1 - (pct||0)/100)
+    let totalStartTasks = 0;
+    let currentRemainingTasks = 0;
+
+    burndownProjects.forEach(p => {
+      (p.assemblies || []).forEach(asm => {
+        (asm.tasks || []).forEach(t => {
+          const weight = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+          totalStartTasks += weight;
+          currentRemainingTasks += weight * (1 - (t.pct || 0) / 100);
+        });
+      });
+    });
+
+    // --- MODE 2: HOURS ---
+    // totalBudgetHours = sum of p.budgetHours || 0
+    let totalStartHours = 0;
+    burndownProjects.forEach(p => {
+      totalStartHours += p.budgetHours || 0;
+    });
+
+    // Local assembly ID to project Map to avoid using outside inline map
+    const localAssemblyProjectIds = new Set<string>();
+    burndownProjects.forEach(p => {
+      (p.assemblies || []).forEach(asm => {
+        localAssemblyProjectIds.add(asm.id);
+      });
+    });
+
+    // Match timesheets to our projects in scope
+    const monthlyTimesheets = timesheets.filter(ts => {
+      if (ts.date.slice(0, 7) !== selectedMonth) return false;
+      if (!ts.assemblyId) return false;
+      return localAssemblyProjectIds.has(ts.assemblyId);
+    });
+
+    // Build day-by-day logged hours map
+    const loggedHoursByDay: { [day: number]: number } = {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      loggedHoursByDay[d] = 0;
+    }
+    monthlyTimesheets.forEach(ts => {
+      const day = parseInt(ts.date.slice(8, 10), 10);
+      if (day >= 1 && day <= daysInMonth) {
+        loggedHoursByDay[day] += ts.totalHours || 0;
+      }
+    });
+
+    // Cumulative logged hours up to day d
+    const cumulativeLoggedHoursUpToDay: { [day: number]: number } = {};
+    let runningSum = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      runningSum += loggedHoursByDay[d];
+      cumulativeLoggedHoursUpToDay[d] = runningSum;
+    }
+
+    const currentLoggedHours = cumulativeLoggedHoursUpToDay[todayDay] || 0;
+    const currentRemainingHours = Math.max(0, totalStartHours - currentLoggedHours);
+
+    // Build the day-by-day series for LineChart
+    const taskSeries: any[] = [];
+    const hourSeries: any[] = [];
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateLabel = `${d}`;
+
+      // Ideal Tasks
+      const idealTaskVal = totalStartTasks * (1 - (d - 1) / Math.max(1, daysInMonth - 1));
+      
+      // Actual Tasks
+      let actualTaskVal: number | null = null;
+      if (d === 1) {
+        actualTaskVal = totalStartTasks;
+      } else if (d <= todayDay) {
+        actualTaskVal = totalStartTasks + (currentRemainingTasks - totalStartTasks) * ((d - 1) / Math.max(1, todayDay - 1));
+      }
+
+      taskSeries.push({
+        day: dateLabel,
+        ideal: Math.round(idealTaskVal * 10) / 10,
+        actual: actualTaskVal !== null ? Math.round(actualTaskVal * 10) / 10 : null
+      });
+
+      // Ideal Hours
+      const idealHourVal = totalStartHours * (1 - (d - 1) / Math.max(1, daysInMonth - 1));
+
+      // Actual Hours
+      let actualHourVal: number | null = null;
+      if (d === 1) {
+        actualHourVal = totalStartHours;
+      } else if (d <= todayDay) {
+        const loggedSoFar = cumulativeLoggedHoursUpToDay[d] || 0;
+        actualHourVal = Math.max(0, totalStartHours - loggedSoFar);
+      }
+
+      hourSeries.push({
+        day: dateLabel,
+        ideal: Math.round(idealHourVal * 10) / 10,
+        actual: actualHourVal !== null ? Math.round(actualHourVal * 10) / 10 : null
+      });
+    }
+
+    // Calculations of ideal/actual target for today to show variance
+    const idealTasksToday = totalStartTasks * (1 - (todayDay - 1) / Math.max(1, daysInMonth - 1));
+    const idealHoursToday = totalStartHours * (1 - (todayDay - 1) / Math.max(1, daysInMonth - 1));
+
+    const taskMetrics = {
+      remainingNow: Math.round(currentRemainingTasks * 10) / 10,
+      idealToday: Math.round(idealTasksToday * 10) / 10,
+      variance: Math.round((currentRemainingTasks - idealTasksToday) * 10) / 10,
+      totalStart: totalStartTasks
+    };
+
+    const hourMetrics = {
+      remainingNow: Math.round(currentRemainingHours * 10) / 10,
+      idealToday: Math.round(idealHoursToday * 10) / 10,
+      variance: Math.round((currentRemainingHours - idealHoursToday) * 10) / 10,
+      totalStart: totalStartHours
+    };
+
+    const hasTasks = totalStartTasks > 0;
+    const hasHours = totalStartHours > 0;
+
+    return {
+      taskSeries,
+      hourSeries,
+      taskMetrics,
+      hourMetrics,
+      hasTasks,
+      hasHours,
+      daysInMonth,
+      todayDay
+    };
+  }, [filteredProjects, selectedMonth, dashLoc, timesheets]);
+
   // Task statistics
+  // --- AI MORNING BRIEF STATES & LOGIC ---
+  const [isBriefLoading, setIsBriefLoading] = useState(false);
+  const [briefText, setBriefText] = useState<string | null>(null);
+  const [briefError, setBriefError] = useState<string | null>(null);
+  const [isBriefExpanded, setIsBriefExpanded] = useState(false);
+
+  const handleGenerateBrief = async () => {
+    setIsBriefLoading(true);
+    setBriefError(null);
+    setBriefText(null);
+    setIsBriefExpanded(true);
+
+    try {
+      const user = getAuth().currentUser;
+      if (!user) {
+        setBriefError("Silakan login ulang sebelum generate Morning Brief");
+        setIsBriefLoading(false);
+        return;
+      }
+
+      let idToken = '';
+      try {
+        idToken = await user.getIdToken(true);
+      } catch (tokenErr: any) {
+        setBriefError("Gagal memperoleh token autentikasi. Silakan login ulang.");
+        setIsBriefLoading(false);
+        return;
+      }
+
+      if (!idToken) {
+        setBriefError("Token autentikasi tidak ditemukan. Silakan login ulang.");
+        setIsBriefLoading(false);
+        return;
+      }
+
+      const todayStr = new Date().toISOString().slice(0, 10);
+
+      // 1. Overdue projects count in selectedMonth + dashLoc scope
+      const overdueProjs = filteredProjects.filter(p => {
+        return p.status !== 'completed' && p.due && p.due < todayStr && !p.isArchived;
+      });
+
+      // 2. Top 3 overdue projects (nama/client/unit)
+      const topOverdue = overdueProjs
+        .slice()
+        .sort((a, b) => (a.due || '').localeCompare(b.due || ''))
+        .slice(0, 3)
+        .map(p => ({
+          name: p.name,
+          client: p.client,
+          dueDate: p.due,
+          progress: `${calcPct(p)}%`
+        }));
+
+      // 3. Top 3 highest risk projects with reasons
+      const scoredActiveProjects = filteredProjects
+        .filter(p => p.status !== 'completed' && !p.isArchived)
+        .map(p => {
+          const risk = calcProjectRiskScore(p, {
+            timesheets,
+            inspections,
+            problemReports,
+            today: todayStr,
+            materialProcessing: p.materialProcessing
+          });
+          return {
+            name: p.name,
+            client: p.client,
+            dueDate: p.due || 'TBD',
+            progress: `${calcPct(p)}%`,
+            riskScore: risk.score,
+            riskLevel: risk.level,
+            riskReasons: risk.reasons
+          };
+        })
+        .sort((a, b) => b.riskScore - a.riskScore);
+
+      const topRiskProjects = scoredActiveProjects.slice(0, 3);
+
+      // 4. Manpower hadir hari ini vs total employee aktif
+      const presentCount = new Set(
+        timesheets
+          .filter(t => t.date === todayStr && (t.status === 'present' || t.status === 'late'))
+          .map(t => t.empId)
+      ).size;
+      const totalEmployees = employees.length;
+
+      // 5. MR urgent/critical open (max 5 judul)
+      const criticalMRs = materialRequests.filter(mr => 
+        (mr.urgency === 'Critical' || mr.urgency === 'Urgent') &&
+        ['Submitted', 'Approved'].includes(mr.status)
+      );
+      const topCriticalMRs = criticalMRs
+        .slice(0, 5)
+        .map(mr => ({
+          mrNo: mr.mrNo,
+          urgency: mr.urgency,
+          item: mr.items?.[0]?.materialName || mr.notes || 'Bahan fabrikasi',
+          qty: mr.items?.[0]?.qtyRequested || 0
+        }));
+
+      // 6. Inspection/problem open count
+      const openProblemsCount = problemReports.filter(pr => pr.status === 'Open').length;
+      const pendingInspectionsCount = inspections.filter(ir => ['Draft', 'Requested'].includes(ir.status)).length;
+
+      // Consolidate data payload
+      const context = {
+        selectedMonth,
+        locationFilter: dashLoc,
+        topRiskProjects,
+        overdueProjectsCount: overdueProjs.length,
+        topOverdueProjects: topOverdue,
+        manpower: {
+          present: presentCount,
+          total: totalEmployees
+        },
+        criticalMaterialRequests: topCriticalMRs,
+        openFieldProblemsCount: openProblemsCount,
+        pendingInspectionsCount: pendingInspectionsCount
+      };
+
+      const userMsg = `Buat laporan "Morning Brief" operasional toko fabrikasi baja (maksimal 5 poin utama berformat bullet) untuk tanggal hari ini (${todayStr}) dalam Bahasa Indonesia yang singkat, padat, dan langsung siap dibacakan saat briefing pagi. Sorot top proyek dengan skor risiko tertinggi beserta alasan kendalanya, ketersediaan manpower, material kritis, dan status lapangan. Sampaikan dengan gaya taktis dan profesional, tanpa mengarang data di luar JSON yang dikirimkan.`;
+
+      const res = await fetch("/api/gemini/chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`
+        },
+        body: JSON.stringify({ prompt: userMsg, context }),
+      });
+
+      if (!res.ok) {
+        let serverError = `Gagal menghubungi AI Server (${res.status})`;
+        try {
+          const errData = await res.json();
+          if (errData?.error) {
+            serverError = errData.details ? `${errData.error}: ${errData.details}` : errData.error;
+          } else if (errData?.message) {
+            serverError = errData.message;
+          }
+        } catch {
+          // fallback
+        }
+        throw new Error(serverError);
+      }
+
+      const data = await res.json();
+      if (data.text) {
+        setBriefText(data.text);
+        setBriefError(null);
+      } else {
+        throw new Error("Respons AI kosong.");
+      }
+    } catch (err: any) {
+      console.error("Gagal men-generate Morning Brief:", err);
+      const errMsg = err?.message || String(err);
+      setBriefText(null);
+      setBriefError(errMsg);
+    } finally {
+      setIsBriefLoading(false);
+    }
+  };
+
+  const renderBriefText = (text: string) => {
+    return text.split('\n').map((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return null;
+      
+      const isBullet = trimmed.startsWith('*') || trimmed.startsWith('-') || /^\d+\./.test(trimmed);
+      const content = trimmed.replace(/^[\*\-\d\.\s]+/, '');
+
+      if (isBullet) {
+        return (
+          <li key={idx} className="flex items-start gap-2.5 text-xs text-base-text leading-relaxed">
+            <span className="w-1.5 h-1.5 rounded-full bg-base-accent mt-1.5 shrink-0" />
+            <span>{content}</span>
+          </li>
+        );
+      }
+      return (
+        <p key={idx} className="text-xs text-base-text leading-relaxed mb-1 font-semibold text-base-muted">
+          {trimmed}
+        </p>
+      );
+    });
+  };
+
   let totalTasks = 0;
   let doneTasks = 0;
   let totalDifficultyWeight = 0;
@@ -955,11 +1126,141 @@ export default function DashboardView({
     );
   });
 
+  // --- SHIFT PULSE & FOCUS NOW DATA ---
+  const { shiftPulse, focusNowList } = useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    
+    // 1. Manpower
+    const presentCount = new Set(
+      timesheets
+        .filter(t => t.date === todayStr && (t.status === 'present' || t.status === 'late'))
+        .map(t => t.empId)
+    ).size;
+
+    // 2. Project Risk & Merah
+    const activeProjects = projects.filter(p => !p.isArchived && ['active', 'pending', 'on-hold'].includes(p.status));
+    
+    // Evaluate risk score for each active project
+    const scoredProjects = activeProjects.map(p => {
+      const risk = calcProjectRiskScore(p, {
+        timesheets,
+        inspections,
+        problemReports,
+        today: todayStr,
+        materialProcessing: p.materialProcessing,
+      });
+      return { project: p, risk };
+    }).sort((a, b) => b.risk.score - a.risk.score);
+
+    const highestRiskProject = scoredProjects[0];
+    const redProjectCount = scoredProjects.filter(sp => sp.risk.score >= 70).length;
+
+    // 3. Material Critical
+    const criticalMaterials = materialRequests.filter(mr => 
+      (mr.urgency === 'Critical' || mr.urgency === 'Urgent') &&
+      ['Submitted', 'Approved'].includes(mr.status)
+    );
+
+    // 4. Problem & Inspection Open
+    const openProblems = problemReports.filter(pr => pr.status === 'Open');
+    const pendingInspections = inspections.filter(ir => ['Draft', 'Requested'].includes(ir.status));
+
+    // Compile Focus Now
+    const focusItems = [];
+
+    if (highestRiskProject && highestRiskProject.risk.score >= 40) {
+      focusItems.push({
+        id: 'f-proj-' + highestRiskProject.project.id,
+        title: `Mitigasi Risiko (${highestRiskProject.risk.score}/100) — ${highestRiskProject.project.client || highestRiskProject.project.gaNumber || highestRiskProject.project.name}`,
+        reason: highestRiskProject.risk.reasons[0] || `High risk score: ${highestRiskProject.risk.score}`,
+        action: () => openSpotlight(highestRiskProject.project.id),
+        type: 'project'
+      });
+    } else if (highestRiskProject && highestRiskProject.project) {
+      // Fallback if there's any active project
+      const p = highestRiskProject.project;
+      const isOverdue = p.due && p.due < todayStr;
+      if (isOverdue || highestRiskProject.risk.reasons.length > 0) {
+        focusItems.push({
+          id: 'f-proj-' + p.id,
+          title: `Update progress — ${p.client || p.gaNumber || p.name}`,
+          reason: highestRiskProject.risk.reasons[0] || (isOverdue ? 'Overdue due date' : 'Active review'),
+          action: () => openSpotlight(p.id),
+          type: 'project'
+        });
+      }
+    }
+
+    if (criticalMaterials.length > 0) {
+      const oldestMr = [...criticalMaterials].sort((a, b) => a.mrNo.localeCompare(b.mrNo))[0];
+      focusItems.push({
+        id: 'f-mat-' + oldestMr.id,
+        title: `Follow up MR — ${oldestMr.mrNo}`,
+        reason: `Material ${oldestMr.urgency} belum di-issue`,
+        action: () => setActiveTab('materials'),
+        type: 'material'
+      });
+    }
+
+    if (pendingInspections.length > 0) {
+      focusItems.push({
+        id: 'f-ins-' + pendingInspections[0].id,
+        title: `Close inspection — ${pendingInspections[0].rfiNo || pendingInspections[0].projectName}`,
+        reason: 'Inspection pending',
+        action: () => setActiveTab('inspections'),
+        type: 'inspection'
+      });
+    } else if (openProblems.length > 0) {
+      focusItems.push({
+        id: 'f-prob-' + openProblems[0].id,
+        title: `Close problem — ${openProblems[0].category}`,
+        reason: 'Problem open',
+        action: () => setActiveTab('projects'),
+        type: 'problem'
+      });
+    }
+
+    // Add a stuck task if we need more items
+    if (focusItems.length < 3) {
+      let stuckTaskFound = false;
+      for (const p of activeProjects) {
+        if (stuckTaskFound) break;
+        for (const asm of (p.assemblies || [])) {
+          for (const t of (asm.tasks || [])) {
+            if (!t.done && t.pct > 0 && t.pct < 90 && t.finishDate && t.finishDate <= todayStr) {
+              focusItems.push({
+                id: 'f-task-' + t.id,
+                title: `Task delayed — ${t.name}`,
+                reason: `Progress stuck at ${t.pct}% in ${p.name}`,
+                action: () => openSpotlight(p.id),
+                type: 'project'
+              });
+              stuckTaskFound = true;
+              break;
+            }
+          }
+          if (stuckTaskFound) break;
+        }
+      }
+    }
+
+    return {
+      shiftPulse: {
+        presentCount,
+        totalEmployees: employees.length,
+        redProjectCount,
+        criticalMatCount: criticalMaterials.length,
+        openIssuesCount: openProblems.length + pendingInspections.length
+      },
+      focusNowList: focusItems.slice(0, 3)
+    };
+  }, [timesheets, projects, materialRequests, problemReports, inspections, employees, openSpotlight, setActiveTab]);
+
   return (
     <div className="space-y-6">
 
       {/* Hero card */}
-      <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-6 sm:p-8 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-6 dark:from-[#151921] dark:to-[#1b212c]">
+      <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-4 sm:p-8 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6 dark:from-[#151921] dark:to-[#1b212c]">
         {/* Decorative background details */}
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-radial from-base-accent-dim to-transparent opacity-40 pointer-events-none" />
         <div className="absolute -bottom-12 left-1/3 w-48 h-48 rounded-full bg-radial from-base-blue-dim to-transparent opacity-40 pointer-events-none" />
@@ -1103,21 +1404,405 @@ export default function DashboardView({
         </div>
       </div>
 
+      {/* SHIFT PULSE & FOCUS NOW */}
+      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+        {/* SHIFT PULSE */}
+        <div className="xl:col-span-2 flex flex-col gap-3">
+          <h2 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm flex items-center gap-2">
+            <Activity className="w-4 h-4 text-base-accent" />
+            Shift Pulse
+          </h2>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between text-base-muted">
+                <Users className="w-4 h-4" />
+                <span className="text-[10px] font-condensed font-bold uppercase tracking-wider">Hadir Hari Ini</span>
+              </div>
+              <div className="text-2xl font-condensed font-black text-base-text mt-1">
+                {shiftPulse.presentCount} <span className="text-xs text-base-muted font-normal">/ {shiftPulse.totalEmployees}</span>
+              </div>
+            </div>
+            
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between text-base-muted">
+                <AlertTriangle className={`w-4 h-4 ${shiftPulse.redProjectCount > 0 ? 'text-base-red' : ''}`} />
+                <span className="text-[10px] font-condensed font-bold uppercase tracking-wider">Project Merah</span>
+              </div>
+              <div className={`text-2xl font-condensed font-black mt-1 ${shiftPulse.redProjectCount > 0 ? 'text-base-red' : 'text-base-text'}`}>
+                {shiftPulse.redProjectCount}
+              </div>
+            </div>
+
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between text-base-muted">
+                <Package className={`w-4 h-4 ${shiftPulse.criticalMatCount > 0 ? 'text-base-accent' : ''}`} />
+                <span className="text-[10px] font-condensed font-bold uppercase tracking-wider">MR Critical</span>
+              </div>
+              <div className={`text-2xl font-condensed font-black mt-1 ${shiftPulse.criticalMatCount > 0 ? 'text-base-accent' : 'text-base-text'}`}>
+                {shiftPulse.criticalMatCount}
+              </div>
+            </div>
+
+            <div className="bg-base-surface border border-base-border rounded-xl p-4 flex flex-col gap-2 shadow-sm">
+              <div className="flex items-center justify-between text-base-muted">
+                <ShieldAlert className={`w-4 h-4 ${shiftPulse.openIssuesCount > 0 ? 'text-amber-500' : ''}`} />
+                <span className="text-[10px] font-condensed font-bold uppercase tracking-wider">Open Issue/Ins</span>
+              </div>
+              <div className={`text-2xl font-condensed font-black mt-1 ${shiftPulse.openIssuesCount > 0 ? 'text-amber-500' : 'text-base-text'}`}>
+                {shiftPulse.openIssuesCount}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* FOCUS NOW */}
+        <div className="xl:col-span-1 flex flex-col gap-3">
+          <div className="flex items-center justify-between">
+            <h2 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm flex items-center gap-2">
+              <Target className="w-4 h-4 text-base-accent" />
+              Focus Now
+            </h2>
+            <button
+              onClick={handleGenerateBrief}
+              className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-accent border border-base-accent/20 hover:bg-base-accent/10 px-2.5 py-1 rounded-lg flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+              title="Generate Morning Briefing"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-base-accent animate-pulse" /> Morning Brief
+            </button>
+          </div>
+          <div className="bg-base-surface border border-base-border rounded-xl p-4 flex-1 flex flex-col gap-3 shadow-sm">
+            {focusNowList.length === 0 ? (
+              <div className="flex-1 flex flex-col items-center justify-center text-center py-4">
+                <CheckCircle className="w-8 h-8 text-base-green mb-2 opacity-80" />
+                <p className="text-sm font-bold text-base-text">Semua Aman!</p>
+                <p className="text-xs text-base-muted">Tidak ada aksi kritis hari ini.</p>
+              </div>
+            ) : (
+              focusNowList.map(item => (
+                <div key={item.id} className="flex flex-col gap-1.5 p-3 rounded-lg border border-base-border hover:border-base-accent/50 bg-base-surface2 transition-all group">
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-xs font-bold text-base-text leading-tight group-hover:text-base-accent transition-colors">
+                      {item.title}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-[10px] text-base-muted italic truncate pr-2">{item.reason}</span>
+                    <button onClick={item.action} className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-accent hover:underline flex items-center gap-1 cursor-pointer shrink-0">
+                      Action <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* AI MORNING BRIEF SECTION */}
+      <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-sm space-y-4">
+        <div 
+          onClick={() => setIsBriefExpanded(!isBriefExpanded)} 
+          className="flex items-center justify-between cursor-pointer select-none group"
+        >
+          <div className="flex items-center gap-2.5">
+            <div className="p-2 rounded-lg bg-base-accent/10 border border-base-accent/20 text-base-accent">
+              <Sparkles className="w-4.5 h-4.5" />
+            </div>
+            <div>
+              <h3 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm flex items-center gap-2">
+                AI Morning Brief
+                <span className="text-[10px] bg-base-accent/10 text-base-accent px-1.5 py-0.5 rounded border border-base-accent/20 normal-case">Beta</span>
+              </h3>
+              <p className="text-xs text-base-muted mt-0.5">
+                Ringkasan kesiapan operasional lantai produksi hari ini
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            {!briefText && !isBriefLoading && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleGenerateBrief();
+                }}
+                className="px-3.5 py-1.5 bg-base-accent hover:bg-base-accent/90 text-white rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Generate Brief
+              </button>
+            )}
+            <div className="p-1.5 rounded-lg hover:bg-base-surface2 text-base-muted group-hover:text-base-text transition-colors">
+              {isBriefExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            </div>
+          </div>
+        </div>
+
+        {isBriefExpanded && (
+          <div className="border-t border-base-border/50 pt-4">
+            {isBriefLoading && (
+              <div className="flex flex-col items-center justify-center py-8 text-center space-y-3">
+                <div className="relative w-10 h-10">
+                  <div className="absolute inset-0 rounded-full border-2 border-base-border"></div>
+                  <div className="absolute inset-0 rounded-full border-2 border-t-base-accent animate-spin"></div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-bold text-base-text">Menganalisis Kesiapan Lantai Produksi...</p>
+                  <p className="text-xs text-base-muted max-w-xs mx-auto">
+                    Menyusun ringkasan proyek overdue, ketersediaan manpower, material kritis, dan isu lapangan.
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {briefError && (
+              <div className="bg-base-red/5 border border-base-red/25 rounded-xl p-4 flex gap-3 text-xs text-base-red">
+                <AlertCircle className="w-4.5 h-4.5 shrink-0" />
+                <div className="space-y-1">
+                  <p className="font-bold">Gagal Menghasilkan Briefing Pagi</p>
+                  <p className="opacity-90">{briefError}</p>
+                  <button 
+                    onClick={handleGenerateBrief}
+                    className="mt-2 font-bold uppercase tracking-wider hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    Coba Lagi <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {!isBriefLoading && !briefError && !briefText && (
+              <div className="flex flex-col items-center justify-center py-6 text-center">
+                <div className="w-12 h-12 rounded-full bg-base-surface2 border border-base-border/60 flex items-center justify-center mb-3">
+                  <Activity className="w-5 h-5 text-base-muted" />
+                </div>
+                <p className="text-sm font-bold text-base-text">Briefing Pagi Belum Di-generate</p>
+                <p className="text-xs text-base-muted max-w-md mt-1 mb-4">
+                  Dapatkan rangkuman cerdas AI mengenai prioritas produksi, material kritis, dan kesiapan tenaga kerja hari ini sebelum rapat pagi dimulai.
+                </p>
+                <button
+                  onClick={handleGenerateBrief}
+                  className="px-4 py-2 bg-base-accent hover:bg-base-accent/90 text-white rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Generate Morning Brief
+                </button>
+              </div>
+            )}
+
+            {briefText && !isBriefLoading && !briefError && (
+              <div className="space-y-4">
+                <div className="bg-base-surface2 border border-base-border/50 rounded-xl p-4 md:p-5">
+                  <ul className="space-y-3.5">
+                    {renderBriefText(briefText)}
+                  </ul>
+                </div>
+                
+                <div className="flex items-center justify-between text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted">
+                  <span className="flex items-center gap-1">
+                    <Activity className="w-3.5 h-3.5 text-base-green" /> Terkoneksi dengan Gemini 3.6 Flash
+                  </span>
+                  <button 
+                    onClick={handleGenerateBrief}
+                    className="hover:text-base-accent flex items-center gap-1 cursor-pointer"
+                  >
+                    Regenerate Brief <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* SPRINT / PERIOD BURNDOWN CHART */}
+      <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-base-border/50 mb-5">
+          <div>
+            <div className="flex items-center gap-2">
+              <TrendingUp className="h-4.5 w-4.5 text-base-accent" />
+              <h3 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm">
+                Period Burndown
+              </h3>
+            </div>
+            <p className="text-xs text-base-muted mt-0.5">
+              Sisa pekerjaan vs waktu — {formatMonthLabel(selectedMonth)}
+            </p>
+          </div>
+
+          {/* Toggle "Tasks" | "Hours" */}
+          {burndownData.hasHours && (
+            <div className="flex items-center bg-base-surface2 border border-base-border rounded-lg p-0.5 select-none self-start sm:self-auto">
+              <button
+                onClick={() => setBurndownMode('tasks')}
+                className={`px-3 py-1 text-xs font-condensed font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                  burndownMode === 'tasks'
+                    ? 'bg-base-accent text-white shadow-sm'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+              >
+                Tasks ({burndownData.taskMetrics.totalStart} pts)
+              </button>
+              <button
+                onClick={() => setBurndownMode('hours')}
+                className={`px-3 py-1 text-xs font-condensed font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer ${
+                  burndownMode === 'hours'
+                    ? 'bg-base-accent text-white shadow-sm'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+              >
+                Hours ({burndownData.hourMetrics.totalStart} hrs)
+              </button>
+            </div>
+          )}
+        </div>
+
+        {!burndownData.hasTasks && (
+          <div className="flex flex-col items-center justify-center text-center py-10">
+            <AlertCircle className="w-10 h-10 text-base-muted mb-2.5" />
+            <p className="text-sm font-bold text-base-text">Tidak ada scope pekerjaan di periode ini</p>
+            <p className="text-xs text-base-muted max-w-sm mt-1">
+              Silakan tambahkan proyek dengan target tanggal selesai di bulan {formatMonthLabel(selectedMonth)} atau ubah filter lokasi kerja.
+            </p>
+          </div>
+        )}
+
+        {burndownData.hasTasks && (
+          <div className="space-y-5">
+            {/* Chart Area */}
+            <div className="w-full h-[260px] min-h-[220px] min-w-0" style={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
+                <LineChart
+                  data={burndownMode === 'tasks' ? burndownData.taskSeries : burndownData.hourSeries}
+                  margin={{ top: 10, right: 15, left: -10, bottom: 5 }}
+                >
+                  <CartesianGrid stroke="var(--border, rgba(15,23,42,0.1))" className="opacity-40" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="day"
+                    stroke="var(--muted, #64748b)"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    dy={10}
+                  />
+                  <YAxis
+                    stroke="var(--muted, #64748b)"
+                    fontSize={10}
+                    tickLine={false}
+                    axisLine={false}
+                    dx={-5}
+                  />
+                  <Tooltip content={<CustomBurndownTooltip />} />
+                  <Line
+                    name="Ideal"
+                    type="monotone"
+                    dataKey="ideal"
+                    stroke="var(--muted, #64748b)"
+                    strokeWidth={1.5}
+                    strokeDasharray="4 4"
+                    dot={false}
+                    activeDot={false}
+                  />
+                  <Line
+                    name="Actual"
+                    type="monotone"
+                    dataKey="actual"
+                    stroke="var(--accent, #d97706)"
+                    strokeWidth={2.5}
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    connectNulls={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Custom Legend */}
+            <div className="flex items-center justify-center gap-6 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-t border-base-border/30 pt-3">
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0 border-t-2 border-dashed border-base-muted/60" />
+                <span>Ideal Burn</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-0.5 bg-base-accent" />
+                <span>Actual Remaining</span>
+              </div>
+            </div>
+
+            {/* Metrics Footer */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 pt-3 border-t border-base-border/50">
+              <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
+                <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
+                  Sisa Pekerjaan Sekarang
+                </span>
+                <span className="text-xl font-condensed font-black text-base-text mt-1.5 leading-none">
+                  {burndownMode === 'tasks' ? (
+                    <>{burndownData.taskMetrics.remainingNow} <span className="text-xs font-normal text-base-muted">pts</span></>
+                  ) : (
+                    <>{burndownData.hourMetrics.remainingNow} <span className="text-xs font-normal text-base-muted">hrs</span></>
+                  )}
+                </span>
+              </div>
+
+              <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
+                <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
+                  Target Sisa Hari Ini
+                </span>
+                <span className="text-xl font-condensed font-black text-base-text mt-1.5 leading-none">
+                  {burndownMode === 'tasks' ? (
+                    <>{burndownData.taskMetrics.idealToday} <span className="text-xs font-normal text-base-muted">pts</span></>
+                  ) : (
+                    <>{burndownData.hourMetrics.idealToday} <span className="text-xs font-normal text-base-muted">hrs</span></>
+                  )}
+                </span>
+              </div>
+
+              {(() => {
+                const metrics = burndownMode === 'tasks' ? burndownData.taskMetrics : burndownData.hourMetrics;
+                const isAhead = metrics.variance < 0;
+                const isOnTrack = metrics.variance === 0;
+                
+                let badgeClass = "text-base-red border-base-red/20 bg-base-red/5";
+                let text = `Terlambat +${metrics.variance}`;
+                
+                if (isAhead) {
+                  badgeClass = "text-base-green border-base-green/20 bg-base-green/5";
+                  text = `Lebih Cepat ${metrics.variance}`;
+                } else if (isOnTrack) {
+                  badgeClass = "text-base-green border-base-green/20 bg-base-green/5";
+                  text = "Sesuai Target";
+                }
+
+                return (
+                  <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
+                    <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
+                      Deviasi Progress
+                    </span>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-condensed font-bold uppercase tracking-wider leading-none ${badgeClass}`}>
+                        {text} {metrics.variance !== 0 ? (burndownMode === 'tasks' ? 'pts' : 'hrs') : ''}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* SECTION 2 — Bento KPI Grid */}
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3">
           {/* Card 1 - Total Projects */}
           <div 
             onClick={() => setActiveModal('project')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Folder className="h-4.5 w-4.5 text-base-muted" />
-                Total projects
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <Folder className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Total projects</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="4" r="1" fill="currentColor" />
@@ -1127,23 +1812,23 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{filteredProjects.length}</div>
+              <div className="text-2xl sm:text-3xl font-condensed font-extrabold text-base-text select-none">{filteredProjects.length}</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">{isCurrentMonth() ? 'this month' : 'within scope'}</p>
           </div>
 
           {/* Card 2 - Active */}
           <div 
             onClick={() => setActiveModal('active')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-4.5 w-4.5 text-base-muted" />
-                Active
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Active</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,6 L 12,3 L 22,7 L 32,4 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="6" r="1" fill="currentColor" />
                 <circle cx="12" cy="3" r="1" fill="currentColor" />
@@ -1153,23 +1838,23 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{activeCount}</div>
+              <div className="text-2xl sm:text-3xl font-condensed font-extrabold text-base-text select-none">{activeCount}</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">in progress</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">in progress</p>
           </div>
 
           {/* Card 3 - Completed */}
           <div 
             onClick={() => setActiveModal('completed')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <CheckCircle className="h-4.5 w-4.5 text-base-muted" />
-                Completed
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <CheckCircle className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Completed</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,5 L 12,6 L 22,4 L 32,7 L 42,3" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="5" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1179,9 +1864,9 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className={`text-3xl font-condensed font-extrabold select-none ${completedCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{completedCount}</div>
+              <div className={`text-2xl sm:text-3xl font-condensed font-extrabold select-none ${completedCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{completedCount}</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">finished</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">finished</p>
           </div>
 
           {/* Card 4 - Overdue */}
@@ -1190,15 +1875,15 @@ export default function DashboardView({
               setActiveModal('overdue');
               setOverdueTab(overdueCount > 0 ? 'projects' : overdueTasksList.length > 0 ? 'tasks' : 'projects');
             }}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <AlertTriangle className="h-4.5 w-4.5 text-base-red" />
-                Overdue
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <AlertTriangle className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-red shrink-0" />
+                <span className="truncate">Overdue</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,3 L 12,5 L 22,3 L 32,6 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="3" r="1" fill="currentColor" />
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -1208,7 +1893,7 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className={`text-3xl font-condensed font-extrabold select-none ${(overdueCount > 0 || overdueTasksList.length > 0) ? 'text-base-red' : 'text-base-text'}`}>
+              <div className={`text-2xl sm:text-3xl font-condensed font-extrabold select-none ${(overdueCount > 0 || overdueTasksList.length > 0) ? 'text-base-red' : 'text-base-text'}`}>
                 {overdueCount} <span className="text-xs font-medium text-base-muted">Proj</span>
                 {overdueTasksList.length > 0 && (
                   <>
@@ -1218,29 +1903,29 @@ export default function DashboardView({
                 )}
               </div>
               {(overdueCount > 0 || overdueTasksList.length > 0) && (
-                <span className="text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
+                <span className="text-[9px] sm:text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
                   ⚠ Alert
                 </span>
               )}
             </div>
-            <p className="text-xs text-base-muted2 mt-1">past target date</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">past target date</p>
           </div>
         </div>
 
         {/* Second row - attendance + manhours + material processing */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-3 mt-3">
           {/* Card 5 - Man Hours */}
           <div 
             onClick={() => setActiveModal('man-hours')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Clock className="h-4.5 w-4.5 text-base-muted" />
-                Man-hours
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Man-hours</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,5 L 22,6 L 32,4 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="5" r="1" fill="currentColor" />
@@ -1250,23 +1935,23 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-3xl font-condensed font-extrabold text-base-text select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
+              <div className="text-2xl sm:text-3xl font-condensed font-extrabold text-base-text select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
           </div>
 
           {/* Card 6 - Present Today */}
           <div 
             onClick={() => setActiveModal('present')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-green group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-green/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Users className="h-4.5 w-4.5 text-base-muted" />
-                Present
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <Users className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Present</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,4 L 12,6 L 22,3 L 32,5 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="4" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1276,23 +1961,23 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className={`text-3xl font-condensed font-extrabold select-none ${presentCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{presentCount}</div>
+              <div className={`text-2xl sm:text-3xl font-condensed font-extrabold select-none ${presentCount > 0 ? 'text-base-green' : 'text-base-text'}`}>{presentCount}</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">out of {employees.length} guys</p>
           </div>
 
           {/* Card 7 - Absent Today */}
           <div 
             onClick={() => setActiveModal('absent')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-red group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-red/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <ShieldAlert className="h-4.5 w-4.5 text-base-muted" />
-                Absent
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <ShieldAlert className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Absent</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,4 L 22,6 L 32,3 L 42,4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="7" r="1" fill="currentColor" />
                 <circle cx="12" cy="4" r="1" fill="currentColor" />
@@ -1302,22 +1987,22 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className={`text-3xl font-condensed font-extrabold select-none ${absentCount > 0 ? 'text-base-red' : 'text-base-text'}`}>{absentCount}</div>
+              <div className={`text-2xl sm:text-3xl font-condensed font-extrabold select-none ${absentCount > 0 ? 'text-base-red' : 'text-base-text'}`}>{absentCount}</div>
             </div>
-            <p className="text-xs text-base-muted2 mt-1">out of {employees.length} guys</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">out of {employees.length} guys</p>
           </div>
 
           {/* Card 8 - Material Processing Shop-Floor */}
           <div 
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-accent group transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-accent/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-3">
-              <div className="flex items-center gap-1.5">
-                <Layers className="h-4.5 w-4.5 text-base-muted" />
-                Mat. Processing
+            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-1.5 truncate">
+                <Layers className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
+                <span className="truncate">Mat. Processing</span>
               </div>
-              <svg className="w-10 h-3 opacity-40 text-base-muted" viewBox="0 0 50 10">
+              <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,3 L 12,6 L 22,4 L 32,7 L 42,5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 <circle cx="2" cy="3" r="1" fill="currentColor" />
                 <circle cx="12" cy="6" r="1" fill="currentColor" />
@@ -1327,285 +2012,26 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className={`text-3xl font-condensed font-extrabold select-none ${overdueProc > 0 ? 'text-base-red' : 'text-base-text'}`}>
+              <div className={`text-2xl sm:text-3xl font-condensed font-extrabold select-none ${overdueProc > 0 ? 'text-base-red' : 'text-base-text'}`}>
                 {completedProc}/{totalProc}
               </div>
               {overdueProc > 0 && (
-                <span className="text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
+                <span className="text-[9px] sm:text-[10px] font-condensed font-bold text-base-red bg-base-red/10 px-1.5 py-0.5 rounded-full animate-pulse uppercase tracking-wider">
                   ⚠ {overdueProc} Delayed
                 </span>
               )}
             </div>
-            <p className="text-xs text-base-muted2 mt-1">active: {activeProc} items in stages</p>
+            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">active: {activeProc} items in stages</p>
           </div>
         </div>
       </div>
 
-      {/* SECTION 3 — Main Content Bento (3-column on desktop) */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-
-        {/* LEFT COLUMN — spans 2 cols */}
-        <div className="xl:col-span-2 space-y-4">
-
-          {/* S-Curve Chart — keep existing chart code exactly, just re-wrap */}
-          <div className="bg-base-surface border border-base-border rounded-2xl shadow-card p-6 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <h3 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-base-accent" />
-                  Cumulative Project Progress Trend (S-Curve)
-                </h3>
-                <p className="text-xs text-base-muted2">
-                  Comparison of actual cumulative completion percentage against planned trajectory for the selected period.
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
-                {/* Month/Quarter Toggle */}
-                <div className="flex items-center bg-base-bg/70 border border-base-border rounded-lg p-0.5 text-xs font-condensed font-bold uppercase tracking-wider select-none shrink-0">
-                  <button
-                    onClick={() => setSCurveView('month')}
-                    className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
-                      sCurveView === 'month'
-                        ? 'bg-base-accent text-white shadow-sm'
-                        : 'text-base-muted2 hover:text-base-text hover:bg-base-surface3'
-                    }`}
-                  >
-                    Month
-                  </button>
-                  <button
-                    onClick={() => setSCurveView('quarter')}
-                    className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
-                      sCurveView === 'quarter'
-                        ? 'bg-base-accent text-white shadow-sm'
-                        : 'text-base-muted2 hover:text-base-text hover:bg-base-surface3'
-                    }`}
-                  >
-                    Quarter
-                  </button>
-                </div>
-
-                {/* Legend */}
-                <div className="flex items-center gap-4 text-xs font-condensed font-bold uppercase tracking-wider bg-base-bg/50 px-3 py-1.5 rounded-lg border border-base-border shrink-0 select-none">
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-3.5 h-0.75 bg-base-accent rounded-full" />
-                    <span className="text-base-text">Actual Completion</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 border-l border-base-border pl-3">
-                    <span className="w-3.5 h-0.75 border-t-2 border-dashed border-base-muted2" />
-                    <span className="text-base-muted2">Planned Baseline</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="h-[260px] w-full pt-1">
-              <ResponsiveContainer width="99%" height={255}>
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -22, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--accent)" stopOpacity={0.25}/>
-                      <stop offset="95%" stopColor="var(--accent)" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis 
-                    dataKey="day" 
-                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
-                    tickLine={false}
-                    axisLine={false}
-                  />
-                  <YAxis 
-                    domain={[0, 100]} 
-                    tick={{ fill: 'var(--muted2)', fontSize: 10, fontFamily: 'monospace' }}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(val) => `${val}%`}
-                  />
-                  <Tooltip content={<CustomChartTooltip />} />
-                  <Area 
-                    name="Actual Progress"
-                    type="monotone" 
-                    dataKey="actual" 
-                    stroke="var(--accent)" 
-                    strokeWidth={3}
-                    fillOpacity={1} 
-                    fill="url(#colorActual)"
-                    activeDot={{ r: 5, strokeWidth: 0, fill: 'var(--accent)' }}
-                    connectNulls
-                  />
-                  <Area 
-                    name="Planned Baseline"
-                    type="monotone" 
-                    dataKey="planned" 
-                    stroke="var(--blue)" 
-                    strokeWidth={2}
-                    strokeDasharray="4 4"
-                    fill="none" 
-                    activeDot={false}
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-
-            {/* S-Curve Additional Insights Section */}
-            <div className="border-t border-base-border/50 pt-5 space-y-5">
-              {/* Variance & Forecast Row */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {/* A. Variance Indicator */}
-                <div className="bg-base-surface2/40 border border-base-border rounded-xl p-4 flex items-center justify-between">
-                  <div className="space-y-1">
-                    <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted">Schedule Variance</span>
-                    <h4 className="text-sm font-semibold text-base-text">Vs. Planned Baseline</h4>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {variance >= 0 ? (
-                      <div className="flex items-center gap-1.5 bg-emerald-500/10 text-emerald-500 px-3 py-1.5 rounded-lg border border-emerald-500/20">
-                        <TrendingUp className="h-4.5 w-4.5" />
-                        <span className="font-condensed font-extrabold text-sm select-none">+{variance.toFixed(0)}% AHEAD</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1.5 bg-rose-500/10 text-rose-500 px-3 py-1.5 rounded-lg border border-rose-500/20">
-                        <AlertTriangle className="h-4.5 w-4.5 animate-pulse" />
-                        <span className="font-condensed font-extrabold text-sm select-none">{variance.toFixed(0)}% BEHIND</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* D. Completion Forecast */}
-                <div className="bg-base-surface2/40 border border-base-border rounded-xl p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted">Completion Forecast</span>
-                    <span className="text-[10px] font-mono font-bold text-base-accent">Based on {dailyRate.toFixed(2)}%/day rate</span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="bg-base-bg border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-text">
-                      Daily Rate: <span className="font-mono text-base-accent">{dailyRate.toFixed(2)}%</span>
-                    </div>
-                    <div className="bg-base-bg border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-text">
-                      Remaining: <span className="font-mono text-base-blue">{remainingPct.toFixed(0)}%</span>
-                    </div>
-                    {(() => {
-                      const remainingDays = dailyRate > 0 ? Math.ceil(remainingPct / dailyRate) : null;
-                      return remainingDays !== null && remainingDays !== Infinity && remainingDays >= 0 ? (
-                        <div className="bg-base-accent/10 border border-base-accent/20 px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-accent flex items-center gap-1">
-                          <span>Est. Finish:</span>
-                          <span className="font-mono uppercase">{forecastDateStr}</span>
-                        </div>
-                      ) : (
-                        <div className="bg-base-border/30 border border-base-border px-2.5 py-1 rounded-lg text-xs font-condensed font-bold text-base-muted2">
-                          No active progress trend
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-
-              {/* B. Project Breakdown Table */}
-              {showProjectScopeTable && (
-                <div id="project-scope-breakdown-section" className="space-y-3 pt-3 border-t border-base-border/50 animate-fade-in">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-muted flex items-center gap-1.5">
-                      <Folder className="h-4 w-4 text-base-accent" />
-                      Project Scope Breakdown & Performance
-                    </h4>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-condensed font-bold text-base-muted">
-                        {targetProjs.length} active in this period
-                      </span>
-                      <button
-                        onClick={() => setShowProjectScopeTable(false)}
-                        className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-accent hover:text-base-text bg-base-accent/10 hover:bg-base-accent/20 border border-base-accent/20 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
-                      >
-                        Hide Scope Table ▲
-                      </button>
-                    </div>
-                  </div>
-                  
-                  <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface3/25">
-                    <div className="overflow-x-auto text-base-text">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-base-surface2/70 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
-                            <th className="px-4 py-2.5">Project Name</th>
-                            <th className="px-4 py-2.5">Client / Code</th>
-                            <th className="px-4 py-2.5 text-center">Status</th>
-                            <th className="px-4 py-2.5 text-center">Overdue Tasks</th>
-                            <th className="px-4 py-2.5 w-44">Overall Progress</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-base-border/50 text-base-text font-medium">
-                          {targetProjs.map(p => {
-                            const pct = calcPct(p);
-                            const todayStr = new Date().toISOString().slice(0, 10);
-                            const overdueTasks = getOverdueTasksCount(p, todayStr);
-                            const isProjOverdue = p.due && p.due < todayStr && p.status !== 'completed';
-                            return (
-                              <tr key={p.id} className="hover:bg-base-surface2/30 transition-colors">
-                                <td className="px-4 py-3 font-semibold">
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="text-base-text truncate max-w-[180px]">{p.name}</span>
-                                    {isProjOverdue && (
-                                      <span className="px-1.5 py-0.5 text-[8px] font-condensed font-bold bg-rose-500/10 text-rose-500 border border-rose-500/25 rounded uppercase">
-                                        Overdue Proj
-                                      </span>
-                                    )}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3 text-base-muted2 font-mono text-[11px]">{p.client || 'N/A'}</td>
-                                <td className="px-4 py-3 text-center">
-                                  <span className={`inline-block px-2 py-0.5 text-[9px] font-condensed font-bold uppercase rounded-full`}
-                                        style={{
-                                          backgroundColor: `${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}15`,
-                                          color: STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870',
-                                          border: `1px solid ${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}25`
-                                        }}>
-                                    {p.status}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-center">
-                                  {overdueTasks > 0 ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-lg">
-                                      {overdueTasks} overdue
-                                    </span>
-                                  ) : (
-                                    <span className="text-base-muted2 font-mono">-</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <div className="flex items-center gap-3">
-                                    <div className="flex-1 h-2 bg-base-border/35 rounded-full overflow-hidden">
-                                      <div 
-                                        className="h-full rounded-full transition-all duration-500" 
-                                        style={{ 
-                                          width: `${pct}%`,
-                                          backgroundColor: pct >= 100 ? '#4caf7d' : 'var(--accent)'
-                                        }}
-                                      />
-                                    </div>
-                                    <span className="font-mono font-bold text-xs text-base-text shrink-0">{pct}%</span>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-
-
-
-        </div>
-
-        {/* RIGHT COLUMN — spans 1 col */}
-        <div className="space-y-4">
-
+      {/* SECTION 3 — Additional Insights & Scope */}
+      <div className="space-y-4">
+        
+        {/* WIDGETS ROW */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          
           {/* WIDGET 1 — Today's Attendance Summary */}
           <div className="bg-base-surface border border-base-border rounded-xl shadow-card p-5">
             <h3 className="font-condensed font-extrabold text-xs uppercase tracking-widest text-base-muted mb-4 flex items-center gap-1.5">
@@ -1691,7 +2117,7 @@ export default function DashboardView({
             );
           })()}
 
-          {/* WIDGET — Status Breakdown Donut (upgraded) */}
+          {/* WIDGET 3 — Status Breakdown Donut (upgraded) */}
           <div className="card-panel relative overflow-hidden">
             <div className="card-panel-header">
               <h3 className="card-panel-title">
@@ -1771,6 +2197,101 @@ export default function DashboardView({
           </div>
 
         </div>
+
+        {/* Project Scope Breakdown Table (Optional / Collapsible) */}
+        {showProjectScopeTable && (
+          <div id="project-scope-breakdown-section" className="space-y-3 pt-3 border-t border-base-border/50 animate-fade-in">
+            <div className="flex items-center justify-between">
+              <h4 className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-muted flex items-center gap-1.5">
+                <Folder className="h-4 w-4 text-base-accent" />
+                Project Scope Breakdown & Performance
+              </h4>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-condensed font-bold text-base-muted">
+                  {targetProjs.length} active in this period
+                </span>
+                <button
+                  onClick={() => setShowProjectScopeTable(false)}
+                  className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-accent hover:text-base-text bg-base-accent/10 hover:bg-base-accent/20 border border-base-accent/20 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
+                >
+                  Hide Scope Table ▲
+                </button>
+              </div>
+            </div>
+            
+            <div className="border border-base-border rounded-xl overflow-hidden bg-base-surface3/25">
+              <div className="overflow-x-auto text-base-text">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-base-surface2/70 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
+                      <th className="px-4 py-2.5">Project Name</th>
+                      <th className="px-4 py-2.5">Client / Code</th>
+                      <th className="px-4 py-2.5 text-center">Status</th>
+                      <th className="px-4 py-2.5 text-center">Overdue Tasks</th>
+                      <th className="px-4 py-2.5 w-44">Overall Progress</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-base-border/50 text-base-text font-medium">
+                    {targetProjs.map(p => {
+                      const pct = calcPct(p);
+                      const todayStr = new Date().toISOString().slice(0, 10);
+                      const overdueTasks = getOverdueTasksCount(p, todayStr);
+                      const isProjOverdue = p.due && p.due < todayStr && p.status !== 'completed';
+                      return (
+                        <tr key={p.id} className="hover:bg-base-surface2/30 transition-colors">
+                          <td className="px-4 py-3 font-semibold">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-base-text truncate max-w-[180px]">{p.name}</span>
+                              {isProjOverdue && (
+                                <span className="px-1.5 py-0.5 text-[8px] font-condensed font-bold bg-rose-500/10 text-rose-500 border border-rose-500/25 rounded uppercase">
+                                  Overdue Proj
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-base-muted2 font-mono text-[11px]">{p.client || 'N/A'}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`inline-block px-2 py-0.5 text-[9px] font-condensed font-bold uppercase rounded-full`}
+                                  style={{
+                                    backgroundColor: `${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}15`,
+                                    color: STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870',
+                                    border: `1px solid ${STATUS_COLORS[p.status as keyof typeof STATUS_COLORS] || '#7a7870'}25`
+                                  }}>
+                              {p.status}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center">
+                            {overdueTasks > 0 ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-mono font-bold bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-lg">
+                                {overdueTasks} overdue
+                              </span>
+                            ) : (
+                              <span className="text-base-muted2 font-mono">-</span>
+                            )}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex items-center gap-3">
+                              <div className="flex-1 h-2 bg-base-border/35 rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full rounded-full transition-all duration-500" 
+                                  style={{ 
+                                    width: `${pct}%`,
+                                    backgroundColor: pct >= 100 ? '#4caf7d' : 'var(--accent)'
+                                  }}
+                                />
+                              </div>
+                              <span className="font-mono font-bold text-xs text-base-text shrink-0">{pct}%</span>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
 

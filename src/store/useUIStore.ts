@@ -37,6 +37,11 @@ interface UIStore {
   isSpotlightOpen: boolean;
   openSpotlight: (projectId: string) => void;
   closeSpotlight: () => void;
+
+  // Shop Floor Mode (Tablet-Friendly)
+  shopFloorMode: boolean;
+  setShopFloorMode: (mode: boolean | ((prev: boolean) => boolean)) => void;
+  toggleShopFloorMode: () => void;
 }
 
 export const useUIStore = create<UIStore>((set, get) => ({
@@ -51,6 +56,25 @@ export const useUIStore = create<UIStore>((set, get) => ({
       mobileMenuOpen: typeof open === 'function' ? open(state.mobileMenuOpen) : open
     })),
   toggleMobileMenu: () => set((state) => ({ mobileMenuOpen: !state.mobileMenuOpen })),
+
+  // Shop Floor Mode
+  shopFloorMode: typeof window !== 'undefined' ? localStorage.getItem('austin_shopfloor_mode') === 'true' : false,
+  setShopFloorMode: (mode) =>
+    set((state) => {
+      const nextMode = typeof mode === 'function' ? mode(state.shopFloorMode) : mode;
+      try {
+        localStorage.setItem('austin_shopfloor_mode', nextMode ? 'true' : 'false');
+      } catch {}
+      return { shopFloorMode: nextMode };
+    }),
+  toggleShopFloorMode: () =>
+    set((state) => {
+      const nextMode = !state.shopFloorMode;
+      try {
+        localStorage.setItem('austin_shopfloor_mode', nextMode ? 'true' : 'false');
+      } catch {}
+      return { shopFloorMode: nextMode };
+    }),
 
   // Filters & Search
   selectedMonth: new Date().toISOString().slice(0, 7),

@@ -665,8 +665,8 @@ export default function DailyReportView({
             </div>
 
             {/* Line Graph Area */}
-            <div className="h-[250px] w-full pt-2">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[250px] w-full min-h-[250px] min-w-0 pt-2" style={{ width: '100%', height: 250 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={250}>
                 <LineChart data={trendData} margin={{ top: 10, right: 15, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                   <XAxis

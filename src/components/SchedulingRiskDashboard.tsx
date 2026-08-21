@@ -499,8 +499,8 @@ export default function SchedulingRiskDashboard({
               </span>
             </div>
 
-            <div className="h-[260px] w-full">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[260px] w-full min-h-[260px] min-w-0" style={{ width: '100%', height: 260 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={260}>
                 <BarChart data={companyBarChartData} margin={{ top: 10, right: 10, left: -20, bottom: 25 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" opacity={0.4} vertical={false} />
                   <XAxis 
@@ -566,8 +566,8 @@ export default function SchedulingRiskDashboard({
               )}
             </div>
 
-            <div className="h-[220px] w-full relative flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[220px] w-full min-h-[220px] min-w-0 relative flex items-center justify-center" style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <PieChart>
                   <Pie
                     data={submittalsDonutData}
@@ -643,8 +643,8 @@ export default function SchedulingRiskDashboard({
               </span>
             </div>
 
-            <div className="h-[220px] w-full relative flex items-center justify-center">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="h-[220px] w-full min-h-[220px] min-w-0 relative flex items-center justify-center" style={{ width: '100%', height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <PieChart>
                   <Pie
                     data={dailyLogDelaysData}

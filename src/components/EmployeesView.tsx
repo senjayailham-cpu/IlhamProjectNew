@@ -1241,8 +1241,8 @@ export default function EmployeesView({
                     {/* Chart trend consumable summary */}
                     <div className="md:col-span-2 bg-base-bg/10 border border-base-border/50 rounded-xl p-4 min-h-[160px]">
                       <span className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted block mb-2">Consumable Monthly Trend (kg)</span>
-                      <div className="h-32 w-full text-xs font-mono">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-32 w-full min-h-[128px] min-w-0 text-xs font-mono" style={{ width: '100%', height: 128 }}>
+                        <ResponsiveContainer width="100%" height="100%" minHeight={128}>
                           <BarChart data={kpiData?.trendData || []} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                             <XAxis dataKey="monthLabel" stroke="#888" fontSize={10} />
@@ -1330,8 +1330,8 @@ export default function EmployeesView({
                   {/* Monthly line trend graph */}
                   <div className="bg-base-bg/10 border border-base-border/50 rounded-xl p-4 min-h-[220px]">
                     <span className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted block mb-3">Attendance Trends (Days counted per category)</span>
-                    <div className="h-44 w-full text-xs font-mono">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-44 w-full min-h-[176px] min-w-0 text-xs font-mono" style={{ width: '100%', height: 176 }}>
+                      <ResponsiveContainer width="100%" height="100%" minHeight={176}>
                         <LineChart data={kpiData?.trendData || []} margin={{ top: 5, right: 5, left: -25, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" stroke="#2a2a2a" />
                           <XAxis dataKey="monthLabel" stroke="#888" fontSize={10} />

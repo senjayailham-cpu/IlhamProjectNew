@@ -6,6 +6,7 @@ import { sha256 } from '../utils/helpers';
 
 const activeTabsList = [
   { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
+  { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: ['admin', 'coordinator'] },
   { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
   { id: 'current', label: 'Current Projects', icon: 'Folder', access: 'all' },
   { id: 'completed', label: 'Project Complete', icon: 'CheckCircle', access: 'all' },

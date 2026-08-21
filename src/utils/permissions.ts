@@ -20,3 +20,46 @@ export function can(currentUser: User | null, perm: keyof typeof PERMISSIONS.adm
   const role = currentUser.role as keyof typeof PERMISSIONS;
   return !!PERMISSIONS[role]?.[perm];
 }
+
+/**
+ * Resolves default landing tab for a given user role upon login/session initialization.
+ * - admin / manager / project control → 'dash'
+ * - coordinator → 'shopfloor'
+ * - quality control → 'inspections'
+ * - viewer → 'dash'
+ * - facility / safety → 'dash'
+ */
+export function getDefaultLandingTabForRole(role?: string, allowedFeatures?: string[]): string {
+  let target = 'dash';
+  if (role) {
+    const normalizedRole = role.toLowerCase().trim();
+    switch (normalizedRole) {
+      case 'coordinator':
+        target = 'shopfloor';
+        break;
+      case 'quality control':
+      case 'qc':
+        target = 'inspections';
+        break;
+      case 'admin':
+      case 'manager':
+      case 'project control':
+      case 'viewer':
+      case 'facility maintanance':
+      case 'facility maintenance':
+      case 'safety':
+      default:
+        target = 'dash';
+        break;
+    }
+  }
+
+  // If user has custom allowedFeatures restrictions, ensure target tab is accessible
+  if (allowedFeatures && allowedFeatures.length > 0) {
+    if (!allowedFeatures.includes(target)) {
+      target = allowedFeatures[0] || 'dash';
+    }
+  }
+
+  return target;
+}

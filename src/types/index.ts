@@ -167,6 +167,9 @@ export interface Project {
   successors?: Dependency[];
   budgetHours?: number;
   isArchived?: boolean;
+  archivedAt?: string;
+  archivedBy?: string;
+  archivedReason?: string;
   targetMonth?: string;
   originalDue?: string;   // snapshot tanggal Due saat project pertama dibuat, TIDAK PERNAH diubah lagi setelahnya (untuk deteksi schedule slip)
   materialProcessing?: MaterialProcessing[];
@@ -198,6 +201,8 @@ export interface TimesheetEntry {
   workOrder?: string;
   assemblyId?: string;
   assemblyName?: string;
+  taskId?: string;
+  taskName?: string;
   totalHours: number;
   status: TimesheetStatusType;
   desc?: string;

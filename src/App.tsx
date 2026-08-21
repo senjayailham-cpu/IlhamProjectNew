@@ -1,8 +1,8 @@
-import React, { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { User, Project, Employee, TimesheetEntry, ActivityLog, ProblemReport, InspectionRequest, WireLog, MaterialItem, MaterialRequest, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MaterialUnit, MaterialCategory, Assembly, DrawingRevision, BomTemplate, BomItem } from './types';
 import { DEFAULT_USERS, DEFAULT_PROJECTS, DEFAULT_EMPLOYEES, DEFAULT_TIMESHEETS, DEFAULT_ACTIVITIES, DEFAULT_PROBLEM_REPORTS, DEFAULT_INSPECTION_REQUESTS, DEFAULT_WIRE_LOGS } from './mockData';
 import { exportProjectsCSV } from './utils/projectUtils';
-import { can as canUtil, PERMISSIONS } from './utils/permissions';
+import { can as canUtil, PERMISSIONS, getDefaultLandingTabForRole } from './utils/permissions';
 import { uid, cleanFirestoreData, handleFirestoreError, OperationType, sha256 } from './utils/helpers';
 
 // Firebase imports
@@ -15,6 +15,7 @@ import { useUserPreferences } from './hooks/useUserPreferences';
 import { useAppStore, useUIStore } from './store';
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
+import SpotlightModal from './components/SpotlightModal';
 import { GaAutoMatchModal } from './components/GaAutoMatchModal';
 import { IndustryTemplatePicker } from './components/IndustryTemplatePicker';
 import { ToastContainer } from './components/Toast';
@@ -55,11 +56,12 @@ const DrawingRegisterView = lazy(() => import('./components/DrawingRegisterView'
 const BomView = lazy(() => import('./components/BomView'));
 const ProjectTimelineView = lazy(() => import('./components/ProjectTimelineView'));
 const SchedulingRiskDashboard = lazy(() => import('./components/SchedulingRiskDashboard'));
+const ShopFloorView = lazy(() => import('./components/ShopFloorView'));
 
 // Lucide Icons
 import {
   Download, LogOut, Key, Menu, X, ChevronLeft, ChevronRight,
-  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar, TrendingUp, Settings
+  LayoutGrid, AlertTriangle, Folder, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, ListChecks, Database, Trophy, Calendar, TrendingUp, Settings, Factory
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -84,29 +86,26 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Trophy,
   Calendar,
   TrendingUp,
-  Settings
+  Settings,
+  Factory
 };
 
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'focus24', 'schedule', 'scheduling-risk', 'progress']
+    items: ['dash', 'projects', 'schedule']
   },
   {
-    title: 'Projects',
-    items: ['projects']
+    title: 'Shop Floor',
+    items: ['shopfloor', 'timesheet', 'manpower', 'matprocessing', 'materials', 'inspections']
   },
   {
-    title: 'Operations',
-    items: ['timesheet', 'manpower', 'inspections', 'drawings', 'bom', 'dailyreport', 'kpi']
+    title: 'Engineering',
+    items: ['drawings', 'bom', 'consumable']
   },
   {
-    title: 'Materials & Supply',
-    items: ['materials', 'consumable', 'matprocessing']
-  },
-  {
-    title: 'Management',
-    items: ['employees', 'users', 'masterdata', 'orgsettings']
+    title: 'Admin',
+    items: ['dailyreport', 'employees', 'users', 'masterdata', 'orgsettings']
   }
 ];
 
@@ -288,29 +287,81 @@ function AppContent() {
     useAppStore.setState({ isOffline, lastSavedLabel: isOffline ? 'OFFLINE MODE (Cached)' : 'All synced online' });
   }, [isOffline]);
 
+  // Flag ref to ensure default landing tab per role is only set once per user session (doesn't override manual navigation)
+  const defaultTabSetForUserRef = useRef<string | null>(null);
+
   // Sync Current User with Zustand App Store
   useEffect(() => {
     useAppStore.setState({ currentUser, users });
   }, [currentUser, users]);
 
-  // UI Store Bidirectional Navigation Sync
-  const storeActiveTab = useUIStore((s) => s.activeTab);
+  // Helper to remap deprecated tabs
+  const getMappedTab = (tab: string) => {
+    switch (tab) {
+      case 'focus':
+      case 'focus24': return 'shopfloor';
+      case 'scheduling-risk': return 'schedule';
+      case 'progress': return 'projects';
+      case 'kpi': return 'dash';
+      default: return tab;
+    }
+  };
+
+  // Central Navigation Handler (single source of truth for tab switches)
+  const navigateTo = (tab: string) => {
+    let mapped = getMappedTab(tab);
+
+    // Guard: Shop Floor is restricted to coordinator and admin roles
+    if (mapped === 'shopfloor' && currentUser) {
+      const isAllowedRole = currentUser.role === 'coordinator' || currentUser.role === 'admin';
+      const hasExplicitFeature = currentUser.allowedFeatures?.includes('shopfloor');
+      const isForbidden = !isAllowedRole && !hasExplicitFeature;
+      if (isForbidden) {
+        mapped = getDefaultLandingTabForRole(currentUser.role, currentUser.allowedFeatures) || 'dash';
+      }
+    }
+
+    setActiveTab(mapped);
+    useUIStore.setState({ activeTab: mapped });
+  };
+
+  // Set default landing tab per user session once
   useEffect(() => {
-    if (storeActiveTab && storeActiveTab !== activeTab) {
-      setActiveTab(storeActiveTab);
+    if (currentUser?.id) {
+      if (defaultTabSetForUserRef.current !== currentUser.id) {
+        defaultTabSetForUserRef.current = currentUser.id;
+        const initialRoleTab = getDefaultLandingTabForRole(currentUser.role, currentUser.allowedFeatures);
+        navigateTo(initialRoleTab);
+      }
+    } else {
+      defaultTabSetForUserRef.current = null;
+    }
+  }, [currentUser?.id, currentUser?.role]);
+
+  // UI Store Navigation Sync (Store -> Local state)
+  const storeActiveTab = useUIStore((s) => s.activeTab);
+  const shopFloorMode = useUIStore((s) => s.shopFloorMode);
+  const setShopFloorMode = useUIStore((s) => s.setShopFloorMode);
+
+  useEffect(() => {
+    if (storeActiveTab) {
+      const mappedTab = getMappedTab(storeActiveTab);
+      if (mappedTab !== activeTab) {
+        setActiveTab(mappedTab);
+      }
     }
   }, [storeActiveTab]);
 
+  // Sync other UI state variables to useUIStore (without touching activeTab to prevent race conditions)
   useEffect(() => {
     useUIStore.setState({
-      activeTab,
       mobileMenuOpen,
       selectedMonth,
       reportDate,
       projectSearchQuery,
       currentTabMonthFilter
     });
-  }, [activeTab, mobileMenuOpen, selectedMonth, reportDate, projectSearchQuery, currentTabMonthFilter]);
+  }, [mobileMenuOpen, selectedMonth, reportDate, projectSearchQuery, currentTabMonthFilter]);
 
   const { saveItem, removeItem, saveBatch } = useFirestore();
 
@@ -345,12 +396,44 @@ function AppContent() {
     verifyMarkChanged();
   };
 
-  const can = (perm: keyof typeof PERMISSIONS.admin): boolean => {
+  const can = (userOrPerm: any, maybePerm?: keyof typeof PERMISSIONS.admin): boolean => {
+    if (maybePerm) {
+      return canUtil(userOrPerm, maybePerm);
+    }
+    const perm = userOrPerm as keyof typeof PERMISSIONS.admin;
     if (!currentUser) return false;
     if (currentUser.allowedPermissions && currentUser.allowedPermissions[perm] !== undefined) {
       return !!currentUser.allowedPermissions[perm];
     }
     return !!PERMISSIONS[currentUser.role]?.[perm];
+  };
+
+  const handleUpdateProject = (
+    updatedProj: Project,
+    logParams?: {
+      type: string;
+      action: string;
+      asmName?: string;
+      task?: string;
+      oldP?: number;
+      newP?: number;
+    }
+  ) => {
+    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+    saveItem('projects', updatedProj);
+    verifyMarkChanged();
+    if (logParams) {
+      logActivity(
+        logParams.type as any,
+        logParams.action,
+        updatedProj.id,
+        updatedProj.name,
+        logParams.asmName,
+        logParams.task,
+        logParams.oldP,
+        logParams.newP
+      );
+    }
   };
 
   const masterData = useMasterData(!!fbUser && !!currentUser && !!auth.currentUser);
@@ -1403,25 +1486,22 @@ function AppContent() {
 
   const activeTabsList = React.useMemo(() => [
     { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
-    { id: 'focus24', label: '24 Hours Focus', icon: 'AlertTriangle', access: 'all' },
-    { id: 'schedule', label: 'Project Schedule', icon: 'Calendar', access: 'all' },
-    { id: 'scheduling-risk', label: 'Scheduling & Risk', icon: 'TrendingUp', access: 'all' },
-    { id: 'progress', label: 'Update Progress', icon: 'ListChecks', access: 'all' },
+    { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: ['admin', 'coordinator'] },
     { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
+    { id: 'schedule', label: 'Schedule', icon: 'Calendar', access: 'all' },
+    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
+    { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
+    { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
+    { id: 'materials', label: 'Materials', icon: 'Package', access: 'all' },
     { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
     { id: 'drawings', label: 'Drawing Register', icon: 'FileBadge', access: 'all' },
     { id: 'bom', label: 'BOM', icon: 'ListTree', access: 'all' },
     { id: 'consumable', label: orgSettings?.terminology?.wireConsumableLabel || 'Consumable', icon: 'Flame', access: 'all' },
-    { id: 'kpi', label: 'KPI Dashboard', icon: 'Trophy', access: 'all' },
-    { id: 'materials', label: 'Materials & Stock', icon: 'Package', access: 'all' },
-    { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
     { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
     { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
-    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
-    { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
     { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
     { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] },
-    { id: 'orgsettings', label: 'Org Settings', icon: 'Settings', access: ['admin'] }
+    { id: 'orgsettings', label: 'Settings', icon: 'Settings', access: ['admin'] }
   ], [orgSettings]);
 
   if (isAuthLoading) {
@@ -1454,16 +1534,18 @@ function AppContent() {
   const activeTabItem = activeTabsList.find(t => t.id === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : 'Project Workspace';
 
+  const effectiveSidebarCollapsed = shopFloorMode || sidebarCollapsed;
+
   return (
     <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans select-none antialiased">
       
       {/* 1. DESKTOP LEFT SIDEBAR */}
       <AppSidebar
-        sidebarCollapsed={sidebarCollapsed}
+        sidebarCollapsed={effectiveSidebarCollapsed}
         toggleSidebar={toggleSidebar}
         allowedTabs={allowedTabs}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={navigateTo}
         sectionGroups={sectionGroups}
         projects={projects}
         problemReports={problemReports}
@@ -1479,7 +1561,7 @@ function AppContent() {
         setMobileMenuOpen={setMobileMenuOpen}
         allowedTabs={allowedTabs}
         activeTab={activeTab}
-        setActiveTab={setActiveTab}
+        setActiveTab={navigateTo}
         sectionGroups={sectionGroups}
         projects={projects}
         problemReports={problemReports}
@@ -1490,7 +1572,7 @@ function AppContent() {
       />
 
       {/* 4. MAIN CONTENT CONTAINER (Desktop offset applied smoothly) */}
-      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${sidebarCollapsed ? 'md:pl-16' : 'md:pl-64'}`}>
+      <div className={`flex-1 flex flex-col min-h-screen transition-all duration-300 ${effectiveSidebarCollapsed ? 'md:pl-16' : 'md:pl-64'}`}>
         
         {/* Contextual Desktop Sub-Header Bar */}
         <AppTopBar
@@ -1504,7 +1586,7 @@ function AppContent() {
           employees={employees}
           materials={materials}
           bomTemplates={bomTemplates}
-          setActiveTab={setActiveTab}
+          setActiveTab={navigateTo}
           readNotificationIds={prefs.readNotificationIds || []}
           onMarkRead={(ids) => setPref('readNotificationIds', ids)}
           openSpotlight={(id) => {
@@ -1514,9 +1596,91 @@ function AppContent() {
         />
 
         {/* Core Screen Viewport */}
-        <main key={activeTab} className={`flex-1 w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-32 page-enter ${activeTab === 'gantt' || activeTab === 'schedule' ? 'max-w-none' : 'max-w-[1600px]'}`}>
+        <main key={activeTab} className={`flex-1 w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 pb-28 sm:pb-32 page-enter ${activeTab === 'gantt' || activeTab === 'schedule' ? 'max-w-none' : 'max-w-[1600px]'}`}>
+          
+          {/* Shop Floor Tablet Banner when activeTab is not shopfloor */}
+          {shopFloorMode && activeTab !== 'shopfloor' && (
+            <div className="mb-6 bg-amber-500/15 border-2 border-amber-500/40 rounded-xl p-3 sm:p-4 flex flex-wrap items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="px-2.5 py-1 rounded bg-base-warn text-white font-condensed font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
+                  <Factory className="h-3.5 w-3.5" />
+                  Shop Floor Mode
+                </span>
+                <span className="text-xs text-base-muted hidden sm:inline font-condensed">Quick Navigation:</span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    onClick={() => navigateTo('shopfloor')}
+                    className="px-2.5 py-1 rounded-lg bg-base-surface hover:bg-base-surface2 border border-base-border text-base-text font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer"
+                  >
+                    Hub
+                  </button>
+                  <button
+                    onClick={() => navigateTo('timesheet')}
+                    className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
+                      activeTab === 'timesheet' ? 'bg-base-info text-white border-base-info' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                    }`}
+                  >
+                    1. Timesheet
+                  </button>
+                  <button
+                    onClick={() => navigateTo('projects')}
+                    className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
+                      activeTab === 'projects' ? 'bg-base-ok text-white border-base-ok' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                    }`}
+                  >
+                    2. Progress
+                  </button>
+                  <button
+                    onClick={() => navigateTo('materials')}
+                    className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
+                      activeTab === 'materials' ? 'bg-base-warn text-white border-base-warn font-black' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                    }`}
+                  >
+                    3. Materials
+                  </button>
+                  <button
+                    onClick={() => navigateTo('inspections')}
+                    className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
+                      activeTab === 'inspections' ? 'bg-base-accent text-white border-base-accent' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                    }`}
+                  >
+                    4. QC
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => setShopFloorMode(false)}
+                className="px-3 py-1.5 bg-base-surface hover:bg-base-surface2 border border-base-border text-base-red font-condensed font-black text-xs uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                title="Exit Shop Floor Mode"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Exit</span>
+              </button>
+            </div>
+          )}
+
           <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
             <Suspense fallback={<PageLoadingFallback />}>
+              {activeTab === 'shopfloor' && (
+                <ShopFloorView
+                  projects={projects}
+                  timesheets={timesheets}
+                  inspections={inspections}
+                  materialRequests={materialRequests}
+                  orgSettings={orgSettings}
+                  problemReports={problemReports}
+                  employees={employees}
+                  currentUser={currentUser}
+                  onAddProblemReport={handleAddProblemReport}
+                  onUpdateProblemStatus={handleUpdateProblemStatus}
+                  onDeleteProblemReport={handleDeleteProblemReport}
+                  openSpotlight={(id) => {
+                    projectsHook.setSpotlightProjectId(id);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
+                />
+              )}
+
               {activeTab === 'dash' && (
                 <DashboardView
                   projects={projects}
@@ -1528,7 +1692,7 @@ function AppContent() {
                   setSelectedMonth={setSelectedMonth}
                   problemReports={problemReports}
                   inspections={inspections}
-                  setActiveTab={setActiveTab}
+                  setActiveTab={navigateTo}
                   openSpotlight={(id) => {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);
@@ -1554,20 +1718,16 @@ function AppContent() {
               )}
 
               {activeTab === 'scheduling-risk' && (
-                <ErrorBoundary key="scheduling-risk">
-                  <Suspense fallback={<PageLoadingFallback />}>
-                    <SchedulingRiskDashboard
-                      projects={projects}
-                      problemReports={problemReports}
-                      inspections={inspections}
-                      currentUser={currentUser}
-                      openSpotlight={(id) => {
-                        projectsHook.setSpotlightProjectId(id);
-                        projectsHook.setSpotlightOpen(true);
-                      }}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
+                <SchedulingRiskDashboard
+                  projects={projects}
+                  problemReports={problemReports}
+                  inspections={inspections}
+                  currentUser={currentUser}
+                  openSpotlight={(id) => {
+                    projectsHook.setSpotlightProjectId(id);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
+                />
               )}
 
               {activeTab === 'projects' && (
@@ -1629,40 +1789,32 @@ function AppContent() {
               )}
 
               {activeTab === 'drawings' && (
-                <ErrorBoundary key="drawings">
-                  <Suspense fallback={<PageLoadingFallback />}>
-                    <DrawingRegisterView
-                      drawings={drawings}
-                      projects={projects}
-                      currentUser={currentUser}
-                      onAddDrawing={handleAddDrawing}
-                      onReviseDrawing={handleReviseDrawing}
-                      onVoidDrawing={handleVoidDrawing}
-                      onDeleteDrawing={handleDeleteDrawing}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
+                <DrawingRegisterView
+                  drawings={drawings}
+                  projects={projects}
+                  currentUser={currentUser}
+                  onAddDrawing={handleAddDrawing}
+                  onReviseDrawing={handleReviseDrawing}
+                  onVoidDrawing={handleVoidDrawing}
+                  onDeleteDrawing={handleDeleteDrawing}
+                />
               )}
 
               {activeTab === 'bom' && (
-                <ErrorBoundary key="bom">
-                  <Suspense fallback={<PageLoadingFallback />}>
-                    <BomView
-                      bomTemplates={bomTemplates}
-                      materials={materials}
-                      materialProcessings={projects.flatMap(p => (p.materialProcessing || []).map(mp => ({ ...mp, gaNumber: p.gaNumber })))}
-                      drawings={drawings}
-                      masterData={masterData}
-                      projects={projects}
-                      currentUser={currentUser}
-                      setActiveTab={setActiveTab}
-                      onAddBomTemplate={handleAddBomTemplate}
-                      onUpdateBomTemplate={handleUpdateBomTemplate}
-                      onDeleteBomTemplate={handleDeleteBomTemplate}
-                      onAddMaterialProcessing={handleAddMaterialProcessing}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
+                <BomView
+                  bomTemplates={bomTemplates}
+                  materials={materials}
+                  materialProcessings={projects.flatMap(p => (p.materialProcessing || []).map(mp => ({ ...mp, gaNumber: p.gaNumber })))}
+                  drawings={drawings}
+                  masterData={masterData}
+                  projects={projects}
+                  currentUser={currentUser}
+                  setActiveTab={navigateTo}
+                  onAddBomTemplate={handleAddBomTemplate}
+                  onUpdateBomTemplate={handleUpdateBomTemplate}
+                  onDeleteBomTemplate={handleDeleteBomTemplate}
+                  onAddMaterialProcessing={handleAddMaterialProcessing}
+                />
               )}
 
               {activeTab === 'consumable' && (
@@ -1678,8 +1830,8 @@ function AppContent() {
                   onDeleteWireLog={handleDeleteWireLog}
                   onAddMaterialRequest={handleAddMaterialRequest}
                   onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
-                  onNavigateToKPI={() => setActiveTab('kpi')}
-                  onNavigateToMaterials={() => setActiveTab('materials')}
+                  onNavigateToKPI={() => navigateTo('kpi')}
+                  onNavigateToMaterials={() => navigateTo('materials')}
                   onAddMaterial={handleAddMaterial}
                   onUpdateMaterial={handleUpdateMaterial}
                   onDeleteMaterial={handleDeleteMaterial}
@@ -1718,36 +1870,32 @@ function AppContent() {
               )}
 
               {activeTab === 'matprocessing' && (
-                <ErrorBoundary key="matprocessing">
-                  <Suspense fallback={<PageLoadingFallback />}>
-                    <MaterialProcessingView
-                      orgSettings={orgSettings}
-                      projects={projects}
-                      currentUser={currentUser!}
-                      prefs={prefs}
-                      onSetPref={(key, val) => setPref(key as any, val)}
-                      onAdd={handleAddMaterialProcessing}
-                      onUpdateStage={handleUpdateProcessingStage}
-                      onDelete={handleDeleteMaterialProcessing}
-                      onDeleteAll={handleDeleteAllMaterialProcessing}
-                      setDeleteConfirm={setDeleteConfirm}
-                      masterDataEntries={masterData.entries}
-                      onEnsureMasterData={masterData.ensureEntry}
-                      initialProjectId={projectsHook.spotlightProjectId || undefined}
-                      onCopyStructure={async (targetProjectId: string, newAssemblies: Assembly[]) => {
-                        const proj = projects.find(p => p.id === targetProjectId);
-                        if (!proj) return;
-                        const merged = [...(proj.assemblies || []), ...newAssemblies];
-                        setProjects(prev => prev.map(p => p.id === targetProjectId ? { ...p, assemblies: merged } : p));
-                        try {
-                          await saveItem('projects', { id: targetProjectId, assemblies: merged });
-                        } catch (err) {
-                          console.error('Failed to copy structure:', err);
-                        }
-                      }}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
+                <MaterialProcessingView
+                  orgSettings={orgSettings}
+                  projects={projects}
+                  currentUser={currentUser!}
+                  prefs={prefs}
+                  onSetPref={(key, val) => setPref(key as any, val)}
+                  onAdd={handleAddMaterialProcessing}
+                  onUpdateStage={handleUpdateProcessingStage}
+                  onDelete={handleDeleteMaterialProcessing}
+                  onDeleteAll={handleDeleteAllMaterialProcessing}
+                  setDeleteConfirm={setDeleteConfirm}
+                  masterDataEntries={masterData.entries}
+                  onEnsureMasterData={masterData.ensureEntry}
+                  initialProjectId={projectsHook.spotlightProjectId || undefined}
+                  onCopyStructure={async (targetProjectId: string, newAssemblies: Assembly[]) => {
+                    const proj = projects.find(p => p.id === targetProjectId);
+                    if (!proj) return;
+                    const merged = [...(proj.assemblies || []), ...newAssemblies];
+                    setProjects(prev => prev.map(p => p.id === targetProjectId ? { ...p, assemblies: merged } : p));
+                    try {
+                      await saveItem('projects', { id: targetProjectId, assemblies: merged });
+                    } catch (err) {
+                      console.error('Failed to copy structure:', err);
+                    }
+                  }}
+                />
               )}
 
               {activeTab === 'dailyreport' && (
@@ -1848,7 +1996,7 @@ function AppContent() {
                   currentUser={currentUser}
                   onNavigateToManpower={(date) => {
                     if (date) timesheetsHook.setTimesheetDate(date);
-                    setActiveTab('manpower');
+                    navigateTo('manpower');
                   }}
                 />
               )}
@@ -1864,7 +2012,7 @@ function AppContent() {
                       currentUser={currentUser}
                       onNavigateToTimesheet={(date) => {
                         if (date) timesheetsHook.setTimesheetDate(date);
-                        setActiveTab('timesheet');
+                        navigateTo('timesheet');
                       }}
                       openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
                     />
@@ -1937,13 +2085,14 @@ function AppContent() {
         {/* PWA Mobile Bottom Navigation */}
         <BottomNav
           activeTab={activeTab}
-          setActiveTab={setActiveTab}
+          setActiveTab={navigateTo}
           setMobileMenuOpen={setMobileMenuOpen}
           totalMenuCount={allowedTabs.length}
+          currentUser={currentUser}
         />
 
-        {/* Universal Footer Alignment */}
-        <footer className={`fixed bottom-0 right-0 py-2.5 px-6 border-t border-base-border bg-base-surface text-base-muted text-[10px] font-condensed font-bold uppercase tracking-wider flex items-center justify-between z-30 shadow-[0_-1px_3px_rgba(0,0,0,0.05)] transition-all duration-300 ${sidebarCollapsed ? 'left-16' : 'left-64'} md:left-auto`}>
+        {/* Universal Footer Alignment (Desktop only) */}
+        <footer className={`fixed bottom-0 right-0 py-2.5 px-6 border-t border-base-border bg-base-surface text-base-muted text-[10px] font-condensed font-bold uppercase tracking-wider hidden md:flex items-center justify-between z-30 shadow-[0_-1px_3px_rgba(0,0,0,0.05)] transition-all duration-300 ${effectiveSidebarCollapsed ? 'left-16' : 'left-64'}`}>
           <span>Austin Batam · Project tracking console</span>
           <span className="text-base-accent font-bold">{lastSavedLabel}</span>
         </footer>
@@ -1983,6 +2132,23 @@ function AppContent() {
         onConfirmCopy={projectsHook.handleGaConfirmCopy}
         onCreateEmpty={projectsHook.handleGaCreateEmpty}
         onCancel={projectsHook.handleGaCancel}
+      />
+
+      <SpotlightModal
+        isOpen={projectsHook.spotlightOpen}
+        onClose={() => projectsHook.setSpotlightOpen(false)}
+        projectId={projectsHook.spotlightProjectId}
+        projects={projects}
+        timesheets={timesheets}
+        wireLogs={wireLogs}
+        consumptionLogs={consumptionLogs}
+        onAddMaterialProcessing={handleAddMaterialProcessing}
+        onUpdateProcessingStage={handleUpdateProcessingStage}
+        onDeleteMaterialProcessing={handleDeleteMaterialProcessing}
+        onEdit={projectsHook.openEditProject}
+        onUpdateProject={handleUpdateProject}
+        currentUser={currentUser}
+        canUpdateTask={can(currentUser, 'updateTask')}
       />
     </div>
   );

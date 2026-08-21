@@ -7,10 +7,15 @@ import { getAuth } from "firebase-admin/auth";
 import rateLimit from "express-rate-limit";
 
 const app = express();
+app.set("trust proxy", 1);
 const PORT = 3000;
 
+const projectId = process.env.VITE_FIREBASE_PROJECT_ID || process.env.FIREBASE_PROJECT_ID || process.env.GCLOUD_PROJECT;
+
 if (getApps().length === 0) {
-  initializeApp();
+  initializeApp({
+    projectId: projectId || undefined,
+  });
 }
 
 async function requireAuth(req: express.Request, res: express.Response, next: express.NextFunction) {
@@ -19,12 +24,21 @@ async function requireAuth(req: express.Request, res: express.Response, next: ex
     res.status(401).json({ error: "Unauthorized: missing token" });
     return;
   }
-  const idToken = authHeader.split("Bearer ")[1];
+  const idToken = authHeader.split("Bearer ")[1]?.trim();
+  if (!idToken) {
+    res.status(401).json({ error: "Unauthorized: empty token" });
+    return;
+  }
   try {
-    await getAuth().verifyIdToken(idToken);
+    const decoded = await getAuth().verifyIdToken(idToken);
+    (req as any).user = decoded;
     next();
-  } catch (err) {
-    res.status(401).json({ error: "Unauthorized: invalid token" });
+  } catch (err: any) {
+    console.error("[requireAuth] Token verification failed:", err?.message || err);
+    res.status(401).json({ 
+      error: "Unauthorized: invalid token", 
+      details: err?.message || "Token verification failed on server" 
+    });
   }
 }
 
@@ -34,6 +48,7 @@ const geminiLimiter = rateLimit({
   standardHeaders: "draft-8",
   legacyHeaders: false,
   message: { error: "Too many requests, please try again later." },
+  validate: { xForwardedForHeader: false },
 });
 
 app.use(express.json({ limit: "10mb" }));

@@ -4,10 +4,12 @@ import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLo
 import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
+import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import { useAuth } from '../hooks/useAuth';
 import { useAppStore, useUIStore } from '../store';
 import { can as canUtil } from '../utils/permissions';
+import { ColdStorageArchiveModal } from '../components/ColdStorageArchiveModal';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
 
@@ -172,6 +174,8 @@ export function ProjectsPage({
   const storeWireLogs = useAppStore((s) => s.wireLogs);
   const storeConsumptionLogs = useAppStore((s) => s.consumptionLogs);
   const storeCurrentUser = useAppStore((s) => s.currentUser);
+  const inspections = useAppStore((s) => s.inspections);
+  const problemReports = useAppStore((s) => s.problemReports);
 
   const storeProjectSearchQuery = useUIStore((s) => s.projectSearchQuery);
   const storeSetProjectSearchQuery = useUIStore((s) => s.setProjectSearchQuery);
@@ -200,9 +204,11 @@ export function ProjectsPage({
     return saved === 'radial' ? 'radial' : 'list';
   });
 
-  const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'priority' | 'alphabetical'>(() => {
+  const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'risk' | 'priority' | 'alphabetical'>(() => {
     return (prefs?.projectsSortBy as any) || (localStorage.getItem('gantt_projects_sortBy') as any) || 'deadline';
   });
+
+  const [coldStorageOpen, setColdStorageOpen] = React.useState(false);
 
   React.useEffect(() => {
     if (prefs?.projectsFilterTab) {
@@ -234,7 +240,7 @@ export function ProjectsPage({
     else localStorage.setItem('gantt_projects_viewMode', mode);
   };
 
-  const handleSetSortBy = (sort: 'deadline' | 'priority' | 'alphabetical') => {
+  const handleSetSortBy = (sort: 'deadline' | 'risk' | 'priority' | 'alphabetical') => {
     setProjectSortBy(sort);
     if (onSetPref) onSetPref('projectsSortBy', sort);
     else localStorage.setItem('gantt_projects_sortBy', sort);
@@ -823,6 +829,27 @@ export function ProjectsPage({
       });
 
     const filteredProjects = [...rawFilteredProjects].sort((a, b) => {
+      if (projectSortBy === 'risk') {
+        const riskA = calcProjectRiskScore(a, {
+          timesheets: scopedTimesheetsForPage,
+          inspections,
+          problemReports,
+          materialProcessing: a.materialProcessing
+        });
+        const riskB = calcProjectRiskScore(b, {
+          timesheets: scopedTimesheetsForPage,
+          inspections,
+          problemReports,
+          materialProcessing: b.materialProcessing
+        });
+        if (riskB.score !== riskA.score) {
+          return riskB.score - riskA.score; // High risk first
+        }
+        // Secondary sort by deadline
+        const dateA = a.due || '9999-12-31';
+        const dateB = b.due || '9999-12-31';
+        return dateA.localeCompare(dateB);
+      }
       if (projectSortBy === 'deadline') {
         const dateA = a.due || '9999-12-31';
         const dateB = b.due || '9999-12-31';
@@ -950,6 +977,7 @@ export function ProjectsPage({
                 title="Sort projects by"
               >
                 <option value="deadline">📅 Sort: Deadline</option>
+                <option value="risk">🔥 Sort: Risk Score</option>
                 <option value="priority">⚠️ Sort: Priority</option>
                 <option value="alphabetical">🔤 Sort: Alphabetical</option>
               </select>
@@ -1066,8 +1094,8 @@ export function ProjectsPage({
                       </div>
 
                       {/* Radial Gauge Chart Container */}
-                      <div className="relative w-36 h-36 flex items-center justify-center my-1">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="relative w-36 h-36 min-w-[144px] min-h-[144px] flex items-center justify-center my-1" style={{ width: 144, height: 144 }}>
+                        <ResponsiveContainer width="100%" height="100%" minWidth={144} minHeight={144}>
                           <RadialBarChart
                             cx="50%"
                             cy="50%"
@@ -1112,11 +1140,29 @@ export function ProjectsPage({
                           </span>
                         </div>
 
-                        {/* Location Badge */}
-                        <div className="pt-1 flex items-center justify-center gap-1.5">
+                        {/* Location & Risk Badges */}
+                        <div className="pt-1 flex items-center justify-center gap-1.5 flex-wrap">
                           <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted px-2 py-0.5 rounded bg-base-bg border border-base-border">
                             {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location || 'All Locs'}
                           </span>
+                          {(() => {
+                            const risk = calcProjectRiskScore(p, {
+                              timesheets: scopedTimesheetsForPage,
+                              inspections,
+                              problemReports,
+                              materialProcessing: p.materialProcessing,
+                            });
+                            if (p.status === 'completed' || p.isArchived) return null;
+                            const badgeClass = getRiskBadgeClasses(risk.score);
+                            return (
+                              <span 
+                                className={`text-[9px] font-condensed font-bold uppercase tracking-wider px-2 py-0.5 rounded border cursor-help ${badgeClass}`}
+                                title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
+                              >
+                                Risk: {risk.score}
+                              </span>
+                            );
+                          })()}
                           {isOverdue && (
                             <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
                               Overdue
@@ -1260,22 +1306,44 @@ export function ProjectsPage({
                           )}
                         </td>
 
-                        {/* Kolom 5: Flags (Critical Path) */}
+                        {/* Kolom 5: Flags (Critical Path & Risk Score) */}
                         <td className="px-4 py-3.5">
-                          {cp.isCritical ? (
-                            <div
-                              className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help whitespace-nowrap"
-                              title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
-                            >
-                              <span className="relative flex h-1.5 w-1.5">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
-                              </span>
-                              <span>Critical</span>
-                            </div>
-                          ) : (
-                            <span className="text-base-muted">—</span>
-                          )}
+                          <div className="flex flex-col gap-1 items-start">
+                            {(() => {
+                              const risk = calcProjectRiskScore(p, {
+                                timesheets: scopedTimesheetsForPage,
+                                inspections,
+                                problemReports,
+                                materialProcessing: p.materialProcessing,
+                              });
+                              if (p.status === 'completed' || p.isArchived) return null;
+                              const badgeClass = getRiskBadgeClasses(risk.score);
+                              return (
+                                <span
+                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border cursor-help whitespace-nowrap ${badgeClass}`}
+                                  title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
+                                >
+                                  <span className={`w-1.5 h-1.5 rounded-full ${risk.score >= 70 ? 'bg-red-500' : risk.score >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                                  <span>Risk: {risk.score}</span>
+                                </span>
+                              );
+                            })()}
+                            {cp.isCritical && (
+                              <div
+                                className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help whitespace-nowrap"
+                                title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
+                              >
+                                <span className="relative flex h-1.5 w-1.5">
+                                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500"></span>
+                                </span>
+                                <span>Critical</span>
+                              </div>
+                            )}
+                            {!cp.isCritical && (p.status === 'completed' || p.isArchived) && (
+                              <span className="text-base-muted">—</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Kolom 6: Usage (hours + wire) */}
@@ -1389,13 +1457,24 @@ export function ProjectsPage({
   return (
     <div className="space-y-4 animate-fade-in">
       {renderTabPills()}
-      <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
-        {projectFilterTab === 'completed'
-          ? 'Completed Log'
-          : projectFilterTab === 'archive'
-            ? 'Historical Archive'
-            : `${projectFilterTab} Sub-directory`}
-      </h2>
+      <div className="flex items-center justify-between">
+        <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
+          {projectFilterTab === 'completed'
+            ? 'Completed Log'
+            : projectFilterTab === 'archive'
+              ? 'Historical Archive'
+              : `${projectFilterTab} Sub-directory`}
+        </h2>
+        {projectFilterTab === 'archive' && (
+          <button
+            onClick={() => setColdStorageOpen(true)}
+            className="flex items-center gap-2 px-3 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase text-base-muted hover:bg-base-surface2 hover:text-base-accent transition-colors"
+          >
+            <Archive className="h-4 w-4" />
+            <span>Open Cold Storage</span>
+          </button>
+        )}
+      </div>
 
       {matchedProjects.length === 0 ? (
         <div className="bg-base-surface border border-base-border rounded-xl p-8 text-center text-sm text-base-muted font-medium">
@@ -1442,6 +1521,26 @@ export function ProjectsPage({
                       {p.priority === 'high' ? '🔴 High' : p.priority === 'low' ? '🟢 Low' : '🟡 Medium'}
                     </span>
                   )}
+
+                  {(() => {
+                    const risk = calcProjectRiskScore(p, {
+                      timesheets: scopedTimesheetsForPage,
+                      inspections,
+                      problemReports,
+                      materialProcessing: p.materialProcessing,
+                    });
+                    if (p.status === 'completed' || p.isArchived) return null;
+                    const badgeClass = getRiskBadgeClasses(risk.score);
+                    return (
+                      <span
+                        className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border cursor-help transition-all flex items-center gap-1 ${badgeClass}`}
+                        title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
+                      >
+                        <span className={`w-1.5 h-1.5 rounded-full ${risk.score >= 70 ? 'bg-red-500 animate-ping' : risk.score >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                        <span>Risk: {risk.score}</span>
+                      </span>
+                    );
+                  })()}
                   
                   {(() => {
                     const cp = getProjectCriticalPath(p, projects);
@@ -1562,6 +1661,14 @@ export function ProjectsPage({
           })}
         </div>
       )}
+
+      <ColdStorageArchiveModal
+        isOpen={coldStorageOpen}
+        onClose={() => setColdStorageOpen(false)}
+        archivedProjects={projects.filter(p => p.isArchived === true)}
+        onRestoreProject={async (id) => { unarchiveProject(id); }}
+        currentUser={currentUser}
+      />
     </div>
   );
 }

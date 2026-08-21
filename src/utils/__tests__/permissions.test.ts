@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { can } from '../permissions';
+import { can, getDefaultLandingTabForRole } from '../permissions';
 import { makeUser } from '../../test/factories';
 import { UserRole } from '../../types';
 
@@ -45,5 +45,33 @@ describe('permissions - can', () => {
   it('unknown role returns false safely', () => {
     const userWithInvalidRole = makeUser({ role: 'unknown_role' as any });
     expect(can(userWithInvalidRole, 'addProject')).toBe(false);
+  });
+});
+
+describe('getDefaultLandingTabForRole', () => {
+  it('returns "dash" for admin, manager, project control, viewer, facility, safety', () => {
+    expect(getDefaultLandingTabForRole('admin')).toBe('dash');
+    expect(getDefaultLandingTabForRole('manager')).toBe('dash');
+    expect(getDefaultLandingTabForRole('project control')).toBe('dash');
+    expect(getDefaultLandingTabForRole('viewer')).toBe('dash');
+    expect(getDefaultLandingTabForRole('facility maintanance')).toBe('dash');
+    expect(getDefaultLandingTabForRole('safety')).toBe('dash');
+  });
+
+  it('returns "manpower" for coordinator', () => {
+    expect(getDefaultLandingTabForRole('coordinator')).toBe('manpower');
+  });
+
+  it('returns "inspections" for quality control', () => {
+    expect(getDefaultLandingTabForRole('quality control')).toBe('inspections');
+    expect(getDefaultLandingTabForRole('qc')).toBe('inspections');
+  });
+
+  it('falls back to custom allowedFeatures if default is not in allowedFeatures', () => {
+    expect(getDefaultLandingTabForRole('coordinator', ['timesheet', 'drawings'])).toBe('timesheet');
+  });
+
+  it('returns "dash" for undefined role', () => {
+    expect(getDefaultLandingTabForRole()).toBe('dash');
   });
 });

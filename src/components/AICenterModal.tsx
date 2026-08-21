@@ -98,8 +98,8 @@ export default function AICenterModal({
         icon: Flame,
         title: `${openProblems.length} Open Field Issues`,
         description: `Latest issue: "${openProblems[0].description}" reported by ${openProblems[0].reportedBy}.`,
-        targetTab: 'focus24',
-        buttonLabel: 'Open Focus 24'
+        targetTab: 'projects',
+        buttonLabel: 'View Projects & Issues'
       });
     }
 
@@ -382,25 +382,28 @@ export default function AICenterModal({
         pendingInspections: inspections.filter(i => i.status === 'Requested').length,
       };
 
-      const idToken = await getAuth().currentUser?.getIdToken();
+      const user = getAuth().currentUser;
+      const idToken = user ? await user.getIdToken(true).catch(() => null) : null;
 
-      const res = await fetch("/api/gemini/chat", {
-        method: "POST",
-        headers: { 
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${idToken || ''}`
-        },
-        body: JSON.stringify({ prompt: userMsg, context }),
-      });
+      if (idToken) {
+        const res = await fetch("/api/gemini/chat", {
+          method: "POST",
+          headers: { 
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${idToken}`
+          },
+          body: JSON.stringify({ prompt: userMsg, context }),
+        });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.text) {
-          // Check if any projects mentioned in text
-          const matchedIds = projects.filter(p => data.text.toLowerCase().includes(p.name.toLowerCase())).map(p => p.id);
-          setChatHistory(prev => [...prev, { sender: 'ai', text: data.text, projectIds: matchedIds.length > 0 ? matchedIds : undefined }]);
-          setIsTyping(false);
-          return;
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text) {
+            // Check if any projects mentioned in text
+            const matchedIds = projects.filter(p => data.text.toLowerCase().includes(p.name.toLowerCase())).map(p => p.id);
+            setChatHistory(prev => [...prev, { sender: 'ai', text: data.text, projectIds: matchedIds.length > 0 ? matchedIds : undefined }]);
+            setIsTyping(false);
+            return;
+          }
         }
       }
     } catch (err) {

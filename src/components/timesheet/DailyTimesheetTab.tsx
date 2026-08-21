@@ -62,6 +62,7 @@ export interface DailyTimesheetTabProps {
   setEmployeeFilter: (filter: string) => void;
   currentUser: User | null;
   onNavigateToManpower?: (date?: string) => void;
+  onNavigateToProjectHours?: () => void;
 }
 
 export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
@@ -100,7 +101,8 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   employeeFilter,
   setEmployeeFilter,
   currentUser: propUser,
-  onNavigateToManpower
+  onNavigateToManpower,
+  onNavigateToProjectHours
 }) => {
   const storeEmployees = useAppStore((s) => s.employees);
   const storeProjects = useAppStore((s) => s.projects);
@@ -127,7 +129,8 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
       'Work Order': e.workOrder || '',
       'Project': e.projectName || '',
       'Sub-Assembly': e.assemblyName || '',
-      'Task': e.desc || '',
+      'Task Assembly': e.taskName || '',
+      'Description / Note': e.desc || '',
       'Hours': e.totalHours || 0
     }));
 
@@ -388,47 +391,6 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
         </div>
       </div>
 
-      {/* Cumulative Work order statistics */}
-      {sortedWOs.length > 0 && (
-        <div className="bg-base-surface border border-base-border rounded-xl shadow-card overflow-hidden animate-fade-in">
-          <div className="px-4 py-3 bg-base-surface2 border-b border-base-border flex items-center gap-2">
-            <ClipboardList className="h-4 w-4 text-base-accent" />
-            <h3 className="font-condensed font-extrabold uppercase text-xs tracking-wider text-base-text">Project Hours (All Time)</h3>
-          </div>
-          <div className="divide-y divide-base-border/50">
-            {sortedWOs.map(([wo, info]) => {
-              const proj = projects.find(x => (x.client || '').trim().toLowerCase() === (wo || '').trim().toLowerCase());
-              return (
-                <div
-                  key={wo}
-                  onClick={() => proj && openSpotlight?.(proj.id)}
-                  className={`flex px-4 py-3 items-center justify-between gap-4 text-xs group transition-all duration-150 ${
-                    proj ? 'hover:bg-base-surface2/60 cursor-pointer' : ''
-                  }`}
-                  title={proj ? `Click to view project: ${proj.name}` : undefined}
-                >
-                  <div className="font-condensed font-extrabold text-sm text-base-blue flex-shrink-0 min-w-[100px] uppercase tracking-wide flex items-center gap-1.5">
-                    <span>{wo}</span>
-                    {proj && (
-                      <ExternalLink className="h-3 w-3 text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
-                    )}
-                  </div>
-                  <div className="flex-1 font-medium text-base-muted2 whitespace-nowrap overflow-hidden text-ellipsis group-hover:text-base-text transition-colors">
-                    {proj ? proj.name : 'Unassociated work order scope'}
-                  </div>
-                  <div className="text-right flex items-center gap-3">
-                    <span className="text-[10px] text-base-muted">{info.list.size} manpower</span>
-                    <span className="font-condensed font-extrabold text-base text-base-accent bg-base-accent-dim/20 px-2 py-0.5 rounded-sm">
-                      {fmtHrs(info.hrs)}h
-                    </span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
       {/* Main timesheet groups by Coordinator */}
       <div className="space-y-4 animate-fade-in">
         {dayEntries.length === 0 ? (
@@ -521,8 +483,18 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                           {e.workOrder || '—'}
                                         </div>
                                       )}
-                                      {e.assemblyName && (
-                                        <div className="text-[10px] text-base-muted2 font-medium mt-0.5">{e.assemblyName}</div>
+                                      {(e.assemblyName || e.taskName) && (
+                                        <div className="text-[10px] text-base-muted2 font-medium mt-0.5 flex items-center gap-1 flex-wrap">
+                                          {e.assemblyName && (
+                                            <span className="font-semibold text-base-text/80">{e.assemblyName}</span>
+                                          )}
+                                          {e.assemblyName && e.taskName && (
+                                            <span className="text-base-muted">▸</span>
+                                          )}
+                                          {e.taskName && (
+                                            <span className="text-amber-500 font-bold bg-amber-500/10 px-1 py-0.2 rounded-xs">{e.taskName}</span>
+                                          )}
+                                        </div>
                                       )}
                                     </div>
                                   );

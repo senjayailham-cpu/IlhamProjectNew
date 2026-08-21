@@ -937,11 +937,11 @@ export default function KPIView({
             <span className="text-[10px] text-base-muted">Total share of consumable allocations in current period</span>
           </div>
 
-          <div className="h-64 flex items-center justify-center">
+          <div className="h-64 w-full min-h-[256px] min-w-0 flex items-center justify-center" style={{ width: '100%', height: 256 }}>
             {positionChartData.data.length === 0 ? (
               <div className="text-xs text-base-muted italic">No data records found for selected filters</div>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
+              <ResponsiveContainer width="100%" height="100%" minHeight={256}>
                 <PieChart>
                   <Pie
                     data={positionChartData.data}
@@ -982,8 +982,8 @@ export default function KPIView({
             <span className="text-[10px] text-base-muted">Monthly historical breakdown for the last 6 months</span>
           </div>
 
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-h-[256px] min-w-0" style={{ width: '100%', height: 256 }}>
+            <ResponsiveContainer width="100%" height="100%" minHeight={256}>
               <LineChart data={monthlyTrendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
                 <XAxis 
                   dataKey="month" 
