@@ -14,7 +14,55 @@ const INITIAL_NOTES: ShiftHandoverNote[] = [
     createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
     isPinned: true,
     station: 'Workshop 1 - Bay 2',
-    acknowledgedBy: []
+    acknowledgedBy: ['Supervisor Hendra', 'Operator Joko']
+  },
+  {
+    id: 'handover-init-2',
+    note: 'Cutting plat 12mm untuk Proyek Hopper sudah rampung 100%. Sisa material plat telah ditata di rak buffer Bay 1. Mohon QC lakukan check dimensi sebelum diserahkan ke tim fit-up.',
+    authorName: 'Coordinator Bambang',
+    authorRole: 'coordinator',
+    targetShift: 'Day Shift',
+    priority: 'normal',
+    createdAt: new Date(Date.now() - 3600000 * 10).toISOString(),
+    isPinned: false,
+    station: 'Cutting & CNC Station',
+    acknowledgedBy: ['Coordinator Senjaya']
+  },
+  {
+    id: 'handover-init-3',
+    note: 'PERHATIAN: Mesin Bending 2 hidrolik sedikit rembes oli. Maintenance sudah diinfokan untuk cek awal shift pagi. Gunakan Mesin Bending 1 untuk bending flange profil L.',
+    authorName: 'Shift Leader Ridwan',
+    authorRole: 'coordinator',
+    targetShift: 'Day Shift',
+    priority: 'urgent',
+    createdAt: new Date(Date.now() - 3600000 * 18).toISOString(),
+    isPinned: false,
+    station: 'Forming & Bending Bay',
+    acknowledgedBy: ['Coordinator Bambang', 'Coordinator Senjaya', 'Maintenance Rudi']
+  },
+  {
+    id: 'handover-init-4',
+    note: 'Inspeksi NDT (MPI) untuk joint kritis frame utama telah diajukan ke Quality Control (RFI-084). Hasil test dijadwalkan keluar jam 10:00 pagi.',
+    authorName: 'QC Inspector Arif',
+    authorRole: 'quality_control',
+    targetShift: 'Shift 1',
+    priority: 'important',
+    createdAt: new Date(Date.now() - 3600000 * 26).toISOString(),
+    isPinned: false,
+    station: 'QC Inspection Bay',
+    acknowledgedBy: ['Coordinator Senjaya']
+  },
+  {
+    id: 'handover-init-5',
+    note: 'Manpower lembur malam telah menyelesaikan perakitan baseplate structure 4 unit. Catatan: kawat las LB-52 stok di locker sisa 2 box, mohon request logistik.',
+    authorName: 'Coordinator Darmawan',
+    authorRole: 'coordinator',
+    targetShift: 'Night Shift',
+    priority: 'normal',
+    createdAt: new Date(Date.now() - 3600000 * 34).toISOString(),
+    isPinned: false,
+    station: 'Assembly Line 3',
+    acknowledgedBy: ['Shift Leader Ridwan']
   }
 ];
 
@@ -25,6 +73,17 @@ export function useShiftHandover(currentUser?: { name: string; role?: string } |
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
+          // If fewer than 5 notes, merge non-existing INITIAL_NOTES to ensure rich 5-shift history
+          if (parsed.length < 5) {
+            const existingIds = new Set(parsed.map(n => n.id));
+            const merged = [...parsed];
+            for (const initNote of INITIAL_NOTES) {
+              if (!existingIds.has(initNote.id)) {
+                merged.push(initNote);
+              }
+            }
+            return merged;
+          }
           return parsed;
         }
       }
