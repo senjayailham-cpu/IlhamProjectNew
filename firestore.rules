@@ -112,6 +112,12 @@ service cloud.firestore {
       allow update, delete: if isAdmin() || (isSignedIn() && incoming() == existing());
     }
 
+    match /userSessions/{sessionId} {
+      allow read: if isAdmin() || isSignedIn();
+      allow create, update: if isSignedIn();
+      allow delete: if isAdmin();
+    }
+
     match /users/{userId} {
       // Secure user profiles: only admin or the user themselves can read individual profiles, preventing password hash leakage.
       allow get: if isAdmin() || (

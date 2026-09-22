@@ -66,7 +66,10 @@ export enum ActivityLogType {
   ProjectDelete = 'project_delete',
   AssemblyAdd = 'assembly_add',
   AssemblyEdit = 'assembly_edit',
-  AssemblyDelete = 'assembly_delete'
+  AssemblyDelete = 'assembly_delete',
+  UserLogin = 'user_login',
+  UserLogout = 'user_logout',
+  UserEdit = 'user_edit'
 }
 
 export type ActivityLogTypeVal =
@@ -80,7 +83,15 @@ export type ActivityLogTypeVal =
   | 'project_delete'
   | 'assembly_add'
   | 'assembly_edit'
-  | 'assembly_delete';
+  | 'assembly_delete'
+  | 'user_login'
+  | 'user_logout'
+  | 'user_edit'
+  | 'user_create'
+  | 'user_delete'
+  | 'material_add'
+  | 'material_edit'
+  | 'material_delete';
 
 // ============================================================================
 // 2. DATA MODELS & STRUCTURES
@@ -104,6 +115,8 @@ export interface User {
     ganttShowSCurve?: boolean;
     ganttAutoSchedule?: boolean;
     ganttShowResourceLoad?: boolean;
+    ganttShowHoursTracking?: boolean;
+    ganttShowBaseline?: boolean;
     matProcessingViewMode?: string;
     readNotificationIds?: string[];
   };
@@ -128,6 +141,9 @@ export interface Task {
   workflowStatus?: WorkflowStatusType;
   assignedCompany?: string;
   crewSize?: number;
+  budgetHours?: number;
+  baselineStart?: string;
+  baselineFinish?: string;
 }
 
 export interface Dependency {
@@ -142,6 +158,8 @@ export interface Assembly {
   notes?: string;
   start?: string;
   finish?: string;
+  baselineStart?: string;
+  baselineFinish?: string;
   tasks: Task[];
   budgetHours?: number;
   predecessors?: Dependency[];
@@ -156,6 +174,8 @@ export interface Project {
   gaNumber?: string;
   start?: string;
   due?: string;
+  baselineStart?: string;
+  baselineFinish?: string;
   status: ProjectStatusType;
   category: ProjectCategoryType;
   location: ProjectLocationType;
@@ -198,11 +218,13 @@ export interface TimesheetEntry {
   date: string;
   empId: string;
   empName: string;
+  position?: string;
   workOrder?: string;
   assemblyId?: string;
   assemblyName?: string;
   taskId?: string;
   taskName?: string;
+  category?: string; // Job Category: Welder (Hot Pass, Root Pass, Capping, Cleaning, Others), Fitter (Fit-Up, Cleaning, Others), Grinder (Cleaning, Others), Coordinator (Monitoring, Others)
   totalHours: number;
   status: TimesheetStatusType;
   desc?: string;
@@ -275,6 +297,19 @@ export interface ActivityLog {
   oldPct?: number;
   newPct?: number;
   detail?: string;
+}
+
+export interface UserSessionLog {
+  id: string;
+  userId: string;
+  userName: string;
+  userRole: UserRoleType;
+  loginTs: string;
+  logoutTs?: string | null;
+  status: 'active' | 'logged_out';
+  deviceInfo?: string;
+  sessionId: string;
+  durationMinutes?: number | null;
 }
 
 // ============================================================================

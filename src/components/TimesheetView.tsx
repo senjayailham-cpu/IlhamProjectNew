@@ -155,6 +155,9 @@ export default function TimesheetView({
     const matchesSearch = searchQuery === '' || 
       e.empName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.workOrder || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.taskName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (e.assemblyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.desc || '').toLowerCase().includes(searchQuery.toLowerCase());
       
     const matchesProject = projectFilter === '' || 

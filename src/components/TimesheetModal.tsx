@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { TimesheetEntry, Employee, Project, Assembly, Task } from '../types';
 import { esc } from '../utils/projectUtils';
-import { ClipboardCheck, Loader2, ListChecks, CheckCircle2, ChevronRight } from 'lucide-react';
+import { ClipboardCheck, Loader2, ListChecks, CheckCircle2, ChevronRight, Layers, Plus, Trash2, Split } from 'lucide-react';
+import { getCategoriesForPosition, detectPositionGroup, getDefaultCategoryForPosition } from '../utils/timesheetCategories';
 
 interface TimesheetModalProps {
   isOpen: boolean;
@@ -16,12 +17,15 @@ interface TimesheetModalProps {
 }
 
 interface RowInput {
+  rowKey: string;
+  existingId?: string;
   empId: string;
   empName: string;
   position: string;
   workOrder: string;
   assemblyId: string;
   taskId: string;
+  category: string;
   totalHours: string;
   status: 'present' | 'late' | 'absent' | 'leave';
   desc: string;
@@ -43,6 +47,7 @@ export default function TimesheetModal({
   const [globalWo, setGlobalWo] = useState<string>('');
   const [globalAsm, setGlobalAsm] = useState<string>('');
   const [globalTask, setGlobalTask] = useState<string>('');
+  const [globalCategory, setGlobalCategory] = useState<string>('');
   const [globalHrs, setGlobalHrs] = useState<string>('');
   const [globalStatus, setGlobalStatus] = useState<string>('');
 
@@ -67,6 +72,7 @@ export default function TimesheetModal({
       if (targetTs) {
         const emp = employees.find(x => x.id === targetTs.empId);
         const coord = (emp?.coordinator || '').trim();
+        const autoPosition = emp?.position?.trim() || 'Crew';
         setSelectedCoord(coord);
         setGlobalWo(targetTs.workOrder || '');
         setGlobalAsm(targetTs.assemblyId || '');
@@ -74,12 +80,15 @@ export default function TimesheetModal({
 
         const rows: RowInput[] = [
           {
+            rowKey: targetTs.id || `edit_${targetTs.empId}_${Date.now()}`,
+            existingId: targetTs.id,
             empId: targetTs.empId,
             empName: targetTs.empName,
-            position: emp?.position || 'Crew',
+            position: autoPosition,
             workOrder: targetTs.workOrder || '',
             assemblyId: targetTs.assemblyId || '',
             taskId: targetTs.taskId || '',
+            category: targetTs.category || getDefaultCategoryForPosition(autoPosition),
             totalHours: String(targetTs.totalHours),
             status: targetTs.status,
             desc: targetTs.desc || '',
@@ -93,6 +102,7 @@ export default function TimesheetModal({
       setGlobalWo('');
       setGlobalAsm('');
       setGlobalTask('');
+      setGlobalCategory('');
       setGlobalHrs('');
       setGlobalStatus('');
       setRowInputs([]);
@@ -106,21 +116,49 @@ export default function TimesheetModal({
     const matchedEmps = employees.filter(e => (e.coordinator || '').trim() === selectedCoord);
     const existingTimesheets = timesheets.filter(ts => ts.date === timesheetDate);
 
-    const initialRows: RowInput[] = matchedEmps.map(e => {
-      // Pre-fill existing entries if they logged hours today
-      const pastLog = existingTimesheets.find(ts => ts.empId === e.id);
-      return {
-        empId: e.id,
-        empName: e.name,
-        position: e.position || 'Fitter',
-        workOrder: pastLog?.workOrder || '',
-        assemblyId: pastLog?.assemblyId || '',
-        taskId: pastLog?.taskId || '',
-        totalHours: pastLog ? String(pastLog.totalHours) : '',
-        status: pastLog ? pastLog.status : 'present',
-        desc: pastLog?.desc || '',
-        included: true
-      };
+    const initialRows: RowInput[] = [];
+
+    matchedEmps.forEach(e => {
+      const autoPosition = e.position?.trim() || 'Crew';
+      // Find all entries for this employee today
+      const empLogs = existingTimesheets.filter(ts => ts.empId === e.id);
+
+      if (empLogs.length > 0) {
+        // If employee has 1 or multiple logged work orders today, create a row for each
+        empLogs.forEach((log, lIdx) => {
+          initialRows.push({
+            rowKey: log.id || `${e.id}_${lIdx}_${Date.now()}`,
+            existingId: log.id, // preserve existing document ID
+            empId: e.id,
+            empName: e.name,
+            position: autoPosition,
+            workOrder: log.workOrder || '',
+            assemblyId: log.assemblyId || '',
+            taskId: log.taskId || '',
+            category: log.category || getDefaultCategoryForPosition(autoPosition),
+            totalHours: String(log.totalHours || ''),
+            status: log.status || 'present',
+            desc: log.desc || '',
+            included: true
+          });
+        });
+      } else {
+        // Default single row
+        initialRows.push({
+          rowKey: `${e.id}_0_${Date.now()}`,
+          empId: e.id,
+          empName: e.name,
+          position: autoPosition,
+          workOrder: '',
+          assemblyId: '',
+          taskId: '',
+          category: getDefaultCategoryForPosition(autoPosition),
+          totalHours: '',
+          status: 'present',
+          desc: '',
+          included: true
+        });
+      }
     });
 
     setRowInputs(initialRows);
@@ -193,6 +231,11 @@ export default function TimesheetModal({
     setRowInputs(prev => prev.map(row => ({ ...row, taskId: globalTask })));
   };
 
+  const applyCategoryToAll = () => {
+    if (!globalCategory) return;
+    setRowInputs(prev => prev.map(row => ({ ...row, category: globalCategory })));
+  };
+
   const applyHrsToAll = () => {
     if (!globalHrs) return;
     setRowInputs(prev => prev.map(row => ({ ...row, totalHours: globalHrs })));
@@ -213,9 +256,51 @@ export default function TimesheetModal({
     setRowInputs(prev => prev.map(row => ({ ...row, included: checked })));
   };
 
+  // Add a split row for an employee to work on an additional Work Order
+  const handleAddSplitRow = (empId: string, sourceIdx: number) => {
+    const sourceRow = rowInputs[sourceIdx];
+    const newSplitRow: RowInput = {
+      rowKey: `${empId}_split_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      empId: sourceRow.empId,
+      empName: sourceRow.empName,
+      // Automatically pre-fill position directly from employee record (read-only)
+      position: sourceRow.position,
+      workOrder: '',
+      assemblyId: '',
+      taskId: '',
+      category: sourceRow.category,
+      totalHours: '',
+      status: sourceRow.status,
+      desc: '',
+      included: true
+    };
+    
+    // Insert immediately after the source row
+    const updated = [...rowInputs];
+    updated.splice(sourceIdx + 1, 0, newSplitRow);
+    setRowInputs(updated);
+  };
+
+  // Remove a split row
+  const handleRemoveSplitRow = (idx: number) => {
+    const updated = [...rowInputs];
+    updated.splice(idx, 1);
+    setRowInputs(updated);
+  };
+
   const handleRowFieldChange = (idx: number, field: keyof RowInput, val: string) => {
     const updated = [...rowInputs];
     (updated[idx] as any)[field] = val;
+    
+    if (field === 'empId') {
+      const newEmp = employees.find(e => e.id === val);
+      if (newEmp) {
+        updated[idx].empName = newEmp.name;
+        updated[idx].position = newEmp.position?.trim() || 'Crew';
+        updated[idx].category = getDefaultCategoryForPosition(updated[idx].position);
+      }
+    }
+    
     if (field === 'assemblyId') {
       updated[idx].taskId = ''; // reset task when assembly changes
     }
@@ -248,13 +333,16 @@ export default function TimesheetModal({
       const asm = proj && (proj.assemblies || []).find(a => a.id === r.assemblyId);
       const task = asm && (asm.tasks || []).find(t => t.id === r.taskId);
       return {
+        id: r.existingId,
         empId: r.empId,
         empName: r.empName,
+        position: r.position,
         workOrder: r.workOrder.trim(),
         assemblyId: r.assemblyId || '',
         assemblyName: asm ? asm.name : '',
         taskId: r.taskId || '',
         taskName: task ? task.name : '',
+        category: r.category || '',
         totalHours: parseFloat(r.totalHours),
         status: r.status,
         desc: r.desc.trim()
@@ -401,6 +489,39 @@ export default function TimesheetModal({
                 Set Task All
               </button>
 
+              {/* Bulk Job Category */}
+              <select
+                value={globalCategory}
+                onChange={(e) => setGlobalCategory(e.target.value)}
+                className="px-2 py-1 bg-base-bg text-emerald-600 dark:text-emerald-400 text-xs rounded border border-base-border focus:border-emerald-500 outline-none font-condensed font-bold max-w-[140px] cursor-pointer"
+                title="Bulk apply Job Category"
+              >
+                <option value="">— Category —</option>
+                <optgroup label="Welder">
+                  <option value="Hot Pass">Hot Pass</option>
+                  <option value="Root Pass">Root Pass</option>
+                  <option value="Capping">Capping</option>
+                </optgroup>
+                <optgroup label="Fitter">
+                  <option value="Fit-Up">Fit-Up</option>
+                </optgroup>
+                <optgroup label="Cleaning (Common)">
+                  <option value="Cleaning">Cleaning</option>
+                </optgroup>
+                <optgroup label="Coordinator">
+                  <option value="Monitoring">Monitoring</option>
+                </optgroup>
+                <option value="Others">Others</option>
+              </select>
+              <button
+                type="button"
+                onClick={applyCategoryToAll}
+                disabled={!globalCategory}
+                className="px-2 py-1 bg-base-surface3 hover:bg-emerald-500 hover:text-white text-emerald-600 dark:text-emerald-400 rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+              >
+                Set Cat All
+              </button>
+
               {/* Bulk Hours */}
               <input
                 type="number"
@@ -460,19 +581,23 @@ export default function TimesheetModal({
                   <th className="py-2.5 px-3 min-w-[170px] text-base-blue">Work Order</th>
                   <th className="py-2.5 px-3 min-w-[160px] text-base-blue">Sub-Assembly</th>
                   <th className="py-2.5 px-3 min-w-[170px] text-amber-500 font-extrabold">Task Assembly</th>
+                  <th className="py-2.5 px-3 min-w-[140px] text-emerald-600 dark:text-emerald-400 font-extrabold">Category</th>
                   <th className="py-2.5 px-3 w-20 text-center">Hours</th>
                   <th className="py-2.5 px-3 w-28">Status</th>
                   <th className="py-2.5 px-3 min-w-[180px]">Description / Note</th>
-                  <th className="py-2.5 px-4 w-12 text-center">
-                    {!editingId && (
-                      <input
-                        type="checkbox"
-                        checked={rowInputs.every(r => r.included)}
-                        onChange={(e) => handleCheckAllToggle(e.target.checked)}
-                        className="h-3.5 w-3.5 accent-base-accent rounded cursor-pointer"
-                        title="Include/Exclude All Rows"
-                      />
-                    )}
+                  <th className="py-2.5 px-4 w-32 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span>Include</span>
+                      {!editingId && (
+                        <input
+                          type="checkbox"
+                          checked={rowInputs.every(r => r.included)}
+                          onChange={(e) => handleCheckAllToggle(e.target.checked)}
+                          className="h-3.5 w-3.5 accent-base-accent rounded cursor-pointer"
+                          title="Include/Exclude All Rows"
+                        />
+                      )}
+                    </div>
                   </th>
                 </tr>
               </thead>
@@ -483,22 +608,54 @@ export default function TimesheetModal({
                   const selectedAsmObj = assemblyList.find(a => a.id === row.assemblyId);
                   const taskList = (selectedAsmObj && selectedAsmObj.tasks) || [];
 
+                  // Compute total hours and split groupings
+                  const empTotalHrs = rowInputs.filter(r => r.empId === row.empId && r.included && r.totalHours).reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
+                  const isFirstRowForEmp = rowInputs.findIndex(r => r.empId === row.empId) === i;
+                  const isSplitRow = !isFirstRowForEmp;
+
                   // Row matches autocomplete
                   const matches = rowDropdownMatches[row.empId] || [];
                   const showDropdown = !!rowDropdownOpen[row.empId];
 
                   return (
                     <tr
-                      key={row.empId}
+                      key={row.rowKey}
                       className={`hover:bg-base-surface2/25 transition-colors ${
                         row.included ? '' : 'opacity-40 line-through select-none grayscale'
-                      }`}
+                      } ${isSplitRow ? 'bg-base-surface2/10' : ''}`}
                     >
                       {/* Name / Position */}
-                      <td className="py-2.5 px-4 font-semibold text-base-text">
+                      <td className="py-2.5 px-4 font-semibold text-base-text relative">
+                        {isSplitRow && (
+                          <div className="absolute left-1.5 top-0 bottom-0 w-px bg-emerald-500/30"></div>
+                        )}
                         <div>
-                          <div>{row.empName}</div>
-                          <div className="text-[10px] text-base-muted font-normal mt-0.5">{row.position}</div>
+                          {!isSplitRow ? (
+                            <>
+                              <div className="font-bold flex items-center justify-between">
+                                {row.empName}
+                                {empTotalHrs > 0 && (
+                                  <span className={`text-[10px] font-condensed font-bold ${empTotalHrs > 8 ? 'text-amber-500' : 'text-emerald-500'}`}>
+                                    Total: {empTotalHrs}h
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span
+                                  className="text-[10px] bg-base-surface2 border border-base-border rounded px-1.5 py-0.5 text-base-muted font-condensed font-bold uppercase select-none pointer-events-none"
+                                  title={`Position: ${row.position || 'Crew'} (Read-only dari database Employee)`}
+                                >
+                                  {row.position || 'Crew'}
+                                </span>
+                              </div>
+                            </>
+                          ) : (
+                            <div className="flex items-center gap-2 pl-2 text-base-muted font-medium">
+                              <Split className="w-3.5 h-3.5 text-emerald-500/70" />
+                              <span>Split Log #{rowInputs.filter((r, rIdx) => rIdx <= i && r.empId === row.empId).length}</span>
+                              <span className="text-[10px] uppercase font-condensed px-1 border border-base-border/50 rounded">{row.position || 'Crew'}</span>
+                            </div>
+                          )}
                         </div>
                       </td>
 
@@ -576,6 +733,33 @@ export default function TimesheetModal({
                         </select>
                       </td>
 
+                      {/* Job Category */}
+                      <td className="py-2.5 px-3">
+                        {(() => {
+                          const cats = getCategoriesForPosition(row.position);
+                          return (
+                            <select
+                              value={row.category}
+                              disabled={!row.included}
+                              onChange={(e) => handleRowFieldChange(i, 'category', e.target.value)}
+                              className={`w-full px-2 py-1 bg-base-bg border rounded font-condensed font-bold text-xs outline-none cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-colors ${
+                                row.category
+                                  ? 'border-emerald-500/50 text-emerald-600 dark:text-emerald-400 font-extrabold bg-emerald-500/5'
+                                  : 'border-base-border text-base-muted hover:border-emerald-500/50'
+                              }`}
+                              title={`Job Category for ${row.position || 'employee'}`}
+                            >
+                              <option value="">— Select Category —</option>
+                              {cats.map(cat => (
+                                <option key={cat} value={cat}>
+                                  {cat}
+                                </option>
+                              ))}
+                            </select>
+                          );
+                        })()}
+                      </td>
+
                       {/* Hours */}
                       <td className="py-2.5 px-3">
                         <input
@@ -618,16 +802,39 @@ export default function TimesheetModal({
                         />
                       </td>
 
-                      {/* Row selection check box */}
-                      <td className="py-2.5 px-4 text-center">
-                        {!editingId && (
-                          <input
-                            type="checkbox"
-                            checked={row.included}
-                            onChange={(e) => handleRowCheckToggle(i, e.target.checked)}
-                            className="h-3.5 w-3.5 accent-base-accent rounded cursor-pointer"
-                          />
-                        )}
+                      {/* Row Actions */}
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center justify-end gap-3">
+                          {!isSplitRow ? (
+                            <button
+                              type="button"
+                              onClick={() => handleAddSplitRow(row.empId, i)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-emerald-500/30 text-emerald-600 bg-emerald-500/5 hover:bg-emerald-500/10 hover:border-emerald-500/50 transition-colors text-[10px] font-condensed font-bold uppercase disabled:opacity-50"
+                              title="1 orang bisa bekerja di beberapa Work Order"
+                              disabled={!row.included}
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>Split WO</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveSplitRow(i)}
+                              className="p-1 rounded text-base-muted hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                              title="Hapus baris split"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                          {!editingId && (
+                            <input
+                              type="checkbox"
+                              checked={row.included}
+                              onChange={(e) => handleRowCheckToggle(i, e.target.checked)}
+                              className="h-3.5 w-3.5 accent-base-accent rounded cursor-pointer ml-1"
+                            />
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

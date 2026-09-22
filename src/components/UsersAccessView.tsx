@@ -17,8 +17,10 @@ import {
   UserCheck, 
   Lock,
   Compass,
-  AlertTriangle
+  AlertTriangle,
+  History
 } from 'lucide-react';
+import UserSessionAuditView from './users/UserSessionAuditView';
 
 interface UsersAccessViewProps {
   users: User[];
@@ -75,6 +77,9 @@ export default function UsersAccessView({
   const [selectedUserId, setSelectedUserId] = useState<string>(users[0]?.id || '');
   const [searchQuery, setSearchQuery] = useState<string>('');
   
+  // Main View Switcher: User Accounts Directory vs Login/Logout Audit Logs
+  const [viewMode, setViewMode] = useState<'directory' | 'audit_logs'>('directory');
+
   // Right Column Sub-Tab State
   const [activeSubTab, setActiveSubTab] = useState<'account' | 'navigation' | 'permissions'>('account');
 
@@ -411,7 +416,7 @@ export default function UsersAccessView({
         </div>
         
         {/* Floating save indicator or quick save button when changes are staged */}
-        {isDirty && (
+        {isDirty && viewMode === 'directory' && (
           <div className="flex items-center gap-2 animate-pulse-slow">
             <button
               onClick={() => setLocalUsers(users)}
@@ -433,8 +438,45 @@ export default function UsersAccessView({
         )}
       </div>
 
-      {/* TWO COLUMN GRID WRAPPER */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-start">
+      {/* TOP VIEW TABS (Manajemen User & Hak Akses vs Catatan Login & Logout) */}
+      <div className="flex items-center gap-2 border-b border-base-border pb-2">
+        <button
+          onClick={() => setViewMode('directory')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+            viewMode === 'directory'
+              ? 'bg-[#9b1c2e] text-white shadow-sm'
+              : 'bg-base-surface hover:bg-base-surface2 border border-base-border text-base-muted hover:text-base-text'
+          }`}
+        >
+          <UserCheck className="w-4 h-4" />
+          <span>Daftar User & Hak Akses</span>
+          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-normal ${
+            viewMode === 'directory' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+          }`}>
+            {localUsers.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => setViewMode('audit_logs')}
+          className={`flex items-center gap-2 px-4 py-2 text-xs font-condensed font-bold uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+            viewMode === 'audit_logs'
+              ? 'bg-[#9b1c2e] text-white shadow-sm'
+              : 'bg-base-surface hover:bg-base-surface2 border border-base-border text-base-muted hover:text-base-text'
+          }`}
+        >
+          <History className="w-4 h-4" />
+          <span>Catatan Login & Logout</span>
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse ml-0.5" title="Live Audit Active"></span>
+        </button>
+      </div>
+
+      {/* VIEW CONTENT */}
+      {viewMode === 'audit_logs' ? (
+        <UserSessionAuditView currentUser={currentUser} users={users} />
+      ) : (
+        /* TWO COLUMN GRID WRAPPER */
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 w-full items-start">
       
         {/* LEFT COLUMN: User Directory list (Grid cols: 4) */}
         <div className="lg:col-span-4 flex flex-col gap-4 bg-base-surface border border-base-border rounded-xl p-4 shadow-sm">
@@ -997,6 +1039,7 @@ export default function UsersAccessView({
           )}
         </div>
       </div>
+      )}
       
       {/* Custom Delete Confirmation Modal */}
       {deleteConfirm.isOpen && (

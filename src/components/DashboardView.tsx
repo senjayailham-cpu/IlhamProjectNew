@@ -1,11 +1,11 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Project, TimesheetEntry, Employee, MaterialItem, MaterialRequest, MaterialProcessing, ProblemReport, InspectionRequest } from '../types';
 import { useAppStore, useUIStore } from '../store';
 import { getAuth } from 'firebase/auth';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
 import { calcProjectRiskScore } from '../utils/riskScore';
-import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, Sparkles, Sliders, Gauge, Target, MapPin, Activity } from 'lucide-react';
+import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Calendar, BookmarkCheck, Sparkles, Sliders, Gauge, Target, MapPin, Activity } from 'lucide-react';
 import {
   RadialBarChart,
   RadialBar,
@@ -420,6 +420,68 @@ export default function DashboardView({
     return list;
   })();
 
+  // Helper to determine default date for selected month:
+  // if selectedMonth is current month -> today (YYYY-MM-DD)
+  // else -> last day of that month
+  const getDefaultDashDate = (monthYM: string): string => {
+    const today = new Date();
+    const curYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const [y, m] = monthYM.split('-').map(Number);
+    const lastDayOfMonth = new Date(y, m, 0).getDate();
+    if (monthYM === curYM) {
+      return `${curYM}-${String(today.getDate()).padStart(2, '0')}`;
+    }
+    return `${monthYM}-${String(lastDayOfMonth).padStart(2, '0')}`;
+  };
+
+  const [dashDate, setDashDate] = useState<string>(() => getDefaultDashDate(selectedMonth));
+
+  // Sync and clamp dashDate when selectedMonth changes
+  useEffect(() => {
+    setDashDate(getDefaultDashDate(selectedMonth));
+  }, [selectedMonth]);
+
+  const { minMonthDate, maxMonthDate, daysInSelectedMonth } = useMemo(() => {
+    const [yStr, mStr] = selectedMonth.split('-');
+    const y = parseInt(yStr, 10) || 2026;
+    const m = parseInt(mStr, 10) || 6;
+    const days = new Date(y, m, 0).getDate();
+    return {
+      minMonthDate: `${selectedMonth}-01`,
+      maxMonthDate: `${selectedMonth}-${String(days).padStart(2, '0')}`,
+      daysInSelectedMonth: days
+    };
+  }, [selectedMonth]);
+
+  const handlePrevDay = () => {
+    const [y, m, d] = dashDate.split('-').map(Number);
+    const dt = new Date(y, m - 1, d - 1);
+    const nextStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    if (nextStr >= minMonthDate) {
+      setDashDate(nextStr);
+    }
+  };
+
+  const handleNextDay = () => {
+    const [y, m, d] = dashDate.split('-').map(Number);
+    const dt = new Date(y, m - 1, d + 1);
+    const nextStr = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+    if (nextStr <= maxMonthDate) {
+      setDashDate(nextStr);
+    }
+  };
+
+  const handleDateChange = (val: string) => {
+    if (!val) return;
+    if (val < minMonthDate) {
+      setDashDate(minMonthDate);
+    } else if (val > maxMonthDate) {
+      setDashDate(maxMonthDate);
+    } else {
+      setDashDate(val);
+    }
+  };
+
   const shiftMonth = (delta: number) => {
     const [y, m] = selectedMonth.split('-').map(Number);
     const d = new Date(y, m - 1 + delta, 1);
@@ -428,7 +490,10 @@ export default function DashboardView({
 
   const jumpToToday = () => {
     const today = new Date();
-    setSelectedMonth(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`);
+    const curYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const todayStr = `${curYM}-${String(today.getDate()).padStart(2, '0')}`;
+    setSelectedMonth(curYM);
+    setDashDate(todayStr);
   };
 
   const isCurrentMonth = () => {
@@ -1094,6 +1159,144 @@ export default function DashboardView({
   const circ = 2 * Math.PI * radius;
   const strokeDashoffset = circ - (circ * overallPct) / 100;
 
+  // Circular BASELINE Statistics (Scope = filteredProjects)
+  // Only projects with baselineStart & baselineFinish
+  // Evaluation point = dashDate
+  // plannedPct from baseline window s/d dashDate (clamped 0 - 100%)
+  // actualPct = calcPct aggregate of projects with baseline in scope
+  const baselineStats = useMemo(() => {
+    const scopedProjects = filteredProjects.filter(p => Boolean(p.baselineStart && p.baselineFinish));
+
+    if (scopedProjects.length === 0) {
+      return {
+        hasBaseline: false,
+        count: 0,
+        plannedPct: 0,
+        actualPct: 0,
+        variance: 0,
+        projects: []
+      };
+    }
+
+    let totalWeight = 0;
+    let sumPlanned = 0;
+    let sumActual = 0;
+
+    scopedProjects.forEach(p => {
+      const taskCount = (p.assemblies || []).reduce((acc, a) => acc + (a.tasks?.length || 0), 0);
+      const weight = Math.max(1, taskCount);
+
+      let projPlanned = 0;
+      if (dashDate < p.baselineStart!) {
+        projPlanned = 0;
+      } else if (dashDate >= p.baselineFinish!) {
+        projPlanned = 100;
+      } else {
+        const startMs = new Date(p.baselineStart!).getTime();
+        const finishMs = new Date(p.baselineFinish!).getTime();
+        const currentMs = new Date(dashDate).getTime();
+        const span = Math.max(1, finishMs - startMs);
+        const elapsed = Math.max(0, currentMs - startMs);
+        projPlanned = Math.min(100, Math.max(0, Math.round((elapsed / span) * 100)));
+      }
+
+      const projActual = calcPct(p);
+
+      sumPlanned += projPlanned * weight;
+      sumActual += projActual * weight;
+      totalWeight += weight;
+    });
+
+    const plannedPct = totalWeight === 0 ? 0 : Math.round(sumPlanned / totalWeight);
+    const actualPct = totalWeight === 0 ? 0 : Math.round(sumActual / totalWeight);
+    const variance = actualPct - plannedPct; // positive = ahead, negative = behind
+
+    return {
+      hasBaseline: true,
+      count: scopedProjects.length,
+      plannedPct,
+      actualPct,
+      variance,
+      projects: scopedProjects
+    };
+  }, [filteredProjects, dashDate]);
+
+  // Circular MAN-HOURS Statistics (Scope follows dashLoc & filteredProjects)
+  // actualHrs = sum timesheets in selectedMonth, date <= dashDate (cumulative from month start up to selected date)
+  // target monthly hours from projects in scope (p.budgetHours)
+  const manHoursStats = useMemo(() => {
+    const localAssemblyIds = new Set<string>();
+    const localWorkOrders = new Set<string>();
+    const localProjectIds = new Set<string>();
+
+    filteredProjects.forEach(p => {
+      localProjectIds.add(p.id);
+      if (p.client) localWorkOrders.add(p.client.trim().toLowerCase());
+      if (p.name) localWorkOrders.add(p.name.trim().toLowerCase());
+      (p.assemblies || []).forEach(asm => {
+        localAssemblyIds.add(asm.id);
+      });
+    });
+
+    let actualHrs = 0;
+    let timesheetCount = 0;
+
+    timesheets.forEach(ts => {
+      if (!ts.date) return;
+      if (ts.date.slice(0, 7) !== selectedMonth) return;
+      if (ts.date > dashDate) return;
+
+      let inScope = false;
+      if (ts.assemblyId && localAssemblyIds.has(ts.assemblyId)) {
+        inScope = true;
+      } else if (ts.workOrder && localWorkOrders.has(ts.workOrder.trim().toLowerCase())) {
+        inScope = true;
+      } else if (dashLoc !== 'all') {
+        const targetProj = projects.find(
+          p => p.client && p.client.trim().toLowerCase() === (ts.workOrder || '').trim().toLowerCase()
+        );
+        if (targetProj && targetProj.location === dashLoc && localProjectIds.has(targetProj.id)) {
+          inScope = true;
+        }
+      } else {
+        const targetProj = projects.find(
+          p => p.client && p.client.trim().toLowerCase() === (ts.workOrder || '').trim().toLowerCase()
+        );
+        if (targetProj && localProjectIds.has(targetProj.id)) {
+          inScope = true;
+        }
+      }
+
+      if (inScope) {
+        actualHrs += (ts.totalHours || 0);
+        timesheetCount++;
+      }
+    });
+
+    const targetMonthlyHrs = filteredProjects.reduce((sum, p) => sum + (p.budgetHours || 0), 0);
+    const hasTarget = targetMonthlyHrs > 0;
+
+    const dayNum = parseInt(dashDate.slice(8, 10), 10) || 1;
+    const pacePct = Math.min(100, Math.max(0, Math.round((dayNum / daysInSelectedMonth) * 100)));
+    const targetBurnPct = hasTarget ? Math.min(100, Math.round((actualHrs / targetMonthlyHrs) * 100)) : pacePct;
+
+    return {
+      actualHrs: Math.round(actualHrs * 10) / 10,
+      targetMonthlyHrs,
+      hasTarget,
+      burnPct: targetBurnPct,
+      pacePct,
+      timesheetCount
+    };
+  }, [filteredProjects, timesheets, selectedMonth, dashDate, dashLoc, projects, daysInSelectedMonth]);
+
+  const baselinePlanOffset = circ - (circ * Math.min(100, Math.max(0, baselineStats.plannedPct))) / 100;
+  const baselineActOffset = circ - (circ * Math.min(100, Math.max(0, baselineStats.actualPct))) / 100;
+  const hoursBurnPctClamped = manHoursStats.hasTarget 
+    ? Math.min(100, Math.max(0, manHoursStats.burnPct))
+    : Math.min(100, Math.max(0, manHoursStats.pacePct));
+  const hoursOffset = circ - (circ * hoursBurnPctClamped) / 100;
+
   // Donut chart segments calculation
   const totalProjCount = filteredProjects.length || 1;
   const statusKeys: ('active' | 'pending' | 'completed' | 'on-hold')[] = ['active', 'pending', 'completed', 'on-hold'];
@@ -1260,40 +1463,75 @@ export default function DashboardView({
     <div className="space-y-6">
 
       {/* Hero card */}
-      <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-4 sm:p-8 shadow-card flex flex-col md:flex-row md:items-center md:justify-between gap-4 sm:gap-6 dark:from-[#151921] dark:to-[#1b212c]">
+      <div className="dash-hero relative overflow-hidden bg-base-surface border border-base-border2 rounded-2xl p-4 sm:p-6 lg:p-8 shadow-card flex flex-col xl:flex-row xl:items-center xl:justify-between gap-6 dark:from-[#151921] dark:to-[#1b212c]">
         {/* Decorative background details */}
         <div className="absolute -top-16 -right-16 w-64 h-64 rounded-full bg-radial from-base-accent-dim to-transparent opacity-40 pointer-events-none" />
         <div className="absolute -bottom-12 left-1/3 w-48 h-48 rounded-full bg-radial from-base-blue-dim to-transparent opacity-40 pointer-events-none" />
 
         <div className="flex-1 space-y-4 relative z-10">
-          <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            {/* Month Navigation */}
             <div className="flex items-center bg-base-surface2 border border-base-border2 rounded-lg p-1">
               <button
                 onClick={() => shiftMonth(-1)}
                 className="p-1.5 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text"
+                title="Bulan Sebelumnya"
               >
-                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="15 18 9 12 15 6" />
-                </svg>
+                <ChevronLeft className="h-4 w-4" />
               </button>
               <span
                 onClick={jumpToToday}
-                className="font-condensed font-bold text-sm tracking-wide text-base-text px-4 cursor-pointer hover:bg-base-surface3 rounded py-1 transition-colors"
+                className="font-condensed font-bold text-sm tracking-wide text-base-text px-3 cursor-pointer hover:bg-base-surface3 rounded py-1 transition-colors select-none"
+                title="Klik untuk kembali ke bulan ini"
               >
                 {formatMonthLabel(selectedMonth)}
               </span>
               <button
                 onClick={() => shiftMonth(1)}
                 className="p-1.5 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text"
+                title="Bulan Berikutnya"
               >
-                <svg viewBox="0 0 24 24" className="h-4.5 w-4.5" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <polyline points="9 18 15 12 9 6" />
-                </svg>
+                <ChevronRight className="h-4 w-4" />
               </button>
             </div>
+
+            {/* Selected Date Control (dashDate) */}
+            <div className="flex items-center bg-base-surface2 border border-base-border2 rounded-lg p-1 gap-1">
+              <button
+                onClick={handlePrevDay}
+                disabled={dashDate <= minMonthDate}
+                className="p-1 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text disabled:opacity-30 disabled:pointer-events-none"
+                title="Hari Sebelumnya"
+              >
+                <ChevronLeft className="h-3.5 w-3.5" />
+              </button>
+              
+              <div className="flex items-center gap-1.5 px-1.5">
+                <Calendar className="h-3.5 w-3.5 text-base-accent shrink-0" />
+                <input
+                  type="date"
+                  value={dashDate}
+                  min={minMonthDate}
+                  max={maxMonthDate}
+                  onChange={(e) => handleDateChange(e.target.value)}
+                  className="bg-transparent text-xs font-mono font-bold text-base-text cursor-pointer focus:outline-hidden border-none p-0 w-[114px]"
+                  title="Pilih Tanggal Evaluasi (dashDate)"
+                />
+              </div>
+
+              <button
+                onClick={handleNextDay}
+                disabled={dashDate >= maxMonthDate}
+                className="p-1 rounded hover:bg-base-surface3 transition-colors text-base-muted2 hover:text-base-text disabled:opacity-30 disabled:pointer-events-none"
+                title="Hari Berikutnya"
+              >
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
+
             <button
               onClick={jumpToToday}
-              className="px-3.5 py-1.5 border border-base-accent/25 hover:bg-base-accent-dim text-base-accent rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+              className="px-3 py-1.5 border border-base-accent/25 hover:bg-base-accent-dim text-base-accent rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
             >
               Today
             </button>
@@ -1357,50 +1595,213 @@ export default function DashboardView({
           </div>
         </div>
 
-        {/* Big circular progress gauge */}
-        <div 
-          onClick={handleToggleProjectScope}
-          className="flex flex-col items-center gap-1.5 relative z-10 flex-shrink-0 cursor-pointer group p-2 rounded-2xl hover:bg-base-surface2/80 transition-all border border-transparent hover:border-base-border/80 shadow-xs hover:shadow-card"
-          title="Click to toggle Project Scope Breakdown & Performance"
-        >
-          <div className="relative transform group-hover:scale-105 transition-transform duration-200">
-            <svg className="h-24 w-24" viewBox="0 0 90 90">
-              {/* Background trace */}
-              <circle cx="45" cy="45" r={radius} fill="none" stroke="rgba(0, 0, 0, 0.05)" strokeWidth="10" />
-              {/* Core arc */}
-              <circle
-                cx="45"
-                cy="45"
-                r={radius}
-                fill="none"
-                stroke="var(--accent)"
-                strokeWidth="10"
-                strokeLinecap="round"
-                strokeDasharray={circ}
-                strokeDashoffset={strokeDashoffset}
-                transform="rotate(-90 45 45)"
-                style={{ transition: 'stroke-dashoffset 0.8s ease' }}
-              />
-              <text
-                x="45"
-                y="51"
-                textAnchor="middle"
-                fill="var(--text)"
-                className="font-condensed font-extrabold text-lg tracking-tight"
-              >
-                {overallPct}%
-              </text>
-            </svg>
+        {/* Three Circular Gauges: Overall Progress | Baseline circular | Man-Hours circular */}
+        <div className="relative z-10 w-full xl:w-auto shrink-0 pt-2 xl:pt-0">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 md:gap-4">
+            {/* 1. Overall Progress */}
+            <div 
+              onClick={handleToggleProjectScope}
+              className="flex flex-col items-center justify-between gap-2 p-4 sm:p-5 rounded-2xl bg-base-surface2/80 hover:bg-base-surface2 border border-base-border hover:border-base-border2 transition-all cursor-pointer group shadow-2xs text-center min-w-[155px] sm:min-w-[170px]"
+              title="Click to toggle Project Scope Breakdown & Performance"
+            >
+              <div className="relative transform group-hover:scale-105 transition-transform duration-200">
+                <svg className="h-24 w-24 sm:h-26 sm:w-26" viewBox="0 0 90 90">
+                  <circle cx="45" cy="45" r={radius} fill="none" stroke="currentColor" className="text-base-border/50" strokeWidth="8" />
+                  <circle
+                    cx="45"
+                    cy="45"
+                    r={radius}
+                    fill="none"
+                    stroke="var(--accent)"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={circ}
+                    strokeDashoffset={strokeDashoffset}
+                    transform="rotate(-90 45 45)"
+                    style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                  />
+                  <text
+                    x="45"
+                    y="52"
+                    textAnchor="middle"
+                    fill="var(--text)"
+                    className="font-condensed font-black text-2xl sm:text-3xl tracking-tight"
+                  >
+                    {overallPct}%
+                  </text>
+                </svg>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-condensed font-extrabold text-sm sm:text-base uppercase tracking-wider text-base-text group-hover:text-base-accent transition-colors">
+                  Overall Progress
+                </span>
+                <ChevronDown className={`h-4 w-4 text-base-accent transition-transform duration-300 ${showProjectScopeTable ? 'rotate-180' : ''}`} />
+              </div>
+              <span className="text-xs sm:text-sm font-condensed font-bold uppercase tracking-wider text-base-accent px-3 py-1 rounded-full bg-base-accent/10 border border-base-accent/20 group-hover:bg-base-accent group-hover:text-white transition-all whitespace-nowrap">
+                {showProjectScopeTable ? 'Hide Scope ▲' : 'View Scope ▼'}
+              </span>
+              <span className="text-xs text-base-muted font-medium">
+                {doneTasks}/{totalTasks} Tasks
+              </span>
+            </div>
+
+            {/* 2. Baseline circular */}
+            <div 
+              className="flex flex-col items-center justify-between gap-2 p-4 sm:p-5 rounded-2xl bg-base-surface2/80 border border-base-border shadow-2xs text-center min-w-[155px] sm:min-w-[170px]"
+              title={
+                baselineStats.hasBaseline
+                  ? `Baseline Schedule per ${dashDate}: Planned ${baselineStats.plannedPct}% vs Actual ${baselineStats.actualPct}%`
+                  : 'Belum ada project dengan Baseline Start & Finish di scope ini'
+              }
+            >
+              <div className="relative">
+                <svg className="h-24 w-24 sm:h-26 sm:w-26" viewBox="0 0 90 90">
+                  <circle cx="45" cy="45" r={radius} fill="none" stroke="currentColor" className="text-base-border/50" strokeWidth="8" />
+                  {baselineStats.hasBaseline ? (
+                    <>
+                      {/* Planned Reference Ring (dashed slate) */}
+                      <circle
+                        cx="45"
+                        cy="45"
+                        r={radius}
+                        fill="none"
+                        stroke="#94a3b8"
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={circ}
+                        strokeDashoffset={baselinePlanOffset}
+                        transform="rotate(-90 45 45)"
+                        className="opacity-40"
+                        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                      />
+                      {/* Actual Progress Ring */}
+                      <circle
+                        cx="45"
+                        cy="45"
+                        r={radius}
+                        fill="none"
+                        stroke={baselineStats.variance >= 0 ? '#10b981' : '#f59e0b'}
+                        strokeWidth="8"
+                        strokeLinecap="round"
+                        strokeDasharray={circ}
+                        strokeDashoffset={baselineActOffset}
+                        transform="rotate(-90 45 45)"
+                        style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                      />
+                      <text
+                        x="45"
+                        y="46"
+                        textAnchor="middle"
+                        fill="var(--text)"
+                        className="font-condensed font-black text-xl sm:text-2xl tracking-tight"
+                      >
+                        {baselineStats.actualPct}%
+                      </text>
+                      <text
+                        x="45"
+                        y="58"
+                        textAnchor="middle"
+                        className="text-[11px] font-mono font-bold fill-slate-500 dark:fill-slate-400"
+                      >
+                        Plan:{baselineStats.plannedPct}%
+                      </text>
+                    </>
+                  ) : (
+                    <text
+                      x="45"
+                      y="52"
+                      textAnchor="middle"
+                      fill="var(--text)"
+                      className="font-condensed font-black text-2xl text-base-muted"
+                    >
+                      —
+                    </text>
+                  )}
+                </svg>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <BookmarkCheck className="h-4 w-4 text-slate-500" />
+                <span className="font-condensed font-extrabold text-sm sm:text-base uppercase tracking-wider text-base-text">
+                  Baseline Plan/Act
+                </span>
+              </div>
+              {baselineStats.hasBaseline ? (
+                <span className={`text-xs sm:text-sm font-condensed font-bold uppercase tracking-wider px-3 py-1 rounded-full border whitespace-nowrap ${
+                  baselineStats.variance >= 0
+                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                }`}>
+                  {baselineStats.variance >= 0 ? `+${baselineStats.variance}% Ahead` : `${baselineStats.variance}% Behind`}
+                </span>
+              ) : (
+                <span className="text-xs sm:text-sm font-condensed font-bold uppercase tracking-wider text-base-muted px-3 py-1 rounded-full bg-base-surface3 border border-base-border whitespace-nowrap">
+                  0 Proj Baseline
+                </span>
+              )}
+              <span className="text-xs text-base-muted font-medium">
+                {baselineStats.count} Project Ber-baseline
+              </span>
+            </div>
+
+            {/* 3. Man-Hours circular */}
+            <div 
+              onClick={() => setActiveModal('man-hours')}
+              className="flex flex-col items-center justify-between gap-2 p-4 sm:p-5 rounded-2xl bg-base-surface2/80 hover:bg-base-surface2 border border-base-border hover:border-base-border2 transition-all cursor-pointer group shadow-2xs text-center min-w-[155px] sm:min-w-[170px]"
+              title={`Man-Hours kumulatif awal bulan s/d ${dashDate}. Klik untuk detail modal.`}
+            >
+              <div className="relative transform group-hover:scale-105 transition-transform duration-200">
+                <svg className="h-24 w-24 sm:h-26 sm:w-26" viewBox="0 0 90 90">
+                  <circle cx="45" cy="45" r={radius} fill="none" stroke="currentColor" className="text-base-border/50" strokeWidth="8" />
+                  <circle
+                    cx="45"
+                    cy="45"
+                    r={radius}
+                    fill="none"
+                    stroke="#3b82f6"
+                    strokeWidth="8"
+                    strokeLinecap="round"
+                    strokeDasharray={circ}
+                    strokeDashoffset={hoursOffset}
+                    transform="rotate(-90 45 45)"
+                    style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+                  />
+                  <text
+                    x="45"
+                    y={manHoursStats.hasTarget ? "44" : "51"}
+                    textAnchor="middle"
+                    fill="var(--text)"
+                    className="font-condensed font-black text-xl sm:text-2xl tracking-tight"
+                  >
+                    {fmtHrs(manHoursStats.actualHrs)}h
+                  </text>
+                  {manHoursStats.hasTarget && (
+                    <text
+                      x="45"
+                      y="58"
+                      textAnchor="middle"
+                      className="text-[11px] font-mono font-bold fill-blue-600 dark:fill-blue-400"
+                    >
+                      /{manHoursStats.targetMonthlyHrs}h
+                    </text>
+                  )}
+                </svg>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <Clock className="h-4 w-4 text-blue-500" />
+                <span className="font-condensed font-extrabold text-sm sm:text-base uppercase tracking-wider text-base-text group-hover:text-blue-500 transition-colors">
+                  Man-Hours (MTD)
+                </span>
+              </div>
+              <span className="text-xs sm:text-sm font-condensed font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400 px-3 py-1 rounded-full bg-blue-500/15 border border-blue-500/30 group-hover:bg-blue-500 group-hover:text-white transition-all whitespace-nowrap">
+                {manHoursStats.hasTarget
+                  ? `${manHoursStats.burnPct}% of Target`
+                  : `${fmtHrs(manHoursStats.actualHrs)}h Logged`}
+              </span>
+              <span className="text-xs text-base-muted font-medium">
+                Kumulatif s/d {dashDate.slice(8, 10)} {formatMonthLabel(selectedMonth).slice(0, 3)}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center gap-1">
-            <span className="font-condensed font-bold text-xs uppercase tracking-widest text-base-muted group-hover:text-base-accent transition-colors">
-              Overall progress
-            </span>
-            <ChevronDown className={`h-3.5 w-3.5 text-base-accent transition-transform duration-300 ${showProjectScopeTable ? 'rotate-180' : ''}`} />
-          </div>
-          <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-accent px-2 py-0.5 rounded-full bg-base-accent/10 border border-base-accent/20 group-hover:bg-base-accent group-hover:text-white transition-all">
-            {showProjectScopeTable ? 'Hide Scope Table ▲' : 'Click to View Scope ▼'}
-          </span>
         </div>
       </div>
 
@@ -1917,13 +2318,13 @@ export default function DashboardView({
           {/* Card 5 - Man Hours */}
           <div 
             onClick={() => setActiveModal('man-hours')}
-            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-3.5 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
+            className="kpi-card relative overflow-hidden bg-base-surface border border-base-border p-4 sm:p-5 rounded-xl shadow-card hover-lift border-b-2 border-b-base-blue group cursor-pointer transition-all hover:shadow-lg"
           >
             <div className="absolute inset-0 bg-gradient-to-br from-base-blue/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-            <div className="text-base-muted text-xs font-condensed font-bold uppercase tracking-wider flex items-center justify-between mb-2 sm:mb-3">
-              <div className="flex items-center gap-1.5 truncate">
-                <Clock className="h-4 w-4 sm:h-4.5 sm:w-4.5 text-base-muted shrink-0" />
-                <span className="truncate">Man-hours</span>
+            <div className="text-xs sm:text-sm font-condensed font-extrabold uppercase tracking-wider text-base-text flex items-center justify-between mb-2 sm:mb-3">
+              <div className="flex items-center gap-2 truncate">
+                <Clock className="h-4.5 w-4.5 sm:h-5 sm:w-5 text-blue-500 shrink-0" />
+                <span className="truncate">Total Man-Hours</span>
               </div>
               <svg className="w-8 sm:w-10 h-3 opacity-40 text-base-muted hidden sm:block" viewBox="0 0 50 10">
                 <path d="M 2,7 L 12,5 L 22,6 L 32,4 L 42,7" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -1935,9 +2336,13 @@ export default function DashboardView({
               </svg>
             </div>
             <div className="flex items-end justify-between">
-              <div className="text-2xl sm:text-3xl font-condensed font-extrabold text-base-text select-none">{fmtHrs(getTotalManHours(scopedTimesheets))}h</div>
+              <div className="text-3xl sm:text-4xl font-condensed font-black text-base-text select-none">
+                {fmtHrs(getTotalManHours(scopedTimesheets))}h
+              </div>
             </div>
-            <p className="text-[11px] sm:text-xs text-base-muted2 mt-0.5 sm:mt-1">{isCurrentMonth() ? 'logged this month' : 'within scope'}</p>
+            <p className="text-xs sm:text-sm text-base-muted mt-1 font-medium">
+              {isCurrentMonth() ? 'Logged this month (MTD)' : 'Within filtered scope'}
+            </p>
           </div>
 
           {/* Card 6 - Present Today */}

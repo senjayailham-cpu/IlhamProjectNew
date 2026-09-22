@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Project, User, OrgSettings } from '../types';
+import { Project, User, OrgSettings, TimesheetEntry } from '../types';
 import { GanttPage } from './GanttPage';
 import ProjectTimelineView from '../components/ProjectTimelineView';
 import { BarChart2, Calendar, Clock, SlidersHorizontal } from 'lucide-react';
 
 export interface ProjectSchedulePageProps {
   projects: Project[];
+  timesheets?: TimesheetEntry[];
   prefs?: any;
   onSetPref?: (key: string, value: any) => void;
   onUpdateProject?: (project: Project) => void;
@@ -20,6 +21,7 @@ export interface ProjectSchedulePageProps {
 
 export function ProjectSchedulePage({
   projects,
+  timesheets = [],
   prefs,
   onSetPref,
   onUpdateProject,
@@ -83,6 +85,7 @@ export function ProjectSchedulePage({
         {activeSubTab === 'gantt' && (
           <GanttPage
             projects={projects}
+            timesheets={timesheets}
             prefs={prefs}
             onSetPref={onSetPref}
             onUpdateProject={onUpdateProject}

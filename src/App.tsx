@@ -1916,6 +1916,7 @@ function AppContent() {
               {(activeTab === 'schedule' || activeTab === 'gantt' || activeTab === 'timeline') && (
                 <ProjectSchedulePage
                   projects={projects}
+                  timesheets={timesheets}
                   prefs={prefs}
                   onSetPref={(key, val) => setPref(key as any, val)}
                   onUpdateProject={(updatedProj) => {

@@ -36,7 +36,12 @@ const ACT_ICONS: Record<string, { label: string; color: string; bg: string }> = 
   project_delete: { label: 'Project deleted', color: 'var(--red)', bg: 'rgba(212,90,77,.12)' },
   assembly_add: { label: 'Assembly added', color: 'var(--blue)', bg: 'rgba(77,150,224,.15)' },
   assembly_edit: { label: 'Assembly edited', color: 'var(--accent)', bg: 'rgba(240,168,50,.12)' },
-  assembly_delete: { label: 'Assembly deleted', color: 'var(--red)', bg: 'rgba(212,90,77,.12)' }
+  assembly_delete: { label: 'Assembly deleted', color: 'var(--red)', bg: 'rgba(212,90,77,.12)' },
+  user_login: { label: 'User login', color: '#10b981', bg: 'rgba(16,185,129,.15)' },
+  user_logout: { label: 'User logout', color: '#64748b', bg: 'rgba(100,116,139,.15)' },
+  user_edit: { label: 'User profile update', color: '#8b5cf6', bg: 'rgba(139,92,246,.15)' },
+  user_create: { label: 'New user created', color: '#06b6d4', bg: 'rgba(6,182,212,.15)' },
+  user_delete: { label: 'User removed', color: '#f43f5e', bg: 'rgba(244,63,94,.15)' }
 };
 
 export default function DailyReportView({

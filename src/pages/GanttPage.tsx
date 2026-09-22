@@ -1,10 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { Project, User, OrgSettings } from '../types';
+import { Project, User, OrgSettings, TimesheetEntry } from '../types';
 import GanttView from '../components/GanttView';
 import { Briefcase, Calendar, AlertCircle, FileText, BarChart2 } from 'lucide-react';
 
 interface GanttPageProps {
   projects: Project[];
+  timesheets?: TimesheetEntry[];
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
   depModalOpen?: boolean;
@@ -18,6 +19,7 @@ interface GanttPageProps {
 
 export function GanttPage({ 
   projects, 
+  timesheets = [],
   onUpdateProject, 
   onOpenDepModal,
   depModalOpen,
@@ -145,6 +147,7 @@ export function GanttPage({
       <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-xs">
         <GanttView 
           projects={projectsInMonth} 
+          timesheets={timesheets}
           onUpdateProject={handleUpdateProject} 
           onOpenDepModal={onOpenDepModal} 
           depModalOpen={depModalOpen}

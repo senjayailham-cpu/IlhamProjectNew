@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
-import { Project, Assembly, Task, Dependency, User, WorkflowStatusType, OrgSettings } from '../types';
+import { Project, Assembly, Task, Dependency, User, WorkflowStatusType, OrgSettings, TimesheetEntry } from '../types';
 import { can } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 
@@ -119,7 +119,9 @@ import {
   Flame,
   Undo2,
   Redo2,
-  Monitor
+  Monitor,
+  BookmarkCheck,
+  BookmarkPlus
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -346,6 +348,7 @@ const CircularProgressBadge: React.FC<CircularProgressBadgeProps> = ({
 interface GanttViewProps {
   project?: Project;
   projects?: Project[];
+  timesheets?: TimesheetEntry[];
   onClose?: () => void;
   onUpdateProject?: (project: Project) => void;
   onOpenDepModal?: (rowKey: string) => void;
@@ -360,6 +363,8 @@ interface GanttViewProps {
     ganttShowSCurve?: boolean;
     ganttAutoSchedule?: boolean;
     ganttShowResourceLoad?: boolean;
+    ganttShowHoursTracking?: boolean;
+    ganttShowBaseline?: boolean;
   };
   onSetPref?: (key: string, value: any) => void;
   selectedMonth?: string;
@@ -387,6 +392,12 @@ interface GanttRow {
   workflowStatus?: WorkflowStatusType;
   assignedCompany?: string;
   crewSize?: number;
+  budgetHours?: number;
+  baselineStart?: string;
+  baselineFinish?: string;
+  planHours: number;
+  actualHours: number;
+  timesheetCount: number;
 }
 
 interface DragState {
@@ -812,6 +823,7 @@ const cascadeSchedule = (
 export default function GanttView({ 
   project, 
   projects, 
+  timesheets = [],
   onClose, 
   onUpdateProject: onUpdateProjectRaw, 
   onOpenDepModal,
@@ -915,6 +927,13 @@ export default function GanttView({
   const [showSCurve, setShowSCurve] = useState<boolean>(() =>
     prefs?.ganttShowSCurve ?? (localStorage.getItem('gantt_showSCurve') === 'true')
   );
+  const [showHoursTracking, setShowHoursTracking] = useState<boolean>(() =>
+    prefs?.ganttShowHoursTracking ?? (localStorage.getItem('gantt_showHoursTracking') !== 'false')
+  );
+  const [showBaseline, setShowBaseline] = useState<boolean>(() =>
+    prefs?.ganttShowBaseline ?? (localStorage.getItem('gantt_showBaseline') !== 'false')
+  );
+  const [showBaselineMenu, setShowBaselineMenu] = useState<boolean>(false);
   const [cascadedTaskIds, setCascadedTaskIds] = useState<Set<string>>(new Set());
 
   // AUTO-SCHEDULE FEATURE
@@ -937,6 +956,18 @@ export default function GanttView({
     else localStorage.setItem('gantt_showSCurve', String(val));
   };
 
+  const handleSetShowHoursTracking = (val: boolean) => {
+    setShowHoursTracking(val);
+    if (onSetPref) onSetPref('ganttShowHoursTracking', val);
+    else localStorage.setItem('gantt_showHoursTracking', String(val));
+  };
+
+  const handleSetShowBaseline = (val: boolean) => {
+    setShowBaseline(val);
+    if (onSetPref) onSetPref('ganttShowBaseline', val);
+    else localStorage.setItem('gantt_showBaseline', String(val));
+  };
+
   useEffect(() => {
     if (prefs?.ganttAutoSchedule !== undefined) {
       setAutoSchedule(prefs.ganttAutoSchedule);
@@ -948,6 +979,18 @@ export default function GanttView({
       setShowSCurve(prefs.ganttShowSCurve);
     }
   }, [prefs?.ganttShowSCurve]);
+
+  useEffect(() => {
+    if (prefs?.ganttShowHoursTracking !== undefined) {
+      setShowHoursTracking(prefs.ganttShowHoursTracking);
+    }
+  }, [prefs?.ganttShowHoursTracking]);
+
+  useEffect(() => {
+    if (prefs?.ganttShowBaseline !== undefined) {
+      setShowBaseline(prefs.ganttShowBaseline);
+    }
+  }, [prefs?.ganttShowBaseline]);
 
   // ── RESOURCE LOAD VIEW STATES ──
   const [showResourceLoad, setShowResourceLoad] = useState<boolean>(() => {
@@ -1341,6 +1384,7 @@ export default function GanttView({
   const [editingPred, setEditingPred] = useState<string | null>(null);
   const [predInputVal, setPredInputVal] = useState<string>('');
   const [editingPct, setEditingPct] = useState<string | null>(null);
+  const [editingHoursCell, setEditingHoursCell] = useState<string | null>(null);
   const [flashingCellId, setFlashingCellId] = useState<string | null>(null);
 
   // Drag interaction state
@@ -1583,6 +1627,41 @@ export default function GanttView({
     return { timelineStart: start, timelineEnd: end, totalTimelineDays: days };
   }, [pStartD, pDueD, zoomMode]);
 
+  // Summary and lookup maps for Timesheet actual hours (Plan vs Actual integration)
+  const timesheetSummary = useMemo(() => {
+    const taskHoursMap = new Map<string, { actualHours: number; count: number }>();
+    const taskNameHoursMap = new Map<string, { actualHours: number; count: number }>();
+    const asmHoursMap = new Map<string, { actualHours: number; count: number }>();
+    const woHoursMap = new Map<string, { actualHours: number; count: number }>();
+    let grandTotalActualHours = 0;
+
+    (timesheets || []).forEach(ts => {
+      const hrs = typeof ts.totalHours === 'number' ? ts.totalHours : 0;
+      grandTotalActualHours += hrs;
+
+      if (ts.taskId) {
+        const prev = taskHoursMap.get(ts.taskId) || { actualHours: 0, count: 0 };
+        taskHoursMap.set(ts.taskId, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
+      }
+      if (ts.assemblyId && ts.taskName) {
+        const key = `${ts.assemblyId}:::${ts.taskName.trim().toLowerCase()}`;
+        const prev = taskNameHoursMap.get(key) || { actualHours: 0, count: 0 };
+        taskNameHoursMap.set(key, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
+      }
+      if (ts.assemblyId) {
+        const prev = asmHoursMap.get(ts.assemblyId) || { actualHours: 0, count: 0 };
+        asmHoursMap.set(ts.assemblyId, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
+      }
+      if (ts.workOrder) {
+        const woKey = ts.workOrder.trim().toLowerCase();
+        const prev = woHoursMap.get(woKey) || { actualHours: 0, count: 0 };
+        woHoursMap.set(woKey, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
+      }
+    });
+
+    return { taskHoursMap, taskNameHoursMap, asmHoursMap, woHoursMap, grandTotalActualHours };
+  }, [timesheets]);
+
   // Generate full unfiltered list of Gantt rows (including WBS numbering)
   const allRows = useMemo(() => {
     const result: GanttRow[] = [];
@@ -1604,6 +1683,68 @@ export default function GanttView({
     };
 
     projectsList.forEach((p, pIdx) => {
+      // Pre-calculate hours rollups for this project
+      let projectPlanHoursSum = 0;
+      let projectTaskActualHoursSum = 0;
+      let projectTimesheetCount = 0;
+
+      const asmHoursRollup = new Map<string, { planHours: number; actualHours: number; count: number }>();
+      const taskHoursRollup = new Map<string, { planHours: number; actualHours: number; count: number }>();
+
+      (p.assemblies || []).forEach(asm => {
+        let asmPlanSum = 0;
+        let asmTaskActualSum = 0;
+        let asmTaskCount = 0;
+
+        (asm.tasks || []).forEach(t => {
+          const tStart = t.date || asm.start || p.start || new Date().toISOString().slice(0, 10);
+          const tFinish = t.finishDate || tStart;
+          const tStartD = parseLocalDate(tStart);
+          const tFinishD = parseLocalDate(tFinish);
+          const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+
+          // Task planned hours: explicit budgetHours, or estimated from (crew * duration * 8) or (difficulty * 8)
+          const tPlanHours = (typeof t.budgetHours === 'number' && t.budgetHours >= 0)
+            ? t.budgetHours
+            : (t.crewSize ? (t.crewSize * tDuration * 8) : (t.difficulty ? t.difficulty * 8 : tDuration * 8));
+
+          // Task actual hours from timesheets
+          const taskStatsById = timesheetSummary.taskHoursMap.get(t.id);
+          const taskStatsByName = timesheetSummary.taskNameHoursMap.get(`${asm.id}:::${t.name.trim().toLowerCase()}`);
+          const tActualHours = (taskStatsById?.actualHours || 0) + (taskStatsByName && !taskStatsById ? taskStatsByName.actualHours : 0);
+          const tTimesheetCount = (taskStatsById?.count || 0) + (taskStatsByName && !taskStatsById ? taskStatsByName.count : 0);
+
+          taskHoursRollup.set(t.id, { planHours: tPlanHours, actualHours: tActualHours, count: tTimesheetCount });
+
+          asmPlanSum += tPlanHours;
+          asmTaskActualSum += tActualHours;
+          asmTaskCount += tTimesheetCount;
+        });
+
+        // Direct assembly timesheets (if any logged directly to assembly)
+        const directAsmStats = timesheetSummary.asmHoursMap.get(asm.id);
+        const aActualHours = Math.max(asmTaskActualSum, directAsmStats?.actualHours || 0);
+        const aCount = (directAsmStats?.count || 0) + asmTaskCount;
+        const aPlanHours = (typeof (asm as any).budgetHours === 'number' && (asm as any).budgetHours > 0)
+          ? (asm as any).budgetHours
+          : asmPlanSum;
+
+        asmHoursRollup.set(asm.id, { planHours: aPlanHours, actualHours: aActualHours, count: aCount });
+
+        projectPlanHoursSum += aPlanHours;
+        projectTaskActualHoursSum += aActualHours;
+        projectTimesheetCount += aCount;
+      });
+
+      // Project level actual hours & plan hours
+      const woStats = timesheetSummary.woHoursMap.get(p.name.trim().toLowerCase()) 
+        || (p.client ? timesheetSummary.woHoursMap.get(p.client.trim().toLowerCase()) : undefined);
+      const pActualHours = Math.max(projectTaskActualHoursSum, woStats?.actualHours || 0);
+      const pTimesheetCountTotal = (woStats?.count || 0) + projectTimesheetCount;
+      const pPlanHours = (typeof p.budgetHours === 'number' && p.budgetHours > 0)
+        ? p.budgetHours
+        : projectPlanHoursSum;
+
       // 1. Project level summary row
       const pPct = calcPct(p);
       
@@ -1657,7 +1798,13 @@ export default function GanttView({
         duration: pDuration,
         pct: pPct,
         done: pPct >= 100,
-        predecessors: p.predecessors
+        predecessors: p.predecessors,
+        budgetHours: p.budgetHours,
+        baselineStart: p.baselineStart,
+        baselineFinish: p.baselineFinish,
+        planHours: pPlanHours,
+        actualHours: pActualHours,
+        timesheetCount: pTimesheetCountTotal
       });
 
       // 2. Assembly & Task level rows
@@ -1697,6 +1844,7 @@ export default function GanttView({
           : 0;
 
         const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
+        const asmStats = asmHoursRollup.get(asm.id) || { planHours: 0, actualHours: 0, count: 0 };
 
         result.push({
           id: getUniqueRowId(asm.id),
@@ -1709,7 +1857,13 @@ export default function GanttView({
           duration: aDuration,
           pct: aPct,
           done: aPct >= 100,
-          predecessors: asm.predecessors
+          predecessors: asm.predecessors,
+          budgetHours: (asm as any).budgetHours,
+          baselineStart: asm.baselineStart,
+          baselineFinish: asm.baselineFinish,
+          planHours: asmStats.planHours,
+          actualHours: asmStats.actualHours,
+          timesheetCount: asmStats.count
         });
 
         // Add child tasks if assembly is expanded
@@ -1726,6 +1880,7 @@ export default function GanttView({
             const tStartD = parseLocalDate(tStart);
             const tFinishD = parseLocalDate(tFinish);
             const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+            const tStats = taskHoursRollup.get(t.id) || { planHours: 0, actualHours: 0, count: 0 };
 
             result.push({
               id: getUniqueRowId(t.id),
@@ -1744,7 +1899,13 @@ export default function GanttView({
               assigned: t.assigned,
               workflowStatus: t.workflowStatus,
               assignedCompany: t.assignedCompany,
-              crewSize: t.crewSize
+              crewSize: t.crewSize,
+              budgetHours: t.budgetHours,
+              baselineStart: t.baselineStart,
+              baselineFinish: t.baselineFinish,
+              planHours: tStats.planHours,
+              actualHours: tStats.actualHours,
+              timesheetCount: tStats.count
             });
           });
         }
@@ -1752,7 +1913,24 @@ export default function GanttView({
     });
 
     return result;
-  }, [projectsList, collapsedAsms]);
+  }, [projectsList, collapsedAsms, timesheetSummary]);
+
+  // Overall Project Plan vs Actual hours statistics
+  const totalHoursStats = useMemo(() => {
+    let plan = 0;
+    let actual = 0;
+    let entries = 0;
+
+    allRows.filter(r => r.level === 0).forEach(r => {
+      plan += r.planHours;
+      actual += r.actualHours;
+      entries += r.timesheetCount;
+    });
+
+    const burn = plan > 0 ? Math.round((actual / plan) * 100) : 0;
+    const variance = actual - plan;
+    return { plan, actual, entries, burn, variance };
+  }, [allRows]);
 
   // Generate list of filtered Gantt rows
   const rows = useMemo(() => {
@@ -2402,6 +2580,145 @@ export default function GanttView({
 
       onUpdateProject(updated);
     }
+  };
+
+  // Plan / Budget hours save handler for rows (Tasks, Assemblies, Projects)
+  const saveRowBudgetHours = (rowId: string, level: 0 | 1 | 2, val: string) => {
+    if (!onUpdateProject) return;
+    const num = parseFloat(val);
+    const budgetHoursVal = isNaN(num) || num < 0 ? undefined : num;
+
+    if (level === 2) {
+      const res = findAndCloneProject(rowId);
+      if (!res) return;
+      const updated = res.cloned;
+      for (const a of updated.assemblies || []) {
+        const t = a.tasks?.find(task => task.id === rowId);
+        if (t) {
+          t.budgetHours = budgetHoursVal;
+          break;
+        }
+      }
+      setFlashingCellId(rowId);
+      setTimeout(() => setFlashingCellId(null), 500);
+      onUpdateProject(updated);
+    } else if (level === 1) {
+      const res = findAndCloneProject(rowId);
+      if (!res) return;
+      const updated = res.cloned;
+      const a = updated.assemblies?.find(asm => asm.id === rowId);
+      if (a) {
+        (a as any).budgetHours = budgetHoursVal;
+      }
+      setFlashingCellId(rowId);
+      setTimeout(() => setFlashingCellId(null), 500);
+      onUpdateProject(updated);
+    } else if (level === 0) {
+      const p = projectsList.find(proj => proj.id === rowId);
+      if (p) {
+        const updated = { ...p, budgetHours: budgetHoursVal };
+        setFlashingCellId(rowId);
+        setTimeout(() => setFlashingCellId(null), 500);
+        onUpdateProject(updated);
+      }
+    }
+  };
+
+  // Baseline Scheduling Actions & Permissions
+  const canSetBaseline = Boolean(
+    currentUser && (
+      currentUser.role === 'admin' ||
+      currentUser.role === 'manager' ||
+      currentUser.role === 'project control' ||
+      can(currentUser, 'editGanttSchedule')
+    )
+  );
+
+  const selectedProject = useMemo(() => {
+    if (!selectedRowId) return projectsList.length === 1 ? projectsList[0] : null;
+    const res = findAndCloneProject(selectedRowId);
+    if (res) return res.original;
+    return projectsList.length === 1 ? projectsList[0] : null;
+  }, [projectsList, selectedRowId]);
+
+  const baselineStats = useMemo(() => {
+    let count = 0;
+    allRows.forEach(r => {
+      if (r.baselineStart) count++;
+    });
+    return { count };
+  }, [allRows]);
+
+  const setBaselineForProject = (targetProj: Project, bypassConfirm = false) => {
+    if (!onUpdateProject) return;
+
+    const hasExistingBaseline = Boolean(
+      targetProj.baselineStart ||
+      targetProj.baselineFinish ||
+      targetProj.assemblies?.some(a => a.baselineStart || a.tasks?.some(t => t.baselineStart))
+    );
+
+    if (hasExistingBaseline && !bypassConfirm) {
+      const confirmed = window.confirm(
+        `Proyek "${targetProj.name}" sudah memiliki Baseline (${targetProj.baselineStart || '—'} s/d ${targetProj.baselineFinish || '—'}).\n\nRe-baseline (replace existing) dengan jadwal aktual saat ini?`
+      );
+      if (!confirmed) return;
+    }
+
+    const updated: Project = JSON.parse(JSON.stringify(targetProj));
+    let pMinStart: string | null = null;
+    let pMaxFinish: string | null = null;
+
+    (updated.assemblies || []).forEach(asm => {
+      let aMinStart: string | null = null;
+      let aMaxFinish: string | null = null;
+
+      (asm.tasks || []).forEach(t => {
+        const actualStart = t.startDate || t.date || asm.start || updated.start;
+        const actualFinish = t.endDate || t.finishDate || actualStart;
+        if (actualStart) {
+          t.baselineStart = actualStart;
+          t.baselineFinish = actualFinish || actualStart;
+
+          if (!aMinStart || actualStart < aMinStart) aMinStart = actualStart;
+          if (actualFinish && (!aMaxFinish || actualFinish > aMaxFinish)) aMaxFinish = actualFinish;
+
+          if (!pMinStart || actualStart < pMinStart) pMinStart = actualStart;
+          if (actualFinish && (!pMaxFinish || actualFinish > pMaxFinish)) pMaxFinish = actualFinish;
+        }
+      });
+
+      if (aMinStart) {
+        asm.baselineStart = aMinStart;
+        asm.baselineFinish = aMaxFinish || aMinStart;
+      } else if (asm.start) {
+        asm.baselineStart = asm.start;
+        asm.baselineFinish = asm.finish || asm.start;
+        if (!pMinStart || asm.baselineStart < pMinStart) pMinStart = asm.baselineStart;
+        if (asm.baselineFinish && (!pMaxFinish || asm.baselineFinish > pMaxFinish)) pMaxFinish = asm.baselineFinish;
+      }
+    });
+
+    if (pMinStart) {
+      updated.baselineStart = pMinStart;
+      updated.baselineFinish = pMaxFinish || pMinStart;
+    } else {
+      updated.baselineStart = updated.start;
+      updated.baselineFinish = updated.due || updated.start;
+    }
+
+    onUpdateProject(updated);
+    setToastMsg(`Baseline berhasil dikunci untuk "${targetProj.name}": ${updated.baselineStart || '—'} → ${updated.baselineFinish || '—'}`);
+    setTimeout(() => setToastMsg(null), 4000);
+  };
+
+  const handleSetBaselineAll = () => {
+    if (!onUpdateProject || projectsList.length === 0) return;
+    const confirmed = window.confirm(
+      `Kunci Baseline untuk semua (${projectsList.length}) proyek yang ditampilkan?\n\nJadwal rencana baseline akan disalin dari tanggal aktual saat ini.`
+    );
+    if (!confirmed) return;
+    projectsList.forEach(p => setBaselineForProject(p, true));
   };
 
   // Header row elements generators
@@ -3200,6 +3517,24 @@ export default function GanttView({
     return cache;
   }, [rows, timelineStart, pixelsPerDay, dragState]);
 
+  // Precomputed Map of baseline bar coordinates (fixed target schedule, independent of drag)
+  const rowBaselineCoordsCache = useMemo(() => {
+    const cache = new Map<string, { left: number; width: number } | null>();
+    rows.forEach(row => {
+      if (!row.baselineStart) {
+        cache.set(row.id, null);
+        return;
+      }
+      const bStartD = parseLocalDate(row.baselineStart);
+      const left = daysBetween(timelineStart, bStartD) * pixelsPerDay;
+      const bFinishD = row.baselineFinish ? parseLocalDate(row.baselineFinish) : bStartD;
+      const duration = Math.max(1, daysBetween(bStartD, bFinishD) + 1);
+      const width = row.isMilestone ? 14 : Math.max(8, duration * pixelsPerDay);
+      cache.set(row.id, { left, width });
+    });
+    return cache;
+  }, [rows, timelineStart, pixelsPerDay]);
+
   // Generate SVG dependency path lines
   const arrows = useMemo(() => {
     if (!showArrows) return [];
@@ -3372,15 +3707,22 @@ export default function GanttView({
   const colWbsWidth = 56;
   const colNameWidth = 200;
   const colDurWidth = 64;
+  const colPlanHrsWidth = 68;
+  const colActHrsWidth = 68;
+  const colVarianceWidth = 72;
   const colCrewWidth = 50;
   const colCompanyWidth = 105;
   const colAssigneeWidth = 105;
+  const colBaseStartWidth = 75;
+  const colBaseFinishWidth = 75;
   const colStartWidth = 85;
   const colFinishWidth = 85;
   const colPredWidth = 90;
   const colPctWidth = 64;
   const colStatusWidth = 100;
   const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth 
+    + (showHoursTracking ? (colPlanHrsWidth + colActHrsWidth + colVarianceWidth) : 0)
+    + (showBaseline ? (colBaseStartWidth + colBaseFinishWidth) : 0)
     + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
     + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + colStatusWidth;
 
@@ -3825,11 +4167,168 @@ export default function GanttView({
                     className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
                   />
                 </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Plan vs Actual Hours</span>
+                    <span className="text-[8.5px] text-base-muted font-mono">Timesheet Integration</span>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={showHoursTracking} 
+                    onChange={e => {
+                      const nextVal = e.target.checked;
+                      setShowHoursTracking(nextVal);
+                      handleSetShowHoursTracking(nextVal);
+                    }}
+                    className="h-3.5 w-3.5 accent-blue-600 border-base-border rounded cursor-pointer"
+                  />
+                </label>
+
+                <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                  <div className="flex flex-col">
+                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Baseline Schedule</span>
+                    <span className="text-[8.5px] text-base-muted font-mono">Target Rencana vs Aktual</span>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={showBaseline} 
+                    onChange={e => {
+                      const nextVal = e.target.checked;
+                      setShowBaseline(nextVal);
+                      handleSetShowBaseline(nextVal);
+                    }}
+                    className="h-3.5 w-3.5 accent-slate-600 border-base-border rounded cursor-pointer"
+                  />
+                </label>
               </div>
             )}
           </div>
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
+
+          {/* Baseline Schedule Toggle & Set Baseline Button */}
+          <div className="flex items-center gap-1 shrink-0 relative">
+            <button
+              onClick={() => {
+                const nextVal = !showBaseline;
+                setShowBaseline(nextVal);
+                handleSetShowBaseline(nextVal);
+                if (nextVal) {
+                  setToastMsg(`Baseline Active: Menampilkan perbandingan jadwal Rencana (Baseline) vs Aktual.`);
+                  setTimeout(() => setToastMsg(null), 3000);
+                }
+              }}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
+                showBaseline 
+                  ? 'bg-slate-700 text-white border-slate-600 shadow-sm ring-2 ring-slate-500/30' 
+                  : 'bg-base-surface border-base-border text-base-muted hover:text-slate-700 hover:border-slate-500/50'
+              }`}
+              title="Toggle Baseline Schedule: Tampilkan / sembunyikan bar target jadwal rencana (Baseline)"
+            >
+              <BookmarkCheck className={`h-3.5 w-3.5 shrink-0 ${showBaseline ? 'text-white' : 'text-slate-500'}`} />
+              <span>Baseline</span>
+              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                showBaseline ? 'bg-white/20 text-white' : 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30'
+              }`}>
+                {baselineStats.count}
+              </span>
+            </button>
+
+            {canSetBaseline && onUpdateProject && (
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    if (projectsList.length > 1 && !selectedProject) {
+                      setShowBaselineMenu(prev => !prev);
+                    } else if (selectedProject) {
+                      setBaselineForProject(selectedProject);
+                    } else if (projectsList.length === 1) {
+                      setBaselineForProject(projectsList[0]);
+                    } else {
+                      setShowBaselineMenu(prev => !prev);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-base-border bg-base-surface text-base-text hover:bg-base-accent/10 hover:border-base-accent/50 hover:text-base-accent transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px]"
+                  title={
+                    selectedProject
+                      ? `Kunci Jadwal Baseline untuk Proyek "${selectedProject.name}"`
+                      : 'Kunci Jadwal Baseline (Salin Aktual → Baseline)'
+                  }
+                >
+                  <BookmarkPlus className="h-3.5 w-3.5 text-base-accent shrink-0" />
+                  <span>Set Baseline</span>
+                  {projectsList.length > 1 && (
+                    <span className="text-[8px] opacity-70">▼</span>
+                  )}
+                </button>
+
+                {/* Dropdown menu when multiple projects available */}
+                {showBaselineMenu && projectsList.length > 1 && (
+                  <div className="absolute right-0 top-full mt-1.5 w-64 bg-base-surface border border-base-border rounded-xl shadow-xl p-2 z-50 text-left space-y-1">
+                    <div className="px-2 py-1 text-[10px] font-bold text-base-muted uppercase tracking-wider border-b border-base-border/50">
+                      Pilih Proyek untuk Set Baseline:
+                    </div>
+                    {projectsList.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => {
+                          setShowBaselineMenu(false);
+                          setBaselineForProject(p);
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-base-surface2 transition-colors flex items-center justify-between gap-2"
+                      >
+                        <span className="truncate font-semibold">{p.name}</span>
+                        {p.baselineStart && (
+                          <span className="text-[9px] font-mono text-slate-500 shrink-0">
+                            {p.baselineStart.slice(5)}
+                          </span>
+                        )}
+                      </button>
+                    ))}
+                    <div className="border-t border-base-border/50 pt-1 mt-1">
+                      <button
+                        onClick={() => {
+                          setShowBaselineMenu(false);
+                          handleSetBaselineAll();
+                        }}
+                        className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold text-base-accent hover:bg-base-accent/10 transition-colors"
+                      >
+                        ★ Set Baseline Semua Proyek ({projectsList.length})
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Dedicated Plan vs Actual Timesheet Hours Button */}
+          <button
+            onClick={() => {
+              const nextVal = !showHoursTracking;
+              setShowHoursTracking(nextVal);
+              handleSetShowHoursTracking(nextVal);
+              if (nextVal) {
+                setToastMsg(`Plan vs Actual Hours Active: ${totalHoursStats.actual.toFixed(1)}h logged / ${totalHoursStats.plan.toFixed(1)}h budgeted (${totalHoursStats.burn}% burn).`);
+                setTimeout(() => setToastMsg(null), 3500);
+              }
+            }}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
+              showHoursTracking 
+                ? 'bg-blue-600 text-white border-blue-500 shadow-sm ring-2 ring-blue-500/30' 
+                : 'bg-base-surface border-base-border text-base-muted hover:text-blue-600 hover:border-blue-500/50'
+            }`}
+            title="Toggle Plan vs Actual Hours: Compare budgeted man-hours against real workshop Timesheet logs"
+          >
+            <Clock className={`h-3.5 w-3.5 shrink-0 ${showHoursTracking ? 'text-white' : 'text-blue-500'}`} />
+            <span>Plan vs Actual</span>
+            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+              showHoursTracking ? 'bg-white/20 text-white' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+            }`}>
+              {Math.round(totalHoursStats.actual)}h / {Math.round(totalHoursStats.plan)}h
+            </span>
+          </button>
 
           {/* Dedicated Critical Path Highlighter Button */}
           <button
@@ -4097,12 +4596,41 @@ export default function GanttView({
         </div>
       )}
 
-      {/* Gantt Legend */}
-      <div className="flex items-center gap-4 px-4 py-2 bg-base-surface/50 border-b border-base-border text-[11px] font-medium text-base-muted2 select-none">
-        <span className="flex items-center gap-1"><span className="text-[10px]">🔴</span> Critical Path</span>
-        <span className="flex items-center gap-1"><span className="text-[10px]">🔵</span> On Track</span>
-        <span className="flex items-center gap-1"><span className="text-[10px]">🟡</span> Overdue</span>
-        <span className="flex items-center gap-1"><span className="text-[10px]">🟢</span> Done</span>
+      {/* Gantt Legend & Hours Summary */}
+      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-base-surface/50 border-b border-base-border text-[11px] font-medium text-base-muted2 select-none">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1"><span className="text-[10px]">🔴</span> Critical Path</span>
+          <span className="flex items-center gap-1"><span className="text-[10px]">🔵</span> On Track</span>
+          <span className="flex items-center gap-1"><span className="text-[10px]">🟡</span> Overdue</span>
+          <span className="flex items-center gap-1"><span className="text-[10px]">🟢</span> Done</span>
+          {showBaseline && (
+            <span className="flex items-center gap-1.5">
+              <span className="inline-block w-3.5 h-2 rounded-xs bg-slate-400/60 dark:bg-slate-500/60 border border-slate-500/80 shadow-2xs" />
+              <span className="text-slate-600 dark:text-slate-400 font-semibold">Baseline (Target)</span>
+            </span>
+          )}
+        </div>
+
+        {showHoursTracking && (
+          <div className="flex items-center gap-3 text-[10px] font-mono">
+            <span className="text-base-muted">Shopfloor Man-Hours:</span>
+            <span className="text-indigo-600 dark:text-indigo-400 font-bold">
+              Plan: {totalHoursStats.plan.toFixed(1)}h
+            </span>
+            <span className="text-base-border">|</span>
+            <span className="text-blue-600 dark:text-blue-400 font-bold">
+              Actual: {totalHoursStats.actual.toFixed(1)}h ({totalHoursStats.entries} entries)
+            </span>
+            <span className="text-base-border">|</span>
+            <span className={`font-black px-1.5 py-0.5 rounded ${
+              totalHoursStats.actual > totalHoursStats.plan
+                ? 'bg-red-500/15 text-red-600 dark:text-red-400'
+                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+            }`}>
+              Burn: {totalHoursStats.burn}% ({totalHoursStats.variance > 0 ? `+${totalHoursStats.variance.toFixed(1)}h over` : `${Math.abs(totalHoursStats.variance).toFixed(1)}h under`})
+            </span>
+          </div>
+        )}
       </div>
 
       {/* CORE GANTT WORKSPACE BOX */}
@@ -4129,6 +4657,13 @@ export default function GanttView({
               <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-bold">WBS</div>
               <div style={{ width: `${colNameWidth}px` }} className="shrink-0 px-2 font-bold truncate">Task Name</div>
               <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center font-bold truncate">Duration</div>
+              {showHoursTracking && (
+                <>
+                  <div style={{ width: `${colPlanHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-indigo-600 dark:text-indigo-400" title="Planned/Budgeted Man-Hours (Click task cell to edit)">Plan Hrs</div>
+                  <div style={{ width: `${colActHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-blue-600 dark:text-blue-400" title="Actual Timesheet Hours recorded from shopfloor">Act Hrs</div>
+                  <div style={{ width: `${colVarianceWidth}px` }} className="shrink-0 text-center font-bold truncate text-amber-600 dark:text-amber-400" title="Variance & Burn Rate (Actual vs Plan)">Burn / Var</div>
+                </>
+              )}
               {activeTab === 'lookahead' && (
                 <>
                   <div style={{ width: `${colCrewWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Crew Size">Crew</div>
@@ -4138,6 +4673,12 @@ export default function GanttView({
               )}
               <div style={{ width: `${colStartWidth}px` }} className="shrink-0 text-center font-bold truncate">Start</div>
               <div style={{ width: `${colFinishWidth}px` }} className="shrink-0 text-center font-bold truncate">Finish</div>
+              {showBaseline && (
+                <>
+                  <div style={{ width: `${colBaseStartWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Start Date (Jadwal Target Rencana)">Base Start</div>
+                  <div style={{ width: `${colBaseFinishWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Finish Date (Jadwal Target Rencana)">Base Finish</div>
+                </>
+              )}
               <div style={{ width: `${colPredWidth}px` }} className="shrink-0 text-center font-bold truncate">Pred</div>
               <div style={{ width: `${colPctWidth}px` }} className="shrink-0 text-center font-bold truncate" title="% Complete">% Comp</div>
               <div style={{ width: `${colStatusWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Workflow Status">Status</div>
@@ -4232,6 +4773,115 @@ export default function GanttView({
                   <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
                     {row.isMilestone ? '0 days' : `${row.duration}d`}
                   </div>
+
+                  {showHoursTracking && (
+                    <>
+                      {/* Planned / Budgeted Hours */}
+                      <div
+                        style={{ width: `${colPlanHrsWidth}px` }}
+                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+                        onClick={() => {
+                          if (onUpdateProject) {
+                            setEditingHoursCell(row.id);
+                          }
+                        }}
+                        title={row.level === 2 ? 'Click to edit Planned/Budgeted hours for task' : row.level === 1 ? 'Click to set Assembly budget hours' : 'Click to set Project budget hours'}
+                      >
+                        {editingHoursCell === row.id && onUpdateProject ? (
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.5"
+                            autoFocus
+                            defaultValue={row.budgetHours ?? (row.planHours > 0 ? row.planHours : '')}
+                            placeholder="Hrs..."
+                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
+                            onClick={(e) => e.stopPropagation()}
+                            onBlur={(e) => {
+                              saveRowBudgetHours(row.id, row.level, e.target.value);
+                              setEditingHoursCell(null);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                saveRowBudgetHours(row.id, row.level, e.currentTarget.value);
+                                setEditingHoursCell(null);
+                              }
+                              if (e.key === 'Escape') setEditingHoursCell(null);
+                            }}
+                          />
+                        ) : (
+                          <span className={`select-none font-bold ${row.level === 0 ? 'text-indigo-600 dark:text-indigo-400' : row.level === 1 ? 'text-base-text font-extrabold' : 'text-base-muted2'}`}>
+                            {row.planHours > 0 ? `${row.planHours % 1 === 0 ? row.planHours : row.planHours.toFixed(1)}h` : '—'}
+                            {onUpdateProject && (
+                              <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-base-muted">✏️</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Actual Timesheet Hours */}
+                      <div
+                        style={{ width: `${colActHrsWidth}px` }}
+                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
+                        title={`${row.actualHours.toFixed(1)} actual hours logged across ${row.timesheetCount} timesheet entries`}
+                      >
+                        {row.actualHours > 0 ? (
+                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px]">
+                            <Clock className="w-2.5 h-2.5 shrink-0" />
+                            <span>{row.actualHours % 1 === 0 ? row.actualHours : row.actualHours.toFixed(1)}h</span>
+                          </span>
+                        ) : (
+                          <span className="text-base-muted/40 select-none font-mono">0h</span>
+                        )}
+                      </div>
+
+                      {/* Variance & Burn Rate */}
+                      <div
+                        style={{ width: `${colVarianceWidth}px` }}
+                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
+                      >
+                        {(() => {
+                          if (row.planHours === 0 && row.actualHours === 0) {
+                            return <span className="text-base-muted/40 select-none">—</span>;
+                          }
+                          const diff = row.actualHours - row.planHours;
+                          const burnPct = row.planHours > 0 ? Math.round((row.actualHours / row.planHours) * 100) : 100;
+                          const isOver = diff > 0.05;
+                          const isNear = !isOver && burnPct >= 85;
+
+                          if (isOver) {
+                            return (
+                              <span 
+                                className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30 text-[8.5px] font-black font-mono animate-pulse"
+                                title={`OVER BUDGET:\nActual (${row.actualHours.toFixed(1)}h) exceeds Plan (${row.planHours.toFixed(1)}h) by +${diff.toFixed(1)}h (${burnPct}% burn)`}
+                              >
+                                <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-red-500" />
+                                <span>+{diff.toFixed(0)}h</span>
+                              </span>
+                            );
+                          }
+                          if (isNear) {
+                            return (
+                              <span 
+                                className="inline-flex items-center px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[8.5px] font-bold font-mono"
+                                title={`NEAR BUDGET:\n${burnPct}% of planned hours used (${row.actualHours.toFixed(1)}h / ${row.planHours.toFixed(1)}h)`}
+                              >
+                                {burnPct}%
+                              </span>
+                            );
+                          }
+                          return (
+                            <span 
+                              className="inline-flex items-center px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[8.5px] font-mono font-medium"
+                              title={`UNDER BUDGET:\n${burnPct}% of planned hours used (${(row.planHours - row.actualHours).toFixed(1)}h remaining)`}
+                            >
+                              {burnPct}%
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </>
+                  )}
 
                   {activeTab === 'lookahead' && (
                     <>
@@ -4438,6 +5088,26 @@ export default function GanttView({
                       </span>
                     )}
                   </div>
+
+                  {/* Baseline Dates (Read-only planned schedule) */}
+                  {showBaseline && (
+                    <>
+                      <div 
+                        style={{ width: `${colBaseStartWidth}px` }} 
+                        className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
+                        title={row.baselineStart ? `Baseline Start: ${row.baselineStart}` : 'Belum di-set baseline'}
+                      >
+                        {row.baselineStart || '—'}
+                      </div>
+                      <div 
+                        style={{ width: `${colBaseFinishWidth}px` }} 
+                        className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
+                        title={row.baselineFinish ? `Baseline Finish: ${row.baselineFinish}` : 'Belum di-set baseline'}
+                      >
+                        {row.baselineFinish || '—'}
+                      </div>
+                    </>
+                  )}
 
                   {/* Pred Column with Click-to-Modal and Inline Editing */}
                   <div
@@ -4950,6 +5620,7 @@ export default function GanttView({
                 const isSelected = selectedRowId === row.id;
                 const isTargetHovered = dragHoverTargetRowId === row.id;
                 const barCoords = rowBarCoordsCache.get(row.id);
+                const baselineCoords = showBaseline ? rowBaselineCoordsCache.get(row.id) : null;
                 const slackValue = slackMap.get(row.id) ?? 999;
                 const hasEarlyWarning = showCriticalPath && row.level === 2 && !criticalPathIds.has(row.id) && slackValue >= 0 && slackValue <= 1;
                 
@@ -4966,6 +5637,31 @@ export default function GanttView({
                     }`}
                     style={{ height: '32px' }}
                   >
+                    {/* Baseline Bar (Fixed target schedule, read-only and non-draggable) */}
+                    {baselineCoords && (
+                      <div
+                        className="absolute select-none pointer-events-none z-10"
+                        style={{
+                          left: `${baselineCoords.left}px`,
+                          width: `${row.isMilestone ? 14 : Math.max(8, baselineCoords.width)}px`,
+                          bottom: row.level === 0 ? '1px' : '2px',
+                          height: row.level === 0 ? '5px' : '6px',
+                        }}
+                        title={`Baseline: ${row.baselineStart} → ${row.baselineFinish || row.baselineStart}`}
+                      >
+                        {row.isMilestone ? (
+                          <div className="w-3.5 h-3.5 bg-slate-500/80 border border-slate-600 rotate-45 mx-auto" />
+                        ) : (
+                          <div 
+                            className="w-full h-full rounded-xs bg-slate-400/50 dark:bg-slate-500/50 border border-slate-500/70 dark:border-slate-400/60 shadow-2xs"
+                            style={{
+                              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(100,116,139,0.25) 3px, rgba(100,116,139,0.25) 6px)'
+                            }}
+                          />
+                        )}
+                      </div>
+                    )}
+
                     {barCoords && (
                       <div 
                         onMouseEnter={(e) => handleMouseEnter(row, e)}
@@ -5262,11 +5958,30 @@ export default function GanttView({
                           );
                         })()}
 
-                        {/* Resource Labels shown to the right of the bar */}
-                        {row.level === 2 && row.assigned && (
-                          <span className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] text-base-muted font-semibold z-10 pointer-events-none bg-base-surface/60 px-1 rounded backdrop-blur-[1px]">
-                            {row.assigned}
-                          </span>
+                        {/* Resource Labels & Hours Tracking shown to the right of the bar */}
+                        {!row.isMilestone && (
+                          <div className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] z-10 pointer-events-none flex items-center gap-1.5">
+                            {row.assigned && (
+                              <span className="font-semibold text-base-muted bg-base-surface/80 px-1.5 py-0.5 rounded border border-base-border/30 backdrop-blur-[2px]">
+                                {row.assigned}
+                              </span>
+                            )}
+                            {showHoursTracking && (row.planHours > 0 || row.actualHours > 0) && (
+                              <span className={`inline-flex items-center gap-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border backdrop-blur-[2px] ${
+                                row.actualHours > row.planHours
+                                  ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30'
+                                  : row.actualHours > 0
+                                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
+                                    : 'bg-base-surface/80 text-base-muted border-base-border/30'
+                              }`}>
+                                <Clock className="w-2.5 h-2.5 shrink-0" />
+                                <span>{row.actualHours.toFixed(0)}h / {row.planHours.toFixed(0)}h</span>
+                                {row.actualHours > row.planHours && (
+                                  <span className="text-[7.5px] font-black uppercase text-red-500 bg-red-500/20 px-1 rounded">OVER</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
                         )}
                         {row.isMilestone && (
                           <span className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] text-yellow-600 dark:text-yellow-400 font-bold z-10 pointer-events-none bg-base-surface/60 px-1 rounded backdrop-blur-[1px]">
@@ -5810,13 +6525,42 @@ export default function GanttView({
                 </span>
               </div>
               <div className="flex justify-between gap-6">
-                <span>Start Date:</span>
-                <span className="font-mono text-base-text">{hoveredTask.row.start || '—'}</span>
+                <span>Actual Start:</span>
+                <span className="font-mono text-base-text font-bold">{hoveredTask.row.start || '—'}</span>
               </div>
               <div className="flex justify-between gap-6">
-                <span>Finish Date:</span>
-                <span className="font-mono text-base-text">{hoveredTask.row.finish || '—'}</span>
+                <span>Actual Finish:</span>
+                <span className="font-mono text-base-text font-bold">{hoveredTask.row.finish || '—'}</span>
               </div>
+              {hoveredTask.row.baselineStart && (
+                <div className="bg-slate-500/10 border border-slate-500/20 rounded p-1.5 my-1 space-y-0.5">
+                  <div className="flex justify-between gap-6">
+                    <span className="text-slate-600 dark:text-slate-300 font-bold flex items-center gap-1">
+                      <BookmarkCheck className="h-3 w-3" /> Baseline:
+                    </span>
+                    <span className="font-mono text-slate-700 dark:text-slate-200 font-bold">
+                      {hoveredTask.row.baselineStart} → {hoveredTask.row.baselineFinish || hoveredTask.row.baselineStart}
+                    </span>
+                  </div>
+                  {hoveredTask.row.finish && hoveredTask.row.baselineFinish && (
+                    <div className="flex justify-between gap-6 text-[9.5px]">
+                      <span>Variance:</span>
+                      {(() => {
+                        const actD = parseLocalDate(hoveredTask.row.finish);
+                        const baseD = parseLocalDate(hoveredTask.row.baselineFinish);
+                        const diffDays = Math.round((actD.getTime() - baseD.getTime()) / (1000 * 60 * 60 * 24));
+                        if (diffDays > 0) {
+                          return <span className="text-red-500 font-bold font-mono">+{diffDays} days delay</span>;
+                        } else if (diffDays < 0) {
+                          return <span className="text-emerald-500 font-bold font-mono">{Math.abs(diffDays)} days ahead</span>;
+                        } else {
+                          return <span className="text-slate-500 font-bold font-mono">On target</span>;
+                        }
+                      })()}
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="flex justify-between gap-6">
                 <span>Progress:</span>
                 <span className="font-mono text-base-text font-black text-xs">
@@ -5857,6 +6601,42 @@ export default function GanttView({
                     </div>
                   )}
                 </>
+              )}
+
+              {/* Plan vs Actual Hours Details */}
+              {(hoveredTask.row.planHours > 0 || hoveredTask.row.actualHours > 0) && (
+                <div className="border-t border-base-border/40 mt-1.5 pt-1.5 space-y-1">
+                  <div className="flex justify-between gap-6">
+                    <span className="flex items-center gap-1 text-indigo-600 dark:text-indigo-400">
+                      <Clock className="w-3 h-3 shrink-0" /> Plan Hours:
+                    </span>
+                    <span className="font-mono text-base-text font-bold">
+                      {hoveredTask.row.planHours.toFixed(1)} hrs
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-6">
+                    <span className="flex items-center gap-1 text-blue-600 dark:text-blue-400">
+                      <Clock className="w-3 h-3 shrink-0" /> Actual (Timesheets):
+                    </span>
+                    <span className="font-mono text-base-text font-bold">
+                      {hoveredTask.row.actualHours.toFixed(1)} hrs ({hoveredTask.row.timesheetCount} logs)
+                    </span>
+                  </div>
+                  <div className="flex justify-between gap-6">
+                    <span>Variance / Burn:</span>
+                    <span className={`font-mono font-black ${
+                      hoveredTask.row.actualHours > hoveredTask.row.planHours
+                        ? 'text-red-500'
+                        : hoveredTask.row.actualHours > 0
+                          ? 'text-emerald-500'
+                          : 'text-base-muted'
+                    }`}>
+                      {hoveredTask.row.planHours > 0
+                        ? `${Math.round((hoveredTask.row.actualHours / hoveredTask.row.planHours) * 100)}% burn (${(hoveredTask.row.planHours - hoveredTask.row.actualHours).toFixed(1)}h remaining)`
+                        : 'No plan'}
+                    </span>
+                  </div>
+                </div>
               )}
             </div>
           </div>

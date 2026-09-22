@@ -43,6 +43,25 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+function getDeviceDescription(): string {
+  if (typeof window === 'undefined' || !window.navigator) return 'Web Browser';
+  const ua = window.navigator.userAgent;
+  let browser = 'Browser';
+  if (ua.includes('Chrome') && !ua.includes('Edg')) browser = 'Chrome';
+  else if (ua.includes('Edg')) browser = 'Edge';
+  else if (ua.includes('Safari') && !ua.includes('Chrome')) browser = 'Safari';
+  else if (ua.includes('Firefox')) browser = 'Firefox';
+
+  let platform = 'Desktop';
+  if (/Android/i.test(ua)) platform = 'Mobile (Android)';
+  else if (/iPhone|iPad|iPod/i.test(ua)) platform = 'Mobile (iOS)';
+  else if (/Windows/i.test(ua)) platform = 'Windows';
+  else if (/Macintosh|Mac OS/i.test(ua)) platform = 'macOS';
+  else if (/Linux/i.test(ua)) platform = 'Linux';
+
+  return `${browser} (${platform})`;
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [fbUser, setFbUser] = useState<any>(null);
@@ -407,6 +426,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setCurrentUser(session);
       sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));
 
+      // Record Login Audit Log
+      const nowIso = new Date().toISOString();
+      const logId = `sess_${testUser.id}_${Date.now()}`;
+      const deviceDesc = getDeviceDescription();
+
+      sessionStorage.setItem('w2proj_active_log_id', logId);
+      sessionStorage.setItem('w2proj_active_login_ts', nowIso);
+
+      const sessionLogRecord = {
+        id: logId,
+        userId: testUser.id,
+        userName: testUser.name,
+        userRole: testUser.role,
+        loginTs: nowIso,
+        logoutTs: null,
+        status: 'active',
+        deviceInfo: deviceDesc,
+        sessionId: nextSessionId,
+        durationMinutes: null
+      };
+
       // Persist the currentSessionId directly into the user master document in Firestore
       if (isFullyAuth && isOnline) {
         try {
@@ -417,6 +457,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           });
         } catch (saveErr) {
           console.warn("Could not save currentSessionId on master profile:", saveErr);
+        }
+
+        // Store login session in Firestore
+        try {
+          await setDoc(doc(db, 'userSessions', logId), cleanFirestoreData(sessionLogRecord), { merge: true });
+        } catch (sessErr) {
+          console.warn("Could not record login session log in Firestore:", sessErr);
+        }
+
+        // Also record in Activity Log
+        try {
+          const actId = `act_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+          const now = new Date();
+          const actLog = {
+            id: actId,
+            ts: now.toISOString(),
+            date: now.toISOString().slice(0, 10),
+            time: now.toTimeString().slice(0, 8),
+            userId: testUser.id,
+            userName: testUser.name,
+            userRole: testUser.role,
+            type: 'user_login' as any,
+            action: 'User signed in to portal',
+            detail: `User ${testUser.name} (${testUser.role}) logged in successfully via ${deviceDesc}`
+          };
+          await setDoc(doc(db, 'activities', actId), cleanFirestoreData(actLog));
+        } catch (actErr) {
+          console.warn("Could not log user_login activity:", actErr);
         }
       } else {
         console.warn("Firestore session saving skipped: User is not fully authenticated or device is offline.");
@@ -436,6 +504,53 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const executeLogout = async () => {
     setLogoutConfirmOpen(false);
+
+    const activeLogId = sessionStorage.getItem('w2proj_active_log_id');
+    const loginTsStr = sessionStorage.getItem('w2proj_active_login_ts');
+    const nowIso = new Date().toISOString();
+    let durationMinutes: number | null = null;
+    if (loginTsStr) {
+      const loginTime = new Date(loginTsStr).getTime();
+      const nowTime = new Date(nowIso).getTime();
+      durationMinutes = Math.max(1, Math.round((nowTime - loginTime) / 60000));
+    }
+
+    // Update session log to logged_out in Firestore
+    if (activeLogId) {
+      try {
+        await updateDoc(doc(db, 'userSessions', activeLogId), {
+          logoutTs: nowIso,
+          status: 'logged_out',
+          durationMinutes: durationMinutes || 1
+        });
+      } catch (sessErr) {
+        console.warn("Could not update logout session log in Firestore:", sessErr);
+      }
+    }
+
+    // Record Activity Log for logout
+    if (currentUser) {
+      try {
+        const actId = `act_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+        const now = new Date();
+        const actLog = {
+          id: actId,
+          ts: now.toISOString(),
+          date: now.toISOString().slice(0, 10),
+          time: now.toTimeString().slice(0, 8),
+          userId: currentUser.id,
+          userName: currentUser.name,
+          userRole: currentUser.role,
+          type: 'user_logout' as any,
+          action: 'User logged out',
+          detail: `User ${currentUser.name} (${currentUser.role}) signed out. Session duration: ${durationMinutes ? `${durationMinutes} min` : 'N/A'}`
+        };
+        await setDoc(doc(db, 'activities', actId), cleanFirestoreData(actLog));
+      } catch (actErr) {
+        console.warn("Could not log user_logout activity:", actErr);
+      }
+    }
+
     try {
       if (auth.currentUser) {
         await signOut(auth);
@@ -446,6 +561,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setCurrentUser(null);
     sessionStorage.removeItem('w2proj_session_v1');
     sessionStorage.removeItem('w2proj_active_session_id');
+    sessionStorage.removeItem('w2proj_active_log_id');
+    sessionStorage.removeItem('w2proj_active_login_ts');
     setLoginId('');
     setLoginPass('');
   };

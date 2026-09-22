@@ -43,7 +43,7 @@ export function useTimesheets(
       const copy = [...prev];
       rawLogs.forEach(rl => {
         if (editingTsId) {
-          const idx = copy.findIndex(x => x.id === editingTsId && x.empId === rl.empId);
+          const idx = copy.findIndex(x => x.id === editingTsId);
           if (idx > -1) {
             const updated = { ...copy[idx], ...rl };
             copy[idx] = updated;
@@ -54,13 +54,23 @@ export function useTimesheets(
             writtenItems.push(newItem);
           }
         } else {
-          const idx = copy.findIndex(x => x.date === timesheetDate && x.empId === rl.empId);
+          let idx = -1;
+          if (rl.id) {
+            idx = copy.findIndex(x => x.id === rl.id);
+          } else {
+            idx = copy.findIndex(x => 
+              x.date === timesheetDate && 
+              x.empId === rl.empId && 
+              (x.workOrder || '').trim().toLowerCase() === (rl.workOrder || '').trim().toLowerCase()
+            );
+          }
+          
           if (idx > -1) {
             const updated = { ...copy[idx], ...rl };
             copy[idx] = updated;
             writtenItems.push(updated);
           } else {
-            const newItem = { id: uid(), date: timesheetDate, ...rl };
+            const newItem = { id: rl.id || uid(), date: timesheetDate, ...rl };
             copy.push(newItem);
             writtenItems.push(newItem);
           }

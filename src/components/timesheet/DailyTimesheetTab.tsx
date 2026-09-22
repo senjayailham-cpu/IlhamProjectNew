@@ -3,6 +3,7 @@ import { TimesheetEntry, Employee, Project, User } from '../../types';
 import { can } from '../../utils/permissions';
 import { fmtHrs } from '../../utils/projectUtils';
 import { useAppStore } from '../../store';
+import { getCategoryBadgeClass } from '../../utils/timesheetCategories';
 import * as XLSX from 'xlsx';
 import { 
   Clock, 
@@ -130,6 +131,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
       'Project': e.projectName || '',
       'Sub-Assembly': e.assemblyName || '',
       'Task Assembly': e.taskName || '',
+      'Job Category': e.category || '',
       'Description / Note': e.desc || '',
       'Hours': e.totalHours || 0
     }));
@@ -445,6 +447,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                         <tr className="bg-base-surface2/30 text-left text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-b border-base-border/50">
                           <th className="py-2.5 px-4 font-condensed uppercase tracking-wider">Employee</th>
                           <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Work Order</th>
+                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-extrabold">Category</th>
                           <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Hours</th>
                           <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Description</th>
                           <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Status</th>
@@ -499,6 +502,15 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                     </div>
                                   );
                                 })()}
+                              </td>
+                              <td className="py-3 px-3">
+                                {e.category ? (
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-condensed font-bold uppercase tracking-wider ${getCategoryBadgeClass(e.category)}`}>
+                                    {e.category}
+                                  </span>
+                                ) : (
+                                  <span className="text-base-muted/40 text-[11px] font-mono">—</span>
+                                )}
                               </td>
                               <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent">
                                 {fmtHrs(e.totalHours || 0)}h
