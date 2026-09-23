@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutGrid, Folder, Calendar, Package, Menu, Factory, Clock, ClipboardCheck, AlertTriangle } from 'lucide-react';
+import { LayoutGrid, Folder, Calendar, Package, Menu, Factory, Clock, ClipboardCheck, AlertTriangle, TrendingUp } from 'lucide-react';
 import { useUIStore } from '../../store';
 import { User, UserRole } from '../../types';
 
@@ -26,7 +26,7 @@ export default function BottomNav({
       return [
         { id: 'shopfloor', label: 'Shop Floor', icon: Factory },
         { id: 'timesheet', label: 'Timesheet', icon: Clock },
-        { id: 'projects', label: 'Progress', icon: Folder },
+        { id: 'progress', label: 'Progress', icon: TrendingUp },
         { id: 'materials', label: 'Materials', icon: Package },
         { id: 'inspections', label: 'QC', icon: ClipboardCheck },
         { id: 'more', label: 'More', icon: Menu, isMenuTrigger: true }

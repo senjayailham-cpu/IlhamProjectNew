@@ -33,6 +33,7 @@ export {
 };
 import { 
   ChevronRight, 
+  ChevronLeft,
   ChevronDown, 
   Maximize2, 
   Minimize2, 
@@ -1194,6 +1195,10 @@ export default function GanttView({
 
   // Inline Editing States
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: 'start' | 'finish' } | null>(null);
+  const [editingBaselineCell, setEditingBaselineCell] = useState<{ rowId: string; field: 'start' | 'finish' } | null>(null);
+  const [baselineManagerModalOpen, setBaselineManagerModalOpen] = useState<boolean>(false);
+  const [shiftDaysInput, setShiftDaysInput] = useState<number>(7);
+  const [baselineTargetProjectId, setBaselineTargetProjectId] = useState<string>('');
   const [editingLookaheadCell, setEditingLookaheadCell] = useState<{ rowId: string; field: 'crew' | 'company' | 'assigned' } | null>(null);
   const [editingPred, setEditingPred] = useState<string | null>(null);
   const [predInputVal, setPredInputVal] = useState<string>('');
@@ -1217,6 +1222,8 @@ export default function GanttView({
   });
   const [isResizingSplitter, setIsResizingSplitter] = useState(false);
   const splitterStartRef = useRef<{ x: number; width: number } | null>(null);
+  const latestLeftPanelWidthRef = useRef<number>(leftPanelWidth);
+  latestLeftPanelWidthRef.current = leftPanelWidth;
 
   const handleSplitterMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -1227,13 +1234,36 @@ export default function GanttView({
     };
   };
 
+  const handleSplitterDoubleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    // Auto fit to comfortable width (or toggle between compact and wide)
+    const targetWidth = leftPanelWidth <= 150 ? defaultTotalTableWidth : (leftPanelWidth > 800 ? defaultTotalTableWidth : 880);
+    setLeftPanelWidth(targetWidth);
+    try {
+      localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, targetWidth.toString());
+    } catch {}
+  };
+
+  const handleToggleCollapseTable = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (leftPanelWidth <= 120) {
+      const target = defaultTotalTableWidth;
+      setLeftPanelWidth(target);
+      try { localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, target.toString()); } catch {}
+    } else {
+      setLeftPanelWidth(90);
+      try { localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, '90'); } catch {}
+    }
+  };
+
   useEffect(() => {
     if (!isResizingSplitter) return;
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!splitterStartRef.current) return;
       const deltaX = e.clientX - splitterStartRef.current.x;
-      const nextWidth = Math.max(80, Math.min(splitterStartRef.current.width + deltaX, 1200));
+      const nextWidth = Math.max(70, Math.min(splitterStartRef.current.width + deltaX, 1300));
+      latestLeftPanelWidthRef.current = nextWidth;
       setLeftPanelWidth(nextWidth);
     };
 
@@ -1241,7 +1271,7 @@ export default function GanttView({
       setIsResizingSplitter(false);
       splitterStartRef.current = null;
       try {
-        localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, leftPanelWidth.toString());
+        localStorage.setItem(`gantt_left_panel_width_${projectStorageId}`, latestLeftPanelWidthRef.current.toString());
       } catch (e) {
         // ignore
       }
@@ -1254,7 +1284,7 @@ export default function GanttView({
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isResizingSplitter, leftPanelWidth, project?.id, projectsList]);
+  }, [isResizingSplitter, project?.id, projectsList, projectStorageId]);
 
   // Tooltip state
   const [hoveredTask, setHoveredTask] = useState<{
@@ -2003,6 +2033,11 @@ export default function GanttView({
       if (t) {
         t.pct = clampedPct;
         t.done = clampedPct === 100;
+        if (clampedPct === 100) {
+          t.workflowStatus = 'complete';
+        } else if (clampedPct > 0 && (!t.workflowStatus || t.workflowStatus === 'not_started')) {
+          t.workflowStatus = 'on_track';
+        }
         found = true;
         break;
       }
@@ -2234,6 +2269,135 @@ export default function GanttView({
     );
     if (!confirmed) return;
     projectsList.forEach(p => setBaselineForProject(p, true));
+  };
+
+  // Inline Baseline Date Saving handler (per task, per assembly, or per project)
+  const saveBaselineDate = (rowId: string, field: 'start' | 'finish', newVal: string) => {
+    if (!onUpdateProject) return;
+
+    const res = findAndCloneProject(rowId);
+    if (!res) return;
+    const updated = res.cloned;
+
+    if (rowId === updated.id) {
+      if (field === 'start') updated.baselineStart = newVal || undefined;
+      else updated.baselineFinish = newVal || undefined;
+    } else {
+      const asm = updated.assemblies?.find(a => a.id === rowId);
+      if (asm) {
+        if (field === 'start') asm.baselineStart = newVal || undefined;
+        else asm.baselineFinish = newVal || undefined;
+      } else {
+        for (const a of updated.assemblies || []) {
+          const t = a.tasks?.find(t => t.id === rowId);
+          if (t) {
+            if (field === 'start') t.baselineStart = newVal || undefined;
+            else t.baselineFinish = newVal || undefined;
+
+            // Recalculate parent assembly baseline bounds
+            let minAsmBaseStart: string | null = null;
+            let maxAsmBaseFinish: string | null = null;
+            a.tasks?.forEach(task => {
+              if (task.baselineStart) {
+                if (!minAsmBaseStart || task.baselineStart < minAsmBaseStart) minAsmBaseStart = task.baselineStart;
+              }
+              if (task.baselineFinish) {
+                if (!maxAsmBaseFinish || task.baselineFinish > maxAsmBaseFinish) maxAsmBaseFinish = task.baselineFinish;
+              }
+            });
+            if (minAsmBaseStart) a.baselineStart = minAsmBaseStart;
+            if (maxAsmBaseFinish) a.baselineFinish = maxAsmBaseFinish;
+            break;
+          }
+        }
+      }
+    }
+
+    // Also recalculate project level baseline bounds
+    let pMinBase: string | null = null;
+    let pMaxBase: string | null = null;
+    updated.assemblies?.forEach(a => {
+      if (a.baselineStart && (!pMinBase || a.baselineStart < pMinBase)) pMinBase = a.baselineStart;
+      if (a.baselineFinish && (!pMaxBase || a.baselineFinish > pMaxBase)) pMaxBase = a.baselineFinish;
+    });
+    if (pMinBase) updated.baselineStart = pMinBase;
+    if (pMaxBase) updated.baselineFinish = pMaxBase;
+
+    onUpdateProject(updated);
+    setToastMsg(`Baseline diperbarui: ${newVal || 'Dikosongkan'}`);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  // Clear / Reset Baseline handler
+  const clearBaselineForProject = (targetProj: Project) => {
+    if (!onUpdateProject) return;
+    const confirmed = window.confirm(
+      `Hapus/Reset Baseline untuk proyek "${targetProj.name}"?\n\nJadwal baseline akan dikosongkan sehingga Anda bisa mengatur ulang dari awal.`
+    );
+    if (!confirmed) return;
+
+    const updatedAssemblies = (targetProj.assemblies || []).map(asm => ({
+      ...asm,
+      baselineStart: undefined,
+      baselineFinish: undefined,
+      tasks: (asm.tasks || []).map(t => ({
+        ...t,
+        baselineStart: undefined,
+        baselineFinish: undefined
+      }))
+    }));
+
+    const updated: Project = {
+      ...targetProj,
+      baselineStart: undefined,
+      baselineFinish: undefined,
+      assemblies: updatedAssemblies
+    };
+
+    onUpdateProject(updated);
+    setToastMsg(`Baseline proyek "${targetProj.name}" berhasil direset.`);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  // Shift Baseline by X Days (geser serentak)
+  const shiftBaselineForProject = (targetProj: Project, days: number) => {
+    if (!onUpdateProject || days === 0) return;
+
+    const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
+      const nextAsmStart = asm.baselineStart ? addDaysToLocalDate(asm.baselineStart, days) : asm.baselineStart;
+      const nextAsmFinish = asm.baselineFinish ? addDaysToLocalDate(asm.baselineFinish, days) : asm.baselineFinish;
+
+      const updatedTasks = (asm.tasks || []).map(t => {
+        const nextStart = t.baselineStart ? addDaysToLocalDate(t.baselineStart, days) : t.baselineStart;
+        const nextFinish = t.baselineFinish ? addDaysToLocalDate(t.baselineFinish, days) : t.baselineFinish;
+        return {
+          ...t,
+          baselineStart: nextStart,
+          baselineFinish: nextFinish
+        };
+      });
+
+      return {
+        ...asm,
+        baselineStart: nextAsmStart,
+        baselineFinish: nextAsmFinish,
+        tasks: updatedTasks
+      };
+    });
+
+    const nextPStart = targetProj.baselineStart ? addDaysToLocalDate(targetProj.baselineStart, days) : targetProj.baselineStart;
+    const nextPFinish = targetProj.baselineFinish ? addDaysToLocalDate(targetProj.baselineFinish, days) : targetProj.baselineFinish;
+
+    const updated: Project = {
+      ...targetProj,
+      baselineStart: nextPStart,
+      baselineFinish: nextPFinish,
+      assemblies: updatedAssemblies
+    };
+
+    onUpdateProject(updated);
+    setToastMsg(`Baseline digeser ${days > 0 ? `+${days}` : days} hari untuk "${targetProj.name}".`);
+    setTimeout(() => setToastMsg(null), 3000);
   };
 
   // Header row elements generators
@@ -3722,65 +3886,93 @@ export default function GanttView({
             {canSetBaseline && onUpdateProject && (
               <div className="relative">
                 <button
-                  onClick={() => {
-                    if (projectsList.length > 1 && !selectedProject) {
-                      setShowBaselineMenu(prev => !prev);
-                    } else if (selectedProject) {
-                      setBaselineForProject(selectedProject);
-                    } else if (projectsList.length === 1) {
-                      setBaselineForProject(projectsList[0]);
-                    } else {
-                      setShowBaselineMenu(prev => !prev);
-                    }
-                  }}
+                  onClick={() => setShowBaselineMenu(prev => !prev)}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-base-border bg-base-surface text-base-text hover:bg-base-accent/10 hover:border-base-accent/50 hover:text-base-accent transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px]"
-                  title={
-                    selectedProject
-                      ? `Kunci Jadwal Baseline untuk Proyek "${selectedProject.name}"`
-                      : 'Kunci Jadwal Baseline (Salin Aktual → Baseline)'
-                  }
+                  title="Kelola Jadwal Target Baseline (Kunci, Ubah, Geser, atau Reset)"
                 >
                   <BookmarkPlus className="h-3.5 w-3.5 text-base-accent shrink-0" />
-                  <span>Set Baseline</span>
-                  {projectsList.length > 1 && (
-                    <span className="text-[8px] opacity-70">▼</span>
-                  )}
+                  <span>Atur Baseline</span>
+                  <span className="text-[8px] opacity-70">▼</span>
                 </button>
 
-                {/* Dropdown menu when multiple projects available */}
-                {showBaselineMenu && projectsList.length > 1 && (
-                  <div className="absolute right-0 top-full mt-1.5 w-64 bg-base-surface border border-base-border rounded-xl shadow-xl p-2 z-50 text-left space-y-1">
-                    <div className="px-2 py-1 text-[10px] font-bold text-base-muted uppercase tracking-wider border-b border-base-border/50">
-                      Pilih Proyek untuk Set Baseline:
+                {/* Dropdown menu for Baseline Management */}
+                {showBaselineMenu && (
+                  <div className="absolute right-0 top-full mt-1.5 w-72 bg-base-surface border border-base-border rounded-xl shadow-xl p-2 z-[160] text-left space-y-1 animate-fade-in font-sans">
+                    <div className="px-2 py-1 text-[10px] font-bold text-base-muted uppercase tracking-wider border-b border-base-border/50 flex items-center justify-between">
+                      <span>Menu Baseline</span>
+                      <span className="text-[9px] font-mono font-bold text-slate-500">{projectsList.length} Proyek</span>
                     </div>
-                    {projectsList.map(p => (
-                      <button
-                        key={p.id}
-                        onClick={() => {
-                          setShowBaselineMenu(false);
-                          setBaselineForProject(p);
-                        }}
-                        className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-base-surface2 transition-colors flex items-center justify-between gap-2"
-                      >
-                        <span className="truncate font-semibold">{p.name}</span>
-                        {p.baselineStart && (
-                          <span className="text-[9px] font-mono text-slate-500 shrink-0">
-                            {p.baselineStart.slice(5)}
-                          </span>
-                        )}
-                      </button>
-                    ))}
-                    <div className="border-t border-base-border/50 pt-1 mt-1">
-                      <button
-                        onClick={() => {
-                          setShowBaselineMenu(false);
+
+                    <button
+                      onClick={() => {
+                        setShowBaselineMenu(false);
+                        const target = selectedProject || (projectsList.length > 0 ? projectsList[0] : null);
+                        if (target) setBaselineTargetProjectId(target.id);
+                        setBaselineManagerModalOpen(true);
+                        if (!showBaseline) handleSetShowBaseline(true);
+                      }}
+                      className="w-full text-left px-2 py-2 rounded-lg text-xs hover:bg-base-accent/10 hover:text-base-accent font-bold transition-colors flex items-center gap-2 text-base-text"
+                    >
+                      <span className="p-1 rounded bg-base-accent/15 text-base-accent text-xs">⚙️</span>
+                      <div>
+                        <div className="leading-tight font-extrabold">Buka Pengelola Baseline...</div>
+                        <div className="text-[10px] text-base-muted font-normal font-sans">Ubah, geser hari, atau reset baseline</div>
+                      </div>
+                    </button>
+
+                    <div className="border-t border-base-border/50 my-1" />
+
+                    <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
+                      Aksi Cepat:
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setShowBaselineMenu(false);
+                        const target = selectedProject || (projectsList.length === 1 ? projectsList[0] : null);
+                        if (target) {
+                          setBaselineForProject(target);
+                          if (!showBaseline) handleSetShowBaseline(true);
+                        } else {
                           handleSetBaselineAll();
-                        }}
-                        className="w-full text-left px-2 py-1.5 rounded-lg text-xs font-bold text-base-accent hover:bg-base-accent/10 transition-colors"
-                      >
-                        ★ Set Baseline Semua Proyek ({projectsList.length})
-                      </button>
-                    </div>
+                          if (!showBaseline) handleSetShowBaseline(true);
+                        }
+                      }}
+                      className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-base-surface2 transition-colors flex items-center gap-2"
+                    >
+                      <BookmarkPlus className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <span className="truncate">
+                        {selectedProject ? `Kunci Aktual → Baseline (${selectedProject.name})` : 'Kunci Aktual → Baseline Semua'}
+                      </span>
+                    </button>
+
+                    {projectsList.length > 1 && (
+                      <div className="pt-1">
+                        <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
+                          Pilih Proyek:
+                        </div>
+                        <div className="max-h-36 overflow-y-auto space-y-0.5 pr-1">
+                          {projectsList.map(p => (
+                            <button
+                              key={p.id}
+                              onClick={() => {
+                                setShowBaselineMenu(false);
+                                setBaselineForProject(p);
+                                if (!showBaseline) handleSetShowBaseline(true);
+                              }}
+                              className="w-full text-left px-2 py-1 rounded text-[11px] hover:bg-base-surface2 transition-colors flex items-center justify-between gap-1.5"
+                            >
+                              <span className="truncate">{p.name}</span>
+                              {p.baselineStart && (
+                                <span className="text-[9px] font-mono text-slate-500 shrink-0">
+                                  {p.baselineStart.slice(5)}
+                                </span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -4174,6 +4366,9 @@ export default function GanttView({
           editingCell={editingCell}
           setEditingCell={setEditingCell}
           saveDate={saveDate}
+          editingBaselineCell={editingBaselineCell}
+          setEditingBaselineCell={setEditingBaselineCell}
+          saveBaselineDate={allowedToEdit ? saveBaselineDate : undefined}
           editingPred={editingPred}
           setEditingPred={setEditingPred}
           predInputVal={predInputVal}
@@ -4205,15 +4400,45 @@ export default function GanttView({
           setExpandedResources={setExpandedResources}
         />
 
-        {/* RESIZE SPLITTER */}
+        {/* ENHANCED RESIZE SPLITTER BAR */}
         <div
-          className={`w-2 cursor-col-resize relative z-30 shrink-0 self-stretch transition-colors flex items-center justify-center bg-base-surface2 border-l border-r border-base-border ${
-            isResizingSplitter ? 'bg-base-accent/30 border-base-accent' : 'hover:bg-base-accent-dim/50 hover:border-base-accent/50'
+          className={`w-3.5 cursor-col-resize relative z-30 shrink-0 self-stretch transition-all select-none flex flex-col items-center justify-center bg-base-surface2 border-x border-base-border group ${
+            isResizingSplitter
+              ? 'bg-base-accent/25 border-base-accent shadow-md'
+              : 'hover:bg-base-accent-dim/40 hover:border-base-accent/60'
           }`}
           onMouseDown={handleSplitterMouseDown}
-          title="Drag to resize task sheet table"
+          onDoubleClick={handleSplitterDoubleClick}
+          title="Geser (Drag) untuk mengubah lebar tabel | Double-click untuk Auto-Fit | Klik tombol panah untuk Ciutkan/Lebarkan"
         >
-          <div className={`w-[2px] h-6 rounded-full ${isResizingSplitter ? 'bg-base-accent' : 'bg-base-muted/40'}`} />
+          {/* Quick Collapse / Expand Toggle Button on Splitter */}
+          <button
+            type="button"
+            onClick={handleToggleCollapseTable}
+            onMouseDown={(e) => e.stopPropagation()}
+            className="absolute top-2 w-5 h-6 rounded-md bg-base-surface border border-base-border shadow-xs flex items-center justify-center text-base-muted hover:text-base-accent hover:border-base-accent transition-all cursor-pointer z-40 hover:scale-110 active:scale-95"
+            title={leftPanelWidth <= 120 ? "Lebarkan Tabel (Buka)" : "Ciutkan Tabel (Fokus ke Timeline)"}
+          >
+            {leftPanelWidth <= 120 ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronLeft className="w-3.5 h-3.5" />
+            )}
+          </button>
+
+          {/* Grip Texture (Vertical textured dots/bars) */}
+          <div className="flex flex-col gap-1 items-center justify-center pointer-events-none py-2">
+            <div className={`w-1 h-1 rounded-full transition-colors ${isResizingSplitter ? 'bg-base-accent' : 'bg-base-muted/40 group-hover:bg-base-accent'}`} />
+            <div className={`w-1 h-3 rounded-full transition-colors ${isResizingSplitter ? 'bg-base-accent' : 'bg-base-muted/50 group-hover:bg-base-accent'}`} />
+            <div className={`w-1 h-1 rounded-full transition-colors ${isResizingSplitter ? 'bg-base-accent' : 'bg-base-muted/40 group-hover:bg-base-accent'}`} />
+          </div>
+
+          {/* Floating live width badge during resizing */}
+          {isResizingSplitter && (
+            <div className="absolute top-12 left-1/2 -translate-x-1/2 bg-base-surface text-base-text border border-base-accent px-2 py-0.5 rounded shadow-lg text-[9px] font-mono font-bold whitespace-nowrap z-50 pointer-events-none animate-pulse">
+              {leftPanelWidth}px
+            </div>
+          )}
         </div>
 
         {/* RIGHT SCROLLABLE TIMELINE PANEL */}
@@ -4837,6 +5062,242 @@ export default function GanttView({
                       </div>
                     );
                   })()}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* BASELINE MANAGER MODAL */}
+        {baselineManagerModalOpen && (() => {
+          const currentTargetProj = projectsList.find(p => p.id === baselineTargetProjectId) || selectedProject || projectsList[0];
+          const hasBaseline = Boolean(currentTargetProj?.baselineStart || currentTargetProj?.baselineFinish);
+          
+          let varianceText = 'On target';
+          let varianceClass = 'text-slate-500';
+          if (currentTargetProj?.due && currentTargetProj?.baselineFinish) {
+            const actD = parseLocalDate(currentTargetProj.due);
+            const baseD = parseLocalDate(currentTargetProj.baselineFinish);
+            const diffDays = Math.round((actD.getTime() - baseD.getTime()) / (1000 * 60 * 60 * 24));
+            if (diffDays > 0) {
+              varianceText = `+${diffDays} hari terlambat dari rencana`;
+              varianceClass = 'text-red-500 font-bold';
+            } else if (diffDays < 0) {
+              varianceText = `${Math.abs(diffDays)} hari lebih cepat dari rencana`;
+              varianceClass = 'text-emerald-500 font-bold';
+            }
+          }
+
+          return (
+            <div className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in font-sans">
+              <div 
+                className="bg-base-surface border-2 border-base-border rounded-2xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col text-base-text animate-scale-up"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Header */}
+                <div className="px-5 py-4 border-b border-base-border flex items-center justify-between bg-base-surface2/50">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 rounded-xl bg-slate-700 text-white shadow-xs">
+                      <BookmarkCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold font-condensed uppercase tracking-wide">
+                        Pengelola Baseline Proyek
+                      </h3>
+                      <p className="text-xs text-base-muted font-sans">
+                        Atur target jadwal komitmen rencana proyek & sub-assembly
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setBaselineManagerModalOpen(false)}
+                    className="p-1.5 rounded-lg hover:bg-base-surface3 text-base-muted hover:text-base-text transition-colors cursor-pointer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Content */}
+                <div className="p-5 space-y-5 overflow-y-auto max-h-[75vh]">
+                  {/* Project Selector if multiple */}
+                  {projectsList.length > 1 && (
+                    <div>
+                      <label className="block text-[11px] font-bold text-base-muted uppercase tracking-wider mb-1 font-condensed">
+                        Pilih Target Proyek:
+                      </label>
+                      <select
+                        value={currentTargetProj?.id || ''}
+                        onChange={(e) => setBaselineTargetProjectId(e.target.value)}
+                        className="w-full bg-base-surface2 border border-base-border rounded-xl px-3 py-2 text-xs font-bold text-base-text outline-none focus:border-base-accent"
+                      >
+                        {projectsList.map(p => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} {p.baselineStart ? `(Baseline: ${p.baselineStart})` : '(Belum ada baseline)'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Baseline Status Card */}
+                  {currentTargetProj && (
+                    <div className="p-4 rounded-xl bg-slate-500/10 border border-slate-500/20 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold text-base-muted font-condensed uppercase tracking-wider">
+                          Status Baseline: {currentTargetProj.name}
+                        </span>
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ${
+                          hasBaseline ? 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-600 border border-amber-500/30'
+                        }`}>
+                          {hasBaseline ? 'Terkunci (Active)' : 'Belum Dikunci'}
+                        </span>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 font-mono text-xs">
+                        <div className="bg-base-surface p-2 rounded-lg border border-base-border">
+                          <div className="text-[9px] text-base-muted uppercase font-sans font-bold">Baseline Start</div>
+                          <div className="font-extrabold text-base-text">{currentTargetProj.baselineStart || '—'}</div>
+                        </div>
+                        <div className="bg-base-surface p-2 rounded-lg border border-base-border">
+                          <div className="text-[9px] text-base-muted uppercase font-sans font-bold">Baseline Finish</div>
+                          <div className="font-extrabold text-base-text">{currentTargetProj.baselineFinish || '—'}</div>
+                        </div>
+                        <div className="bg-base-surface p-2 rounded-lg border border-base-border col-span-2 sm:col-span-1">
+                          <div className="text-[9px] text-base-muted uppercase font-sans font-bold">Deviasi / Variance</div>
+                          <div className={`text-xs ${varianceClass}`}>{varianceText}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Action 1: Set Baseline from Current Schedule */}
+                  <div className="p-4 rounded-xl border border-base-border bg-base-surface space-y-2">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-extrabold uppercase font-condensed text-base-text flex items-center gap-1.5">
+                          <BookmarkPlus className="h-4 w-4 text-emerald-500 shrink-0" />
+                          <span>1. Kunci Baseline dari Jadwal Saat Ini</span>
+                        </div>
+                        <p className="text-[11px] text-base-muted mt-0.5">
+                          Salin seluruh tanggal jadwal aktual saat ini (proyek, sub-assembly, task) menjadi target rencana Baseline baru.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentTargetProj) {
+                            setBaselineForProject(currentTargetProj, false);
+                          }
+                        }}
+                        className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-condensed font-extrabold uppercase tracking-wider shrink-0 transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        Kunci Sekarang
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Action 2: Shift Baseline by X Days */}
+                  <div className="p-4 rounded-xl border border-base-border bg-base-surface space-y-3">
+                    <div>
+                      <div className="text-xs font-extrabold uppercase font-condensed text-base-text flex items-center gap-1.5">
+                        <Clock className="h-4 w-4 text-blue-500 shrink-0" />
+                        <span>2. Geser Jadwal Baseline (+ / - Hari)</span>
+                      </div>
+                      <p className="text-[11px] text-base-muted mt-0.5">
+                        Jika ada kesepakatan penyesuaian target atau addendum, geser seluruh tanggal baseline proyek sekaligus tanpa mengubah tanggal satu per satu.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex items-center gap-1 bg-base-surface2 border border-base-border rounded-xl px-2 py-1">
+                        <input
+                          type="number"
+                          value={shiftDaysInput}
+                          onChange={(e) => setShiftDaysInput(parseInt(e.target.value, 10) || 0)}
+                          className="w-16 bg-transparent text-xs font-mono font-bold text-center outline-none"
+                        />
+                        <span className="text-[10px] text-base-muted font-bold">Hari</span>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setShiftDaysInput(-7)}
+                          className="px-2 py-1 bg-base-surface2 hover:bg-base-surface3 border border-base-border rounded-lg text-[10px] font-mono font-bold cursor-pointer"
+                        >
+                          -7 hr
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShiftDaysInput(7)}
+                          className="px-2 py-1 bg-base-surface2 hover:bg-base-surface3 border border-base-border rounded-lg text-[10px] font-mono font-bold cursor-pointer"
+                        >
+                          +7 hr
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShiftDaysInput(14)}
+                          className="px-2 py-1 bg-base-surface2 hover:bg-base-surface3 border border-base-border rounded-lg text-[10px] font-mono font-bold cursor-pointer"
+                        >
+                          +14 hr
+                        </button>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentTargetProj && shiftDaysInput !== 0) {
+                            shiftBaselineForProject(currentTargetProj, shiftDaysInput);
+                          }
+                        }}
+                        className="ml-auto px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-condensed font-extrabold uppercase tracking-wider transition-all cursor-pointer shadow-xs active:scale-95"
+                      >
+                        Terapkan Pergeseran ({shiftDaysInput > 0 ? `+${shiftDaysInput}` : shiftDaysInput}d)
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Tip: Inline Date Editing on Table */}
+                  <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/25 flex items-start gap-2.5">
+                    <span className="text-base shrink-0">💡</span>
+                    <div className="text-[11px] leading-relaxed text-amber-900 dark:text-amber-200">
+                      <strong className="font-extrabold">Ubah Tanggal Baseline Per Baris Task:</strong><br />
+                      Anda juga bisa langsung mengklik tanggal di kolom <span className="font-mono font-bold bg-amber-500/20 px-1 py-0.5 rounded">Base Start</span> atau <span className="font-mono font-bold bg-amber-500/20 px-1 py-0.5 rounded">Base Finish</span> pada tabel di sebelah kiri untuk memilih tanggal secara manual dengan kalender interaktif!
+                    </div>
+                  </div>
+
+                  {/* Action 4: Reset / Delete Baseline */}
+                  {hasBaseline && (
+                    <div className="pt-2 border-t border-base-border flex items-center justify-between">
+                      <span className="text-[11px] text-base-muted">
+                        Ingin mengosongkan target jadwal baseline?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (currentTargetProj) {
+                            clearBaselineForProject(currentTargetProj);
+                          }
+                        }}
+                        className="px-3 py-1.5 border border-red-500/40 text-red-600 hover:bg-red-500/10 rounded-xl text-xs font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                        <span>Reset Baseline</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Footer */}
+                <div className="px-5 py-3 border-t border-base-border bg-base-surface2/50 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setBaselineManagerModalOpen(false)}
+                    className="px-4 py-1.5 bg-base-surface border border-base-border hover:bg-base-surface3 rounded-xl text-xs font-bold text-base-text transition-colors cursor-pointer"
+                  >
+                    Tutup
+                  </button>
                 </div>
               </div>
             </div>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Project, User, OrgSettings, TimesheetEntry } from '../types';
 import { GanttPage } from './GanttPage';
 import ProjectTimelineView from '../components/ProjectTimelineView';
-import { BarChart2, Calendar, Clock, SlidersHorizontal } from 'lucide-react';
+import { BarChart2, Calendar, Clock, SlidersHorizontal, TrendingUp } from 'lucide-react';
 
 export interface ProjectSchedulePageProps {
   projects: Project[];
@@ -17,6 +17,7 @@ export interface ProjectSchedulePageProps {
   currentUser: User | null;
   orgSettings?: OrgSettings;
   defaultView?: 'gantt' | 'timeline';
+  onNavigateToProgress?: () => void;
 }
 
 export function ProjectSchedulePage({
@@ -31,7 +32,8 @@ export function ProjectSchedulePage({
   onCloseDepModal,
   currentUser,
   orgSettings,
-  defaultView = 'gantt'
+  defaultView = 'gantt',
+  onNavigateToProgress
 }: ProjectSchedulePageProps) {
   const [activeSubTab, setActiveSubTab] = useState<'gantt' | 'timeline'>(defaultView);
 
@@ -72,10 +74,21 @@ export function ProjectSchedulePage({
                 <Calendar className="h-3.5 w-3.5" />
                 <span>Timeline View</span>
               </button>
+
+              {onNavigateToProgress && (
+                <button
+                  onClick={onNavigateToProgress}
+                  className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide transition-all cursor-pointer text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 ml-1 border-l border-base-border pl-2"
+                  title="Buka Halaman Cepat Update Progress Proyek"
+                >
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  <span>Update Progress ↗</span>
+                </button>
+              )}
             </div>
           </div>
           <p className="text-xs text-base-muted font-sans">
-            Unified project scheduling hub — toggle between Interactive Gantt Chart and Visual Milestone Timeline.
+            Unified project scheduling hub — toggle between Interactive Gantt Chart, Visual Milestone Timeline, and quick progress updating. Tip: Klik kolom <strong className="text-base-text font-mono">% Comp</strong> di tabel untuk edit progres langsung.
           </p>
         </div>
       </div>

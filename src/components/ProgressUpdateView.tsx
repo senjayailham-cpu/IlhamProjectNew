@@ -28,6 +28,11 @@ function saveProgress(
         if (task) {
           task.pct = pct;
           task.done = pct >= 100;
+          if (pct >= 100) {
+            task.workflowStatus = 'complete';
+          } else if (pct > 0 && (!task.workflowStatus || task.workflowStatus === 'not_started')) {
+            task.workflowStatus = 'on_track';
+          }
           break;
         }
       }

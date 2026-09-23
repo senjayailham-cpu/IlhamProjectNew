@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -8,7 +8,9 @@ import {
   Clock,
   Link,
   Search,
-  Users
+  Users,
+  GripVertical,
+  RotateCcw
 } from 'lucide-react';
 import { Project, WorkflowStatusType } from '../types';
 import { GanttRow } from './useGanttRows';
@@ -222,6 +224,9 @@ export interface GanttGridProps {
   editingCell: { rowId: string; field: 'start' | 'finish' } | null;
   setEditingCell: (val: { rowId: string; field: 'start' | 'finish' } | null) => void;
   saveDate: (rowId: string, field: 'start' | 'finish', value: string) => void;
+  editingBaselineCell?: { rowId: string; field: 'start' | 'finish' } | null;
+  setEditingBaselineCell?: (val: { rowId: string; field: 'start' | 'finish' } | null) => void;
+  saveBaselineDate?: (rowId: string, field: 'start' | 'finish', value: string) => void;
   editingPred: string | null;
   setEditingPred: (id: string | null) => void;
   predInputVal: string;
@@ -254,6 +259,43 @@ export interface GanttGridProps {
   expandedResources: Set<string>;
   setExpandedResources: (val: Set<string>) => void;
 }
+
+export type ColumnId =
+  | 'wbs'
+  | 'name'
+  | 'dur'
+  | 'planHrs'
+  | 'actHrs'
+  | 'variance'
+  | 'crew'
+  | 'company'
+  | 'assignee'
+  | 'start'
+  | 'finish'
+  | 'baseStart'
+  | 'baseFinish'
+  | 'pred'
+  | 'pct'
+  | 'status';
+
+export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
+  'wbs',
+  'name',
+  'dur',
+  'planHrs',
+  'actHrs',
+  'variance',
+  'crew',
+  'company',
+  'assignee',
+  'start',
+  'finish',
+  'baseStart',
+  'baseFinish',
+  'pred',
+  'pct',
+  'status',
+];
 
 export const GanttGrid: React.FC<GanttGridProps> = ({
   leftPanelWidth,
@@ -312,6 +354,9 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   editingCell,
   setEditingCell,
   saveDate,
+  editingBaselineCell,
+  setEditingBaselineCell,
+  saveBaselineDate,
   editingPred,
   setEditingPred,
   predInputVal,
@@ -343,6 +388,903 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   expandedResources,
   setExpandedResources,
 }) => {
+  // Column Reordering State with LocalStorage Persistence
+  const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
+    try {
+      const saved = localStorage.getItem('austin_gantt_column_order_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved) as ColumnId[];
+        const valid = parsed.filter(id => DEFAULT_COLUMN_ORDER.includes(id));
+        DEFAULT_COLUMN_ORDER.forEach(id => {
+          if (!valid.includes(id)) valid.push(id);
+        });
+        return valid;
+      }
+    } catch {}
+    return DEFAULT_COLUMN_ORDER;
+  });
+
+  const [draggedCol, setDraggedCol] = useState<ColumnId | null>(null);
+  const [dragOverCol, setDragOverCol] = useState<ColumnId | null>(null);
+  const [dragOverSide, setDragOverSide] = useState<'left' | 'right' | null>(null);
+
+  const handleDropColumn = (targetCol: ColumnId, side: 'left' | 'right') => {
+    if (!draggedCol || draggedCol === targetCol) return;
+
+    setColumnOrder(prev => {
+      const filtered = prev.filter(c => c !== draggedCol);
+      const targetIdx = filtered.indexOf(targetCol);
+      if (targetIdx === -1) return prev;
+
+      const insertIdx = side === 'right' ? targetIdx + 1 : targetIdx;
+      const next = [...filtered.slice(0, insertIdx), draggedCol, ...filtered.slice(insertIdx)];
+      try {
+        localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+
+    setDraggedCol(null);
+    setDragOverCol(null);
+    setDragOverSide(null);
+  };
+
+  const handleResetColumnOrder = () => {
+    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    try {
+      localStorage.removeItem('austin_gantt_column_order_v1');
+    } catch {}
+  };
+
+  const isColVisible = (colId: ColumnId) => {
+    if (colId === 'planHrs' || colId === 'actHrs' || colId === 'variance') return showHoursTracking;
+    if (colId === 'crew' || colId === 'company' || colId === 'assignee') return activeTab === 'lookahead';
+    if (colId === 'baseStart' || colId === 'baseFinish') return showBaseline;
+    return true;
+  };
+
+  const activeColumns = columnOrder.filter(isColVisible);
+
+  const getColConfig = (colId: ColumnId) => {
+    switch (colId) {
+      case 'wbs':
+        return { width: colWbsWidth, title: 'WBS Code', label: 'WBS', align: 'center' };
+      case 'name':
+        return { width: colNameWidth, title: 'Task Name', label: 'Task Name', align: 'left' };
+      case 'dur':
+        return { width: colDurWidth, title: 'Duration (Days)', label: 'Duration', align: 'center' };
+      case 'planHrs':
+        return { width: colPlanHrsWidth, title: 'Planned/Budgeted Man-Hours', label: 'Plan Hrs', align: 'center', className: 'text-indigo-600 dark:text-indigo-400' };
+      case 'actHrs':
+        return { width: colActHrsWidth, title: 'Actual Timesheet Hours', label: 'Act Hrs', align: 'center', className: 'text-blue-600 dark:text-blue-400' };
+      case 'variance':
+        return { width: colVarianceWidth, title: 'Variance & Burn Rate', label: 'Burn / Var', align: 'center', className: 'text-amber-600 dark:text-amber-400' };
+      case 'crew':
+        return { width: colCrewWidth, title: 'Crew Size', label: 'Crew', align: 'center' };
+      case 'company':
+        return { width: colCompanyWidth, title: 'Company / Vendor', label: 'Company', align: 'center' };
+      case 'assignee':
+        return { width: colAssigneeWidth, title: 'Assignees / PIC', label: 'Assignees', align: 'center' };
+      case 'start':
+        return { width: colStartWidth, title: 'Start Date', label: 'Start', align: 'center' };
+      case 'finish':
+        return { width: colFinishWidth, title: 'Finish Date', label: 'Finish', align: 'center' };
+      case 'baseStart':
+        return { width: colBaseStartWidth, title: 'Baseline Start Date (Jadwal Target Rencana)', label: 'Base Start', align: 'center', className: 'text-slate-500' };
+      case 'baseFinish':
+        return { width: colBaseFinishWidth, title: 'Baseline Finish Date (Jadwal Target Rencana)', label: 'Base Finish', align: 'center', className: 'text-slate-500' };
+      case 'pred':
+        return { width: colPredWidth, title: 'Predecessors', label: 'Pred', align: 'center' };
+      case 'pct':
+        return { width: colPctWidth, title: '% Complete', label: '% Comp', align: 'center' };
+      case 'status':
+        return { width: colStatusWidth, title: 'Workflow Status', label: 'Status', align: 'center' };
+    }
+  };
+
+  const renderColumnHeader = (colId: ColumnId) => {
+    const conf = getColConfig(colId);
+    const isBeingDragged = draggedCol === colId;
+    const isTarget = dragOverCol === colId;
+
+    return (
+      <div
+        key={`hdr-col-${colId}`}
+        draggable
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', colId);
+          setDraggedCol(colId);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          const rect = e.currentTarget.getBoundingClientRect();
+          const mid = rect.left + rect.width / 2;
+          const side = e.clientX > mid ? 'right' : 'left';
+          setDragOverCol(colId);
+          setDragOverSide(side);
+        }}
+        onDragLeave={() => {
+          if (dragOverCol === colId) {
+            setDragOverCol(null);
+            setDragOverSide(null);
+          }
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          if (dragOverSide) {
+            handleDropColumn(colId, dragOverSide);
+          }
+        }}
+        onDragEnd={() => {
+          setDraggedCol(null);
+          setDragOverCol(null);
+          setDragOverSide(null);
+        }}
+        style={{ width: `${conf.width}px` }}
+        className={`shrink-0 text-[9px] font-bold uppercase tracking-wider truncate h-full flex items-center justify-between px-1 cursor-grab active:cursor-grabbing hover:bg-base-accent-dim/40 transition-all group relative select-none ${
+          conf.align === 'center' ? 'text-center' : 'text-left'
+        } ${conf.className || ''} ${
+          isBeingDragged ? 'opacity-30 bg-base-accent/20' : ''
+        } ${
+          isTarget && dragOverSide === 'left' ? 'border-l-2 border-l-base-accent bg-base-accent/15' : ''
+        } ${
+          isTarget && dragOverSide === 'right' ? 'border-r-2 border-r-base-accent bg-base-accent/15' : ''
+        }`}
+        title={`${conf.title} (Klik dan Drag untuk memindahkan urutan kolom)`}
+      >
+        <span className="truncate flex-1 font-bold">{conf.label}</span>
+        <GripVertical className="h-2.5 w-2.5 opacity-25 group-hover:opacity-100 text-base-muted shrink-0 ml-0.5" />
+      </div>
+    );
+  };
+
+  const renderColumnCell = (
+    colId: ColumnId,
+    row: GanttRow,
+    idx: number,
+    rowConflicts: any[] | undefined,
+    hasConflict: boolean
+  ) => {
+    switch (colId) {
+      case 'wbs':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-base-muted font-bold">
+            {row.wbs}
+          </div>
+        );
+
+      case 'name':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans"
+            style={{
+              width: `${colNameWidth}px`,
+              paddingLeft: `${row.level === 1 ? 16 : row.level === 2 ? 28 : 4}px`
+            }}
+          >
+            {row.type === 'project' && (
+              <button
+                type="button"
+                onClick={(e) => toggleProjectCollapse(row.id, e)}
+                className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-accent hover:text-base-text shrink-0 cursor-pointer transition-all"
+                title={expandedIds.has(row.id) ? "Collapse Project" : "Expand Project"}
+              >
+                {expandedIds.has(row.id) ? (
+                  <ChevronDown className="h-3.5 w-3.5 text-base-accent" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 text-base-accent" />
+                )}
+              </button>
+            )}
+
+            {row.type === 'assembly' && (
+              <button
+                type="button"
+                onClick={(e) => toggleAssemblyCollapse(row.id, e)}
+                className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text shrink-0 cursor-pointer transition-all"
+                title={collapsedAsms[row.id] ? "Expand Assembly" : "Collapse Assembly"}
+              >
+                {collapsedAsms[row.id] ? (
+                  <ChevronRight className="h-3 w-3" />
+                ) : (
+                  <ChevronDown className="h-3 w-3" />
+                )}
+              </button>
+            )}
+
+            {row.isMilestone && (
+              <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
+            )}
+
+            {hasConflict && (
+              <span
+                className="inline-flex items-center gap-0.5 mr-1.5 px-1 py-0.2 rounded bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/50 text-[9px] font-extrabold font-mono animate-pulse shrink-0 cursor-help"
+                title={`HARD DEPENDENCY CONSTRAINT VIOLATION:\n${(rowConflicts || []).map(c => `• ${c.reason}`).join('\n')}`}
+              >
+                <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
+                <span className="hidden sm:inline">CONFLICT</span>
+              </span>
+            )}
+
+            <span className={`truncate select-none ${
+              row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
+              row.level === 1 ? 'font-condensed font-bold text-xs text-base-text uppercase tracking-wide' :
+              'font-medium text-xs text-base-muted2'
+            } ${row.pct === 100 ? 'line-through opacity-50 decoration-emerald-500/70' : ''}`} title={row.name}>
+              {row.pct === 100 && (
+                <span className="no-underline inline-flex items-center text-emerald-500 font-bold mr-1" title="Completed">
+                  ✓ — 
+                </span>
+              )}
+              {highlightText(row.name, searchQuery)}
+            </span>
+            {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
+              <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
+            )}
+          </div>
+        );
+
+      case 'dur':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
+            {row.isMilestone ? '0 days' : `${row.duration}d`}
+          </div>
+        );
+
+      case 'planHrs':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colPlanHrsWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (onUpdateProject) {
+                setEditingHoursCell(row.id);
+              }
+            }}
+            title={row.level === 2 ? 'Click to edit Planned/Budgeted hours for task' : row.level === 1 ? 'Click to set Assembly budget hours' : 'Click to set Project budget hours'}
+          >
+            {editingHoursCell === row.id && onUpdateProject ? (
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                autoFocus
+                defaultValue={row.budgetHours ?? (row.planHours > 0 ? row.planHours : '')}
+                placeholder="Hrs..."
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveRowBudgetHours(row.id, row.level, e.target.value);
+                  setEditingHoursCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveRowBudgetHours(row.id, row.level, e.currentTarget.value);
+                    setEditingHoursCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingHoursCell(null);
+                }}
+              />
+            ) : (
+              <span className={`select-none font-bold ${row.level === 0 ? 'text-indigo-600 dark:text-indigo-400' : row.level === 1 ? 'text-base-text font-extrabold' : 'text-base-muted2'}`}>
+                {row.planHours > 0 ? `${row.planHours % 1 === 0 ? row.planHours : row.planHours.toFixed(1)}h` : '—'}
+                {onUpdateProject && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-base-muted">✏️</span>
+                )}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'actHrs':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colActHrsWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
+            title={`${row.actualHours.toFixed(1)} actual hours logged across ${row.timesheetCount} timesheet entries`}
+          >
+            {row.actualHours > 0 ? (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px]">
+                <Clock className="w-2.5 h-2.5 shrink-0" />
+                <span>{row.actualHours % 1 === 0 ? row.actualHours : row.actualHours.toFixed(1)}h</span>
+              </span>
+            ) : (
+              <span className="text-base-muted/40 select-none font-mono">0h</span>
+            )}
+          </div>
+        );
+
+      case 'variance':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colVarianceWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
+          >
+            {(() => {
+              if (row.planHours === 0 && row.actualHours === 0) {
+                return <span className="text-base-muted/40 select-none">—</span>;
+              }
+              const diff = row.actualHours - row.planHours;
+              const burnPct = row.planHours > 0 ? Math.round((row.actualHours / row.planHours) * 100) : 100;
+              const isOver = diff > 0.05;
+              const isNear = !isOver && burnPct >= 85;
+
+              if (isOver) {
+                return (
+                  <span
+                    className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30 text-[8.5px] font-black font-mono animate-pulse"
+                    title={`OVER BUDGET:\nActual (${row.actualHours.toFixed(1)}h) exceeds Plan (${row.planHours.toFixed(1)}h) by +${diff.toFixed(1)}h (${burnPct}% burn)`}
+                  >
+                    <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-red-500" />
+                    <span>+{diff.toFixed(0)}h</span>
+                  </span>
+                );
+              }
+              if (isNear) {
+                return (
+                  <span
+                    className="inline-flex items-center px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[8.5px] font-bold font-mono"
+                    title={`NEAR BUDGET:\n${burnPct}% of planned hours used (${row.actualHours.toFixed(1)}h / ${row.planHours.toFixed(1)}h)`}
+                  >
+                    {burnPct}%
+                  </span>
+                );
+              }
+              return (
+                <span
+                  className="inline-flex items-center px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[8.5px] font-mono font-medium"
+                  title={`UNDER BUDGET:\n${burnPct}% of planned hours used (${(row.planHours - row.actualHours).toFixed(1)}h remaining)`}
+                >
+                  {burnPct}%
+                </span>
+              );
+            })()}
+          </div>
+        );
+
+      case 'crew':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colCrewWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (row.level === 2 && onUpdateProject) {
+                setEditingLookaheadCell({ rowId: row.id, field: 'crew' });
+              }
+            }}
+          >
+            {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'crew' ? (
+              <input
+                type="number"
+                min="1"
+                autoFocus
+                defaultValue={row.crewSize || ''}
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveTaskField(row.id, 'crew', e.target.value);
+                  setEditingLookaheadCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveTaskField(row.id, 'crew', e.currentTarget.value);
+                    setEditingLookaheadCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingLookaheadCell(null);
+                }}
+              />
+            ) : (
+              <span className="select-none font-bold text-base-text" title={row.level === 2 ? 'Click to edit Crew Size' : ''}>
+                {row.level === 2
+                  ? (row.crewSize ? row.crewSize : '—')
+                  : (
+                    (() => {
+                      const childCrew = allRows
+                        .filter(r => r.level === 2 && (row.level === 1 ? r.parentAsmId === row.id : getProjectIdOfRow(r) === row.id))
+                        .reduce((sum, r) => sum + (r.crewSize || 0), 0);
+                      return childCrew > 0 ? childCrew : '—';
+                    })()
+                  )
+                }
+                {row.level === 2 && onUpdateProject && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5">✏️</span>
+                )}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'company':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colCompanyWidth}px` }}
+            className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (row.level === 2 && onUpdateProject) {
+                setEditingLookaheadCell({ rowId: row.id, field: 'company' });
+              }
+            }}
+          >
+            {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'company' ? (
+              <input
+                type="text"
+                autoFocus
+                defaultValue={row.assignedCompany || ''}
+                placeholder="Company..."
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveTaskField(row.id, 'company', e.target.value);
+                  setEditingLookaheadCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveTaskField(row.id, 'company', e.currentTarget.value);
+                    setEditingLookaheadCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingLookaheadCell(null);
+                }}
+              />
+            ) : (
+              row.level === 2 && row.assignedCompany ? (
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-mono font-bold truncate max-w-[95px] ${getCompanyColorClass(row.assignedCompany)}`} title={row.assignedCompany}>
+                  {row.assignedCompany}
+                </span>
+              ) : (
+                <span className="text-base-muted/60 text-[10px] select-none">—</span>
+              )
+            )}
+          </div>
+        );
+
+      case 'assignee':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colAssigneeWidth}px` }}
+            className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (row.level === 2 && onUpdateProject) {
+                setEditingLookaheadCell({ rowId: row.id, field: 'assigned' });
+              }
+            }}
+          >
+            {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'assigned' ? (
+              <input
+                type="text"
+                autoFocus
+                defaultValue={row.assigned || ''}
+                placeholder="Assignees..."
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveTaskField(row.id, 'assigned', e.target.value);
+                  setEditingLookaheadCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveTaskField(row.id, 'assigned', e.currentTarget.value);
+                    setEditingLookaheadCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingLookaheadCell(null);
+                }}
+              />
+            ) : (
+              <span className="text-base-text font-medium truncate max-w-[95px] select-none" title={row.assigned || ''}>
+                {row.assigned || '—'}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'start':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colStartWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (onUpdateProject) {
+                setEditingCell({ rowId: row.id, field: 'start' });
+              }
+            }}
+          >
+            {editingCell?.rowId === row.id && editingCell.field === 'start' ? (
+              <input
+                type="date"
+                autoFocus
+                defaultValue={row.start || ''}
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveDate(row.id, 'start', e.target.value);
+                  setEditingCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveDate(row.id, 'start', e.currentTarget.value);
+                    setEditingCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingCell(null);
+                }}
+              />
+            ) : (
+              <span className="flex items-center gap-1 select-none" title="Click to edit">
+                {row.start || '—'}
+                {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'finish':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colFinishWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (onUpdateProject) {
+                setEditingCell({ rowId: row.id, field: 'finish' });
+              }
+            }}
+          >
+            {editingCell?.rowId === row.id && editingCell.field === 'finish' ? (
+              <input
+                type="date"
+                autoFocus
+                defaultValue={row.finish || ''}
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveDate(row.id, 'finish', e.target.value);
+                  setEditingCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveDate(row.id, 'finish', e.currentTarget.value);
+                    setEditingCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingCell(null);
+                }}
+              />
+            ) : (
+              <span className="flex items-center gap-1 select-none" title="Click to edit">
+                {row.finish || '—'}
+                {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'baseStart':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colBaseStartWidth}px` }}
+            className={`shrink-0 text-center font-mono text-[9.5px] truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
+              saveBaselineDate ? 'cursor-pointer hover:bg-slate-500/20' : ''
+            }`}
+            onClick={() => {
+              if (saveBaselineDate && setEditingBaselineCell) {
+                setEditingBaselineCell({ rowId: row.id, field: 'start' });
+              }
+            }}
+            title={
+              saveBaselineDate
+                ? `Baseline Start: ${row.baselineStart || '—'} (Klik untuk merubah tanggal)`
+                : (row.baselineStart ? `Baseline Start: ${row.baselineStart}` : 'Belum di-set baseline')
+            }
+          >
+            {editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'start' && saveBaselineDate ? (
+              <input
+                type="date"
+                autoFocus
+                defaultValue={row.baselineStart || row.start || ''}
+                className="w-full text-[9.5px] font-mono bg-base-surface border border-slate-500 rounded px-1 py-0 outline-none text-base-text"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveBaselineDate(row.id, 'start', e.target.value);
+                  setEditingBaselineCell && setEditingBaselineCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveBaselineDate(row.id, 'start', e.currentTarget.value);
+                    setEditingBaselineCell && setEditingBaselineCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingBaselineCell && setEditingBaselineCell(null);
+                }}
+              />
+            ) : (
+              <span className="flex items-center gap-1 select-none text-slate-600 dark:text-slate-300">
+                {row.baselineStart || '—'}
+                {saveBaselineDate && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-slate-500">✏️</span>
+                )}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'baseFinish':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colBaseFinishWidth}px` }}
+            className={`shrink-0 text-center font-mono text-[9.5px] truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
+              saveBaselineDate ? 'cursor-pointer hover:bg-slate-500/20' : ''
+            }`}
+            onClick={() => {
+              if (saveBaselineDate && setEditingBaselineCell) {
+                setEditingBaselineCell({ rowId: row.id, field: 'finish' });
+              }
+            }}
+            title={
+              saveBaselineDate
+                ? `Baseline Finish: ${row.baselineFinish || '—'} (Klik untuk merubah tanggal)`
+                : (row.baselineFinish ? `Baseline Finish: ${row.baselineFinish}` : 'Belum di-set baseline')
+            }
+          >
+            {editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'finish' && saveBaselineDate ? (
+              <input
+                type="date"
+                autoFocus
+                defaultValue={row.baselineFinish || row.finish || ''}
+                className="w-full text-[9.5px] font-mono bg-base-surface border border-slate-500 rounded px-1 py-0 outline-none text-base-text"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  saveBaselineDate(row.id, 'finish', e.target.value);
+                  setEditingBaselineCell && setEditingBaselineCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    saveBaselineDate(row.id, 'finish', e.currentTarget.value);
+                    setEditingBaselineCell && setEditingBaselineCell(null);
+                  }
+                  if (e.key === 'Escape') setEditingBaselineCell && setEditingBaselineCell(null);
+                }}
+              />
+            ) : (
+              <span className="flex items-center gap-1 select-none text-slate-600 dark:text-slate-300">
+                {row.baselineFinish || '—'}
+                {saveBaselineDate && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-slate-500">✏️</span>
+                )}
+              </span>
+            )}
+          </div>
+        );
+
+      case 'pred':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colPredWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 group relative flex items-center justify-center h-full"
+            onClick={() => {
+              if (editingPred !== row.id) {
+                setEditingPred(row.id);
+                const existing = (row.predecessors || [])
+                  .map(dep => {
+                    const predWbs = rows.find(r => r.id === dep.key)?.wbs || '';
+                    if (!predWbs) return '';
+                    const lagStr = dep.lag ? `+${dep.lag}` : '';
+                    const typeStr = dep.type === 'FS' ? '' : dep.type;
+                    return `${predWbs}${typeStr}${lagStr}`;
+                  })
+                  .filter(Boolean)
+                  .join(', ');
+                setPredInputVal(existing);
+              }
+            }}
+          >
+            {editingPred === row.id ? (
+              <input
+                type="text"
+                autoFocus
+                value={predInputVal}
+                placeholder="1.1FS, 1.2SS"
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
+                onClick={(e) => e.stopPropagation()}
+                onChange={e => setPredInputVal(e.target.value)}
+                onBlur={() => {
+                  savePredecessors(row.id, predInputVal);
+                  setEditingPred(null);
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    savePredecessors(row.id, predInputVal);
+                    setEditingPred(null);
+                  }
+                  if (e.key === 'Escape') setEditingPred(null);
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center gap-1 select-none w-full relative">
+                {row.predecessors && row.predecessors.length > 0 ? (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      let rowKey = '';
+                      const pId = getProjectIdOfRow(row);
+                      if (row.level === 0) rowKey = `p:${pId}`;
+                      else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
+                      else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
+                      if (rowKey) {
+                        setDepPanelRowId(rowKey);
+                        setDepPanelOpen(true);
+                        setDepPanelSearch('');
+                      }
+                    }}
+                    className={hasConflict
+                      ? "text-red-600 dark:text-red-400 font-extrabold cursor-pointer truncate max-w-[65px] flex items-center justify-center gap-0.5 bg-red-500/20 border border-red-500/50 px-1 py-0.5 rounded text-[10px] animate-pulse"
+                      : "text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
+                    }
+                    title={hasConflict
+                      ? `DEPENDENCY CONSTRAINT VIOLATION:\n${(rowConflicts || []).map(c => `• ${c.reason}`).join('\n')}`
+                      : "Click to manage predecessors"
+                    }
+                  >
+                    {hasConflict && <AlertTriangle className="h-2.5 w-2.5 text-red-500 shrink-0" />}
+                    {getPredecessorsLabel(row)}
+                  </span>
+                ) : (
+                  <span className="text-base-muted/40 group-hover:hidden select-none">—</span>
+                )}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    let rowKey = '';
+                    const pId = getProjectIdOfRow(row);
+                    if (row.level === 0) rowKey = `p:${pId}`;
+                    else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
+                    else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
+                    if (rowKey) {
+                      setDepPanelRowId(rowKey);
+                      setDepPanelOpen(true);
+                      setDepPanelSearch('');
+                    }
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-base-muted hover:text-base-accent rounded cursor-pointer absolute right-1"
+                  title="Manage dependencies"
+                >
+                  <Link className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+          </div>
+        );
+
+      case 'pct':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colPctWidth}px` }}
+            title={row.level === 2 && onUpdateProject ? `Klik untuk update progress (${Math.round(row.pct)}%)` : `${Math.round(row.pct)}% complete`}
+            className={`shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center transition-all duration-300 relative group
+              ${flashingCellId === row.id
+                ? 'bg-base-green-dim'
+                : row.level === 2 && onUpdateProject
+                  ? 'cursor-pointer hover:bg-base-accent-dim/40'
+                  : 'bg-base-surface3/40 cursor-default'}
+            `}
+            onClick={() => {
+              if (onUpdateProject && row.level === 2) {
+                setEditingPct(row.id);
+              }
+            }}
+          >
+            {row.level === 2 && onUpdateProject && editingPct === row.id ? (
+              <input
+                type="number"
+                min={0}
+                max={100}
+                step={5}
+                autoFocus
+                defaultValue={row.pct}
+                className="w-full text-center text-[10px] font-mono bg-base-surface border border-base-accent rounded py-0 outline-none h-6 px-0.5"
+                onClick={(e) => e.stopPropagation()}
+                onBlur={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  saveProgress(row.id, isNaN(val) ? 0 : val);
+                  setEditingPct(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const val = parseInt(e.currentTarget.value, 10);
+                    saveProgress(row.id, isNaN(val) ? 0 : val);
+                    setEditingPct(null);
+                  }
+                  if (e.key === 'Escape') setEditingPct(null);
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center relative w-full h-full">
+                <CircularProgressBadge pct={row.pct} size={24} />
+                {row.level === 2 && onUpdateProject && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 top-0.5">✏️</span>
+                )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'status':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colStatusWidth}px` }}
+            className="shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center relative px-1"
+          >
+            {row.level === 2 ? (
+              <div className="relative flex items-center justify-center w-full">
+                <WorkflowStatusBadge
+                  status={getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done)}
+                  isInteractive={!!onUpdateProject}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (onUpdateProject) {
+                      setStatusPopoverRowId(statusPopoverRowId === row.id ? null : row.id);
+                    }
+                  }}
+                />
+
+                {statusPopoverRowId === row.id && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setStatusPopoverRowId(null);
+                      }}
+                    />
+                    <div
+                      className="absolute top-full mt-1 z-50 bg-base-surface border border-base-border rounded-lg shadow-xl p-1 flex flex-col gap-0.5 w-32 text-left"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {(['verify', 'on_track', 'delayed', 'complete', 'not_started'] as WorkflowStatusType[]).map((stKey) => {
+                        const cfg = WORKFLOW_STATUS_CONFIG[stKey];
+                        const isSelected = getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done) === stKey;
+                        return (
+                          <button
+                            key={stKey}
+                            type="button"
+                            onClick={() => {
+                              saveWorkflowStatus(row.id, stKey);
+                              setStatusPopoverRowId(null);
+                            }}
+                            className={`flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-mono font-bold transition-colors w-full ${
+                              isSelected ? 'bg-base-accent/20 text-base-text font-extrabold' : 'hover:bg-base-surface3 text-base-muted hover:text-base-text'
+                            }`}
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
+                            <span>{cfg.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <WorkflowStatusBadge
+                status={getEffectiveWorkflowStatus(undefined, row.pct, row.done)}
+                isInteractive={false}
+              />
+            )}
+          </div>
+        );
+    }
+  };
+
   return (
     <div
       className="shrink-0 flex flex-col bg-base-surface relative z-20 select-none overflow-x-auto overflow-y-hidden"
@@ -356,39 +1298,26 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       >
         {/* Header row 1 */}
         <div className="h-7 px-3 flex items-center justify-between text-[10px] font-bold text-base-muted uppercase tracking-wider">
-          <span>Task Sheet & Scheduling Grid</span>
-          <Layers className="h-3 w-3 text-base-muted/70" />
+          <div className="flex items-center gap-2">
+            <span>Task Sheet & Scheduling Grid</span>
+            <button
+              type="button"
+              onClick={handleResetColumnOrder}
+              className="text-[9px] font-sans font-medium text-base-muted hover:text-base-accent px-1.5 py-0.5 rounded border border-base-border/60 hover:border-base-accent/50 bg-base-surface transition-colors cursor-pointer flex items-center gap-1"
+              title="Kembalikan susunan kolom ke default"
+            >
+              <RotateCcw className="h-2.5 w-2.5" />
+              <span>Reset Kolom</span>
+            </button>
+          </div>
+          <div className="flex items-center gap-1.5 text-[9px] text-base-muted/80 font-normal lowercase">
+            <span className="hidden sm:inline">drag header untuk geser kolom</span>
+            <Layers className="h-3 w-3 text-base-muted/70" />
+          </div>
         </div>
         {/* Header row 2 */}
         <div className="h-7 flex text-[9px] font-bold text-base-muted uppercase tracking-wider items-center divide-x divide-base-border/30">
-          <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-bold">WBS</div>
-          <div style={{ width: `${colNameWidth}px` }} className="shrink-0 px-2 font-bold truncate">Task Name</div>
-          <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center font-bold truncate">Duration</div>
-          {showHoursTracking && (
-            <>
-              <div style={{ width: `${colPlanHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-indigo-600 dark:text-indigo-400" title="Planned/Budgeted Man-Hours (Click task cell to edit)">Plan Hrs</div>
-              <div style={{ width: `${colActHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-blue-600 dark:text-blue-400" title="Actual Timesheet Hours recorded from shopfloor">Act Hrs</div>
-              <div style={{ width: `${colVarianceWidth}px` }} className="shrink-0 text-center font-bold truncate text-amber-600 dark:text-amber-400" title="Variance & Burn Rate (Actual vs Plan)">Burn / Var</div>
-            </>
-          )}
-          {activeTab === 'lookahead' && (
-            <>
-              <div style={{ width: `${colCrewWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Crew Size">Crew</div>
-              <div style={{ width: `${colCompanyWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Company / Vendor">Company</div>
-              <div style={{ width: `${colAssigneeWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Assignees / PIC">Assignees</div>
-            </>
-          )}
-          <div style={{ width: `${colStartWidth}px` }} className="shrink-0 text-center font-bold truncate">Start</div>
-          <div style={{ width: `${colFinishWidth}px` }} className="shrink-0 text-center font-bold truncate">Finish</div>
-          {showBaseline && (
-            <>
-              <div style={{ width: `${colBaseStartWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Start Date (Jadwal Target Rencana)">Base Start</div>
-              <div style={{ width: `${colBaseFinishWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Finish Date (Jadwal Target Rencana)">Base Finish</div>
-            </>
-          )}
-          <div style={{ width: `${colPredWidth}px` }} className="shrink-0 text-center font-bold truncate">Pred</div>
-          <div style={{ width: `${colPctWidth}px` }} className="shrink-0 text-center font-bold truncate" title="% Complete">% Comp</div>
-          <div style={{ width: `${colStatusWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Workflow Status">Status</div>
+          {activeColumns.map(colId => renderColumnHeader(colId))}
         </div>
       </div>
 
@@ -423,631 +1352,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               onClick={() => setSelectedRowId(row.id)}
               className={`h-8 flex text-xs font-semibold select-none items-center cursor-pointer transition-colors border-b border-base-border/20 divide-x divide-base-border/10 ${bgClass}`}
             >
-              {/* WBS Column */}
-              <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-base-muted font-bold">
-                {row.wbs}
-              </div>
-
-              {/* Task Name Column with indentations, WBS prefix, and icons */}
-              <div
-                className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans"
-                style={{
-                  width: `${colNameWidth}px`,
-                  paddingLeft: `${row.level === 1 ? 16 : row.level === 2 ? 28 : 4}px`
-                }}
-              >
-                {row.type === 'project' && (
-                  <button
-                    type="button"
-                    onClick={(e) => toggleProjectCollapse(row.id, e)}
-                    className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-accent hover:text-base-text shrink-0 cursor-pointer transition-all"
-                    title={expandedIds.has(row.id) ? "Collapse Project" : "Expand Project"}
-                  >
-                    {expandedIds.has(row.id) ? (
-                      <ChevronDown className="h-3.5 w-3.5 text-base-accent" />
-                    ) : (
-                      <ChevronRight className="h-3.5 w-3.5 text-base-accent" />
-                    )}
-                  </button>
-                )}
-
-                {row.type === 'assembly' && (
-                  <button
-                    type="button"
-                    onClick={(e) => toggleAssemblyCollapse(row.id, e)}
-                    className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text shrink-0 cursor-pointer transition-all"
-                    title={collapsedAsms[row.id] ? "Expand Assembly" : "Collapse Assembly"}
-                  >
-                    {collapsedAsms[row.id] ? (
-                      <ChevronRight className="h-3 w-3" />
-                    ) : (
-                      <ChevronDown className="h-3 w-3" />
-                    )}
-                  </button>
-                )}
-
-                {row.isMilestone && (
-                  <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
-                )}
-
-                {hasConflict && (
-                  <span
-                    className="inline-flex items-center gap-0.5 mr-1.5 px-1 py-0.2 rounded bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/50 text-[9px] font-extrabold font-mono animate-pulse shrink-0 cursor-help"
-                    title={`HARD DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}`}
-                  >
-                    <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
-                    <span className="hidden sm:inline">CONFLICT</span>
-                  </span>
-                )}
-
-                <span className={`truncate select-none ${
-                  row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
-                  row.level === 1 ? 'font-condensed font-bold text-xs text-base-text uppercase tracking-wide' :
-                  'font-medium text-xs text-base-muted2'
-                } ${row.pct === 100 ? 'line-through opacity-50 decoration-emerald-500/70' : ''}`} title={row.name}>
-                  {row.pct === 100 && (
-                    <span className="no-underline inline-flex items-center text-emerald-500 font-bold mr-1" title="Completed">
-                      ✓ — 
-                    </span>
-                  )}
-                  {highlightText(row.name, searchQuery)}
-                </span>
-                {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
-                )}
-              </div>
-
-              {/* Duration Days */}
-              <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
-                {row.isMilestone ? '0 days' : `${row.duration}d`}
-              </div>
-
-              {showHoursTracking && (
-                <>
-                  {/* Planned / Budgeted Hours */}
-                  <div
-                    style={{ width: `${colPlanHrsWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (onUpdateProject) {
-                        setEditingHoursCell(row.id);
-                      }
-                    }}
-                    title={row.level === 2 ? 'Click to edit Planned/Budgeted hours for task' : row.level === 1 ? 'Click to set Assembly budget hours' : 'Click to set Project budget hours'}
-                  >
-                    {editingHoursCell === row.id && onUpdateProject ? (
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.5"
-                        autoFocus
-                        defaultValue={row.budgetHours ?? (row.planHours > 0 ? row.planHours : '')}
-                        placeholder="Hrs..."
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveRowBudgetHours(row.id, row.level, e.target.value);
-                          setEditingHoursCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveRowBudgetHours(row.id, row.level, e.currentTarget.value);
-                            setEditingHoursCell(null);
-                          }
-                          if (e.key === 'Escape') setEditingHoursCell(null);
-                        }}
-                      />
-                    ) : (
-                      <span className={`select-none font-bold ${row.level === 0 ? 'text-indigo-600 dark:text-indigo-400' : row.level === 1 ? 'text-base-text font-extrabold' : 'text-base-muted2'}`}>
-                        {row.planHours > 0 ? `${row.planHours % 1 === 0 ? row.planHours : row.planHours.toFixed(1)}h` : '—'}
-                        {onUpdateProject && (
-                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-base-muted">✏️</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Actual Timesheet Hours */}
-                  <div
-                    style={{ width: `${colActHrsWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
-                    title={`${row.actualHours.toFixed(1)} actual hours logged across ${row.timesheetCount} timesheet entries`}
-                  >
-                    {row.actualHours > 0 ? (
-                      <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px]">
-                        <Clock className="w-2.5 h-2.5 shrink-0" />
-                        <span>{row.actualHours % 1 === 0 ? row.actualHours : row.actualHours.toFixed(1)}h</span>
-                      </span>
-                    ) : (
-                      <span className="text-base-muted/40 select-none font-mono">0h</span>
-                    )}
-                  </div>
-
-                  {/* Variance & Burn Rate */}
-                  <div
-                    style={{ width: `${colVarianceWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
-                  >
-                    {(() => {
-                      if (row.planHours === 0 && row.actualHours === 0) {
-                        return <span className="text-base-muted/40 select-none">—</span>;
-                      }
-                      const diff = row.actualHours - row.planHours;
-                      const burnPct = row.planHours > 0 ? Math.round((row.actualHours / row.planHours) * 100) : 100;
-                      const isOver = diff > 0.05;
-                      const isNear = !isOver && burnPct >= 85;
-
-                      if (isOver) {
-                        return (
-                          <span
-                            className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30 text-[8.5px] font-black font-mono animate-pulse"
-                            title={`OVER BUDGET:\nActual (${row.actualHours.toFixed(1)}h) exceeds Plan (${row.planHours.toFixed(1)}h) by +${diff.toFixed(1)}h (${burnPct}% burn)`}
-                          >
-                            <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-red-500" />
-                            <span>+{diff.toFixed(0)}h</span>
-                          </span>
-                        );
-                      }
-                      if (isNear) {
-                        return (
-                          <span
-                            className="inline-flex items-center px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[8.5px] font-bold font-mono"
-                            title={`NEAR BUDGET:\n${burnPct}% of planned hours used (${row.actualHours.toFixed(1)}h / ${row.planHours.toFixed(1)}h)`}
-                          >
-                            {burnPct}%
-                          </span>
-                        );
-                      }
-                      return (
-                        <span
-                          className="inline-flex items-center px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[8.5px] font-mono font-medium"
-                          title={`UNDER BUDGET:\n${burnPct}% of planned hours used (${(row.planHours - row.actualHours).toFixed(1)}h remaining)`}
-                        >
-                          {burnPct}%
-                        </span>
-                      );
-                    })()}
-                  </div>
-                </>
-              )}
-
-              {activeTab === 'lookahead' && (
-                <>
-                  {/* Crew Size Column */}
-                  <div
-                    style={{ width: `${colCrewWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (row.level === 2 && onUpdateProject) {
-                        setEditingLookaheadCell({ rowId: row.id, field: 'crew' });
-                      }
-                    }}
-                  >
-                    {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'crew' ? (
-                      <input
-                        type="number"
-                        min="1"
-                        autoFocus
-                        defaultValue={row.crewSize || ''}
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveTaskField(row.id, 'crew', e.target.value);
-                          setEditingLookaheadCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveTaskField(row.id, 'crew', e.currentTarget.value);
-                            setEditingLookaheadCell(null);
-                          }
-                          if (e.key === 'Escape') setEditingLookaheadCell(null);
-                        }}
-                      />
-                    ) : (
-                      <span className="select-none font-bold text-base-text" title={row.level === 2 ? 'Click to edit Crew Size' : ''}>
-                        {row.level === 2
-                          ? (row.crewSize ? row.crewSize : '—')
-                          : (
-                            (() => {
-                              const childCrew = allRows
-                                .filter(r => r.level === 2 && (row.level === 1 ? r.parentAsmId === row.id : getProjectIdOfRow(r) === row.id))
-                                .reduce((sum, r) => sum + (r.crewSize || 0), 0);
-                              return childCrew > 0 ? childCrew : '—';
-                            })()
-                          )
-                        }
-                        {row.level === 2 && onUpdateProject && (
-                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5">✏️</span>
-                        )}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Company Column */}
-                  <div
-                    style={{ width: `${colCompanyWidth}px` }}
-                    className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (row.level === 2 && onUpdateProject) {
-                        setEditingLookaheadCell({ rowId: row.id, field: 'company' });
-                      }
-                    }}
-                  >
-                    {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'company' ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        defaultValue={row.assignedCompany || ''}
-                        placeholder="Company..."
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveTaskField(row.id, 'company', e.target.value);
-                          setEditingLookaheadCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveTaskField(row.id, 'company', e.currentTarget.value);
-                            setEditingLookaheadCell(null);
-                          }
-                          if (e.key === 'Escape') setEditingLookaheadCell(null);
-                        }}
-                      />
-                    ) : (
-                      row.level === 2 && row.assignedCompany ? (
-                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-mono font-bold truncate max-w-[95px] ${getCompanyColorClass(row.assignedCompany)}`} title={row.assignedCompany}>
-                          {row.assignedCompany}
-                        </span>
-                      ) : (
-                        <span className="text-base-muted/60 text-[10px] select-none">—</span>
-                      )
-                    )}
-                  </div>
-
-                  {/* Assignees Column */}
-                  <div
-                    style={{ width: `${colAssigneeWidth}px` }}
-                    className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (row.level === 2 && onUpdateProject) {
-                        setEditingLookaheadCell({ rowId: row.id, field: 'assigned' });
-                      }
-                    }}
-                  >
-                    {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'assigned' ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        defaultValue={row.assigned || ''}
-                        placeholder="Assignees..."
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveTaskField(row.id, 'assigned', e.target.value);
-                          setEditingLookaheadCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            saveTaskField(row.id, 'assigned', e.currentTarget.value);
-                            setEditingLookaheadCell(null);
-                          }
-                          if (e.key === 'Escape') setEditingLookaheadCell(null);
-                        }}
-                      />
-                    ) : (
-                      <span className="text-base-text font-medium truncate max-w-[95px] select-none" title={row.assigned || ''}>
-                        {row.assigned || '—'}
-                      </span>
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* Start Date Column with Inline Editing */}
-              <div
-                style={{ width: `${colStartWidth}px` }}
-                className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                onClick={() => {
-                  if (onUpdateProject) {
-                    setEditingCell({ rowId: row.id, field: 'start' });
-                  }
-                }}
-              >
-                {editingCell?.rowId === row.id && editingCell.field === 'start' ? (
-                  <input
-                    type="date"
-                    autoFocus
-                    defaultValue={row.start || ''}
-                    className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      saveDate(row.id, 'start', e.target.value);
-                      setEditingCell(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        saveDate(row.id, 'start', e.currentTarget.value);
-                        setEditingCell(null);
-                      }
-                      if (e.key === 'Escape') setEditingCell(null);
-                    }}
-                  />
-                ) : (
-                  <span className="flex items-center gap-1 select-none" title="Click to edit">
-                    {row.start || '—'}
-                    {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-                  </span>
-                )}
-              </div>
-
-              {/* Finish Date Column with Inline Editing */}
-              <div
-                style={{ width: `${colFinishWidth}px` }}
-                className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                onClick={() => {
-                  if (onUpdateProject) {
-                    setEditingCell({ rowId: row.id, field: 'finish' });
-                  }
-                }}
-              >
-                {editingCell?.rowId === row.id && editingCell.field === 'finish' ? (
-                  <input
-                    type="date"
-                    autoFocus
-                    defaultValue={row.finish || ''}
-                    className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      saveDate(row.id, 'finish', e.target.value);
-                      setEditingCell(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        saveDate(row.id, 'finish', e.currentTarget.value);
-                        setEditingCell(null);
-                      }
-                      if (e.key === 'Escape') setEditingCell(null);
-                    }}
-                  />
-                ) : (
-                  <span className="flex items-center gap-1 select-none" title="Click to edit">
-                    {row.finish || '—'}
-                    {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-                  </span>
-                )}
-              </div>
-
-              {/* Baseline Dates (Read-only planned schedule) */}
-              {showBaseline && (
-                <>
-                  <div
-                    style={{ width: `${colBaseStartWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
-                    title={row.baselineStart ? `Baseline Start: ${row.baselineStart}` : 'Belum di-set baseline'}
-                  >
-                    {row.baselineStart || '—'}
-                  </div>
-                  <div
-                    style={{ width: `${colBaseFinishWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
-                    title={row.baselineFinish ? `Baseline Finish: ${row.baselineFinish}` : 'Belum di-set baseline'}
-                  >
-                    {row.baselineFinish || '—'}
-                  </div>
-                </>
-              )}
-
-              {/* Pred Column with Click-to-Modal and Inline Editing */}
-              <div
-                style={{ width: `${colPredWidth}px` }}
-                className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 group relative flex items-center justify-center h-full"
-                onClick={() => {
-                  if (editingPred !== row.id) {
-                    setEditingPred(row.id);
-                    const existing = (row.predecessors || [])
-                      .map(dep => {
-                        const predWbs = rows.find(r => r.id === dep.key)?.wbs || '';
-                        if (!predWbs) return '';
-                        const lagStr = dep.lag ? `+${dep.lag}` : '';
-                        const typeStr = dep.type === 'FS' ? '' : dep.type;
-                        return `${predWbs}${typeStr}${lagStr}`;
-                      })
-                      .filter(Boolean)
-                      .join(', ');
-                    setPredInputVal(existing);
-                  }
-                }}
-              >
-                {editingPred === row.id ? (
-                  <input
-                    type="text"
-                    autoFocus
-                    value={predInputVal}
-                    placeholder="1.1FS, 1.2SS"
-                    className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                    onClick={(e) => e.stopPropagation()}
-                    onChange={e => setPredInputVal(e.target.value)}
-                    onBlur={() => {
-                      savePredecessors(row.id, predInputVal);
-                      setEditingPred(null);
-                    }}
-                    onKeyDown={e => {
-                      if (e.key === 'Enter') {
-                        savePredecessors(row.id, predInputVal);
-                        setEditingPred(null);
-                      }
-                      if (e.key === 'Escape') setEditingPred(null);
-                    }}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center gap-1 select-none w-full relative">
-                    {row.predecessors && row.predecessors.length > 0 ? (
-                      <span
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          let rowKey = '';
-                          const pId = getProjectIdOfRow(row);
-                          if (row.level === 0) rowKey = `p:${pId}`;
-                          else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
-                          else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
-                          if (rowKey) {
-                            setDepPanelRowId(rowKey);
-                            setDepPanelOpen(true);
-                            setDepPanelSearch('');
-                          }
-                        }}
-                        className={hasConflict
-                          ? "text-red-600 dark:text-red-400 font-extrabold cursor-pointer truncate max-w-[65px] flex items-center justify-center gap-0.5 bg-red-500/20 border border-red-500/50 px-1 py-0.5 rounded text-[10px] animate-pulse"
-                          : "text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
-                        }
-                        title={hasConflict
-                          ? `DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}`
-                          : "Click to manage predecessors"
-                        }
-                      >
-                        {hasConflict && <AlertTriangle className="h-2.5 w-2.5 text-red-500 shrink-0" />}
-                        {getPredecessorsLabel(row)}
-                      </span>
-                    ) : (
-                      <span className="text-base-muted/40 group-hover:hidden select-none">—</span>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        let rowKey = '';
-                        const pId = getProjectIdOfRow(row);
-                        if (row.level === 0) rowKey = `p:${pId}`;
-                        else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
-                        else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
-                        if (rowKey) {
-                          setDepPanelRowId(rowKey);
-                          setDepPanelOpen(true);
-                          setDepPanelSearch('');
-                        }
-                      }}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-base-muted hover:text-base-accent rounded cursor-pointer absolute right-1"
-                      title="Manage dependencies"
-                    >
-                      <Link className="h-3 w-3" />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {/* Progress % Column */}
-              <div
-                style={{ width: `${colPctWidth}px` }}
-                className={`shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center transition-all duration-300 relative group
-                  ${flashingCellId === row.id
-                    ? 'bg-base-green-dim'
-                    : row.level === 2 && onUpdateProject
-                      ? 'cursor-pointer hover:bg-base-accent-dim/40'
-                      : 'bg-base-surface3/40 cursor-default'}
-                `}
-                onClick={() => {
-                  if (onUpdateProject && row.level === 2) {
-                    setEditingPct(row.id);
-                  }
-                }}
-              >
-                {row.level === 2 && onUpdateProject && editingPct === row.id ? (
-                  <input
-                    type="number"
-                    min={0}
-                    max={100}
-                    step={5}
-                    autoFocus
-                    defaultValue={row.pct}
-                    className="w-full text-center text-[10px] font-mono bg-base-surface border border-base-accent rounded py-0 outline-none h-6 px-0.5"
-                    onClick={(e) => e.stopPropagation()}
-                    onBlur={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      saveProgress(row.id, isNaN(val) ? 0 : val);
-                      setEditingPct(null);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const val = parseInt(e.currentTarget.value, 10);
-                        saveProgress(row.id, isNaN(val) ? 0 : val);
-                        setEditingPct(null);
-                      }
-                      if (e.key === 'Escape') setEditingPct(null);
-                    }}
-                  />
-                ) : (
-                  <div className="flex items-center justify-center relative w-full h-full">
-                    <CircularProgressBadge pct={row.pct} size={24} />
-                    {row.level === 2 && onUpdateProject && (
-                      <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 top-0.5">✏️</span>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Status Column */}
-              <div
-                style={{ width: `${colStatusWidth}px` }}
-                className="shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center relative px-1"
-              >
-                {row.level === 2 ? (
-                  <div className="relative flex items-center justify-center w-full">
-                    <WorkflowStatusBadge
-                      status={getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done)}
-                      isInteractive={!!onUpdateProject}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (onUpdateProject) {
-                          setStatusPopoverRowId(statusPopoverRowId === row.id ? null : row.id);
-                        }
-                      }}
-                    />
-
-                    {statusPopoverRowId === row.id && (
-                      <>
-                        <div
-                          className="fixed inset-0 z-40"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setStatusPopoverRowId(null);
-                          }}
-                        />
-                        <div
-                          className="absolute top-full mt-1 z-50 bg-base-surface border border-base-border rounded-lg shadow-xl p-1 flex flex-col gap-0.5 w-32 text-left"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {(['verify', 'on_track', 'delayed', 'complete', 'not_started'] as WorkflowStatusType[]).map((stKey) => {
-                            const cfg = WORKFLOW_STATUS_CONFIG[stKey];
-                            const isSelected = getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done) === stKey;
-                            return (
-                              <button
-                                key={stKey}
-                                type="button"
-                                onClick={() => {
-                                  saveWorkflowStatus(row.id, stKey);
-                                  setStatusPopoverRowId(null);
-                                }}
-                                className={`flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-mono font-bold transition-colors w-full ${
-                                  isSelected ? 'bg-base-accent/20 text-base-text font-extrabold' : 'hover:bg-base-surface3 text-base-muted hover:text-base-text'
-                                }`}
-                              >
-                                <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
-                                <span>{cfg.label}</span>
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <WorkflowStatusBadge
-                    status={getEffectiveWorkflowStatus(undefined, row.pct, row.done)}
-                    isInteractive={false}
-                  />
-                )}
-              </div>
+              {activeColumns.map(colId => renderColumnCell(colId, row, idx, rowConflicts, !!hasConflict))}
             </div>
           );
         })}

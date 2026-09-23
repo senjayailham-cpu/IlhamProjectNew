@@ -172,7 +172,7 @@ export default function ShopFloorView({
 
         {/* Card 2: Update Progress */}
         <button
-          onClick={() => setActiveTab('projects')}
+          onClick={() => setActiveTab('progress')}
           className="group relative flex flex-col justify-between p-6 rounded-2xl bg-base-surface border-2 border-base-border hover:border-emerald-500/80 shadow-md hover:shadow-xl transition-all duration-150 text-left cursor-pointer min-h-[140px] active:scale-[0.98] bg-linear-to-br hover:from-emerald-500/5 hover:to-transparent"
         >
           <div className="flex items-start justify-between gap-4 w-full">
@@ -185,7 +185,7 @@ export default function ShopFloorView({
                   2. Update Progress
                 </h2>
                 <p className="text-sm text-base-muted mt-0.5">
-                  Update % task & assembly proyek
+                  Update % task & assembly proyek secara cepat
                 </p>
               </div>
             </div>
@@ -197,7 +197,7 @@ export default function ShopFloorView({
               <Folder className="h-3.5 w-3.5" />
               {activeProjects.length} Proyek Aktif
             </span>
-            <span className="text-base-accent font-black">Buka Proyek →</span>
+            <span className="text-base-accent font-black">Buka Update Progress →</span>
           </div>
         </button>
 

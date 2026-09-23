@@ -93,7 +93,7 @@ const IconMap: Record<string, React.ComponentType<any>> = {
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'projects', 'schedule']
+    items: ['dash', 'projects', 'schedule', 'progress']
   },
   {
     title: 'Shop Floor',
@@ -301,7 +301,6 @@ function AppContent() {
       case 'focus':
       case 'focus24': return 'shopfloor';
       case 'scheduling-risk': return 'schedule';
-      case 'progress': return 'projects';
       case 'kpi': return 'dash';
       default: return tab;
     }
@@ -1489,6 +1488,7 @@ function AppContent() {
     { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: ['admin', 'coordinator'] },
     { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
     { id: 'schedule', label: 'Schedule', icon: 'Calendar', access: 'all' },
+    { id: 'progress', label: 'Update Progress', icon: 'TrendingUp', access: 'all' },
     { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
     { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
     { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
@@ -1623,9 +1623,9 @@ function AppContent() {
                     1. Timesheet
                   </button>
                   <button
-                    onClick={() => navigateTo('projects')}
+                    onClick={() => navigateTo('progress')}
                     className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
-                      activeTab === 'projects' ? 'bg-base-ok text-white border-base-ok' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                      activeTab === 'progress' ? 'bg-base-ok text-white border-base-ok' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
                     }`}
                   >
                     2. Progress
@@ -1940,6 +1940,7 @@ function AppContent() {
                   currentUser={currentUser}
                   orgSettings={orgSettings}
                   defaultView={activeTab === 'timeline' ? 'timeline' : 'gantt'}
+                  onNavigateToProgress={() => navigateTo('progress')}
                 />
               )}
 
