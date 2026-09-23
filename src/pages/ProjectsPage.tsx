@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
@@ -711,33 +711,33 @@ export function ProjectsPage({
   const dynamicCategories = orgSettings?.projectCategories && orgSettings.projectCategories.length > 0 ? orgSettings.projectCategories : ['tray', 'nontray'];
 
   const renderTabPills = () => (
-    <div className="flex flex-wrap bg-base-surface2 border border-base-border p-1 rounded-xl shadow-xs self-start gap-1">
+    <div className="flex flex-wrap bg-base-surface border border-base-border p-1.5 rounded-2xl shadow-xs self-start gap-1.5">
       <button
         onClick={() => handleSetFilterTab('current')}
-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+        className={`px-4 py-2 rounded-xl text-sm font-condensed font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
           projectFilterTab === 'current'
             ? 'bg-base-accent text-white shadow-xs'
-            : 'text-base-muted hover:text-base-text'
+            : 'text-base-muted hover:text-base-text hover:bg-base-surface2/60'
         }`}
       >
         <span>Current</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-          projectFilterTab === 'current' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-bold ${
+          projectFilterTab === 'current' ? 'bg-white/20 text-white' : 'bg-base-surface2 text-base-muted'
         }`}>
           {countCurrent}
         </span>
       </button>
       <button
         onClick={() => handleSetFilterTab('completed')}
-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+        className={`px-4 py-2 rounded-xl text-sm font-condensed font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
           projectFilterTab === 'completed'
             ? 'bg-base-accent text-white shadow-xs'
-            : 'text-base-muted hover:text-base-text'
+            : 'text-base-muted hover:text-base-text hover:bg-base-surface2/60'
         }`}
       >
         <span>Completed</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-          projectFilterTab === 'completed' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-bold ${
+          projectFilterTab === 'completed' ? 'bg-white/20 text-white' : 'bg-base-surface2 text-base-muted'
         }`}>
           {countCompleted}
         </span>
@@ -750,12 +750,12 @@ export function ProjectsPage({
           <button
             key={catKey}
             onClick={() => handleSetFilterTab(catKey)}
-            className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
-              projectFilterTab === catKey ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text'
+            className={`px-4 py-2 rounded-xl text-sm font-condensed font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
+              projectFilterTab === catKey ? 'bg-base-accent text-white shadow-xs' : 'text-base-muted hover:text-base-text hover:bg-base-surface2/60'
             }`}
           >
             <span>{catStr}</span>
-            <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${projectFilterTab === catKey ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'}`}>
+            <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-bold ${projectFilterTab === catKey ? 'bg-white/20 text-white' : 'bg-base-surface2 text-base-muted'}`}>
               {catCount}
             </span>
           </button>
@@ -763,15 +763,15 @@ export function ProjectsPage({
       })}
       <button
         onClick={() => handleSetFilterTab('archive')}
-        className={`px-4 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase transition-all flex items-center gap-1.5 cursor-pointer ${
+        className={`px-4 py-2 rounded-xl text-sm font-condensed font-bold uppercase transition-all flex items-center gap-2 cursor-pointer ${
           projectFilterTab === 'archive'
             ? 'bg-base-accent text-white shadow-xs'
-            : 'text-base-muted hover:text-base-text'
+            : 'text-base-muted hover:text-base-text hover:bg-base-surface2/60'
         }`}
       >
         <span>Archive</span>
-        <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-          projectFilterTab === 'archive' ? 'bg-white/20 text-white' : 'bg-base-surface3 text-base-muted'
+        <span className={`text-xs px-2 py-0.5 rounded-full font-mono font-bold ${
+          projectFilterTab === 'archive' ? 'bg-white/20 text-white' : 'bg-base-surface2 text-base-muted'
         }`}>
           {countArchive}
         </span>
@@ -873,20 +873,94 @@ export function ProjectsPage({
       return 0;
     });
 
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const totalActiveCount = activePendingProjects.length;
+    let overdueCount = 0;
+    let totalPctSum = 0;
+    let totalBudgetHours = 0;
+    let totalUsedHours = 0;
+
+    activePendingProjects.forEach(p => {
+      totalPctSum += calcPct(p);
+      if (p.due && p.due < todayIso && p.status !== 'completed') {
+        overdueCount++;
+      }
+      if (p.budgetHours) {
+        totalBudgetHours += p.budgetHours;
+      }
+      totalUsedHours += getManHoursForWorkOrder(p.client, scopedTimesheetsForPage);
+    });
+
+    const avgProgress = totalActiveCount > 0 ? Math.round(totalPctSum / totalActiveCount) : 0;
+
     return (
-      <div className="space-y-4 animate-fade-in">
+      <div className="space-y-6 animate-fade-in">
         {renderTabPills()}
+
+        {/* Executive KPI Overview Cards */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+          <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-base-accent/10 border border-base-accent/20 flex items-center justify-center text-base-accent shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold font-mono text-base-text leading-tight">{totalActiveCount}</div>
+              <div className="text-xs font-semibold text-base-muted mt-0.5">Active Schedules</div>
+            </div>
+          </div>
+
+          <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold font-mono text-emerald-600 leading-tight">{avgProgress}%</div>
+              <div className="text-xs font-semibold text-base-muted mt-0.5">Average Progress</div>
+            </div>
+          </div>
+
+          <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3.5">
+            <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 ${
+              overdueCount > 0 
+                ? 'bg-rose-500/10 border border-rose-500/20 text-rose-500' 
+                : 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-500'
+            }`}>
+              {overdueCount > 0 ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+            </div>
+            <div className="min-w-0">
+              <div className={`text-2xl font-bold font-mono leading-tight ${overdueCount > 0 ? 'text-rose-500' : 'text-base-text'}`}>
+                {overdueCount}
+              </div>
+              <div className="text-xs font-semibold text-base-muted mt-0.5">
+                {overdueCount > 0 ? 'Overdue Due Dates' : 'All Dates On Track'}
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-xs flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-500 shrink-0">
+              <Clock className="w-5 h-5" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-2xl font-bold font-mono text-base-text leading-tight">{Math.round(totalUsedHours)}h</div>
+              <div className="text-xs font-semibold text-base-muted mt-0.5">
+                {totalBudgetHours > 0 ? `Logged of ${Math.round(totalBudgetHours)}h Plan` : 'Man-Hours Logged'}
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div className="flex justify-between items-center flex-wrap gap-4">
           <div className="flex items-center gap-4 flex-wrap flex-1 min-w-[280px]">
-            <h2 className="font-condensed font-extrabold text-lg uppercase tracking-wider text-base-text">
+            <h2 className="font-condensed font-extrabold text-xl uppercase tracking-wider text-base-text">
               Current <span className="text-base-accent">Schedules</span>
             </h2>
 
-            {/* Interactive View Toggle: List vs Timeline Gantt vs Radial Gauge */}
-            <div className="relative flex bg-base-surface2 border border-base-border/70 rounded-xl p-1 shadow-xs select-none">
+            {/* Interactive View Toggle: List vs Radial Gauge */}
+            <div className="relative flex bg-base-surface border border-base-border rounded-xl p-1 shadow-xs select-none">
               <button
                 onClick={() => handleSetViewMode('list')}
-                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                className={`relative z-10 flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'list'
                     ? 'text-white font-extrabold'
                     : 'text-base-muted hover:text-base-text'
@@ -900,12 +974,12 @@ export function ProjectsPage({
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
-                <List className="h-3.5 w-3.5" />
+                <List className="h-4 w-4" />
                 <span>List</span>
               </button>
               <button
                 onClick={() => handleSetViewMode('radial')}
-                className={`relative z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                className={`relative z-10 flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
                   viewMode === 'radial'
                     ? 'text-white font-extrabold'
                     : 'text-base-muted hover:text-base-text'
@@ -919,14 +993,14 @@ export function ProjectsPage({
                     transition={{ type: 'spring', stiffness: 380, damping: 30 }}
                   />
                 )}
-                <Gauge className="h-3.5 w-3.5" />
+                <Gauge className="h-4 w-4" />
                 <span>Radial Gauge</span>
               </button>
             </div>
 
             {/* Real-time Search Box */}
             <div id="project-search-container" className="relative w-full sm:max-w-xs md:max-w-sm">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-base-muted">
+              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-base-muted">
                 <Search className="h-4 w-4" />
               </span>
               <input
@@ -934,14 +1008,14 @@ export function ProjectsPage({
                 type="text"
                 value={projectSearchQuery}
                 onChange={(e) => setProjectSearchQuery(e.target.value)}
-                placeholder="Search name or work order..."
-                className="w-full pl-9 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs select-text focus:border-base-accent outline-none text-base-text font-medium"
+                placeholder="Search name, client, WO..."
+                className="w-full pl-10 pr-8 py-2 bg-base-surface border border-base-border rounded-xl text-sm select-text focus:border-base-accent outline-none text-base-text font-medium placeholder:text-base-muted/70 transition-colors"
               />
               {projectSearchQuery && (
                 <button
                   id="current-projects-clear-search-btn"
                   onClick={() => setProjectSearchQuery('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-2.5 text-base-muted hover:text-base-text cursor-pointer font-bold text-[10px]"
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-base-muted hover:text-base-text cursor-pointer font-bold text-xs"
                   title="Clear search"
                 >
                   ✕
@@ -955,12 +1029,12 @@ export function ProjectsPage({
                 id="current-projects-month-select"
                 value={currentTabMonthFilter}
                 onChange={(e) => setCurrentTabMonthFilter(e.target.value)}
-                className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
+                className="pl-3.5 pr-8 py-2 bg-base-surface border border-base-border rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-text hover:border-base-accent/50 transition-colors"
                 title="Filter projects by month"
               >
                 <option value="">All Months</option>
                 {sortedMonthFilterKeys.map(k => (
-                  <option key={k} value={k} className="font-sans normal-case">
+                  <option key={k} value={k} className="font-sans normal-case text-sm">
                     {monthOptionsMap[k]}
                   </option>
                 ))}
@@ -973,7 +1047,7 @@ export function ProjectsPage({
                 id="current-projects-sort-select"
                 value={projectSortBy}
                 onChange={(e: any) => handleSetSortBy(e.target.value)}
-                className="pl-3 pr-8 py-1.5 bg-base-surface border border-base-border rounded-lg text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-muted2 hover:text-base-text transition-colors"
+                className="pl-3.5 pr-8 py-2 bg-base-surface border border-base-border rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer outline-none focus:border-base-accent text-base-text hover:border-base-accent/50 transition-colors"
                 title="Sort projects by"
               >
                 <option value="deadline">📅 Sort: Deadline</option>
@@ -985,13 +1059,13 @@ export function ProjectsPage({
           </div>
 
           {can('addProject') && (
-            <div className="flex gap-2">
+            <div className="flex gap-2.5">
               <button
                 onClick={triggerExcelUpload}
-                className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 rounded-lg text-xs font-condensed font-bold uppercase cursor-pointer transition-all flex items-center gap-1.5"
+                className="px-4 py-2 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-600 rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 shadow-xs"
                 title="Import projects with custom Excel sheet"
               >
-                <Upload className="h-3.5 w-3.5" />
+                <Upload className="h-4 w-4" />
                 <span>Import Excel</span>
               </button>
               <input
@@ -1003,8 +1077,9 @@ export function ProjectsPage({
               />
               <button
                 onClick={openAddProject}
-                className="btn btn-accent btn-sm flex items-center gap-1 font-condensed font-bold uppercase cursor-pointer"
+                className="px-4 py-2 bg-base-accent hover:opacity-95 text-white rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 shadow-xs"
               >
+                <Plus className="h-4 w-4" />
                 <span>Add project</span>
               </button>
             </div>
@@ -1074,15 +1149,22 @@ export function ProjectsPage({
                         setSpotlightProjectId(p.id);
                         setSpotlightOpen(true);
                       }}
-                      className="bg-base-surface2/30 hover:bg-base-surface2/80 border border-base-border hover:border-base-accent/60 p-4 rounded-xl shadow-xs hover:shadow-card transition-all cursor-pointer group flex flex-col items-center justify-between text-center relative overflow-hidden space-y-3"
+                      className="bg-base-surface hover:bg-base-surface2/40 border border-base-border hover:border-base-accent/60 p-5 rounded-2xl shadow-xs hover:shadow-card transition-all cursor-pointer group flex flex-col justify-between text-left relative overflow-hidden space-y-3.5"
                     >
                       {/* Top Bar Info */}
-                      <div className="w-full flex items-center justify-between text-[10px] font-condensed font-bold uppercase tracking-wider">
-                        <span className="text-base-muted truncate max-w-[140px]" title={p.customer ? `${p.client} — ${p.customer}` : p.client}>
-                          {p.client || 'WO N/A'}{p.customer ? ` (${p.customer})` : ''}
-                        </span>
+                      <div className="w-full flex items-center justify-between gap-2">
+                        <div className="min-w-0 flex items-center gap-1.5 truncate">
+                          <span className="text-xs font-mono font-bold text-base-blue uppercase tracking-wide truncate max-w-[150px]" title={p.client}>
+                            {p.client || 'WO N/A'}
+                          </span>
+                          {p.customer && (
+                            <span className="text-xs font-semibold text-emerald-600 truncate max-w-[120px]" title={p.customer}>
+                              • {p.customer}
+                            </span>
+                          )}
+                        </div>
                         <span
-                          className="px-2 py-0.5 rounded-md border text-[9px] uppercase font-bold"
+                          className="px-2.5 py-0.5 rounded-full border text-xs uppercase font-bold tracking-wider shrink-0"
                           style={{
                             backgroundColor: p.status === 'completed' ? '#10b98115' : p.status === 'active' ? '#3b82f615' : '#f59e0b15',
                             color: p.status === 'completed' ? '#10b981' : p.status === 'active' ? '#3b82f6' : '#f59e0b',
@@ -1093,15 +1175,20 @@ export function ProjectsPage({
                         </span>
                       </div>
 
+                      {/* Project Title */}
+                      <h4 className="font-condensed font-bold text-base text-base-text group-hover:text-base-accent transition-colors line-clamp-2 leading-snug w-full" title={p.name}>
+                        {highlightText(p.name, projectSearchQuery)}
+                      </h4>
+
                       {/* Radial Gauge Chart Container */}
-                      <div className="relative w-36 h-36 min-w-[144px] min-h-[144px] flex items-center justify-center my-1" style={{ width: 144, height: 144 }}>
+                      <div className="relative w-36 h-36 min-w-[144px] min-h-[144px] flex items-center justify-center my-1 mx-auto" style={{ width: 144, height: 144 }}>
                         <ResponsiveContainer width="100%" height="100%" minWidth={144} minHeight={144}>
                           <RadialBarChart
                             cx="50%"
                             cy="50%"
                             innerRadius="72%"
                             outerRadius="100%"
-                            barSize={11}
+                            barSize={12}
                             data={[{ name: p.name, value: pct, fill: gaugeColor }]}
                             startAngle={90}
                             endAngle={-270}
@@ -1117,32 +1204,29 @@ export function ProjectsPage({
 
                         {/* Center Overlay Text */}
                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                          <span className="font-condensed font-black text-2xl tracking-tight text-base-text group-hover:scale-110 transition-transform">
+                          <span className="font-condensed font-black text-3xl tracking-tight text-base-text group-hover:scale-105 transition-transform">
                             {pct}%
                           </span>
-                          <span className="text-[9px] font-condensed font-bold text-base-muted uppercase tracking-widest">
+                          <span className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider">
                             {pct >= 100 ? 'COMPLETE' : 'PROGRESS'}
                           </span>
                         </div>
                       </div>
 
                       {/* Project Meta Details */}
-                      <div className="w-full space-y-1.5 border-t border-base-border/50 pt-2.5">
-                        <h4 className="font-condensed font-extrabold text-xs text-base-text truncate group-hover:text-base-accent transition-colors" title={p.name}>
-                          {p.name}
-                        </h4>
-
-                        <div className="flex items-center justify-center gap-3 text-[11px] text-base-muted">
-                          <span className="font-mono font-bold text-base-text">{taskCounts.done}/{taskCounts.total} Tasks</span>
-                          <span>•</span>
-                          <span className={`font-mono text-[10px] ${isOverdue ? 'text-rose-500 font-bold' : ''}`}>
-                            {p.due ? `Due: ${p.due.slice(5)}` : 'No Due Date'}
+                      <div className="w-full space-y-2.5 border-t border-base-border/60 pt-3">
+                        <div className="flex items-center justify-between text-xs text-base-muted">
+                          <span className="font-mono font-bold text-base-text bg-base-surface2/70 px-2.5 py-1 rounded-lg border border-base-border/50">
+                            {taskCounts.done}/{taskCounts.total} Tasks
+                          </span>
+                          <span className={`font-mono text-xs ${isOverdue ? 'text-rose-500 font-bold bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20' : 'text-base-muted2'}`}>
+                            {p.due ? `Due: ${p.due}` : 'No Due Date'}
                           </span>
                         </div>
 
                         {/* Location & Risk Badges */}
-                        <div className="pt-1 flex items-center justify-center gap-1.5 flex-wrap">
-                          <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted px-2 py-0.5 rounded bg-base-bg border border-base-border">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-condensed font-bold uppercase tracking-wider text-base-muted2 px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border">
                             {p.location === 'workshop1' ? 'Workshop 1' : p.location === 'workshop2' ? 'Workshop 2' : p.location || 'All Locs'}
                           </span>
                           {(() => {
@@ -1156,7 +1240,7 @@ export function ProjectsPage({
                             const badgeClass = getRiskBadgeClasses(risk.score);
                             return (
                               <span 
-                                className={`text-[9px] font-condensed font-bold uppercase tracking-wider px-2 py-0.5 rounded border cursor-help ${badgeClass}`}
+                                className={`text-xs font-condensed font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg border cursor-help ${badgeClass}`}
                                 title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
                               >
                                 Risk: {risk.score}
@@ -1164,9 +1248,40 @@ export function ProjectsPage({
                             );
                           })()}
                           {isOverdue && (
-                            <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-rose-500 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">
+                            <span className="text-xs font-condensed font-bold uppercase tracking-wider text-rose-500 bg-rose-500/10 px-2.5 py-1 rounded-lg border border-rose-500/20">
                               Overdue
                             </span>
+                          )}
+                        </div>
+
+                        {/* Quick Action Footer */}
+                        <div className="pt-2 border-t border-base-border/40 flex items-center gap-1.5 w-full" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
+                            className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold font-condensed uppercase tracking-wider bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border/80 transition-colors"
+                            title="Open Project Details"
+                          >
+                            <BookOpen className="w-3.5 h-3.5" />
+                            <span>Detail</span>
+                          </button>
+                          {can('addAssembly') && (
+                            <button
+                              onClick={() => openAssemblyAddForm(p.id)}
+                              className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold font-condensed uppercase tracking-wider bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border/80 transition-colors"
+                              title="Add Assembly"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Assy</span>
+                            </button>
+                          )}
+                          {can('editProject') && (
+                            <button
+                              onClick={() => openEditProjectForm(p.id)}
+                              className="p-1.5 rounded-lg text-xs bg-base-surface2 hover:bg-base-surface3 text-base-muted hover:text-base-accent border border-base-border/80 transition-colors"
+                              title="Edit Project"
+                            >
+                              <Edit className="w-3.5 h-3.5" />
+                            </button>
                           )}
                         </div>
                       </div>
@@ -1177,32 +1292,32 @@ export function ProjectsPage({
             )}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="overflow-x-auto rounded-2xl border border-base-border bg-base-surface shadow-xs">
+            <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
-                  <th className="px-4 py-3">Project</th>
-                  <th className="px-4 py-3">Schedule</th>
-                  <th className="px-4 py-3 text-center">Location</th>
-                  <th className="px-4 py-3 text-center">Priority</th>
-                  <th className="px-4 py-3">Flags</th>
-                  <th className="px-4 py-3 text-right">Usage</th>
-                  <th className="px-4 py-3 text-center">Assemblies</th>
-                  <th className="px-4 py-3">Progress</th>
-                  <th className="px-4 py-3 text-center">Actions</th>
+                <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border text-xs">
+                  <th className="px-4 py-3.5">Project</th>
+                  <th className="px-4 py-3.5">Schedule</th>
+                  <th className="px-4 py-3.5 text-center">Location</th>
+                  <th className="px-4 py-3.5 text-center">Priority</th>
+                  <th className="px-4 py-3.5">Flags</th>
+                  <th className="px-4 py-3.5 text-right">Usage</th>
+                  <th className="px-4 py-3.5 text-center">Assemblies</th>
+                  <th className="px-4 py-3.5">Progress</th>
+                  <th className="px-4 py-3.5 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
+              <tbody className="divide-y divide-base-border text-base-text text-sm">
                 {filteredProjects.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-12 text-center text-base-muted italic">
+                    <td colSpan={9} className="px-6 py-14 text-center text-base-muted italic">
                       <div className="flex flex-col items-center gap-3">
-                        <span>No current schedules match your filters.</span>
+                        <span className="text-sm">No current schedules match your filters.</span>
                         <div className="flex gap-2 justify-center not-italic">
                           {projectSearchQuery && (
                             <button
                               onClick={() => setProjectSearchQuery('')}
-                              className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                              className="px-4 py-2 bg-base-surface border border-base-border text-xs rounded-xl text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
                             >
                               Clear search filter
                             </button>
@@ -1210,7 +1325,7 @@ export function ProjectsPage({
                           {currentTabMonthFilter && (
                             <button
                               onClick={() => setCurrentTabMonthFilter('')}
-                              className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
+                              className="px-4 py-2 bg-base-surface border border-base-border text-xs rounded-xl text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
                             >
                               Clear month filter
                             </button>
@@ -1234,32 +1349,32 @@ export function ProjectsPage({
                     return (
                       <tr
                         key={p.id}
-                        className={`hover:bg-base-surface2/30 transition-colors ${
+                        className={`hover:bg-base-surface2/40 transition-colors ${
                           hasActiveSearch ? 'bg-base-accent/5' : ''
                         }`}
                       >
                         {/* Kolom 1: Project name + client + status dot */}
-                        <td className="px-4 py-3.5 max-w-[220px]">
-                          <div className="flex items-center gap-2">
-                            <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                        <td className="px-4 py-4 max-w-[240px]">
+                          <div className="flex items-center gap-2.5">
+                            <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
                             <div className="min-w-0">
                               <div className="flex items-center gap-1.5">
                                 <span
                                   onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                                  className="font-condensed font-black text-sm tracking-wide text-base-text cursor-pointer hover:text-base-accent transition-colors truncate block"
+                                  className="font-condensed font-bold text-base text-base-text cursor-pointer hover:text-base-accent transition-colors truncate block leading-tight"
                                 >
                                   {highlightText(p.name, projectSearchQuery)}
                                 </span>
                                 {hasActiveSearch && (
-                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[7px] font-condensed font-black uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider shrink-0">
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-condensed font-bold uppercase bg-base-accent/15 text-base-accent border border-base-accent/30 tracking-wider shrink-0">
                                     MATCH
                                   </span>
                                 )}
                               </div>
-                              <p className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wider font-mono truncate">
+                              <p className="text-xs font-condensed font-bold text-base-blue uppercase tracking-wider font-mono truncate mt-0.5">
                                 {highlightText(p.client, projectSearchQuery)}
                                 {p.customer && (
-                                  <span className="text-emerald-500 font-semibold uppercase font-sans ml-1.5 border-l border-base-border/50 pl-1.5">
+                                  <span className="text-emerald-600 font-semibold uppercase font-sans ml-2 border-l border-base-border/60 pl-2">
                                     👤 {highlightText(p.customer, projectSearchQuery)}
                                   </span>
                                 )}
@@ -1269,30 +1384,30 @@ export function ProjectsPage({
                         </td>
 
                         {/* Kolom 2: Schedule dates + target month */}
-                        <td className="px-4 py-3.5 text-base-muted2">
+                        <td className="px-4 py-4 text-base-muted2">
                           {(p.start || p.due) && (
-                            <div className="whitespace-nowrap font-mono text-[10px]">
+                            <div className="whitespace-nowrap font-mono text-xs font-medium text-base-text">
                               {p.start || '??'} → {p.due || '??'}
                             </div>
                           )}
                           {p.targetMonth && (
-                            <span className="inline-block mt-1 px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[9px] font-condensed font-extrabold uppercase tracking-wide">
+                            <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs font-condensed font-extrabold uppercase tracking-wide">
                               🎯 {p.targetMonth}
                             </span>
                           )}
                         </td>
 
                         {/* Kolom 3: Location */}
-                        <td className="px-4 py-3.5 text-center">
-                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                        <td className="px-4 py-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
                             {p.location === 'workshop1' ? 'W1' : 'W2'}
                           </span>
                         </td>
 
                         {/* Kolom 4: Priority */}
-                        <td className="px-4 py-3.5 text-center">
+                        <td className="px-4 py-4 text-center">
                           {p.priority ? (
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border whitespace-nowrap ${
+                            <span className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border whitespace-nowrap ${
                               p.priority === 'high'
                                 ? 'bg-red-500/10 text-red-500 border-red-500/20'
                                 : p.priority === 'low'
@@ -1307,7 +1422,7 @@ export function ProjectsPage({
                         </td>
 
                         {/* Kolom 5: Flags (Critical Path & Risk Score) */}
-                        <td className="px-4 py-3.5">
+                        <td className="px-4 py-4">
                           <div className="flex flex-col gap-1 items-start">
                             {(() => {
                               const risk = calcProjectRiskScore(p, {
@@ -1320,7 +1435,7 @@ export function ProjectsPage({
                               const badgeClass = getRiskBadgeClasses(risk.score);
                               return (
                                 <span
-                                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border cursor-help whitespace-nowrap ${badgeClass}`}
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border cursor-help whitespace-nowrap ${badgeClass}`}
                                   title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
                                 >
                                   <span className={`w-1.5 h-1.5 rounded-full ${risk.score >= 70 ? 'bg-red-500' : risk.score >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -1330,7 +1445,7 @@ export function ProjectsPage({
                             })()}
                             {cp.isCritical && (
                               <div
-                                className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help whitespace-nowrap"
+                                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help whitespace-nowrap"
                                 title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
                               >
                                 <span className="relative flex h-1.5 w-1.5">
@@ -1347,45 +1462,45 @@ export function ProjectsPage({
                         </td>
 
                         {/* Kolom 6: Usage (hours + wire) */}
-                        <td className="px-4 py-3.5 text-right">
-                          <div className={`inline-flex items-center gap-1 font-mono text-[10px] font-bold whitespace-nowrap ${
+                        <td className="px-4 py-4 text-right">
+                          <div className={`inline-flex items-center gap-1 font-mono text-xs font-bold whitespace-nowrap ${
                             isOverBudget ? 'text-red-500' : hasBudget ? 'text-emerald-500' : 'text-base-accent'
                           }`}>
-                            <Clock className="h-2.5 w-2.5" />
+                            <Clock className="h-3 w-3" />
                             {fmtHrs(usedHours)}h / {p.budgetHours || '??'}h
                           </div>
                           {totalWire > 0 && (
-                            <div className="flex items-center justify-end gap-1 text-amber-500 font-mono text-[10px] font-bold mt-0.5">
-                              <Flame className="h-2.5 w-2.5" />
+                            <div className="flex items-center justify-end gap-1 text-amber-500 font-mono text-xs font-bold mt-1">
+                              <Flame className="h-3 w-3" />
                               {totalWire.toFixed(1)} kg
                             </div>
                           )}
                         </td>
 
                         {/* Kolom 7: Assemblies count */}
-                        <td className="px-4 py-3.5 text-center font-mono font-bold text-base-muted2">
+                        <td className="px-4 py-4 text-center font-mono font-bold text-sm text-base-text">
                           {p.assemblies ? p.assemblies.length : 0}
                         </td>
 
                         {/* Kolom 8: Progress */}
-                        <td className="px-4 py-3.5">
-                          <div className="space-y-0.5 w-24">
-                            <div className="flex justify-between items-center text-[10px] font-condensed font-bold text-base-muted2">
+                        <td className="px-4 py-4">
+                          <div className="space-y-1 w-28">
+                            <div className="flex justify-between items-center text-xs font-condensed font-bold text-base-text">
                               <span>{pct}%</span>
                             </div>
-                            <div className="h-1.5 bg-base-border/20 rounded-full overflow-hidden w-24">
+                            <div className="h-2 bg-base-border/30 rounded-full overflow-hidden w-28">
                               <div className="h-full rounded-full bg-base-accent transition-all duration-500 ease-out" style={{ width: `${pct}%` }} />
                             </div>
                           </div>
                         </td>
 
                         {/* Kolom 9: Actions */}
-                        <td className="px-4 py-3.5">
-                          <div className="flex items-center justify-center gap-0.5">
+                        <td className="px-4 py-4">
+                          <div className="flex items-center justify-center gap-1">
                             {can('addAssembly') && (
                               <button
                                 onClick={() => openAssemblyAddForm(p.id)}
-                                className="px-1.5 py-0.5 text-[9px] font-condensed font-extrabold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded text-base-muted2 cursor-pointer transition-colors whitespace-nowrap"
+                                className="px-2.5 py-1 text-xs font-condensed font-bold uppercase bg-base-surface2 border border-base-border/80 hover:bg-base-surface3 hover:text-base-text rounded-lg text-base-muted2 cursor-pointer transition-colors whitespace-nowrap"
                                 title="Add assembly"
                               >
                                 + Assy
@@ -1394,35 +1509,35 @@ export function ProjectsPage({
                             {p.status === 'completed' && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs); }}
-                                className="p-1 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-md cursor-pointer"
+                                className="p-1.5 text-emerald-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-lg cursor-pointer transition-colors"
                                 title="Download completion PDF report"
                               >
-                                <Download className="h-3.5 w-3.5" />
+                                <Download className="h-4 w-4" />
                               </button>
                             )}
                             <button
                               onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                              className="p-1 text-base-muted hover:text-base-text hover:bg-base-surface3 rounded-md cursor-pointer"
+                              className="p-1.5 text-base-muted hover:text-base-text hover:bg-base-surface2 rounded-lg cursor-pointer transition-colors"
                               title="Open spotlight inspector"
                             >
-                              <BookOpen className="h-3.5 w-3.5" />
+                              <BookOpen className="h-4 w-4" />
                             </button>
                             {can('editProject') && (
                               <button
                                 onClick={() => openEditProjectForm(p.id)}
-                                className="p-1 text-base-muted hover:text-base-accent hover:bg-base-surface3 rounded-md cursor-pointer"
+                                className="p-1.5 text-base-muted hover:text-base-accent hover:bg-base-surface2 rounded-lg cursor-pointer transition-colors"
                                 title="Edit parameters"
                               >
-                                <Edit className="h-3.5 w-3.5" />
+                                <Edit className="h-4 w-4" />
                               </button>
                             )}
                             {can('deleteProject') && deleteProjectDetails && (
                               <button
                                 onClick={(e) => { e.stopPropagation(); deleteProjectDetails(p.id); }}
-                                className="p-1 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-md transition-colors cursor-pointer"
+                                className="p-1.5 text-red-500 hover:text-red-600 hover:bg-red-500/10 rounded-lg transition-colors cursor-pointer"
                                 title="Delete project permanently"
                               >
-                                <Trash2 className="h-3.5 w-3.5" />
+                                <Trash2 className="h-4 w-4" />
                               </button>
                             )}
                           </div>
@@ -1488,30 +1603,30 @@ export function ProjectsPage({
               <div
                 key={p.id}
                 onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                className="bg-base-surface border border-base-border hover:border-base-border2 rounded-lg py-1.5 px-3 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-2.5 relative group"
+                className="bg-base-surface border border-base-border hover:border-base-border2 rounded-xl p-4 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative group"
               >
-                <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                  <span className={`w-2 h-2 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
                   <div className="min-w-0">
-                    <h3 className="font-condensed font-black text-sm text-base-text leading-tight truncate">{p.name}</h3>
-                    <span className="text-[10px] font-condensed font-bold text-base-blue uppercase tracking-wide font-mono mt-0.5 block">{p.client}</span>
+                    <h3 className="font-condensed font-bold text-base text-base-text leading-snug truncate">{p.name}</h3>
+                    <span className="text-xs font-condensed font-bold text-base-blue uppercase tracking-wide font-mono mt-0.5 block">{p.client}</span>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-semibold text-base-muted2 shrink-0">
-                  <span className="px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border/30">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold text-base-muted2 shrink-0">
+                  <span className="px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border/50 text-xs font-mono">
                     Due: {p.due || 'No date'}
                   </span>
                   {p.targetMonth && (
-                    <span className="px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 border border-amber-500/20 text-[10px] font-condensed font-extrabold uppercase tracking-wide">
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-500/10 text-amber-600 border border-amber-500/20 text-xs font-condensed font-extrabold uppercase tracking-wide">
                       🎯 Target: {p.targetMonth}
                     </span>
                   )}
-                  <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
+                  <span className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wider ${p.location === 'workshop1' ? 'bg-[#9b1c2e]/10 text-[#9b1c2e]/85 border border-[#9b1c2e]/20' : 'bg-base-blue/10 text-base-blue border border-base-blue/20'}`}>
                     {p.location === 'workshop1' ? 'W1' : 'W2'}
                   </span>
                   {p.priority && (
-                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border ${
+                    <span className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border ${
                       p.priority === 'high' 
                         ? 'bg-red-500/10 text-red-500 border-red-500/20' 
                         : p.priority === 'low'
@@ -1533,7 +1648,7 @@ export function ProjectsPage({
                     const badgeClass = getRiskBadgeClasses(risk.score);
                     return (
                       <span
-                        className={`px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border cursor-help transition-all flex items-center gap-1 ${badgeClass}`}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border cursor-help transition-all flex items-center gap-1.5 ${badgeClass}`}
                         title={`Risk Score: ${risk.score}/100\n${risk.reasons.length > 0 ? risk.reasons.map(r => `• ${r}`).join('\n') : 'Risiko rendah'}`}
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${risk.score >= 70 ? 'bg-red-500 animate-ping' : risk.score >= 40 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
@@ -1547,7 +1662,7 @@ export function ProjectsPage({
                     if (!cp.isCritical) return null;
                     return (
                       <div 
-                        className="flex items-center gap-1.5 px-1.5 py-0.5 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help" 
+                        className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide border bg-red-500/10 text-red-500 border-red-500/20 hover:bg-red-500/20 hover:border-red-500/40 transition-all cursor-help" 
                         title={`Critical Path issues:\n${cp.issues.map(iss => `• ${iss}`).join('\n')}`}
                       >
                         <span className="relative flex h-1.5 w-1.5">
@@ -1563,10 +1678,10 @@ export function ProjectsPage({
                     const hasBudget = p.budgetHours !== undefined && p.budgetHours > 0;
                     const isOverBudget = hasBudget && usedHours >= p.budgetHours;
                     return (
-                      <span className={`font-extrabold text-[10px] uppercase font-condensed px-1.5 py-0.5 rounded border ${
+                      <span className={`font-extrabold text-xs uppercase font-condensed px-2.5 py-1 rounded-lg border ${
                         isOverBudget
                           ? 'bg-red-500/10 text-red-500 border-red-500/30'
-                          : 'bg-base-accent-dim/20 text-base-accent border-transparent'
+                          : 'bg-base-surface2 text-base-text border-base-border/60'
                       }`}>
                         Hours: {fmtHrs(usedHours)}h{hasBudget ? ` / ${p.budgetHours}h` : ''}
                       </span>
@@ -1580,38 +1695,38 @@ export function ProjectsPage({
                     if (totalWire === 0) return null;
                     return (
                       <span
-                        className="flex items-center gap-1 font-extrabold text-[10px] uppercase font-condensed px-1.5 py-0.5 rounded border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
+                        className="flex items-center gap-1 font-extrabold text-xs uppercase font-condensed px-2.5 py-1 rounded-lg border bg-amber-500/15 text-amber-500 border-amber-500/20 transition-all font-mono"
                         title="Total wire consumables logged"
                       >
-                        <Flame className="h-2.5 w-2.5 animate-pulse" />
+                        <Flame className="h-3 w-3 animate-pulse" />
                         <span>Wire: {totalWire.toFixed(1)} kg</span>
                       </span>
                     );
                   })()}
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-1 lg:pt-0 border-t lg:border-t-0 border-base-border/10">
-                  <div className="space-y-0.5 w-16">
-                    <div className="flex justify-between items-center text-[9px] font-condensed font-bold text-base-muted2">
+                <div className="flex items-center gap-3 shrink-0 justify-between lg:justify-end w-full lg:w-auto pt-2 lg:pt-0 border-t lg:border-t-0 border-base-border/20">
+                  <div className="space-y-1 w-24">
+                    <div className="flex justify-between items-center text-xs font-condensed font-bold text-base-muted2">
                       <span>Progress</span>
                       <span>{pct}%</span>
                     </div>
-                    <div className="h-1 bg-base-border/20 rounded-full overflow-hidden w-16">
+                    <div className="h-1.5 bg-base-border/30 rounded-full overflow-hidden w-24">
                       <div className="h-full rounded-full bg-base-accent" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1.5">
                     {p.status === 'completed' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           downloadProjectPDF(p, timesheets, wireLogs, consumptionLogs);
                         }}
-                        className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1-sm p"
+                        className="px-3 py-1.5 text-xs font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-600 rounded-lg cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1.5"
                         title="Download PDF"
                       >
-                        <Download className="w-2.5 h-2.5" />
+                        <Download className="w-3.5 h-3.5" />
                         <span>PDF</span>
                       </button>
                     )}
@@ -1621,10 +1736,10 @@ export function ProjectsPage({
                           e.stopPropagation();
                           archiveProject(p.id);
                         }}
-                        className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-base-accent-dim hover:bg-base-accent hover:text-white border border-base-accent/20 text-base-accent rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs font-condensed font-extrabold bg-base-surface2 hover:bg-base-accent hover:text-white border border-base-border text-base-muted rounded-lg cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1.5"
                         title="Archive completed project"
                       >
-                        <Archive className="w-2.5 h-2.5" />
+                        <Archive className="w-3.5 h-3.5" />
                         <span>Archive</span>
                       </button>
                     )}
@@ -1634,10 +1749,10 @@ export function ProjectsPage({
                           e.stopPropagation();
                           unarchiveProject(p.id);
                         }}
-                        className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs font-condensed font-extrabold bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/20 text-emerald-600 rounded-lg cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1.5"
                         title="Restore to Completed Log"
                       >
-                        <RotateCcw className="w-2.5 h-2.5" />
+                        <RotateCcw className="w-3.5 h-3.5" />
                         <span>Restore</span>
                       </button>
                     )}
@@ -1647,10 +1762,10 @@ export function ProjectsPage({
                           e.stopPropagation();
                           deleteProjectDetails(p.id);
                         }}
-                        className="px-2 py-0.5 text-[9px] font-condensed font-extrabold bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 text-red-500 rounded cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1"
+                        className="px-3 py-1.5 text-xs font-condensed font-extrabold bg-red-500/10 hover:bg-red-500 hover:text-white border border-red-500/20 text-red-500 rounded-lg cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1.5"
                         title="Delete project permanently"
                       >
-                        <Trash2 className="w-2.5 h-2.5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                         <span>Delete</span>
                       </button>
                     )}

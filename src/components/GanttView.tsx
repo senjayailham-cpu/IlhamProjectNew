@@ -6,93 +6,30 @@ import { Project, Assembly, Task, Dependency, User, WorkflowStatusType, OrgSetti
 import { can } from '../utils/permissions';
 import { calcPct } from '../utils/projectUtils';
 
-export const WORKFLOW_STATUS_CONFIG: Record<WorkflowStatusType, {
-  label: string;
-  dotColor: string;
-  badgeClass: string;
-}> = {
-  verify: {
-    label: 'VERIFY',
-    dotColor: 'bg-amber-500',
-    badgeClass: 'bg-amber-500/10 text-amber-700 dark:text-amber-300 border-amber-300/50 dark:border-amber-700/50 hover:bg-amber-500/20',
-  },
-  on_track: {
-    label: 'ON TRACK',
-    dotColor: 'bg-emerald-500',
-    badgeClass: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 border-emerald-300/50 dark:border-emerald-700/50 hover:bg-emerald-500/20',
-  },
-  delayed: {
-    label: 'DELAYED',
-    dotColor: 'bg-rose-500',
-    badgeClass: 'bg-rose-500/10 text-rose-700 dark:text-rose-300 border-rose-300/50 dark:border-rose-700/50 hover:bg-rose-500/20',
-  },
-  complete: {
-    label: 'COMPLETE',
-    dotColor: 'bg-blue-500',
-    badgeClass: 'bg-blue-500/10 text-blue-700 dark:text-blue-300 border-blue-300/50 dark:border-blue-700/50 hover:bg-blue-500/20',
-  },
-  not_started: {
-    label: 'NOT STARTED',
-    dotColor: 'bg-slate-400',
-    badgeClass: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-300/50 dark:border-slate-700/50 hover:bg-slate-500/20',
-  },
-};
+import { 
+  useGanttRows, 
+  GanttRow, 
+  daysBetween, 
+  formatLocalDate, 
+  addDaysToLocalDate, 
+  parseLocalDate 
+} from './useGanttRows';
+import { 
+  GanttGrid, 
+  getCompanyColorClass, 
+  WorkflowStatusBadge, 
+  CircularProgressBadge,
+  WORKFLOW_STATUS_CONFIG,
+  getEffectiveWorkflowStatus
+} from './GanttGrid';
+import { GanttTimeline } from './GanttTimeline';
 
-export const getEffectiveWorkflowStatus = (
-  status?: WorkflowStatusType,
-  pct?: number,
-  done?: boolean
-): WorkflowStatusType => {
-  if (status) return status;
-  if (done || (typeof pct === 'number' && pct >= 100)) return 'complete';
-  if (typeof pct === 'number' && pct > 0) return 'on_track';
-  return 'not_started';
-};
-
-interface WorkflowStatusBadgeProps {
-  status: WorkflowStatusType;
-  onClick?: (e: React.MouseEvent) => void;
-  isInteractive?: boolean;
-}
-
-const COMPANY_PALETTES = [
-  'bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border-indigo-300/50 dark:border-indigo-700/50',
-  'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 border-emerald-300/50 dark:border-emerald-700/50',
-  'bg-purple-500/15 text-purple-700 dark:text-purple-300 border-purple-300/50 dark:border-purple-700/50',
-  'bg-amber-500/15 text-amber-700 dark:text-amber-300 border-amber-300/50 dark:border-amber-700/50',
-  'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border-cyan-300/50 dark:border-cyan-700/50',
-  'bg-rose-500/15 text-rose-700 dark:text-rose-300 border-rose-300/50 dark:border-rose-700/50',
-  'bg-teal-500/15 text-teal-700 dark:text-teal-300 border-teal-300/50 dark:border-teal-700/50',
-  'bg-sky-500/15 text-sky-700 dark:text-sky-300 border-sky-300/50 dark:border-sky-700/50',
-  'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-300/50 dark:border-fuchsia-700/50',
-  'bg-violet-500/15 text-violet-700 dark:text-violet-300 border-violet-300/50 dark:border-violet-700/50',
-];
-
-export const getCompanyColorClass = (companyName?: string): string => {
-  if (!companyName) return 'bg-slate-500/10 text-slate-600 border-slate-300/50';
-  let hash = 0;
-  for (let i = 0; i < companyName.length; i++) {
-    hash = (hash << 5) - hash + companyName.charCodeAt(i);
-    hash |= 0;
-  }
-  const index = Math.abs(hash) % COMPANY_PALETTES.length;
-  return COMPANY_PALETTES[index];
-};
-
-const WorkflowStatusBadge: React.FC<WorkflowStatusBadgeProps> = ({ status, onClick, isInteractive }) => {
-  const cfg = WORKFLOW_STATUS_CONFIG[status] || WORKFLOW_STATUS_CONFIG.not_started;
-  return (
-    <div
-      onClick={onClick}
-      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full border text-[9px] font-mono font-bold uppercase tracking-tight select-none transition-all ${cfg.badgeClass} ${
-        isInteractive ? 'cursor-pointer hover:scale-105 active:scale-95 hover:shadow-xs' : 'cursor-default'
-      }`}
-      title={isInteractive ? 'Click to change status' : cfg.label}
-    >
-      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
-      <span className="truncate max-w-[65px]">{cfg.label}</span>
-    </div>
-  );
+export { 
+  getCompanyColorClass, 
+  WorkflowStatusBadge, 
+  CircularProgressBadge,
+  WORKFLOW_STATUS_CONFIG,
+  getEffectiveWorkflowStatus 
 };
 import { 
   ChevronRight, 
@@ -279,72 +216,6 @@ const overrideCssRules = () => {
   };
 };
 
-interface CircularProgressBadgeProps {
-  pct: number;
-  size?: number;
-  strokeWidth?: number;
-}
-
-const CircularProgressBadge: React.FC<CircularProgressBadgeProps> = ({ 
-  pct, 
-  size = 24, 
-  strokeWidth = 2.5 
-}) => {
-  const clampedPct = Math.min(100, Math.max(0, Math.round(pct || 0)));
-  const center = size / 2;
-  const radius = center - strokeWidth;
-  const circumference = 2 * Math.PI * radius;
-  const strokeDashoffset = circumference - (clampedPct / 100) * circumference;
-
-  const isCompleted = clampedPct === 100;
-  const strokeColor = isCompleted ? '#10b981' : 'var(--accent, #3b82f6)';
-  const textColorClass = isCompleted 
-    ? 'text-emerald-500 font-extrabold' 
-    : clampedPct > 0 
-      ? 'text-base-text font-bold' 
-      : 'text-base-muted/60 font-semibold';
-
-  return (
-    <div 
-      className="relative inline-flex items-center justify-center shrink-0 select-none" 
-      style={{ width: size, height: size }}
-      title={`${clampedPct}% complete`}
-    >
-      <svg width={size} height={size} className="transform -rotate-90">
-        {/* Background Circle */}
-        <circle
-          cx={center}
-          cy={center}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={strokeWidth}
-          className="text-base-border/40"
-        />
-        {/* Progress Circle */}
-        {clampedPct > 0 && (
-          <circle
-            cx={center}
-            cy={center}
-            r={radius}
-            fill="none"
-            stroke={strokeColor}
-            strokeWidth={strokeWidth}
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            className="transition-all duration-300 ease-out"
-          />
-        )}
-      </svg>
-      {/* Center Percentage Text */}
-      <span className={`absolute inset-0 flex items-center justify-center text-[9px] font-mono leading-none ${textColorClass}`}>
-        {clampedPct}
-      </span>
-    </div>
-  );
-};
-
 interface GanttViewProps {
   project?: Project;
   projects?: Project[];
@@ -374,32 +245,6 @@ interface GanttViewProps {
   setIncludeCompleted?: (inc: boolean) => void;
 }
 
-interface GanttRow {
-  id: string;
-  type: 'project' | 'assembly' | 'task';
-  name: string;
-  level: 0 | 1 | 2;
-  wbs: string;
-  start?: string;
-  finish?: string;
-  duration: number;
-  pct: number;
-  done: boolean;
-  isMilestone?: boolean;
-  predecessors?: Dependency[];
-  parentAsmId?: string;
-  assigned?: string;
-  workflowStatus?: WorkflowStatusType;
-  assignedCompany?: string;
-  crewSize?: number;
-  budgetHours?: number;
-  baselineStart?: string;
-  baselineFinish?: string;
-  planHours: number;
-  actualHours: number;
-  timesheetCount: number;
-}
-
 interface DragState {
   rowId: string;
   type: 'move' | 'resize' | 'resize-left';
@@ -411,34 +256,6 @@ interface DragState {
   tempStart?: string;
   tempFinish?: string;
 }
-
-// Utility to parse ISO date strictly without timezone shifts
-const parseLocalDate = (dateStr: string) => {
-  const parts = dateStr.split('-');
-  return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
-};
-
-// Calculate days between two pure local dates
-const daysBetween = (d1: Date, d2: Date) => {
-  const ut1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
-  const ut2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
-  return Math.floor((ut2 - ut1) / (1000 * 60 * 60 * 24));
-};
-
-// Format a Date object back to YYYY-MM-DD timezone-safe local string
-const formatLocalDate = (d: Date) => {
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-};
-
-// Add days to a local date string
-const addDaysToLocalDate = (dateStr: string, days: number) => {
-  const d = parseLocalDate(dateStr);
-  d.setDate(d.getDate() + days);
-  return formatLocalDate(d);
-};
 
 // Parse a predecessor string like "1.1FS+2" into a Dependency list
 function parsePredecessorInput(
@@ -634,7 +451,7 @@ const cascadeSchedule = (
   updatedProject: Project,
   draggedOrEditedId?: string
 ): { updatedProject: Project; shiftedIds: Set<string> } => {
-  const cloned = JSON.parse(JSON.stringify(updatedProject)) as Project;
+  const cloned = structuredClone(updatedProject) as Project;
   const shiftedIds = new Set<string>();
 
   // 1. Gather all tasks in a flat list
@@ -844,68 +661,75 @@ export default function GanttView({
 }: GanttViewProps) {
   const allowedToEdit = can(currentUser ?? null, 'editGanttSchedule');
 
-  const [historyStack, setHistoryStack] = useState<Project[][]>([]);
-  const [redoStack, setRedoStack] = useState<Project[][]>([]);
+  const [internalIncludeCompleted, setInternalIncludeCompleted] = useState<boolean>(false);
+  const showCompleted = includeCompleted !== undefined ? includeCompleted : internalIncludeCompleted;
+  const setShowCompleted = setIncludeCompleted || setInternalIncludeCompleted;
+
+  interface HistoryEntry {
+    projectId: string;
+    before: Project;
+    after: Project;
+  }
+
+  const [historyStack, setHistoryStack] = useState<HistoryEntry[]>([]);
+  const [redoStack, setRedoStack] = useState<HistoryEntry[]>([]);
 
   const commitProjectUpdate = (updatedProject: Project) => {
     if (!onUpdateProjectRaw) return;
-    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
-    setHistoryStack(prev => [...prev.slice(-29), currentSnapshot]);
-    setRedoStack([]);
+    const existing = projectsList.find(p => p.id === updatedProject.id);
+    if (existing) {
+      const entry: HistoryEntry = {
+        projectId: updatedProject.id,
+        before: structuredClone(existing),
+        after: structuredClone(updatedProject)
+      };
+      setHistoryStack(prev => [...prev.slice(-29), entry]);
+      setRedoStack([]);
+    }
     onUpdateProjectRaw(updatedProject);
   };
 
   const onUpdateProject = allowedToEdit ? commitProjectUpdate : undefined;
 
-  const projectsList = useMemo(() => {
-    let list: Project[] = [];
-    if (projects && projects.length > 0) {
-      list = [...projects];
-    } else if (project) {
-      list = [project];
-    } else {
-      return [];
-    }
+  // Filtering States & Ref
+  const [activeTab, setActiveTab] = useState<'gantt' | 'lookahead'>('gantt');
+  const [lookaheadWeeks, setLookaheadWeeks] = useState<number>(3);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all'|'on-track'|'overdue'|'done'|'not-started'>('all');
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
-    const getProjectStartDate = (p: Project): string => {
-      let minDate: Date | null = null;
-      const pStartStr = p.start || p.created || '';
-      if (pStartStr) {
-        try {
-          minDate = parseLocalDate(pStartStr.slice(0, 10));
-        } catch (e) {
-          // ignore
-        }
-      }
-      p.assemblies?.forEach(asm => {
-        asm.tasks?.forEach(t => {
-          if (t.date) {
-            try {
-              const d = parseLocalDate(t.date);
-              if (!minDate || d < minDate) minDate = d;
-            } catch (e) {
-              // ignore
-            }
-          }
-        });
-      });
-      return minDate ? formatLocalDate(minDate) : '9999-12-31';
-    };
-
-    return list.sort((a, b) => getProjectStartDate(a).localeCompare(getProjectStartDate(b)));
-  }, [project, projects]);
+  const {
+    timesheetSummary,
+    projectsList,
+    allRows,
+    rows,
+    expandedIds,
+    setExpandedIds,
+    collapsedAsms,
+    setCollapsedAsms,
+    toggleProjectCollapse,
+    toggleAssemblyCollapse,
+    expandAllAssemblies,
+    collapseAllAssemblies,
+    findProject,
+    totalHoursStats,
+  } = useGanttRows({
+    project,
+    projects,
+    timesheets,
+    showCompleted,
+    searchQuery,
+    statusFilter,
+    activeTab,
+    lookaheadWeeks,
+  });
 
   const findAndCloneProject = (rowId: string): { original: Project; cloned: Project } | null => {
-    const orig = projectsList.find(p => {
-      if (p.id === rowId) return true;
-      if (p.assemblies?.some(a => a.id === rowId)) return true;
-      if (p.assemblies?.some(a => a.tasks?.some(t => t.id === rowId))) return true;
-      return false;
-    });
+    const orig = findProject(rowId);
     if (!orig) return null;
     return {
       original: orig,
-      cloned: JSON.parse(JSON.stringify(orig)) as Project
+      cloned: structuredClone(orig) as Project
     };
   };
 
@@ -1311,7 +1135,6 @@ export default function GanttView({
     setIsFullscreen(false);
   };
   const [selectedRowId, setSelectedRowId] = useState<string | null>(null);
-  const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [statusPopoverRowId, setStatusPopoverRowId] = useState<string | null>(null);
 
   // Draw-to-Connect Interaction States
@@ -1368,15 +1191,6 @@ export default function GanttView({
       window.removeEventListener('keydown', handleGlobalKeyDown);
     };
   }, [connectMode, connectDraw, pendingConnect, depPanelOpen]);
-
-
-
-  // Filtering States & Ref
-  const [activeTab, setActiveTab] = useState<'gantt' | 'lookahead'>('gantt');
-  const [lookaheadWeeks, setLookaheadWeeks] = useState<number>(3);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all'|'on-track'|'overdue'|'done'|'not-started'>('all');
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Inline Editing States
   const [editingCell, setEditingCell] = useState<{ rowId: string; field: 'start' | 'finish' } | null>(null);
@@ -1453,12 +1267,20 @@ export default function GanttView({
   const rightScrollRef = useRef<HTMLDivElement>(null);
   const scrollRafRef = useRef<number | null>(null);
 
+  // Vertical virtualization state
+  const [scrollTop, setScrollTop] = useState<number>(0);
+  const [viewportHeight, setViewportHeight] = useState<number>(800);
+
   // Sync left panel scroll with right timeline vertical scroll using requestAnimationFrame throttling
   const handleScroll = () => {
     if (scrollRafRef.current !== null) return; // already scheduled
     scrollRafRef.current = requestAnimationFrame(() => {
-      if (rightScrollRef.current && leftScrollRef.current) {
-        leftScrollRef.current.scrollTop = rightScrollRef.current.scrollTop;
+      if (rightScrollRef.current) {
+        const st = rightScrollRef.current.scrollTop;
+        if (leftScrollRef.current) {
+          leftScrollRef.current.scrollTop = st;
+        }
+        setScrollTop(st);
       }
       scrollRafRef.current = null;
     });
@@ -1470,6 +1292,23 @@ export default function GanttView({
         cancelAnimationFrame(scrollRafRef.current);
       }
     };
+  }, []);
+
+  // Track container height for virtualization window calculation
+  useEffect(() => {
+    const el = rightScrollRef.current;
+    if (!el) return;
+    const updateHeight = () => {
+      if (el.clientHeight > 0) {
+        setViewportHeight(el.clientHeight);
+      }
+    };
+    updateHeight();
+    const ro = new ResizeObserver(() => {
+      updateHeight();
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // Handle wheel scrolling on the left panel by forwarding to the right scroll panel
@@ -1627,391 +1466,52 @@ export default function GanttView({
     return { timelineStart: start, timelineEnd: end, totalTimelineDays: days };
   }, [pStartD, pDueD, zoomMode]);
 
-  // Summary and lookup maps for Timesheet actual hours (Plan vs Actual integration)
-  const timesheetSummary = useMemo(() => {
-    const taskHoursMap = new Map<string, { actualHours: number; count: number }>();
-    const taskNameHoursMap = new Map<string, { actualHours: number; count: number }>();
-    const asmHoursMap = new Map<string, { actualHours: number; count: number }>();
-    const woHoursMap = new Map<string, { actualHours: number; count: number }>();
-    let grandTotalActualHours = 0;
+  // ── ROW VIRTUALIZATION CONSTANTS & CALCULATIONS ──
+  const ROW_HEIGHT = 32;
+  const OVERSCAN = 8;
+  const totalRowsCount = rows.length;
+  const totalContentHeight = totalRowsCount * ROW_HEIGHT;
 
-    (timesheets || []).forEach(ts => {
-      const hrs = typeof ts.totalHours === 'number' ? ts.totalHours : 0;
-      grandTotalActualHours += hrs;
-
-      if (ts.taskId) {
-        const prev = taskHoursMap.get(ts.taskId) || { actualHours: 0, count: 0 };
-        taskHoursMap.set(ts.taskId, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
-      }
-      if (ts.assemblyId && ts.taskName) {
-        const key = `${ts.assemblyId}:::${ts.taskName.trim().toLowerCase()}`;
-        const prev = taskNameHoursMap.get(key) || { actualHours: 0, count: 0 };
-        taskNameHoursMap.set(key, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
-      }
-      if (ts.assemblyId) {
-        const prev = asmHoursMap.get(ts.assemblyId) || { actualHours: 0, count: 0 };
-        asmHoursMap.set(ts.assemblyId, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
-      }
-      if (ts.workOrder) {
-        const woKey = ts.workOrder.trim().toLowerCase();
-        const prev = woHoursMap.get(woKey) || { actualHours: 0, count: 0 };
-        woHoursMap.set(woKey, { actualHours: prev.actualHours + hrs, count: prev.count + 1 });
-      }
-    });
-
-    return { taskHoursMap, taskNameHoursMap, asmHoursMap, woHoursMap, grandTotalActualHours };
-  }, [timesheets]);
-
-  // Generate full unfiltered list of Gantt rows (including WBS numbering)
-  const allRows = useMemo(() => {
-    const result: GanttRow[] = [];
-    const usedIds = new Set<string>();
-
-    const getUniqueRowId = (baseId: string) => {
-      if (!baseId) baseId = 'row';
-      if (!usedIds.has(baseId)) {
-        usedIds.add(baseId);
-        return baseId;
-      }
-      let counter = 1;
-      while (usedIds.has(`${baseId}_${counter}`)) {
-        counter++;
-      }
-      const uniqueId = `${baseId}_${counter}`;
-      usedIds.add(uniqueId);
-      return uniqueId;
-    };
-
-    projectsList.forEach((p, pIdx) => {
-      // Pre-calculate hours rollups for this project
-      let projectPlanHoursSum = 0;
-      let projectTaskActualHoursSum = 0;
-      let projectTimesheetCount = 0;
-
-      const asmHoursRollup = new Map<string, { planHours: number; actualHours: number; count: number }>();
-      const taskHoursRollup = new Map<string, { planHours: number; actualHours: number; count: number }>();
-
-      (p.assemblies || []).forEach(asm => {
-        let asmPlanSum = 0;
-        let asmTaskActualSum = 0;
-        let asmTaskCount = 0;
-
-        (asm.tasks || []).forEach(t => {
-          const tStart = t.date || asm.start || p.start || new Date().toISOString().slice(0, 10);
-          const tFinish = t.finishDate || tStart;
-          const tStartD = parseLocalDate(tStart);
-          const tFinishD = parseLocalDate(tFinish);
-          const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
-
-          // Task planned hours: explicit budgetHours, or estimated from (crew * duration * 8) or (difficulty * 8)
-          const tPlanHours = (typeof t.budgetHours === 'number' && t.budgetHours >= 0)
-            ? t.budgetHours
-            : (t.crewSize ? (t.crewSize * tDuration * 8) : (t.difficulty ? t.difficulty * 8 : tDuration * 8));
-
-          // Task actual hours from timesheets
-          const taskStatsById = timesheetSummary.taskHoursMap.get(t.id);
-          const taskStatsByName = timesheetSummary.taskNameHoursMap.get(`${asm.id}:::${t.name.trim().toLowerCase()}`);
-          const tActualHours = (taskStatsById?.actualHours || 0) + (taskStatsByName && !taskStatsById ? taskStatsByName.actualHours : 0);
-          const tTimesheetCount = (taskStatsById?.count || 0) + (taskStatsByName && !taskStatsById ? taskStatsByName.count : 0);
-
-          taskHoursRollup.set(t.id, { planHours: tPlanHours, actualHours: tActualHours, count: tTimesheetCount });
-
-          asmPlanSum += tPlanHours;
-          asmTaskActualSum += tActualHours;
-          asmTaskCount += tTimesheetCount;
-        });
-
-        // Direct assembly timesheets (if any logged directly to assembly)
-        const directAsmStats = timesheetSummary.asmHoursMap.get(asm.id);
-        const aActualHours = Math.max(asmTaskActualSum, directAsmStats?.actualHours || 0);
-        const aCount = (directAsmStats?.count || 0) + asmTaskCount;
-        const aPlanHours = (typeof (asm as any).budgetHours === 'number' && (asm as any).budgetHours > 0)
-          ? (asm as any).budgetHours
-          : asmPlanSum;
-
-        asmHoursRollup.set(asm.id, { planHours: aPlanHours, actualHours: aActualHours, count: aCount });
-
-        projectPlanHoursSum += aPlanHours;
-        projectTaskActualHoursSum += aActualHours;
-        projectTimesheetCount += aCount;
-      });
-
-      // Project level actual hours & plan hours
-      const woStats = timesheetSummary.woHoursMap.get(p.name.trim().toLowerCase()) 
-        || (p.client ? timesheetSummary.woHoursMap.get(p.client.trim().toLowerCase()) : undefined);
-      const pActualHours = Math.max(projectTaskActualHoursSum, woStats?.actualHours || 0);
-      const pTimesheetCountTotal = (woStats?.count || 0) + projectTimesheetCount;
-      const pPlanHours = (typeof p.budgetHours === 'number' && p.budgetHours > 0)
-        ? p.budgetHours
-        : projectPlanHoursSum;
-
-      // 1. Project level summary row
-      const pPct = calcPct(p);
-      
-      // Calculate start and due for this specific project
-      let pStartStr = p.start;
-      let pDueStr = p.due;
-      let minTime = Infinity;
-      let maxTime = -Infinity;
-      p.assemblies?.forEach(asm => {
-        asm.tasks?.forEach(t => {
-          if (t.date) {
-            const ms = parseLocalDate(t.date).getTime();
-            if (ms < minTime) minTime = ms;
-            if (ms > maxTime) maxTime = ms;
-          }
-          if (t.finishDate) {
-            const ms = parseLocalDate(t.finishDate).getTime();
-            if (ms < minTime) minTime = ms;
-            if (ms > maxTime) maxTime = ms;
-          }
-        });
-      });
-      if (minTime !== Infinity) {
-        const minDate = new Date(minTime);
-        const maxDate = new Date(maxTime);
-        pStartStr = formatLocalDate(minDate);
-        pDueStr = formatLocalDate(maxDate);
-      } else {
-        if (!pStartStr) pStartStr = p.created?.slice(0, 10) || new Date().toISOString().slice(0, 10);
-        if (!pDueStr) {
-          const d = parseLocalDate(pStartStr);
-          d.setDate(d.getDate() + 30);
-          pDueStr = formatLocalDate(d);
-        }
-      }
-
-      const pStartD_local = parseLocalDate(pStartStr);
-      const pDueD_local = parseLocalDate(pDueStr);
-      const pDuration = Math.max(1, daysBetween(pStartD_local, pDueD_local) + 1);
-
-      const projectWbs = `${pIdx + 1}`;
-
-      result.push({
-        id: getUniqueRowId(p.id),
-        type: 'project',
-        name: p.name,
-        level: 0,
-        wbs: projectWbs,
-        start: pStartStr,
-        finish: pDueStr,
-        duration: pDuration,
-        pct: pPct,
-        done: pPct >= 100,
-        predecessors: p.predecessors,
-        budgetHours: p.budgetHours,
-        baselineStart: p.baselineStart,
-        baselineFinish: p.baselineFinish,
-        planHours: pPlanHours,
-        actualHours: pActualHours,
-        timesheetCount: pTimesheetCountTotal
-      });
-
-      // 2. Assembly & Task level rows
-      p.assemblies?.forEach((asm, asmIdx) => {
-        let aStart = asm.start;
-        let aFinish = asm.finish;
-
-        const taskDates: Date[] = [];
-        asm.tasks?.forEach(t => {
-          if (t.date) taskDates.push(parseLocalDate(t.date));
-          if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
-        });
-
-        // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks
-        if (taskDates.length > 0) {
-          const minDate = new Date(Math.min(...taskDates.map(d => d.getTime())));
-          const maxDate = new Date(Math.max(...taskDates.map(d => d.getTime())));
-          aStart = formatLocalDate(minDate);
-          aFinish = formatLocalDate(maxDate);
-        } else {
-          if (!aStart) aStart = pStartStr;
-          if (!aFinish) aFinish = pDueStr;
-        }
-
-        const aStartD = parseLocalDate(aStart);
-        const aFinishD = parseLocalDate(aFinish);
-        const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
-
-        const aWeightResult = (asm.tasks || []).reduce((acc, t) => {
-          const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
-          acc.totalWeight += difficulty;
-          acc.weightedPct += (t.pct || 0) * difficulty;
-          return acc;
-        }, { totalWeight: 0, weightedPct: 0 });
-        const aPct = aWeightResult.totalWeight > 0
-          ? Math.round(aWeightResult.weightedPct / aWeightResult.totalWeight)
-          : 0;
-
-        const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
-        const asmStats = asmHoursRollup.get(asm.id) || { planHours: 0, actualHours: 0, count: 0 };
-
-        result.push({
-          id: getUniqueRowId(asm.id),
-          type: 'assembly',
-          name: asm.name,
-          level: 1,
-          wbs: assemblyWbs,
-          start: aStart,
-          finish: aFinish,
-          duration: aDuration,
-          pct: aPct,
-          done: aPct >= 100,
-          predecessors: asm.predecessors,
-          budgetHours: (asm as any).budgetHours,
-          baselineStart: asm.baselineStart,
-          baselineFinish: asm.baselineFinish,
-          planHours: asmStats.planHours,
-          actualHours: asmStats.actualHours,
-          timesheetCount: asmStats.count
-        });
-
-        // Add child tasks if assembly is expanded
-        const isAsmCollapsed = collapsedAsms[asm.id] !== false;
-        if (!isAsmCollapsed) {
-          asm.tasks?.forEach((t, taskIdx) => {
-            const tStart = t.date || aStart || pStartStr;
-            let tFinish = t.finishDate || tStart;
-
-            if (new Date(tFinish) < new Date(tStart)) {
-              tFinish = tStart;
-            }
-
-            const tStartD = parseLocalDate(tStart);
-            const tFinishD = parseLocalDate(tFinish);
-            const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
-            const tStats = taskHoursRollup.get(t.id) || { planHours: 0, actualHours: 0, count: 0 };
-
-            result.push({
-              id: getUniqueRowId(t.id),
-              type: 'task',
-              name: t.name,
-              level: 2,
-              wbs: `${assemblyWbs}.${taskIdx + 1}`,
-              start: tStart,
-              finish: tFinish,
-              duration: tDuration,
-              pct: t.pct || 0,
-              done: !!t.done,
-              isMilestone: !!t.isMilestone,
-              predecessors: t.predecessors,
-              parentAsmId: asm.id,
-              assigned: t.assigned,
-              workflowStatus: t.workflowStatus,
-              assignedCompany: t.assignedCompany,
-              crewSize: t.crewSize,
-              budgetHours: t.budgetHours,
-              baselineStart: t.baselineStart,
-              baselineFinish: t.baselineFinish,
-              planHours: tStats.planHours,
-              actualHours: tStats.actualHours,
-              timesheetCount: tStats.count
-            });
-          });
-        }
-      });
-    });
-
-    return result;
-  }, [projectsList, collapsedAsms, timesheetSummary]);
-
-  // Overall Project Plan vs Actual hours statistics
-  const totalHoursStats = useMemo(() => {
-    let plan = 0;
-    let actual = 0;
-    let entries = 0;
-
-    allRows.filter(r => r.level === 0).forEach(r => {
-      plan += r.planHours;
-      actual += r.actualHours;
-      entries += r.timesheetCount;
-    });
-
-    const burn = plan > 0 ? Math.round((actual / plan) * 100) : 0;
-    const variance = actual - plan;
-    return { plan, actual, entries, burn, variance };
-  }, [allRows]);
-
-  // Generate list of filtered Gantt rows
-  const rows = useMemo(() => {
-    const todayStr = formatLocalDate(new Date());
-    const lookaheadEndStr = addDaysToLocalDate(todayStr, lookaheadWeeks * 7);
-    const searchLower = searchQuery.toLowerCase().trim();
-
-    // Helper to check if a row matches the filters
-    const matchesFilter = (row: GanttRow) => {
-      // Search filter
-      if (searchLower !== '' && !row.name.toLowerCase().includes(searchLower)) {
-        return false;
-      }
-      // Status filter
-      if (statusFilter !== 'all') {
-        const isDone = row.pct === 100 || row.done;
-        const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
-        const isOnTrack = row.pct < 100 && row.finish && row.finish >= todayStr;
-        const isNotStarted = row.pct === 0 && !row.done;
-
-        if (statusFilter === 'done' && !isDone) return false;
-        if (statusFilter === 'overdue' && !isOverdue) return false;
-        if (statusFilter === 'on-track' && !isOnTrack) return false;
-        if (statusFilter === 'not-started' && !isNotStarted) return false;
-      }
-      // Lookahead date window filter
-      if (activeTab === 'lookahead') {
-        const rStart = row.start || row.finish || todayStr;
-        const rFinish = row.finish || row.start || todayStr;
-        const overlaps = rStart <= lookaheadEndStr && rFinish >= todayStr;
-        if (!overlaps) return false;
-      }
-      return true;
-    };
-
-    // If no filters are active, show all rows directly
-    if (searchLower === '' && statusFilter === 'all' && activeTab === 'gantt') {
-      return allRows;
+  const { startIndex, endIndex, visibleRows, topSpacerHeight, bottomSpacerHeight } = useMemo(() => {
+    if (isExporting || totalRowsCount === 0) {
+      return {
+        startIndex: 0,
+        endIndex: totalRowsCount,
+        visibleRows: rows,
+        topSpacerHeight: 0,
+        bottomSpacerHeight: 0,
+      };
     }
 
-    // First, identify all task rows (level 2) that match the filter
-    const matchingTaskIds = new Set<string>();
-    allRows.forEach(row => {
-      if (row.level === 2 && matchesFilter(row)) {
-        matchingTaskIds.add(row.id);
-      }
-    });
+    const rawStart = Math.floor(scrollTop / ROW_HEIGHT) - OVERSCAN;
+    const start = Math.max(0, Math.min(totalRowsCount - 1, rawStart));
+    const visibleCount = Math.ceil(viewportHeight / ROW_HEIGHT);
+    const end = Math.min(totalRowsCount, Math.max(start + 1, Math.floor(scrollTop / ROW_HEIGHT) + visibleCount + OVERSCAN));
 
-    // Helper to get project id for a row
-    const getProjectIdOfRow = (r: GanttRow): string => {
-      if (r.level === 0) return r.id;
-      return r.id.split('-')[0];
+    const topSpacer = start * ROW_HEIGHT;
+    const bottomSpacer = Math.max(0, (totalRowsCount - end) * ROW_HEIGHT);
+
+    return {
+      startIndex: start,
+      endIndex: end,
+      visibleRows: rows.slice(start, end),
+      topSpacerHeight: topSpacer,
+      bottomSpacerHeight: bottomSpacer,
     };
+  }, [scrollTop, viewportHeight, totalRowsCount, rows, isExporting]);
 
-    // Filter rows based on matching level 2 tasks, direct name matches, and hierarchy rules
-    const filteredRows = allRows.filter(row => {
-      // If row itself directly matches name filter
-      if (searchLower !== '' && row.name.toLowerCase().includes(searchLower)) {
-        return true;
+  // Keep scrollTop state in sync if totalContentHeight shrinks (e.g. on project/assembly collapse)
+  useEffect(() => {
+    if (rightScrollRef.current) {
+      const currentSt = rightScrollRef.current.scrollTop;
+      if (currentSt !== scrollTop) {
+        setScrollTop(currentSt);
+        if (leftScrollRef.current) {
+          leftScrollRef.current.scrollTop = currentSt;
+        }
       }
-
-      if (row.level === 2) {
-        return matchingTaskIds.has(row.id);
-      }
-      if (row.level === 1) {
-        // Assembly is kept if at least one child task matches or assembly itself has no tasks
-        const childTasks = allRows.filter(r => r.level === 2 && r.parentAsmId === row.id);
-        if (childTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
-        return childTasks.some(r => matchingTaskIds.has(r.id));
-      }
-      if (row.level === 0) {
-        // Project is kept if at least one task across its assemblies matches or project has no tasks
-        const projTasks = allRows.filter(r => r.level === 2 && getProjectIdOfRow(r) === row.id);
-        if (projTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
-        return projTasks.some(r => matchingTaskIds.has(r.id));
-      }
-      return true;
-    });
-
-    return filteredRows;
-  }, [allRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
+    }
+  }, [totalContentHeight]);
 
   // ── HARD DEPENDENCY CONSTRAINT VIOLATION CALCULATOR ──
   const dependencyViolationsMap = useMemo(() => {
@@ -2636,8 +2136,8 @@ export default function GanttView({
 
   const selectedProject = useMemo(() => {
     if (!selectedRowId) return projectsList.length === 1 ? projectsList[0] : null;
-    const res = findAndCloneProject(selectedRowId);
-    if (res) return res.original;
+    const orig = findProject(selectedRowId);
+    if (orig) return orig;
     return projectsList.length === 1 ? projectsList[0] : null;
   }, [projectsList, selectedRowId]);
 
@@ -2665,47 +2165,62 @@ export default function GanttView({
       if (!confirmed) return;
     }
 
-    const updated: Project = JSON.parse(JSON.stringify(targetProj));
     let pMinStart: string | null = null;
     let pMaxFinish: string | null = null;
 
-    (updated.assemblies || []).forEach(asm => {
+    const updatedAssemblies = (targetProj.assemblies || []).map(asm => {
       let aMinStart: string | null = null;
       let aMaxFinish: string | null = null;
 
-      (asm.tasks || []).forEach(t => {
-        const actualStart = t.startDate || t.date || asm.start || updated.start;
+      const updatedTasks = (asm.tasks || []).map(t => {
+        const actualStart = t.startDate || t.date || asm.start || targetProj.start;
         const actualFinish = t.endDate || t.finishDate || actualStart;
         if (actualStart) {
-          t.baselineStart = actualStart;
-          t.baselineFinish = actualFinish || actualStart;
-
           if (!aMinStart || actualStart < aMinStart) aMinStart = actualStart;
           if (actualFinish && (!aMaxFinish || actualFinish > aMaxFinish)) aMaxFinish = actualFinish;
 
           if (!pMinStart || actualStart < pMinStart) pMinStart = actualStart;
           if (actualFinish && (!pMaxFinish || actualFinish > pMaxFinish)) pMaxFinish = actualFinish;
+
+          return {
+            ...t,
+            baselineStart: actualStart,
+            baselineFinish: actualFinish || actualStart
+          };
         }
+        return { ...t };
       });
 
+      let asmBaselineStart = asm.baselineStart;
+      let asmBaselineFinish = asm.baselineFinish;
+
       if (aMinStart) {
-        asm.baselineStart = aMinStart;
-        asm.baselineFinish = aMaxFinish || aMinStart;
+        asmBaselineStart = aMinStart;
+        asmBaselineFinish = aMaxFinish || aMinStart;
       } else if (asm.start) {
-        asm.baselineStart = asm.start;
-        asm.baselineFinish = asm.finish || asm.start;
-        if (!pMinStart || asm.baselineStart < pMinStart) pMinStart = asm.baselineStart;
-        if (asm.baselineFinish && (!pMaxFinish || asm.baselineFinish > pMaxFinish)) pMaxFinish = asm.baselineFinish;
+        asmBaselineStart = asm.start;
+        asmBaselineFinish = asm.finish || asm.start;
+        if (!pMinStart || asmBaselineStart < pMinStart) pMinStart = asmBaselineStart;
+        if (asmBaselineFinish && (!pMaxFinish || asmBaselineFinish > pMaxFinish)) pMaxFinish = asmBaselineFinish;
       }
+
+      return {
+        ...asm,
+        baselineStart: asmBaselineStart,
+        baselineFinish: asmBaselineFinish,
+        tasks: updatedTasks
+      };
     });
 
-    if (pMinStart) {
-      updated.baselineStart = pMinStart;
-      updated.baselineFinish = pMaxFinish || pMinStart;
-    } else {
-      updated.baselineStart = updated.start;
-      updated.baselineFinish = updated.due || updated.start;
-    }
+    const finalBaselineStart = pMinStart || targetProj.start;
+    const finalBaselineFinish = pMinStart ? (pMaxFinish || pMinStart) : (targetProj.due || targetProj.start);
+
+    const updated: Project = {
+      ...targetProj,
+      assemblies: updatedAssemblies,
+      baselineStart: finalBaselineStart,
+      baselineFinish: finalBaselineFinish
+    };
 
     onUpdateProject(updated);
     setToastMsg(`Baseline berhasil dikunci untuk "${targetProj.name}": ${updated.baselineStart || '—'} → ${updated.baselineFinish || '—'}`);
@@ -2863,16 +2378,13 @@ export default function GanttView({
   const handleUndo = () => {
     if (historyStack.length === 0 || !onUpdateProjectRaw) return;
 
-    const previousSnapshot = historyStack[historyStack.length - 1];
+    const lastEntry = historyStack[historyStack.length - 1];
     const newHistoryStack = historyStack.slice(0, historyStack.length - 1);
-    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
 
-    setRedoStack(prev => [...prev, currentSnapshot]);
+    setRedoStack(prev => [...prev, lastEntry]);
     setHistoryStack(newHistoryStack);
 
-    previousSnapshot.forEach(proj => {
-      onUpdateProjectRaw(proj);
-    });
+    onUpdateProjectRaw(lastEntry.before);
 
     setToastMsg('Undo: Perubahan terakhir dibatalkan (Ctrl+Z)');
   };
@@ -2880,16 +2392,13 @@ export default function GanttView({
   const handleRedo = () => {
     if (redoStack.length === 0 || !onUpdateProjectRaw) return;
 
-    const nextSnapshot = redoStack[redoStack.length - 1];
+    const nextEntry = redoStack[redoStack.length - 1];
     const newRedoStack = redoStack.slice(0, redoStack.length - 1);
-    const currentSnapshot = JSON.parse(JSON.stringify(projectsList));
 
-    setHistoryStack(prev => [...prev, currentSnapshot]);
+    setHistoryStack(prev => [...prev, nextEntry]);
     setRedoStack(newRedoStack);
 
-    nextSnapshot.forEach(proj => {
-      onUpdateProjectRaw(proj);
-    });
+    onUpdateProjectRaw(nextEntry.after);
 
     setToastMsg('Redo: Perubahan diterapkan kembali (Ctrl+Y)');
   };
@@ -2920,7 +2429,7 @@ export default function GanttView({
 
     window.addEventListener('keydown', handleUndoRedoKeyDown);
     return () => window.removeEventListener('keydown', handleUndoRedoKeyDown);
-  }, [historyStack, redoStack, projectsList, onUpdateProjectRaw]);
+  }, [historyStack, redoStack, onUpdateProjectRaw]);
 
   // To handle auto dismissal safely
   useEffect(() => {
@@ -3563,6 +3072,16 @@ export default function GanttView({
         const sourceRowIdx = rowIndexMap[dep.key];
         if (sourceRowIdx === undefined) return; // predecessor row is collapsed or hidden
 
+        // Performance Optimization: Skip dependency lines where BOTH source and target
+        // are completely outside the visible viewport window (with safe margin)
+        if (!isExporting) {
+          const arrowMinRow = Math.max(0, startIndex - 6);
+          const arrowMaxRow = Math.min(rows.length - 1, endIndex + 6);
+          if (Math.max(sourceRowIdx, targetIdx) < arrowMinRow || Math.min(sourceRowIdx, targetIdx) > arrowMaxRow) {
+            return;
+          }
+        }
+
         const sourceRow = rows[sourceRowIdx];
         const sourceCoords = rowBarCoordsCache.get(sourceRow.id);
         const targetCoords = rowBarCoordsCache.get(targetRow.id);
@@ -3642,7 +3161,7 @@ export default function GanttView({
     });
 
     return list;
-  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows, criticalPathIds, dependencyViolationsMap]);
+  }, [rows, rowIndexMap, timelineStart, pixelsPerDay, showArrows, criticalPathIds, dependencyViolationsMap, startIndex, endIndex, isExporting]);
 
   const handleMouseEnter = (row: GanttRow, event: React.MouseEvent) => {
     if (isTouchDragging) return;
@@ -3660,37 +3179,6 @@ export default function GanttView({
 
   const handleMouseLeave = () => {
     setHoveredTask(null);
-  };
-
-  const toggleAssemblyCollapse = (asmId: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCollapsedAsms(prev => {
-      const isCurrentlyCollapsed = prev[asmId] !== false;
-      return {
-        ...prev,
-        [asmId]: isCurrentlyCollapsed ? false : true
-      };
-    });
-  };
-
-  const expandAllAssemblies = () => {
-    const newCollapsed: Record<string, boolean> = {};
-    projectsList.forEach(p => {
-      p.assemblies?.forEach(asm => {
-        newCollapsed[asm.id] = false;
-      });
-    });
-    setCollapsedAsms(newCollapsed);
-  };
-
-  const collapseAllAssemblies = () => {
-    const newCollapsed: Record<string, boolean> = {};
-    projectsList.forEach(p => {
-      p.assemblies?.forEach(asm => {
-        newCollapsed[asm.id] = true;
-      });
-    });
-    setCollapsedAsms(newCollapsed);
   };
 
   const getStatusColorClass = (status: Project['status']) => {
@@ -3781,17 +3269,15 @@ export default function GanttView({
                 </div>
               </div>
 
-              {setIncludeCompleted && (
-                <label className="flex items-center gap-2 text-xs font-condensed font-bold text-base-muted uppercase tracking-wider cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={!!includeCompleted}
-                    onChange={(e) => setIncludeCompleted(e.target.checked)}
-                    className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
-                  />
-                  Include Completed/Archived
-                </label>
-              )}
+              <label className="flex items-center gap-2 text-xs font-condensed font-bold text-base-muted uppercase tracking-wider cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={!!showCompleted}
+                  onChange={(e) => setShowCompleted(e.target.checked)}
+                  className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
+                />
+                Show Completed Projects
+              </label>
             </div>
           )}
 
@@ -3911,17 +3397,15 @@ export default function GanttView({
             </div>
           )}
 
-          {setIncludeCompleted && (
-            <label className="flex items-center gap-1.5 px-2.5 py-1 bg-base-surface border border-base-border rounded-xl h-[34px] text-[10px] font-condensed font-bold text-base-muted hover:text-base-text uppercase tracking-wider cursor-pointer select-none shrink-0 shadow-2xs">
-              <input
-                type="checkbox"
-                checked={!!includeCompleted}
-                onChange={(e) => setIncludeCompleted(e.target.checked)}
-                className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
-              />
-              <span>Include Completed</span>
-            </label>
-          )}
+          <label className="flex items-center gap-1.5 px-2.5 py-1 bg-base-surface border border-base-border rounded-xl h-[34px] text-[10px] font-condensed font-bold text-base-muted hover:text-base-text uppercase tracking-wider cursor-pointer select-none shrink-0 shadow-2xs">
+            <input
+              type="checkbox"
+              checked={!!showCompleted}
+              onChange={(e) => setShowCompleted(e.target.checked)}
+              className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
+            />
+            <span>Show Completed</span>
+          </label>
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
@@ -4073,7 +3557,7 @@ export default function GanttView({
             <button 
               onClick={expandAllAssemblies} 
               className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
-              title="Expand All Assemblies"
+              title="Expand All Projects & Tasks"
             >
               <Maximize2 className="h-3 w-3 text-current shrink-0" />
               <span>Expand</span>
@@ -4082,7 +3566,7 @@ export default function GanttView({
             <button 
               onClick={collapseAllAssemblies} 
               className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
-              title="Collapse All Assemblies"
+              title="Collapse All Projects"
             >
               <Minimize2 className="h-3 w-3 text-current shrink-0" />
               <span>Collapse</span>
@@ -4637,869 +4121,89 @@ export default function GanttView({
       <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 overflow-hidden relative" style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '550px' }}>
         
         {/* LEFT FIXED PANEL (MS Project Columns) */}
-        <div 
-          className="shrink-0 flex flex-col bg-base-surface relative z-20 select-none overflow-x-auto overflow-y-hidden"
-          style={{ width: `${leftPanelWidth}px` }}
-          onWheel={handleLeftWheel}
-        >
-          {/* Two-row Headers (56px matching the timeline side exactly) */}
-          <div 
-            className="h-14 border-b border-base-border divide-y divide-base-border/50 font-condensed flex flex-col justify-stretch select-none shrink-0 bg-base-surface3/40"
-            style={{ width: `${totalTableWidth}px` }}
-          >
-            {/* Header row 1 */}
-            <div className="h-7 px-3 flex items-center justify-between text-[10px] font-bold text-base-muted uppercase tracking-wider">
-              <span>Task Sheet & Scheduling Grid</span>
-              <Layers className="h-3 w-3 text-base-muted/70" />
-            </div>
-            {/* Header row 2 */}
-            <div className="h-7 flex text-[9px] font-bold text-base-muted uppercase tracking-wider items-center divide-x divide-base-border/30">
-              <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-bold">WBS</div>
-              <div style={{ width: `${colNameWidth}px` }} className="shrink-0 px-2 font-bold truncate">Task Name</div>
-              <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center font-bold truncate">Duration</div>
-              {showHoursTracking && (
-                <>
-                  <div style={{ width: `${colPlanHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-indigo-600 dark:text-indigo-400" title="Planned/Budgeted Man-Hours (Click task cell to edit)">Plan Hrs</div>
-                  <div style={{ width: `${colActHrsWidth}px` }} className="shrink-0 text-center font-bold truncate text-blue-600 dark:text-blue-400" title="Actual Timesheet Hours recorded from shopfloor">Act Hrs</div>
-                  <div style={{ width: `${colVarianceWidth}px` }} className="shrink-0 text-center font-bold truncate text-amber-600 dark:text-amber-400" title="Variance & Burn Rate (Actual vs Plan)">Burn / Var</div>
-                </>
-              )}
-              {activeTab === 'lookahead' && (
-                <>
-                  <div style={{ width: `${colCrewWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Crew Size">Crew</div>
-                  <div style={{ width: `${colCompanyWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Company / Vendor">Company</div>
-                  <div style={{ width: `${colAssigneeWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Assignees / PIC">Assignees</div>
-                </>
-              )}
-              <div style={{ width: `${colStartWidth}px` }} className="shrink-0 text-center font-bold truncate">Start</div>
-              <div style={{ width: `${colFinishWidth}px` }} className="shrink-0 text-center font-bold truncate">Finish</div>
-              {showBaseline && (
-                <>
-                  <div style={{ width: `${colBaseStartWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Start Date (Jadwal Target Rencana)">Base Start</div>
-                  <div style={{ width: `${colBaseFinishWidth}px` }} className="shrink-0 text-center font-bold truncate text-slate-500" title="Baseline Finish Date (Jadwal Target Rencana)">Base Finish</div>
-                </>
-              )}
-              <div style={{ width: `${colPredWidth}px` }} className="shrink-0 text-center font-bold truncate">Pred</div>
-              <div style={{ width: `${colPctWidth}px` }} className="shrink-0 text-center font-bold truncate" title="% Complete">% Comp</div>
-              <div style={{ width: `${colStatusWidth}px` }} className="shrink-0 text-center font-bold truncate" title="Workflow Status">Status</div>
-            </div>
-          </div>
-
-          {/* Left Panel rows list (sync scrolls vertically via ref) */}
-          <div 
-            ref={leftScrollRef} 
-            className="flex-1 overflow-y-hidden divide-y divide-base-border/40 select-none"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', width: `${totalTableWidth}px` }}
-          >
-            {rows.map((row, idx) => {
-              const isSelected = selectedRowId === row.id;
-              const isTargetHovered = dragHoverTargetRowId === row.id;
-              const rowConflicts = dependencyViolationsMap.get(row.id);
-              const hasConflict = rowConflicts && rowConflicts.length > 0;
-              
-              let bgClass = 'bg-base-surface hover:bg-base-surface2/50';
-              if (isTargetHovered) bgClass = 'bg-green-500/20 text-green-800 dark:text-green-300 font-bold border-y-2 border-green-500 z-20';
-              else if (hasConflict) bgClass = 'bg-red-500/15 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-l-4 border-l-red-500';
-              else if (row.level === 0) bgClass = 'bg-base-accent-dim hover:bg-base-accent-dim/80';
-              else if (row.level === 1) bgClass = 'bg-base-surface2 hover:bg-base-surface3/50';
-              else if (idx % 2 === 1) bgClass = 'bg-base-surface2/30 hover:bg-base-surface2/75';
-
-              if (!isTargetHovered && isSelected) bgClass = hasConflict ? 'bg-red-500/25 border-l-4 border-l-red-600 font-bold' : 'bg-base-accent-dim/60 font-semibold';
-
-              return (
-                <div 
-                  key={`row-left-${row.id}-${idx}`} 
-                  onClick={() => setSelectedRowId(row.id)}
-                  className={`h-8 flex text-xs font-semibold select-none items-center cursor-pointer transition-colors border-b border-base-border/20 divide-x divide-base-border/10 ${bgClass}`}
-                >
-                  {/* WBS Column */}
-                  <div style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-base-muted font-bold">
-                    {row.wbs}
-                  </div>
-
-                  {/* Task Name Column with indentations, WBS prefix, and icons */}
-                  <div 
-                    className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans"
-                    style={{ 
-                      width: `${colNameWidth}px`,
-                      paddingLeft: `${row.level === 1 ? 8 : row.level === 2 ? 24 : 4}px` 
-                    }}
-                  >
-                    {row.type === 'assembly' && (
-                      <button 
-                        onClick={(e) => toggleAssemblyCollapse(row.id, e)}
-                        className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text shrink-0 cursor-pointer transition-all"
-                      >
-                        {collapsedAsms[row.id] !== false ? (
-                          <ChevronRight className="h-3 w-3" />
-                        ) : (
-                          <ChevronDown className="h-3 w-3" />
-                        )}
-                      </button>
-                    )}
-
-                    {row.isMilestone && (
-                      <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
-                    )}
-
-                    {hasConflict && (
-                      <span 
-                        className="inline-flex items-center gap-0.5 mr-1.5 px-1 py-0.2 rounded bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/50 text-[9px] font-extrabold font-mono animate-pulse shrink-0 cursor-help"
-                        title={`HARD DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}`}
-                      >
-                        <AlertTriangle className="h-3 w-3 text-red-500 shrink-0" />
-                        <span className="hidden sm:inline">CONFLICT</span>
-                      </span>
-                    )}
-
-                    <span className={`truncate select-none ${
-                      row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
-                      row.level === 1 ? 'font-condensed font-bold text-xs text-base-text uppercase tracking-wide' :
-                      'font-medium text-xs text-base-muted2'
-                    } ${row.pct === 100 ? 'line-through opacity-50 decoration-emerald-500/70' : ''}`} title={row.name}>
-                      {row.pct === 100 && (
-                        <span className="no-underline inline-flex items-center text-emerald-500 font-bold mr-1" title="Completed">
-                          ✓ — 
-                        </span>
-                      )}
-                      {highlightText(row.name, searchQuery)}
-                    </span>
-                    {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
-                      <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
-                    )}
-                  </div>
-
-                  {/* Duration Days */}
-                  <div style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
-                    {row.isMilestone ? '0 days' : `${row.duration}d`}
-                  </div>
-
-                  {showHoursTracking && (
-                    <>
-                      {/* Planned / Budgeted Hours */}
-                      <div
-                        style={{ width: `${colPlanHrsWidth}px` }}
-                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                        onClick={() => {
-                          if (onUpdateProject) {
-                            setEditingHoursCell(row.id);
-                          }
-                        }}
-                        title={row.level === 2 ? 'Click to edit Planned/Budgeted hours for task' : row.level === 1 ? 'Click to set Assembly budget hours' : 'Click to set Project budget hours'}
-                      >
-                        {editingHoursCell === row.id && onUpdateProject ? (
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.5"
-                            autoFocus
-                            defaultValue={row.budgetHours ?? (row.planHours > 0 ? row.planHours : '')}
-                            placeholder="Hrs..."
-                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => {
-                              saveRowBudgetHours(row.id, row.level, e.target.value);
-                              setEditingHoursCell(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveRowBudgetHours(row.id, row.level, e.currentTarget.value);
-                                setEditingHoursCell(null);
-                              }
-                              if (e.key === 'Escape') setEditingHoursCell(null);
-                            }}
-                          />
-                        ) : (
-                          <span className={`select-none font-bold ${row.level === 0 ? 'text-indigo-600 dark:text-indigo-400' : row.level === 1 ? 'text-base-text font-extrabold' : 'text-base-muted2'}`}>
-                            {row.planHours > 0 ? `${row.planHours % 1 === 0 ? row.planHours : row.planHours.toFixed(1)}h` : '—'}
-                            {onUpdateProject && (
-                              <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-base-muted">✏️</span>
-                            )}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Actual Timesheet Hours */}
-                      <div
-                        style={{ width: `${colActHrsWidth}px` }}
-                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
-                        title={`${row.actualHours.toFixed(1)} actual hours logged across ${row.timesheetCount} timesheet entries`}
-                      >
-                        {row.actualHours > 0 ? (
-                          <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px]">
-                            <Clock className="w-2.5 h-2.5 shrink-0" />
-                            <span>{row.actualHours % 1 === 0 ? row.actualHours : row.actualHours.toFixed(1)}h</span>
-                          </span>
-                        ) : (
-                          <span className="text-base-muted/40 select-none font-mono">0h</span>
-                        )}
-                      </div>
-
-                      {/* Variance & Burn Rate */}
-                      <div
-                        style={{ width: `${colVarianceWidth}px` }}
-                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
-                      >
-                        {(() => {
-                          if (row.planHours === 0 && row.actualHours === 0) {
-                            return <span className="text-base-muted/40 select-none">—</span>;
-                          }
-                          const diff = row.actualHours - row.planHours;
-                          const burnPct = row.planHours > 0 ? Math.round((row.actualHours / row.planHours) * 100) : 100;
-                          const isOver = diff > 0.05;
-                          const isNear = !isOver && burnPct >= 85;
-
-                          if (isOver) {
-                            return (
-                              <span 
-                                className="inline-flex items-center gap-0.5 px-1 py-0.2 rounded bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30 text-[8.5px] font-black font-mono animate-pulse"
-                                title={`OVER BUDGET:\nActual (${row.actualHours.toFixed(1)}h) exceeds Plan (${row.planHours.toFixed(1)}h) by +${diff.toFixed(1)}h (${burnPct}% burn)`}
-                              >
-                                <AlertTriangle className="w-2.5 h-2.5 shrink-0 text-red-500" />
-                                <span>+{diff.toFixed(0)}h</span>
-                              </span>
-                            );
-                          }
-                          if (isNear) {
-                            return (
-                              <span 
-                                className="inline-flex items-center px-1 py-0.2 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-[8.5px] font-bold font-mono"
-                                title={`NEAR BUDGET:\n${burnPct}% of planned hours used (${row.actualHours.toFixed(1)}h / ${row.planHours.toFixed(1)}h)`}
-                              >
-                                {burnPct}%
-                              </span>
-                            );
-                          }
-                          return (
-                            <span 
-                              className="inline-flex items-center px-1 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 text-[8.5px] font-mono font-medium"
-                              title={`UNDER BUDGET:\n${burnPct}% of planned hours used (${(row.planHours - row.actualHours).toFixed(1)}h remaining)`}
-                            >
-                              {burnPct}%
-                            </span>
-                          );
-                        })()}
-                      </div>
-                    </>
-                  )}
-
-                  {activeTab === 'lookahead' && (
-                    <>
-                      {/* Crew Size Column */}
-                      <div
-                        style={{ width: `${colCrewWidth}px` }}
-                        className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                        onClick={() => {
-                          if (row.level === 2 && onUpdateProject) {
-                            setEditingLookaheadCell({ rowId: row.id, field: 'crew' });
-                          }
-                        }}
-                      >
-                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'crew' ? (
-                          <input
-                            type="number"
-                            min="1"
-                            autoFocus
-                            defaultValue={row.crewSize || ''}
-                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => {
-                              saveTaskField(row.id, 'crew', e.target.value);
-                              setEditingLookaheadCell(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveTaskField(row.id, 'crew', e.currentTarget.value);
-                                setEditingLookaheadCell(null);
-                              }
-                              if (e.key === 'Escape') setEditingLookaheadCell(null);
-                            }}
-                          />
-                        ) : (
-                          <span className="select-none font-bold text-base-text" title={row.level === 2 ? 'Click to edit Crew Size' : ''}>
-                            {row.level === 2 
-                              ? (row.crewSize ? row.crewSize : '—')
-                              : (
-                                (() => {
-                                  const childCrew = allRows
-                                    .filter(r => r.level === 2 && (row.level === 1 ? r.parentAsmId === row.id : getProjectIdOfRow(r) === row.id))
-                                    .reduce((sum, r) => sum + (r.crewSize || 0), 0);
-                                  return childCrew > 0 ? childCrew : '—';
-                                })()
-                              )
-                            }
-                            {row.level === 2 && onUpdateProject && (
-                              <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5">✏️</span>
-                            )}
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Company Column */}
-                      <div
-                        style={{ width: `${colCompanyWidth}px` }}
-                        className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                        onClick={() => {
-                          if (row.level === 2 && onUpdateProject) {
-                            setEditingLookaheadCell({ rowId: row.id, field: 'company' });
-                          }
-                        }}
-                      >
-                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'company' ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            defaultValue={row.assignedCompany || ''}
-                            placeholder="Company..."
-                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => {
-                              saveTaskField(row.id, 'company', e.target.value);
-                              setEditingLookaheadCell(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveTaskField(row.id, 'company', e.currentTarget.value);
-                                setEditingLookaheadCell(null);
-                              }
-                              if (e.key === 'Escape') setEditingLookaheadCell(null);
-                            }}
-                          />
-                        ) : (
-                          row.level === 2 && row.assignedCompany ? (
-                            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full border text-[9px] font-mono font-bold truncate max-w-[95px] ${getCompanyColorClass(row.assignedCompany)}`} title={row.assignedCompany}>
-                              {row.assignedCompany}
-                            </span>
-                          ) : (
-                            <span className="text-base-muted/60 text-[10px] select-none">—</span>
-                          )
-                        )}
-                      </div>
-
-                      {/* Assignees Column */}
-                      <div
-                        style={{ width: `${colAssigneeWidth}px` }}
-                        className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                        onClick={() => {
-                          if (row.level === 2 && onUpdateProject) {
-                            setEditingLookaheadCell({ rowId: row.id, field: 'assigned' });
-                          }
-                        }}
-                      >
-                        {editingLookaheadCell?.rowId === row.id && editingLookaheadCell.field === 'assigned' ? (
-                          <input
-                            type="text"
-                            autoFocus
-                            defaultValue={row.assigned || ''}
-                            placeholder="Assignees..."
-                            className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                            onClick={(e) => e.stopPropagation()}
-                            onBlur={(e) => {
-                              saveTaskField(row.id, 'assigned', e.target.value);
-                              setEditingLookaheadCell(null);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                saveTaskField(row.id, 'assigned', e.currentTarget.value);
-                                setEditingLookaheadCell(null);
-                              }
-                              if (e.key === 'Escape') setEditingLookaheadCell(null);
-                            }}
-                          />
-                        ) : (
-                          <span className="text-base-text font-medium truncate max-w-[95px] select-none" title={row.assigned || ''}>
-                            {row.assigned || '—'}
-                          </span>
-                        )}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Start Date Column with Inline Editing */}
-                  <div 
-                    style={{ width: `${colStartWidth}px` }} 
-                    className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (onUpdateProject) {
-                        setEditingCell({ rowId: row.id, field: 'start' });
-                      }
-                    }}
-                  >
-                    {editingCell?.rowId === row.id && editingCell.field === 'start' ? (
-                      <input
-                        type="date"
-                        autoFocus
-                        defaultValue={row.start || ''}
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveDate(row.id, 'start', e.target.value);
-                          setEditingCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { 
-                            saveDate(row.id, 'start', e.currentTarget.value); 
-                            setEditingCell(null); 
-                          }
-                          if (e.key === 'Escape') setEditingCell(null);
-                        }}
-                      />
-                    ) : (
-                      <span className="flex items-center gap-1 select-none" title="Click to edit">
-                        {row.start || '—'}
-                        {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Finish Date Column with Inline Editing */}
-                  <div 
-                    style={{ width: `${colFinishWidth}px` }} 
-                    className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (onUpdateProject) {
-                        setEditingCell({ rowId: row.id, field: 'finish' });
-                      }
-                    }}
-                  >
-                    {editingCell?.rowId === row.id && editingCell.field === 'finish' ? (
-                      <input
-                        type="date"
-                        autoFocus
-                        defaultValue={row.finish || ''}
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          saveDate(row.id, 'finish', e.target.value);
-                          setEditingCell(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') { 
-                            saveDate(row.id, 'finish', e.currentTarget.value); 
-                            setEditingCell(null); 
-                          }
-                          if (e.key === 'Escape') setEditingCell(null);
-                        }}
-                      />
-                    ) : (
-                      <span className="flex items-center gap-1 select-none" title="Click to edit">
-                        {row.finish || '—'}
-                        {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Baseline Dates (Read-only planned schedule) */}
-                  {showBaseline && (
-                    <>
-                      <div 
-                        style={{ width: `${colBaseStartWidth}px` }} 
-                        className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
-                        title={row.baselineStart ? `Baseline Start: ${row.baselineStart}` : 'Belum di-set baseline'}
-                      >
-                        {row.baselineStart || '—'}
-                      </div>
-                      <div 
-                        style={{ width: `${colBaseFinishWidth}px` }} 
-                        className="shrink-0 text-center font-mono text-[9.5px] text-slate-500 dark:text-slate-400 truncate px-1 flex items-center justify-center h-full bg-slate-500/5"
-                        title={row.baselineFinish ? `Baseline Finish: ${row.baselineFinish}` : 'Belum di-set baseline'}
-                      >
-                        {row.baselineFinish || '—'}
-                      </div>
-                    </>
-                  )}
-
-                  {/* Pred Column with Click-to-Modal and Inline Editing */}
-                  <div
-                    style={{ width: `${colPredWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 group relative flex items-center justify-center h-full"
-                    onClick={() => {
-                      if (editingPred !== row.id) {
-                        setEditingPred(row.id);
-                        const existing = (row.predecessors || [])
-                          .map(dep => {
-                            const predWbs = rows.find(r => r.id === dep.key)?.wbs || '';
-                            if (!predWbs) return '';
-                            const lagStr = dep.lag ? `+${dep.lag}` : '';
-                            const typeStr = dep.type === 'FS' ? '' : dep.type;
-                            return `${predWbs}${typeStr}${lagStr}`;
-                          })
-                          .filter(Boolean)
-                          .join(', ');
-                        setPredInputVal(existing);
-                      }
-                    }}
-                  >
-                    {editingPred === row.id ? (
-                      <input
-                        type="text"
-                        autoFocus
-                        value={predInputVal}
-                        placeholder="1.1FS, 1.2SS"
-                        className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                        onClick={(e) => e.stopPropagation()}
-                        onChange={e => setPredInputVal(e.target.value)}
-                        onBlur={() => {
-                          savePredecessors(row.id, predInputVal);
-                          setEditingPred(null);
-                        }}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') { 
-                            savePredecessors(row.id, predInputVal); 
-                            setEditingPred(null); 
-                          }
-                          if (e.key === 'Escape') setEditingPred(null);
-                        }}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center gap-1 select-none w-full relative">
-                        {row.predecessors && row.predecessors.length > 0 ? (
-                          <span 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              let rowKey = '';
-                              const pId = getProjectIdOfRow(row);
-                              if (row.level === 0) rowKey = `p:${pId}`;
-                              else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
-                              else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
-                              if (rowKey) {
-                                setDepPanelRowId(rowKey);
-                                setDepPanelOpen(true);
-                                setDepPanelSearch('');
-                              }
-                            }}
-                            className={hasConflict 
-                              ? "text-red-600 dark:text-red-400 font-extrabold cursor-pointer truncate max-w-[65px] flex items-center justify-center gap-0.5 bg-red-500/20 border border-red-500/50 px-1 py-0.5 rounded text-[10px] animate-pulse" 
-                              : "text-blue-500 hover:text-blue-600 hover:underline font-bold cursor-pointer truncate max-w-[55px]"
-                            }
-                            title={hasConflict 
-                              ? `DEPENDENCY CONSTRAINT VIOLATION:\n${rowConflicts.map(c => `• ${c.reason}`).join('\n')}` 
-                              : "Click to manage predecessors"
-                            }
-                          >
-                            {hasConflict && <AlertTriangle className="h-2.5 w-2.5 text-red-500 shrink-0" />}
-                            {getPredecessorsLabel(row)}
-                          </span>
-                        ) : (
-                          <span className="text-base-muted/40 group-hover:hidden select-none">—</span>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            let rowKey = '';
-                            const pId = getProjectIdOfRow(row);
-                            if (row.level === 0) rowKey = `p:${pId}`;
-                            else if (row.level === 1) rowKey = `a:${pId}:${row.id}`;
-                            else if (row.level === 2) rowKey = `t:${pId}:${row.parentAsmId}:${row.id}`;
-                            if (rowKey) {
-                              setDepPanelRowId(rowKey);
-                              setDepPanelOpen(true);
-                              setDepPanelSearch('');
-                            }
-                          }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-base-muted hover:text-base-accent rounded cursor-pointer absolute right-1"
-                          title="Manage dependencies"
-                        >
-                          <Link className="h-3 w-3" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Progress % Column */}
-                  <div
-                    style={{ width: `${colPctWidth}px` }}
-                    className={`shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center transition-all duration-300 relative group
-                      ${flashingCellId === row.id 
-                        ? 'bg-base-green-dim' 
-                        : row.level === 2 && onUpdateProject 
-                          ? 'cursor-pointer hover:bg-base-accent-dim/40' 
-                          : 'bg-base-surface3/40 cursor-default'}
-                    `}
-                    onClick={() => {
-                      if (onUpdateProject && row.level === 2) {
-                        setEditingPct(row.id);
-                      }
-                    }}
-                  >
-                    {row.level === 2 && onUpdateProject && editingPct === row.id ? (
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step={5}
-                        autoFocus
-                        defaultValue={row.pct}
-                        className="w-full text-center text-[10px] font-mono bg-base-surface border border-base-accent rounded py-0 outline-none h-6 px-0.5"
-                        onClick={(e) => e.stopPropagation()}
-                        onBlur={(e) => {
-                          const val = parseInt(e.target.value, 10);
-                          saveProgress(row.id, isNaN(val) ? 0 : val);
-                          setEditingPct(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            const val = parseInt(e.currentTarget.value, 10);
-                            saveProgress(row.id, isNaN(val) ? 0 : val);
-                            setEditingPct(null);
-                          }
-                          if (e.key === 'Escape') setEditingPct(null);
-                        }}
-                      />
-                    ) : (
-                      <div className="flex items-center justify-center relative w-full h-full">
-                        <CircularProgressBadge pct={row.pct} size={24} />
-                        {row.level === 2 && onUpdateProject && (
-                          <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 top-0.5">✏️</span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Status Column */}
-                  <div
-                    style={{ width: `${colStatusWidth}px` }}
-                    className="shrink-0 text-center font-mono text-[10px] h-full flex items-center justify-center relative px-1"
-                  >
-                    {row.level === 2 ? (
-                      <div className="relative flex items-center justify-center w-full">
-                        <WorkflowStatusBadge
-                          status={getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done)}
-                          isInteractive={!!onUpdateProject}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (onUpdateProject) {
-                              setStatusPopoverRowId(statusPopoverRowId === row.id ? null : row.id);
-                            }
-                          }}
-                        />
-
-                        {statusPopoverRowId === row.id && (
-                          <>
-                            <div 
-                              className="fixed inset-0 z-40" 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setStatusPopoverRowId(null);
-                              }} 
-                            />
-                            <div 
-                              className="absolute top-full mt-1 z-50 bg-base-surface border border-base-border rounded-lg shadow-xl p-1 flex flex-col gap-0.5 w-32 text-left"
-                              onClick={(e) => e.stopPropagation()}
-                            >
-                              {(['verify', 'on_track', 'delayed', 'complete', 'not_started'] as WorkflowStatusType[]).map((stKey) => {
-                                const cfg = WORKFLOW_STATUS_CONFIG[stKey];
-                                const isSelected = getEffectiveWorkflowStatus(row.workflowStatus, row.pct, row.done) === stKey;
-                                return (
-                                  <button
-                                    key={stKey}
-                                    type="button"
-                                    onClick={() => {
-                                      saveWorkflowStatus(row.id, stKey);
-                                      setStatusPopoverRowId(null);
-                                    }}
-                                    className={`flex items-center gap-1.5 px-2 py-1 rounded text-[9px] font-mono font-bold transition-colors w-full ${
-                                      isSelected ? 'bg-base-accent/20 text-base-text font-extrabold' : 'hover:bg-base-surface3 text-base-muted hover:text-base-text'
-                                    }`}
-                                  >
-                                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cfg.dotColor}`} />
-                                    <span>{cfg.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <WorkflowStatusBadge
-                        status={getEffectiveWorkflowStatus(undefined, row.pct, row.done)}
-                        isInteractive={false}
-                      />
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* ── S-CURVE FEATURE SPACER ── */}
-            {showSCurve && sCurvePaths && (
-              <div
-                className="flex-shrink-0 border-t border-base-border bg-base-surface3"
-                style={{ height: `${SCURVE_H + 28}px`, width: `${totalTableWidth}px` }}
-              >
-                <div className="flex items-center h-6 px-3 border-b border-base-border">
-                  <span className="font-condensed font-bold text-[9px] uppercase
-                                   tracking-widest text-base-muted">
-                    S-Curve Chart
-                  </span>
-                </div>
-              </div>
-            )}
-
-            {/* ── RESOURCE LOAD VIEW TABLE SECTION ── */}
-            {showResourceLoad && resourceLoadData && (
-              <div className="flex-shrink-0 border-t-2 border-base-border bg-base-surface3/80" style={{ width: `${totalTableWidth}px` }}>
-                {/* Section Header Controls */}
-                <div className="px-3 py-2 border-b border-base-border bg-base-surface flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Users className="h-4 w-4 text-indigo-500 shrink-0" />
-                      <span className="font-condensed font-extrabold text-xs uppercase tracking-wider text-base-text">
-                        Resource Daily Man-Hours Load
-                      </span>
-                      <span className="text-[10px] text-base-muted font-mono font-bold px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border">
-                        {resourceLoadData.totalResources} Employees
-                      </span>
-                    </div>
-
-                    {resourceLoadData.totalOverloadedEmployees > 0 ? (
-                      <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/40 text-[10px] font-mono font-extrabold animate-pulse">
-                        <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" />
-                        <span>{resourceLoadData.totalOverloadedEmployees} Overloaded ({resourceLoadData.totalConflictDaysOverall} Conflict Days)</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold">
-                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-emerald-500" />
-                        <span>Optimal Capacity</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Control Bar: Filters, Search, Capacity threshold */}
-                  <div className="flex items-center justify-between gap-2 text-[10px] font-sans">
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => setResourceFilter('all')}
-                        className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[9px] cursor-pointer transition-all ${
-                          resourceFilter === 'all'
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-base-surface2 text-base-muted hover:text-base-text'
-                        }`}
-                      >
-                        All Resources
-                      </button>
-                      <button
-                        onClick={() => setResourceFilter('conflicts')}
-                        className={`px-2 py-0.5 rounded font-bold uppercase tracking-wider text-[9px] cursor-pointer transition-all flex items-center gap-1 ${
-                          resourceFilter === 'conflicts'
-                            ? 'bg-red-600 text-white shadow-xs font-black'
-                            : 'bg-base-surface2 text-base-muted hover:text-red-500'
-                        }`}
-                      >
-                        <AlertTriangle className="h-2.5 w-2.5" />
-                        <span>Conflicts Only</span>
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {/* Search box */}
-                      <div className="relative flex items-center">
-                        <Search className="h-3 w-3 absolute left-1.5 text-base-muted pointer-events-none" />
-                        <input
-                          type="text"
-                          placeholder="Search resource..."
-                          value={resourceSearch}
-                          onChange={e => setResourceSearch(e.target.value)}
-                          className="pl-5 pr-2 py-0.5 text-[10px] bg-base-surface border border-base-border rounded focus:outline-none focus:border-indigo-500 w-28 text-base-text"
-                        />
-                      </div>
-
-                      {/* Max Capacity threshold */}
-                      <div className="flex items-center gap-1 text-[10px] font-mono font-bold text-base-muted">
-                        <span>Max:</span>
-                        <select
-                          value={dailyCapacityLimit}
-                          onChange={e => setDailyCapacityLimit(Number(e.target.value))}
-                          className="bg-base-surface border border-base-border rounded px-1 py-0.5 text-[10px] text-base-text font-bold cursor-pointer"
-                        >
-                          <option value={8}>8h / day</option>
-                          <option value={10}>10h / day</option>
-                          <option value={12}>12h / day</option>
-                        </select>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Resource Rows List */}
-                {resourceLoadData.resourceList.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-base-muted font-mono">
-                    No resources match current filter.
-                  </div>
-                ) : (
-                  <div>
-                    {resourceLoadData.resourceList.map(emp => {
-                      const isExpanded = expandedResources.has(emp.name);
-                      const hasConflicts = emp.conflictDaysCount > 0;
-
-                      return (
-                        <React.Fragment key={`res-row-left-${emp.name}`}>
-                          {/* Employee Main Row */}
-                          <div className={`h-9 border-b border-base-border flex items-center px-2 gap-2 text-xs transition-colors ${
-                            hasConflicts ? 'bg-red-500/10 dark:bg-red-950/20' : 'bg-base-surface hover:bg-base-surface2'
-                          }`}>
-                            <button
-                              onClick={() => {
-                                const next = new Set(expandedResources);
-                                if (isExpanded) next.delete(emp.name);
-                                else next.add(emp.name);
-                                setExpandedResources(next);
-                              }}
-                              className="p-0.5 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text transition-colors cursor-pointer shrink-0"
-                              title="Expand task breakdown"
-                            >
-                              {isExpanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                            </button>
-
-                            <div className={`w-6 h-6 rounded-full flex items-center justify-center font-bold text-[10px] text-white shrink-0 shadow-xs ${
-                              hasConflicts ? 'bg-red-600' : 'bg-indigo-600'
-                            }`}>
-                              {emp.name.slice(0, 2).toUpperCase()}
-                            </div>
-
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 truncate">
-                                <span className="font-bold text-base-text text-xs truncate">{emp.name}</span>
-                                <span className="text-[9px] font-mono px-1 py-0.2 rounded bg-base-surface2 border border-base-border text-base-muted truncate">
-                                  {emp.company}
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2 shrink-0">
-                              {hasConflicts ? (
-                                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-black text-[9px] flex items-center gap-1 font-mono shadow-xs animate-pulse">
-                                  <AlertTriangle className="h-3 w-3" />
-                                  <span>{emp.conflictDaysCount} Overload Days</span>
-                                </span>
-                              ) : (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold text-[9px] font-mono border border-emerald-500/30">
-                                  OK ({emp.totalHours}h)
-                                </span>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Task Breakdown Sub-rows */}
-                          {isExpanded && emp.assignedTasks.map(t => (
-                            <div key={`res-task-left-${emp.name}-${t.id}`} className="h-7 border-b border-base-border/60 bg-base-surface2/50 flex items-center pl-8 pr-2 gap-2 text-[11px] text-base-muted">
-                              <span className="font-mono text-[10px] font-bold text-indigo-500 shrink-0">[{t.wbs}]</span>
-                              <span className="truncate flex-1 font-medium text-base-text">{t.name}</span>
-                              <span className="text-[9px] font-mono text-base-muted shrink-0">{t.start} → {t.finish}</span>
-                            </div>
-                          ))}
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <GanttGrid
+          leftPanelWidth={leftPanelWidth}
+          totalTableWidth={totalTableWidth}
+          leftScrollRef={leftScrollRef}
+          handleLeftWheel={handleLeftWheel}
+          colWbsWidth={colWbsWidth}
+          colNameWidth={colNameWidth}
+          colDurWidth={colDurWidth}
+          colPlanHrsWidth={colPlanHrsWidth}
+          colActHrsWidth={colActHrsWidth}
+          colVarianceWidth={colVarianceWidth}
+          colCrewWidth={colCrewWidth}
+          colCompanyWidth={colCompanyWidth}
+          colAssigneeWidth={colAssigneeWidth}
+          colStartWidth={colStartWidth}
+          colFinishWidth={colFinishWidth}
+          colBaseStartWidth={colBaseStartWidth}
+          colBaseFinishWidth={colBaseFinishWidth}
+          colPredWidth={colPredWidth}
+          colPctWidth={colPctWidth}
+          colStatusWidth={colStatusWidth}
+          showHoursTracking={showHoursTracking}
+          showBaseline={showBaseline}
+          activeTab={activeTab}
+          searchQuery={searchQuery}
+          showCriticalPath={showCriticalPath}
+          criticalAssemblyIds={criticalAssemblyIds}
+          visibleRows={visibleRows}
+          allRows={allRows}
+          rows={rows}
+          startIndex={startIndex}
+          topSpacerHeight={topSpacerHeight}
+          bottomSpacerHeight={bottomSpacerHeight}
+          selectedRowId={selectedRowId}
+          setSelectedRowId={setSelectedRowId}
+          dragHoverTargetRowId={dragHoverTargetRowId}
+          dependencyViolationsMap={dependencyViolationsMap}
+          expandedIds={expandedIds}
+          toggleProjectCollapse={toggleProjectCollapse}
+          collapsedAsms={collapsedAsms}
+          toggleAssemblyCollapse={toggleAssemblyCollapse}
+          highlightText={highlightText}
+          getProjectIdOfRow={getProjectIdOfRow}
+          onUpdateProject={onUpdateProject}
+          editingHoursCell={editingHoursCell}
+          setEditingHoursCell={setEditingHoursCell}
+          saveRowBudgetHours={saveRowBudgetHours}
+          editingLookaheadCell={editingLookaheadCell}
+          setEditingLookaheadCell={setEditingLookaheadCell}
+          saveTaskField={saveTaskField}
+          editingCell={editingCell}
+          setEditingCell={setEditingCell}
+          saveDate={saveDate}
+          editingPred={editingPred}
+          setEditingPred={setEditingPred}
+          predInputVal={predInputVal}
+          setPredInputVal={setPredInputVal}
+          savePredecessors={savePredecessors}
+          getPredecessorsLabel={getPredecessorsLabel}
+          setDepPanelRowId={setDepPanelRowId}
+          setDepPanelOpen={setDepPanelOpen}
+          setDepPanelSearch={setDepPanelSearch}
+          flashingCellId={flashingCellId}
+          editingPct={editingPct}
+          setEditingPct={setEditingPct}
+          saveProgress={saveProgress}
+          statusPopoverRowId={statusPopoverRowId}
+          setStatusPopoverRowId={setStatusPopoverRowId}
+          saveWorkflowStatus={saveWorkflowStatus}
+          showSCurve={showSCurve}
+          sCurvePaths={sCurvePaths}
+          SCURVE_H={SCURVE_H}
+          showResourceLoad={showResourceLoad}
+          resourceLoadData={resourceLoadData}
+          setResourceFilter={setResourceFilter}
+          resourceFilter={resourceFilter}
+          resourceSearch={resourceSearch}
+          setResourceSearch={setResourceSearch}
+          dailyCapacityLimit={dailyCapacityLimit}
+          setDailyCapacityLimit={setDailyCapacityLimit}
+          expandedResources={expandedResources}
+          setExpandedResources={setExpandedResources}
+        />
 
         {/* RESIZE SPLITTER */}
         <div
@@ -5513,914 +4217,66 @@ export default function GanttView({
         </div>
 
         {/* RIGHT SCROLLABLE TIMELINE PANEL */}
-        <div 
-          ref={rightScrollRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-auto relative select-none"
-        >
-          {/* Scrollable Container Content Stage */}
-          <div 
-            className="gantt-relative-container relative min-h-full" 
-            style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}
-          >
-            {/* 1. TIMELINE HEADER BAND (56px) */}
-            <div className="h-14 border-b border-base-border sticky top-0 z-30 select-none shrink-0 bg-base-surface">
-              {/* Row 1: Month Name / Year Header */}
-              <div className="h-7 border-b border-base-border/50 flex select-none bg-base-surface3">
-                {topHeaders.map((m, idx) => (
-                  <div 
-                    key={`${m.label}-${idx}`}
-                    style={{ width: `${m.width}px` }}
-                    className="h-full border-r border-base-border/30 flex items-center justify-center font-condensed font-extrabold text-[10px] text-base-muted uppercase tracking-wider select-none shrink-0"
-                  >
-                    {m.label}
-                  </div>
-                ))}
-              </div>
-
-              {/* Row 2: Sub-dates depending on Zoom */}
-              <div className="h-7 flex select-none bg-base-surface2">
-                {bottomHeaders.map((w, idx) => (
-                  <div 
-                    key={`${w.label}-${idx}`}
-                    style={{ width: `${w.width}px` }}
-                    className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[9px] font-bold select-none shrink-0 ${
-                      w.isWeekend ? 'bg-base-red-dim text-base-red' : 'text-base-muted/80'
-                    }`}
-                  >
-                    {w.label}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* 2. BACKGROUND WEEKEND BANDS AND GRID COLUMN VERTS */}
-            <div className="absolute top-14 bottom-0 left-0 right-0 pointer-events-none select-none z-0">
-              {/* Weekend backgrounds */}
-              {weekendBands.map((band, idx) => (
-                <div 
-                  key={`weekend-${idx}`}
-                  className="absolute top-0 bottom-0 bg-slate-100 dark:bg-slate-900/40 pointer-events-none z-0"
-                  style={{ left: `${band.left}px`, width: `${band.width}px` }}
-                />
-              ))}
-
-              {/* Grid vertical lines */}
-              {bottomHeaders.map((bh, idx) => {
-                let accumulatedLeft = 0;
-                for (let i = 0; i < idx; i++) accumulatedLeft += bottomHeaders[i].width;
-                return (
-                  <div 
-                    key={`vert-grid-${idx}`}
-                    className="absolute top-0 bottom-0 border-r border-base-border/20"
-                    style={{ left: `${accumulatedLeft}px`, width: `${bh.width}px` }}
-                  />
-                );
-              })}
-            </div>
-
-            {/* 3. TODAY LINE INDICATOR */}
-            {isTodayInTimeline && (
-              <div 
-                className="absolute top-14 bottom-0 border-l-2 border-dashed border-base-red pointer-events-none z-15 select-none"
-                style={{ left: `${todayX}px` }}
-              >
-                <span className="absolute top-1 -left-4 px-1.5 py-0.5 rounded bg-base-red text-white font-condensed font-extrabold text-[8px] tracking-wider select-none">
-                  TODAY
-                </span>
-                <span className="absolute bottom-1 left-0 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded bg-base-red text-white font-mono text-[8px] select-none font-bold">
-                  {todayFormattedFull}
-                </span>
-              </div>
-            )}
-
-            {/* 4. CHANNELS / ROWS ZONE */}
-            <div className="relative pt-0 min-h-full z-10 select-none">
-              {visibleTasksCount === 0 && isFilterActive ? (
-                <div className="absolute inset-x-0 top-14 flex flex-col items-center justify-center p-8 text-center z-40 bg-base-bg/85 min-h-[250px]">
-                  <div className="p-3 bg-base-surface border border-base-border rounded-full mb-3 text-base-muted flex items-center justify-center shadow-sm">
-                    <Search className="h-6 w-6 stroke-[1.5]" />
-                  </div>
-                  <h3 className="font-condensed font-extrabold text-sm text-base-text">No tasks match your filter.</h3>
-                  <p className="text-[11px] text-base-muted mt-1 max-w-xs">
-                    Try adjusting your search term or status dropdown to find what you are looking for.
-                  </p>
-                  <button
-                    onClick={() => {
-                      setSearchQuery('');
-                      setStatusFilter('all');
-                    }}
-                    className="mt-4 px-3 py-1.5 text-[10px] uppercase tracking-wider font-condensed font-extrabold bg-base-accent text-white rounded-lg hover:bg-base-accent/90 transition-all cursor-pointer shadow-sm"
-                  >
-                    Clear filter
-                  </button>
-                </div>
-              ) : (
-                rows.map((row, idx) => {
-                const isSelected = selectedRowId === row.id;
-                const isTargetHovered = dragHoverTargetRowId === row.id;
-                const barCoords = rowBarCoordsCache.get(row.id);
-                const baselineCoords = showBaseline ? rowBaselineCoordsCache.get(row.id) : null;
-                const slackValue = slackMap.get(row.id) ?? 999;
-                const hasEarlyWarning = showCriticalPath && row.level === 2 && !criticalPathIds.has(row.id) && slackValue >= 0 && slackValue <= 1;
-                
-                let hoverClass = 'hover:bg-base-surface2/50';
-                if (row.level === 0) hoverClass = 'hover:bg-base-accent-dim/80';
-                else if (row.level === 1) hoverClass = 'hover:bg-base-surface3/50';
-
-                return (
-                  <div 
-                    key={`timeline-row-${row.id}-${idx}`}
-                    onClick={() => setSelectedRowId(row.id)}
-                    className={`h-8 relative select-none border-b border-base-border/20 cursor-pointer transition-colors ${hoverClass} ${
-                      isTargetHovered ? 'bg-green-500/25 border-y-2 border-green-500 z-20 font-bold' : isSelected ? 'bg-base-accent-dim/40' : ''
-                    }`}
-                    style={{ height: '32px' }}
-                  >
-                    {/* Baseline Bar (Fixed target schedule, read-only and non-draggable) */}
-                    {baselineCoords && (
-                      <div
-                        className="absolute select-none pointer-events-none z-10"
-                        style={{
-                          left: `${baselineCoords.left}px`,
-                          width: `${row.isMilestone ? 14 : Math.max(8, baselineCoords.width)}px`,
-                          bottom: row.level === 0 ? '1px' : '2px',
-                          height: row.level === 0 ? '5px' : '6px',
-                        }}
-                        title={`Baseline: ${row.baselineStart} → ${row.baselineFinish || row.baselineStart}`}
-                      >
-                        {row.isMilestone ? (
-                          <div className="w-3.5 h-3.5 bg-slate-500/80 border border-slate-600 rotate-45 mx-auto" />
-                        ) : (
-                          <div 
-                            className="w-full h-full rounded-xs bg-slate-400/50 dark:bg-slate-500/50 border border-slate-500/70 dark:border-slate-400/60 shadow-2xs"
-                            style={{
-                              backgroundImage: 'repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(100,116,139,0.25) 3px, rgba(100,116,139,0.25) 6px)'
-                            }}
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {barCoords && (
-                      <div 
-                        onMouseEnter={(e) => handleMouseEnter(row, e)}
-                        onMouseLeave={handleMouseLeave}
-                        className="absolute select-none group"
-                        style={{ 
-                          left: `${barCoords.left}px`, 
-                          width: `${row.isMilestone ? '20' : Math.max(12, barCoords.width)}px`,
-                          top: '0px',
-                          height: '100%',
-                          display: 'flex',
-                          alignItems: 'center'
-                        }}
-                      >
-                        {/* Target hover indicator on bar */}
-                        {isTargetHovered && (
-                          <div 
-                            className="absolute -left-1 z-30 w-3 h-3 rounded-full bg-green-500 border-2 border-white shadow-md animate-ping pointer-events-none"
-                          />
-                        )}
-
-                        {/* Connector Nodes for Draw-to-Connect dependency arrows */}
-                        {onUpdateProject && (
-                          <>
-                            {/* Left Start Node Handle */}
-                            <div
-                              data-export-hide="true"
-                              className={`absolute -left-2 z-30 w-3 h-3 rounded-full bg-blue-500 hover:bg-blue-400 border-2 border-white dark:border-slate-800 shadow-md cursor-crosshair transition-all duration-150 flex items-center justify-center ${
-                                connectMode ? 'opacity-100 animate-pulse scale-110' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
-                              }`}
-                              title={`Drag from Start of ${row.name} to connect`}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                const container = document.querySelector('.gantt-relative-container');
-                                if (container) {
-                                  const rect = container.getBoundingClientRect();
-                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
-                                  const startX = barCoords ? barCoords.left : (e.clientX - rect.left);
-                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
-
-                                  setConnectDraw({
-                                    sourceRowId: row.id,
-                                    sourceX: startX,
-                                    sourceY: startY,
-                                    currentX: e.clientX - rect.left,
-                                    currentY: e.clientY - rect.top - 56
-                                  });
-                                }
-                              }}
-                              onTouchStart={(e) => {
-                                e.stopPropagation();
-                                if (e.touches.length === 0) return;
-                                const touch = e.touches[0];
-                                const container = document.querySelector('.gantt-relative-container');
-                                if (container) {
-                                  const rect = container.getBoundingClientRect();
-                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
-                                  const startX = barCoords ? barCoords.left : (touch.clientX - rect.left);
-                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (touch.clientY - rect.top - 56);
-
-                                  setConnectDraw({
-                                    sourceRowId: row.id,
-                                    sourceX: startX,
-                                    sourceY: startY,
-                                    currentX: touch.clientX - rect.left,
-                                    currentY: touch.clientY - rect.top - 56
-                                  });
-                                }
-                              }}
-                            >
-                              <div className="w-1 h-1 bg-white rounded-full pointer-events-none" />
-                            </div>
-
-                            {/* Right Finish Node Handle */}
-                            <div
-                              data-export-hide="true"
-                              className={`absolute -right-2 z-30 w-3 h-3 rounded-full bg-emerald-500 hover:bg-emerald-400 border-2 border-white dark:border-slate-800 shadow-md cursor-crosshair transition-all duration-150 flex items-center justify-center ${
-                                connectMode ? 'opacity-100 animate-pulse scale-110' : 'opacity-0 group-hover:opacity-100 hover:scale-125'
-                              }`}
-                              title={`Drag from Finish of ${row.name} to connect`}
-                              onMouseDown={(e) => {
-                                e.stopPropagation();
-                                e.preventDefault();
-                                const container = document.querySelector('.gantt-relative-container');
-                                if (container) {
-                                  const rect = container.getBoundingClientRect();
-                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
-                                  const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (e.clientX - rect.left);
-                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (e.clientY - rect.top - 56);
-
-                                  setConnectDraw({
-                                    sourceRowId: row.id,
-                                    sourceX: startX,
-                                    sourceY: startY,
-                                    currentX: e.clientX - rect.left,
-                                    currentY: e.clientY - rect.top - 56
-                                  });
-                                }
-                              }}
-                              onTouchStart={(e) => {
-                                e.stopPropagation();
-                                if (e.touches.length === 0) return;
-                                const touch = e.touches[0];
-                                const container = document.querySelector('.gantt-relative-container');
-                                if (container) {
-                                  const rect = container.getBoundingClientRect();
-                                  const sourceRowIdx = rows.findIndex(r => r.id === row.id);
-                                  const startX = barCoords ? (barCoords.left + (row.isMilestone ? 20 : Math.max(12, barCoords.width))) : (touch.clientX - rect.left);
-                                  const startY = sourceRowIdx >= 0 ? (sourceRowIdx * 32 + 16) : (touch.clientY - rect.top - 56);
-
-                                  setConnectDraw({
-                                    sourceRowId: row.id,
-                                    sourceX: startX,
-                                    sourceY: startY,
-                                    currentX: touch.clientX - rect.left,
-                                    currentY: touch.clientY - rect.top - 56
-                                  });
-                                }
-                              }}
-                            >
-                              <div className="w-1 h-1 bg-white rounded-full pointer-events-none" />
-                            </div>
-                          </>
-                        )}
-                        {/* Summary Bar Level 0 (Project rollup) */}
-                        {row.level === 0 && (
-                          <div 
-                            className="w-full relative flex items-center h-4 select-none"
-                            style={{ cursor: onUpdateProject ? (dragState?.rowId === row.id ? 'grabbing' : 'grab') : 'default' }}
-                            onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                          >
-                            <div className="w-full h-2 bg-base-accent-dim relative rounded-xs overflow-hidden flex items-center border border-base-accent/40 pointer-events-none">
-                              <div 
-                                className="h-full bg-base-accent"
-                                style={{ width: `${row.pct}%` }}
-                              />
-                            </div>
-                            <div className="absolute left-0 top-1.5 border-t-[6px] border-t-base-accent border-x-[4px] border-x-transparent pointer-events-none" />
-                            <div className="absolute right-0 top-1.5 border-t-[6px] border-t-base-accent border-x-[4px] border-x-transparent pointer-events-none" />
-                          </div>
-                        )}
-
-                        {/* Summary Bar Level 1 (Assembly Rollup) */}
-                        {row.level === 1 && (
-                          <div 
-                            className={`w-full relative flex items-center h-4 select-none ${
-                              showCriticalPath && criticalAssemblyIds.has(row.id)
-                                ? 'border-l-2 border-red-600 pl-1'
-                                : ''
-                            }`}
-                            style={{ cursor: onUpdateProject ? (dragState?.rowId === row.id ? 'grabbing' : 'grab') : 'default' }}
-                            onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                          >
-                            <div className="w-full h-1.5 bg-slate-300 dark:bg-slate-700 relative rounded-full overflow-hidden flex items-center border border-slate-400/20 pointer-events-none">
-                              <div 
-                                className="h-full bg-slate-800 dark:bg-slate-200"
-                                style={{ width: `${row.pct}%` }}
-                              />
-                            </div>
-                            <div className="absolute left-0 top-1 border-t-[6px] border-t-slate-800 dark:border-t-slate-200 border-x-[4px] border-x-transparent pointer-events-none" />
-                            <div className="absolute right-0 top-1 border-t-[6px] border-t-slate-800 dark:border-t-slate-200 border-x-[4px] border-x-transparent pointer-events-none" />
-                          </div>
-                        )}
-
-                        {/* Task Bar Level 2 (Standard Task) */}
-                        {row.level === 2 && !row.isMilestone && (() => {
-                          const rowConflicts = dependencyViolationsMap.get(row.id);
-                          const hasConflict = rowConflicts && rowConflicts.length > 0;
-
-                          return (
-                            <div 
-                              className={`w-full h-4.5 rounded relative overflow-hidden flex items-center select-none text-[9px] font-bold text-white transition-all shadow-xs border ${
-                                hasConflict
-                                  ? 'bg-red-600 border-2 border-red-500 ring-2 ring-red-500/60 shadow-md animate-pulse'
-                                  : cascadedTaskIds.has(row.id)
-                                    ? 'border-2 border-amber-400 ring-2 ring-amber-400/40 ring-offset-0 animate-[pulse_0.6s_ease-in-out_3] bg-amber-500'
-                                    : row.done 
-                                      ? 'bg-base-green border-base-green' 
-                                      : showCriticalPath && criticalPathIds.has(row.id)
-                                        ? 'bg-red-600 border-red-600'
-                                        : (() => {
-                                            const todayStr = new Date().toISOString().slice(0, 10);
-                                            const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
-                                            return isOverdue 
-                                              ? 'bg-base-red border-base-red animate-pulse' 
-                                              : 'bg-base-blue border-base-blue';
-                                          })()
-                              } ${hasEarlyWarning ? 'border-l-2 border-l-amber-400 pl-1' : ''}`}
-                              style={{ cursor: onUpdateProject ? 'move' : 'default' }}
-                              onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                              onTouchStart={(e) => handleBarTouchStart(row, 'move', e)}
-                            >
-                              {/* Progress overlay */}
-                              {showProgress && row.pct > 0 && (
-                                <div 
-                                  className="absolute left-0 top-0 bottom-0 bg-black/25 pointer-events-none"
-                                  style={{ width: `${row.pct}%` }}
-                                />
-                              )}
-
-                              {/* AUTO-SCHEDULE FEATURE SHIFTED LABEL */}
-                              {cascadedTaskIds.has(row.id) && !hasConflict && (
-                                <span className="absolute inset-0 flex items-center justify-center 
-                                                 text-[8px] font-black text-amber-900 uppercase 
-                                                 tracking-widest pointer-events-none z-10">
-                                  ↕ shifted
-                                </span>
-                              )}
-
-                              {/* Task name inside label if wide enough */}
-                              {barCoords.width > 80 && (
-                                <span className={`relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8 ${row.pct === 100 ? 'line-through opacity-75' : ''}`}>
-                                  {row.pct === 100 ? `✓ — ${row.name}` : row.name} ({row.pct}%)
-                                </span>
-                              )}
-
-                              {/* Critical Path Indicator Badge inside bar */}
-                              {showCriticalPath && criticalPathIds.has(row.id) && !row.done && !hasConflict && barCoords.width > 40 && (
-                                <span className="absolute right-2.5 text-[7px] bg-white/20 px-1 rounded-sm text-white select-none pointer-events-none z-10 uppercase tracking-wider font-extrabold font-mono">
-                                  CP
-                                </span>
-                              )}
-
-                              {/* Hard Dependency Conflict Badge */}
-                              {hasConflict && (
-                                <span 
-                                  className="absolute right-1 text-[7.5px] bg-red-950/90 text-white border border-red-300 px-1 rounded flex items-center gap-0.5 select-none pointer-events-none z-20 uppercase font-mono font-black animate-pulse"
-                                  title={rowConflicts.map(c => c.reason).join('\n')}
-                                >
-                                  <AlertTriangle className="h-2.5 w-2.5 text-red-300 fill-red-600 shrink-0" />
-                                  <span>CONFLICT</span>
-                                </span>
-                              )}
-
-                              {/* Live Date Tooltip Badge while dragging */}
-                              {dragState && dragState.rowId === row.id && (
-                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-mono px-2 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap z-30 font-bold border border-slate-700 dark:border-slate-300">
-                                  {dragState.tempStart || row.start} → {dragState.tempFinish || row.finish}
-                                </div>
-                              )}
-
-                              {/* Left edge drag resize handle */}
-                              {onUpdateProject && (
-                                <div 
-                                  data-export-hide="true"
-                                  className="absolute left-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-col-resize z-20 print:hidden rounded-l"
-                                  onMouseDown={(e) => {
-                                    e.stopPropagation();
-                                    handleBarMouseDown(row, 'resize-left', e);
-                                  }}
-                                  onTouchStart={(e) => {
-                                    e.stopPropagation();
-                                    handleBarTouchStart(row, 'resize-left', e);
-                                  }}
-                                  title="Drag to adjust start date"
-                                />
-                              )}
-
-                              {/* Right edge drag resize handle */}
-                              {onUpdateProject && (
-                                <div 
-                                  data-export-hide="true"
-                                  className="absolute right-0 top-0 bottom-0 w-2.5 hover:bg-white/40 cursor-col-resize z-20 print:hidden rounded-r"
-                                  onMouseDown={(e) => {
-                                    e.stopPropagation();
-                                    handleBarMouseDown(row, 'resize', e);
-                                  }}
-                                  onTouchStart={(e) => {
-                                    e.stopPropagation();
-                                    handleBarTouchStart(row, 'resize', e);
-                                  }}
-                                  title="Drag to adjust end date"
-                                />
-                              )}
-                            </div>
-                          );
-                        })()}
-
-                        {/* Milestone Diamond shape */}
-                        {row.isMilestone && (() => {
-                          const rowConflicts = dependencyViolationsMap.get(row.id);
-                          const hasConflict = rowConflicts && rowConflicts.length > 0;
-                          return (
-                            <div 
-                              className={`w-3.5 h-3.5 rotate-45 transform border shadow-xs flex items-center justify-center shrink-0 -ml-1.5 z-20 cursor-move ${
-                                hasConflict 
-                                  ? 'bg-red-600 border-red-300 ring-2 ring-red-500/60 animate-pulse' 
-                                  : 'bg-yellow-500 dark:bg-yellow-400 border-white/40'
-                              }`}
-                              onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                              title={hasConflict ? `Milestone Dependency Conflict:\n${rowConflicts.map(c => c.reason).join('\n')}` : "Drag milestone to shift target date"}
-                            />
-                          );
-                        })()}
-
-                        {/* Resource Labels & Hours Tracking shown to the right of the bar */}
-                        {!row.isMilestone && (
-                          <div className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] z-10 pointer-events-none flex items-center gap-1.5">
-                            {row.assigned && (
-                              <span className="font-semibold text-base-muted bg-base-surface/80 px-1.5 py-0.5 rounded border border-base-border/30 backdrop-blur-[2px]">
-                                {row.assigned}
-                              </span>
-                            )}
-                            {showHoursTracking && (row.planHours > 0 || row.actualHours > 0) && (
-                              <span className={`inline-flex items-center gap-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border backdrop-blur-[2px] ${
-                                row.actualHours > row.planHours
-                                  ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30'
-                                  : row.actualHours > 0
-                                    ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                                    : 'bg-base-surface/80 text-base-muted border-base-border/30'
-                              }`}>
-                                <Clock className="w-2.5 h-2.5 shrink-0" />
-                                <span>{row.actualHours.toFixed(0)}h / {row.planHours.toFixed(0)}h</span>
-                                {row.actualHours > row.planHours && (
-                                  <span className="text-[7.5px] font-black uppercase text-red-500 bg-red-500/20 px-1 rounded">OVER</span>
-                                )}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                        {row.isMilestone && (
-                          <span className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] text-yellow-600 dark:text-yellow-400 font-bold z-10 pointer-events-none bg-base-surface/60 px-1 rounded backdrop-blur-[1px]">
-                            {row.name} (Milestone)
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                );
-              }))}
-
-              {/* 5. SVG DEPENDENCY CONNECTOR ARROWS OVERLAY */}
-              <svg 
-                className="absolute pointer-events-none"
-                style={{ 
-                  position: 'absolute',
-                  top: 0,
-                  left: 0,
-                  width: `${totalTimelineDays * pixelsPerDay}px`, 
-                  height: `${rows.length * 32}px`,
-                  zIndex: 10
-                }}
-              >
-                <defs>
-                  <marker 
-                    id="arrow-right" 
-                    viewBox="0 0 10 10" 
-                    refX="8" 
-                    refY="5" 
-                    markerWidth="6" 
-                    markerHeight="6" 
-                    orient="auto"
-                  >
-                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#6b7280" />
-                  </marker>
-                  <marker 
-                    id="arrow-critical" 
-                    viewBox="0 0 10 10" 
-                    refX="8" 
-                    refY="5" 
-                    markerWidth="6" 
-                    markerHeight="6" 
-                    orient="auto"
-                  >
-                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#ef4444" />
-                  </marker>
-                  <marker 
-                    id="arrow-conflict" 
-                    viewBox="0 0 10 10" 
-                    refX="8" 
-                    refY="5" 
-                    markerWidth="6" 
-                    markerHeight="6" 
-                    orient="auto"
-                  >
-                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#dc2626" />
-                  </marker>
-                  <marker 
-                    id="arrow-hover" 
-                    viewBox="0 0 10 10" 
-                    refX="8" 
-                    refY="5" 
-                    markerWidth="6" 
-                    markerHeight="6" 
-                    orient="auto"
-                  >
-                    <path d="M 0 1.5 L 8 5 L 0 8.5 z" fill="#3b82f6" />
-                  </marker>
-                </defs>
-
-                {arrows.map((arr) => {
-                  const isHovered = hoveredArrowId === arr.id;
-                  const isSelected = selectedArrowId === arr.id;
-                  const showNodeBadge = connectMode || isHovered || isSelected || arr.isConflict;
-
-                  return (
-                    <g key={`arrow-group-${arr.id}`}>
-                      {/* Thick invisible hit path for easy interaction */}
-                      <path
-                        d={arr.path}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth={14}
-                        className="pointer-events-auto cursor-pointer"
-                        onMouseEnter={() => setHoveredArrowId(arr.id)}
-                        onMouseLeave={() => setHoveredArrowId(null)}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedArrowId(selectedArrowId === arr.id ? null : arr.id);
-                        }}
-                      />
-
-                      {/* Visible Arrow Line */}
-                      <path
-                        d={arr.path}
-                        fill="none"
-                        stroke={
-                          isHovered || isSelected 
-                            ? '#3b82f6' 
-                            : arr.isConflict
-                              ? '#dc2626'
-                              : arr.isCritical 
-                                ? '#ef4444' 
-                                : '#6b7280'
-                        }
-                        strokeWidth={
-                          isHovered || isSelected 
-                            ? 3 
-                            : arr.isConflict
-                              ? 2.5
-                              : arr.isCritical 
-                                ? 2 
-                                : 1.5
-                        }
-                        strokeDasharray={arr.isConflict ? '5,3' : (isHovered ? '4,3' : undefined)}
-                        markerEnd={
-                          isHovered || isSelected 
-                            ? 'url(#arrow-hover)' 
-                            : arr.markerEnd
-                        }
-                        className="transition-all duration-200 pointer-events-none"
-                        opacity={isHovered || isSelected ? 1 : arr.isCritical ? 1 : 0.85}
-                      />
-
-                      {/* Interactive Removal Node Badge at Line Midpoint */}
-                      {showNodeBadge && (
-                        <foreignObject
-                          x={arr.midX - 52}
-                          y={arr.midY - 12}
-                          width={104}
-                          height={26}
-                          className="pointer-events-auto overflow-visible z-50"
-                        >
-                          <div className="flex items-center justify-center">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteDependencyArrow(arr.targetRowId, arr.sourceRowId);
-                              }}
-                              className="bg-red-600 hover:bg-red-700 active:scale-95 text-white font-mono text-[9px] font-bold px-1.5 py-0.5 rounded shadow-md border border-white/40 flex items-center gap-1 cursor-pointer transition-all hover:scale-110 whitespace-nowrap"
-                              title={`Click to remove link: ${arr.sourceWbs} → ${arr.targetWbs}`}
-                            >
-                              <Link className="h-2.5 w-2.5 rotate-45" />
-                              <span>{arr.sourceWbs}➔{arr.targetWbs}</span>
-                              <span className="bg-red-800 rounded-full w-3.5 h-3.5 flex items-center justify-center text-[8px] font-black ml-0.5">✕</span>
-                            </button>
-                          </div>
-                        </foreignObject>
-                      )}
-                    </g>
-                  );
-                })}
-
-                {/* Live Rubber-Band Connection Line */}
-                {connectDraw && (
-                  <path
-                    d={`M ${connectDraw.sourceX} ${connectDraw.sourceY} L ${connectDraw.currentX} ${connectDraw.currentY}`}
-                    fill="none"
-                    stroke="#22c55e"
-                    strokeWidth="2.5"
-                    strokeDasharray="4,4"
-                    markerEnd="url(#arrow-right)"
-                  />
-                )}
-              </svg>
-            </div>
-
-            {/* ── S-CURVE OVERLAY ── */}
-            {showSCurve && sCurvePaths && (
-              <div
-                className="relative border-t border-base-border bg-base-surface2 flex-shrink-0"
-                style={{ height: `${SCURVE_H + 28}px`, width: `${sCurvePaths.totalWidth}px` }}
-              >
-                {/* Labels row */}
-                <div className="absolute top-0 left-0 right-0 flex items-center gap-3 px-3 h-6
-                                border-b border-base-border bg-base-surface z-10">
-                  <span className="font-condensed font-extrabold text-[9px] uppercase
-                                   tracking-widest text-base-muted">
-                    S-Curve
-                  </span>
-                  {/* Planned legend */}
-                  <span className="flex items-center gap-1 text-[9px] text-base-muted">
-                    <svg width="18" height="4" aria-hidden="true">
-                      <line x1="0" y1="2" x2="18" y2="2"
-                            stroke="var(--accent)" strokeWidth="2"
-                            strokeDasharray="4 2"/>
-                    </svg>
-                    Planned
-                  </span>
-                  {/* Actual legend */}
-                  <span className="flex items-center gap-1 text-[9px] text-base-muted">
-                    <svg width="18" height="4" aria-hidden="true">
-                      <line x1="0" y1="2" x2="18" y2="2"
-                            stroke="var(--green)" strokeWidth="2"/>
-                    </svg>
-                    Actual
-                  </span>
-                  {/* Live pct readout */}
-                  {(() => {
-                    const lastPt = sCurveData?.[sCurveData.length - 1];
-                    if (!lastPt) return null;
-                    const diff = lastPt.actual - lastPt.planned;
-                    const color = diff >= 0 ? 'var(--green)' : 'var(--red)';
-                    const label = diff >= 0
-                      ? `+${diff.toFixed(1)}% ahead`
-                      : `${diff.toFixed(1)}% behind`;
-                    return (
-                      <span className="ml-auto text-[9px] font-condensed font-black"
-                            style={{ color }}>
-                        {label}
-                      </span>
-                    );
-                  })()}
-                </div>
-
-                {/* SVG chart area */}
-                <svg
-                  width={sCurvePaths.totalWidth}
-                  height={SCURVE_H}
-                  viewBox={`0 0 ${sCurvePaths.totalWidth} ${SCURVE_H}`}
-                  className="absolute bottom-0 left-0"
-                  style={{ overflow: 'visible' }}
-                  aria-label="S-Curve planned vs actual progress"
-                  role="img"
-                >
-                  {/* Horizontal grid lines at 25%, 50%, 75%, 100% */}
-                  {[25, 50, 75, 100].map(pct => {
-                    const y = SCURVE_H - (pct / 100) * (SCURVE_H - 4) - 2;
-                    return (
-                      <g key={pct}>
-                        <line
-                          x1={0} y1={y}
-                          x2={sCurvePaths.totalWidth} y2={y}
-                          stroke="var(--border)" strokeWidth="0.5"
-                        />
-                        <text
-                          x={4} y={y - 2}
-                          fontSize="7" fill="var(--muted)"
-                          fontFamily="var(--font-condensed, sans-serif)"
-                        >
-                          {pct}%
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  {/* Today vertical line */}
-                  {(() => {
-                    const todayD = daysBetween(timelineStart, new Date());
-                    if (todayD < 0 || todayD > totalTimelineDays) return null;
-                    const tx = todayD * pixelsPerDay;
-                    return (
-                      <line
-                        x1={tx} y1={0} x2={tx} y2={SCURVE_H}
-                        stroke="var(--red)" strokeWidth="1"
-                        strokeDasharray="3 3" opacity="0.6"
-                      />
-                    );
-                  })()}
-
-                  {/* Area fill under Planned curve */}
-                  <path
-                    d={`${sCurvePaths.planned} L ${sCurvePaths.totalWidth} ${SCURVE_H} L 0 ${SCURVE_H} Z`}
-                    fill="var(--accent)" fillOpacity="0.06"
-                  />
-
-                  {/* Area fill under Actual curve */}
-                  <path
-                    d={`${sCurvePaths.actual} L ${sCurvePaths.totalWidth} ${SCURVE_H} L 0 ${SCURVE_H} Z`}
-                    fill="var(--green)" fillOpacity="0.10"
-                  />
-
-                  {/* Planned line — dashed amber */}
-                  <path
-                    d={sCurvePaths.planned}
-                    fill="none"
-                    stroke="var(--accent)"
-                    strokeWidth="1.5"
-                    strokeDasharray="5 3"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {/* Actual line — solid green */}
-                  <path
-                    d={sCurvePaths.actual}
-                    fill="none"
-                    stroke="var(--green)"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-
-                  {/* Variance shading between planned and actual at today */}
-                  {(() => {
-                    const todayD = Math.min(
-                      totalTimelineDays,
-                      Math.max(0, daysBetween(timelineStart, new Date()))
-                    );
-                    const todayPt = sCurveData?.find(p => p.day >= todayD);
-                    if (!todayPt) return null;
-                    const tx = todayD * pixelsPerDay;
-                    const py = SCURVE_H - (todayPt.planned / 100) * (SCURVE_H - 4) - 2;
-                    const ay = SCURVE_H - (todayPt.actual  / 100) * (SCURVE_H - 4) - 2;
-                    const isAhead = todayPt.actual >= todayPt.planned;
-                    return (
-                      <g>
-                        {/* Vertical variance line */}
-                        <line
-                          x1={tx} y1={Math.min(py, ay)}
-                          x2={tx} y2={Math.max(py, ay)}
-                          stroke={isAhead ? 'var(--green)' : 'var(--red)'}
-                          strokeWidth="2"
-                          strokeDasharray="2 2"
-                        />
-                        {/* Dot on planned */}
-                        <circle cx={tx} cy={py} r="3"
-                          fill="var(--accent)" stroke="var(--surface)" strokeWidth="1.5"/>
-                        {/* Dot on actual */}
-                        <circle cx={tx} cy={ay} r="3"
-                          fill="var(--green)" stroke="var(--surface)" strokeWidth="1.5"/>
-                      </g>
-                    );
-                  })()}
-                </svg>
-              </div>
-            )}
-
-            {/* ── RESOURCE LOAD VIEW TIMELINE GRID ── */}
-            {showResourceLoad && resourceLoadData && (
-              <div className="relative border-t-2 border-base-border bg-base-surface flex-shrink-0" style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}>
-                {/* Section Header Spacer */}
-                <div className="h-[61px] border-b border-base-border bg-base-surface2/80 flex items-center px-4">
-                  <span className="font-condensed font-extrabold text-[10px] uppercase tracking-widest text-base-muted flex items-center gap-2">
-                    <span>Daily Allocated Man-Hours Grid</span>
-                    <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                      ■ 8h (Optimal)
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-[9px] text-red-600 dark:text-red-400 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
-                      ■ &gt;8h (Conflict Overload)
-                    </span>
-                  </span>
-                </div>
-
-                {/* Resource Rows Grid */}
-                {resourceLoadData.resourceList.map(emp => {
-                  const isExpanded = expandedResources.has(emp.name);
-                  const hasConflicts = emp.conflictDaysCount > 0;
-
-                  return (
-                    <React.Fragment key={`res-row-right-${emp.name}`}>
-                      {/* Main Employee Daily Cell Row */}
-                      <div className={`h-9 border-b border-base-border flex ${hasConflicts ? 'bg-red-500/5' : 'bg-base-surface'}`}>
-                        {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
-                          const hours = emp.dailyHours[dIdx];
-                          const isOver = hours > dailyCapacityLimit;
-                          const isOptimal = hours === dailyCapacityLimit;
-                          const isUnder = hours > 0 && hours < dailyCapacityLimit;
-
-                          const currentDateStr = addDaysToLocalDate(formatLocalDate(timelineStart), dIdx);
-
-                          return (
-                            <div
-                              key={`res-cell-${emp.name}-${dIdx}`}
-                              style={{ width: `${pixelsPerDay}px` }}
-                              onMouseEnter={(e) => {
-                                const rect = e.currentTarget.getBoundingClientRect();
-                                setHoveredResourceCell({
-                                  employeeName: emp.name,
-                                  dayIdx: dIdx,
-                                  dateStr: currentDateStr,
-                                  totalHours: hours,
-                                  tasks: emp.dailyTasks.get(dIdx) || [],
-                                  x: rect.left + rect.width / 2,
-                                  y: rect.top - 8
-                                });
-                              }}
-                              onMouseLeave={() => setHoveredResourceCell(null)}
-                              className={`h-full border-r border-base-border/40 flex items-center justify-center font-mono text-[10px] transition-all cursor-pointer select-none ${
-                                isOver
-                                  ? 'bg-red-500/30 text-red-700 dark:text-red-300 font-black border-y-2 border-red-500/60 shadow-xs hover:bg-red-500/50 hover:scale-105 z-10'
-                                  : isOptimal
-                                    ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border-y border-emerald-500/30 hover:bg-emerald-500/30'
-                                    : isUnder
-                                      ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300 font-semibold hover:bg-blue-500/25'
-                                      : 'text-base-muted/20 hover:bg-base-surface3/40'
-                              }`}
-                            >
-                              {hours > 0 ? (
-                                <span className={`px-1 py-0.2 rounded ${isOver ? 'bg-red-600 text-white font-black' : ''}`}>
-                                  {hours}h
-                                </span>
-                              ) : (
-                                <span>·</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-
-                      {/* Sub-rows for tasks when expanded */}
-                      {isExpanded && emp.assignedTasks.map(t => {
-                        const taskStartD = parseLocalDate(t.start);
-                        const taskFinishD = parseLocalDate(t.finish);
-                        const taskStartIdx = daysBetween(timelineStart, taskStartD);
-                        const taskFinishIdx = daysBetween(timelineStart, taskFinishD);
-
-                        return (
-                          <div key={`res-task-right-${emp.name}-${t.id}`} className="h-7 border-b border-base-border/60 bg-base-surface2/30 flex">
-                            {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
-                              const isActive = dIdx >= taskStartIdx && dIdx <= taskFinishIdx;
-
-                              return (
-                                <div
-                                  key={`res-task-cell-${t.id}-${dIdx}`}
-                                  style={{ width: `${pixelsPerDay}px` }}
-                                  className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[9px] ${
-                                    isActive
-                                      ? 'bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold border-y border-indigo-500/40'
-                                      : 'text-transparent'
-                                  }`}
-                                  title={isActive ? `${t.name} (8h)` : ''}
-                                >
-                                  {isActive ? '8h' : ''}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </React.Fragment>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+        <GanttTimeline
+          rightScrollRef={rightScrollRef}
+          handleScroll={handleScroll}
+          totalTimelineDays={totalTimelineDays}
+          pixelsPerDay={pixelsPerDay}
+          topHeaders={topHeaders}
+          bottomHeaders={bottomHeaders}
+          weekendBands={weekendBands}
+          isTodayInTimeline={isTodayInTimeline}
+          todayX={todayX}
+          todayFormattedFull={todayFormattedFull}
+          visibleTasksCount={visibleTasksCount}
+          isFilterActive={isFilterActive}
+          setSearchQuery={setSearchQuery}
+          setStatusFilter={setStatusFilter}
+          topSpacerHeight={topSpacerHeight}
+          bottomSpacerHeight={bottomSpacerHeight}
+          visibleRows={visibleRows}
+          startIndex={startIndex}
+          rows={rows}
+          selectedRowId={selectedRowId}
+          setSelectedRowId={setSelectedRowId}
+          dragHoverTargetRowId={dragHoverTargetRowId}
+          rowBarCoordsCache={rowBarCoordsCache}
+          showBaseline={showBaseline}
+          rowBaselineCoordsCache={rowBaselineCoordsCache}
+          slackMap={slackMap}
+          showCriticalPath={showCriticalPath}
+          criticalPathIds={criticalPathIds}
+          criticalAssemblyIds={criticalAssemblyIds}
+          cascadedTaskIds={cascadedTaskIds}
+          showProgress={showProgress}
+          showHoursTracking={showHoursTracking}
+          dependencyViolationsMap={dependencyViolationsMap}
+          handleMouseEnter={handleMouseEnter}
+          handleMouseLeave={handleMouseLeave}
+          onUpdateProject={onUpdateProject}
+          connectMode={connectMode}
+          connectDraw={connectDraw}
+          setConnectDraw={setConnectDraw}
+          dragState={dragState}
+          handleBarMouseDown={handleBarMouseDown}
+          handleBarTouchStart={handleBarTouchStart}
+          arrows={arrows}
+          hoveredArrowId={hoveredArrowId}
+          setHoveredArrowId={setHoveredArrowId}
+          selectedArrowId={selectedArrowId}
+          setSelectedArrowId={setSelectedArrowId}
+          handleDeleteDependencyArrow={handleDeleteDependencyArrow}
+          showSCurve={showSCurve}
+          sCurvePaths={sCurvePaths}
+          SCURVE_H={SCURVE_H}
+          sCurveData={sCurveData}
+          timelineStart={timelineStart}
+          showResourceLoad={showResourceLoad}
+          resourceLoadData={resourceLoadData}
+          dailyCapacityLimit={dailyCapacityLimit}
+          expandedResources={expandedResources}
+          setHoveredResourceCell={setHoveredResourceCell}
+        />
 
         {/* RESOURCE LOAD HOVER TOOLTIP POPUP */}
         {hoveredResourceCell && (

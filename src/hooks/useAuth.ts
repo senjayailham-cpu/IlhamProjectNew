@@ -318,6 +318,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       testUser = foundDef;
     }
 
+    // If not found in local browser storage or defaults, seamlessly query Firestore cloud!
+    if (!testUser) {
+      try {
+        const cloudUserDoc = await getDoc(doc(db, 'users', targetId));
+        if (cloudUserDoc.exists()) {
+          const cloudData = cloudUserDoc.data() as User;
+          testUser = cloudData;
+          setUsers(prev => {
+            if (prev.some(u => u.id === cloudData.id)) return prev;
+            const next = [...prev, cloudData];
+            try {
+              localStorage.setItem('w2proj_users_v1', JSON.stringify(next));
+            } catch (e) {}
+            return next;
+          });
+        }
+      } catch (cloudErr) {
+        console.warn("Could not query user directly from Firestore cloud during login:", cloudErr);
+      }
+    }
+
     if (!testUser) {
       setLoginError('User ID not found or registered.');
       return;
@@ -411,6 +432,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (docSnap && docSnap.exists()) {
         testUser = docSnap.data() as User;
       }
+
+      // Always cache this active user on this device for offline/subsequent fast logins
+      setUsers(prev => {
+        const exists = prev.some(u => u.id === testUser!.id);
+        const next = exists ? prev.map(u => u.id === testUser!.id ? testUser! : u) : [...prev, testUser!];
+        try {
+          localStorage.setItem('w2proj_users_v1', JSON.stringify(next));
+        } catch (e) {}
+        return next;
+      });
 
       const nextSessionId = Math.random().toString(36).substring(2) + Date.now();
       sessionStorage.setItem('w2proj_active_session_id', nextSessionId);

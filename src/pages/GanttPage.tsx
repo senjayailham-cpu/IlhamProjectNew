@@ -35,7 +35,12 @@ export function GanttPage({
   const [includeCompleted, setIncludeCompleted] = useState<boolean>(false);
 
   const activeProjects = useMemo(
-    () => projects.filter(p => includeCompleted || (p.status !== 'completed' && !p.isArchived)),
+    () => projects.filter(p => {
+      // Archive tidak masuk default
+      if (p.isArchived) return false;
+      if (includeCompleted) return true;
+      return p.status === 'active' || p.status === 'pending' || p.status === 'on-hold';
+    }),
     [projects, includeCompleted]
   );
 
@@ -122,7 +127,7 @@ export function GanttPage({
             </div>
           )}
 
-          {/* Toggle: Include Completed/Archived */}
+          {/* Toggle: Show Completed Projects */}
           <label className="flex items-center gap-2 shrink-0 text-xs font-condensed font-bold text-base-muted uppercase tracking-wider cursor-pointer select-none sm:ml-2">
             <input
               type="checkbox"
@@ -130,7 +135,7 @@ export function GanttPage({
               onChange={(e) => setIncludeCompleted(e.target.checked)}
               className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
             />
-            Include Completed/Archived
+            Show Completed
             {!includeCompleted && hiddenCompletedCount > 0 && (
               <span className="px-1.5 py-0.5 rounded-full bg-base-surface2 text-base-muted2 text-[10px] normal-case font-mono">
                 {hiddenCompletedCount} hidden
