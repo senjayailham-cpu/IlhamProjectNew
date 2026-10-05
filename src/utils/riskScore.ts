@@ -1,5 +1,6 @@
 import { Project, TimesheetEntry, InspectionRequest, ProblemReport, MaterialProcessing } from '../types';
 import { calcPct, fmtHrs, getManHoursForWorkOrder } from './projectUtils';
+export * from './predictiveDelay';
 
 export interface RiskScoreContext {
   timesheets?: TimesheetEntry[];

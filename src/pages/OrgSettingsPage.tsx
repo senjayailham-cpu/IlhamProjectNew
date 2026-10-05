@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { OrgSettings, INDUSTRY_TEMPLATES, User } from '../types';
-import { Settings, Plus, Trash2, ArrowUp, ArrowDown, Save, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react';
+import { can } from '../utils/permissions';
+import { Settings, Plus, Trash2, ArrowUp, ArrowDown, Save, RefreshCw, CheckCircle2, AlertCircle, Image as ImageIcon, Upload, RotateCcw, Eye } from 'lucide-react';
+import { useUIStore } from '../store';
 
 interface OrgSettingsPageProps {
   orgSettings: OrgSettings;
@@ -21,8 +23,35 @@ export function OrgSettingsPage({
   const [isSaving, setIsSaving] = useState(false);
   const [templateConfirm, setTemplateConfirm] = useState<string | null>(null);
 
+  const {
+    backgroundImage,
+    backgroundOpacity,
+    setBackgroundImage,
+    setBackgroundOpacity,
+    resetBackground
+  } = useUIStore();
+  const bgFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  const handleBgFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      notify('Ukuran gambar maksimal 5MB', 'error');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const res = event.target?.result as string;
+      if (res) {
+        setBackgroundImage(res);
+        notify('Background web app berhasil diubah!', 'success');
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const hasAccess = useMemo(() => {
-    return currentUser?.role === 'admin';
+    return can(currentUser ?? null, 'manageOrgSettings') || currentUser?.role === 'admin';
   }, [currentUser]);
 
   useEffect(() => {
@@ -291,6 +320,107 @@ export function OrgSettingsPage({
           </div>
         </div>
       )}
+
+      {/* Section: Web App Background & Wallpaper */}
+      <div className="bg-base-surface border border-base-border rounded-xl p-5 space-y-4 shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 border-b border-base-border/50 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <ImageIcon className="w-5 h-5 text-base-accent" />
+              <h2 className="font-condensed font-extrabold text-lg text-base-text uppercase tracking-wide">
+                Background Web App (Wallpaper)
+              </h2>
+            </div>
+            <p className="text-xs text-base-muted mt-0.5">
+              Tema visual wallpaper latar belakang untuk layar login dan workspace seluruh aplikasi.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              ref={bgFileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleBgFileUpload}
+              className="hidden"
+            />
+            <button
+              type="button"
+              onClick={() => bgFileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-base-surface2 hover:bg-base-accent/20 border border-base-border hover:border-base-accent/50 text-xs font-condensed font-bold text-base-text hover:text-base-accent rounded-lg transition-colors cursor-pointer"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Ganti / Upload Gambar</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                resetBackground();
+                notify('Background dikembalikan ke default truk tambang!', 'success');
+              }}
+              title="Reset ke gambar truk tambang default"
+              className="flex items-center gap-1 px-3 py-1.5 bg-base-surface2 hover:bg-base-surface border border-base-border text-xs font-condensed font-bold text-base-muted hover:text-base-text rounded-lg transition-colors cursor-pointer"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Reset Default</span>
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+          {/* Visual Preview */}
+          <div className="md:col-span-1 relative h-36 rounded-xl overflow-hidden border border-base-border bg-black/50 group">
+            <img
+              src={backgroundImage || '/images/mining_truck_bg.svg'}
+              alt="Mining Truck Background Preview"
+              className="w-full h-full object-cover"
+              style={{ opacity: Math.max(0.35, backgroundOpacity / 100) }}
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent flex flex-col justify-end p-2.5">
+              <span className="text-xs font-condensed font-bold text-white tracking-wider uppercase">
+                Heavy Mining Haul Truck
+              </span>
+              <span className="text-[10px] text-white/70 font-mono">
+                Aktif di Login & Workspace ({backgroundOpacity}% opacity)
+              </span>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div className="md:col-span-2 space-y-3 bg-base-surface2/60 p-4 rounded-xl border border-base-border/60">
+            <div>
+              <div className="flex items-center justify-between text-xs font-condensed mb-1.5">
+                <span className="font-bold text-base-text flex items-center gap-1.5">
+                  <Eye className="w-4 h-4 text-base-accent" />
+                  Tingkat Transparansi di Workspace
+                </span>
+                <span className="font-mono font-bold text-sm text-base-accent bg-base-surface px-2 py-0.5 rounded border border-base-border">
+                  {backgroundOpacity}%
+                </span>
+              </div>
+              <input
+                type="range"
+                min="0"
+                max="80"
+                step="2"
+                value={backgroundOpacity}
+                onChange={(e) => setBackgroundOpacity(Number(e.target.value))}
+                className="w-full accent-base-accent cursor-pointer h-2 bg-base-surface rounded-lg"
+              />
+              <div className="flex justify-between text-[10px] text-base-muted font-mono mt-1">
+                <span>0% (Polos)</span>
+                <span className="text-base-accent font-semibold">18% - 25% (Rekomendasi)</span>
+                <span>50%</span>
+                <span>80% (Pekat)</span>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-base-muted leading-relaxed">
+              💡 <em>Di halaman login, gambar ini otomatis tampil penuh dengan efek pencahayaan sinematik. Di dalam ruang kerja (*workspace*), transparansi dapat diatur agar seluruh kartu, tabel, dan data tetap terbaca jelas.</em>
+            </p>
+          </div>
+        </div>
+      </div>
 
       {/* Section 2: Processing Stages */}
       <div className="bg-base-surface border border-base-border rounded-xl p-5 space-y-4 shadow-sm">

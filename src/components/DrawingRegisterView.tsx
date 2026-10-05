@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { DrawingRevision, Project, User } from '../types';
+import { can } from '../utils/permissions';
 import { 
   Search, Plus, Eye, CornerUpRight, Ban, Trash2, X, FileText, 
   ExternalLink, Layers, CheckCircle2, Clock, AlertTriangle, FileBadge,
@@ -27,7 +28,7 @@ export default function DrawingRegisterView({
 }: DrawingRegisterViewProps) {
   // Permission Check
   const normalizedRole = (currentUser?.role || '').toLowerCase();
-  const canEdit = ['admin', 'manager', 'coordinator', 'project control', 'project_control'].includes(normalizedRole);
+  const canEdit = can(currentUser, 'manageDrawings') || ['admin', 'manager', 'coordinator', 'project control', 'project_control'].includes(normalizedRole);
   const canDeletePermanent = normalizedRole === 'admin';
 
   // State Filters

@@ -228,6 +228,7 @@ export interface TimesheetEntry {
   totalHours: number;
   status: TimesheetStatusType;
   desc?: string;
+  projectId?: string;
 }
 
 export interface ProblemReport {

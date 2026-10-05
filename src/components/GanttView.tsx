@@ -14,6 +14,7 @@ import {
   addDaysToLocalDate, 
   parseLocalDate 
 } from './useGanttRows';
+import { runP6ScheduleF9 } from '../utils/cpmEngine';
 import { 
   GanttGrid, 
   getCompanyColorClass, 
@@ -880,6 +881,70 @@ export default function GanttView({
       setToastMsg(null);
     }, 4000);
   };
+
+  // ── ORACLE PRIMAVERA P6 SCHEDULE (F9) ENGINE ──
+  const [p6ModalData, setP6ModalData] = useState<{
+    isOpen: boolean;
+    dataDate: string;
+    totalTasks: number;
+    criticalCount: number;
+    longestPath: number;
+    shiftedCount: number;
+    hasLoops: boolean;
+  } | null>(null);
+
+  const handleRunP6Schedule = () => {
+    if (!onUpdateProject || projectsList.length === 0) return;
+
+    let overallTotalTasks = 0;
+    let overallCriticalCount = 0;
+    let overallLongestPath = 0;
+    let overallShiftedCount = 0;
+    let anyLoops = false;
+
+    projectsList.forEach(proj => {
+      const { updatedProject, cpmResult, shiftedCount } = runP6ScheduleF9(proj);
+      overallTotalTasks += cpmResult.totalTaskCount;
+      overallCriticalCount += cpmResult.criticalCount;
+      overallLongestPath = Math.max(overallLongestPath, cpmResult.longestPathDuration);
+      overallShiftedCount += shiftedCount;
+      if (cpmResult.hasLoops) anyLoops = true;
+      if (shiftedCount > 0) {
+        onUpdateProject(updatedProject);
+      }
+    });
+
+    const dataDateStr = new Date().toISOString().slice(0, 10);
+    setP6ModalData({
+      isOpen: true,
+      dataDate: dataDateStr,
+      totalTasks: overallTotalTasks,
+      criticalCount: overallCriticalCount,
+      longestPath: overallLongestPath,
+      shiftedCount: overallShiftedCount,
+      hasLoops: anyLoops
+    });
+
+    // Automatically enable critical path highlighting so user immediately sees the critical chain in red
+    setShowCriticalPath(true);
+
+    setToastMsg(
+      `Primavera P6 Schedule (F9) Sukses: Data Date ${dataDateStr} | ${overallCriticalCount} Aktivitas Kritis (TF: 0d) | ${overallShiftedCount} Jadwal Terupdate.`
+    );
+    setTimeout(() => setToastMsg(null), 5000);
+  };
+
+  // Global F9 keyboard shortcut for P6 Run Schedule
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'F9') {
+        e.preventDefault();
+        handleRunP6Schedule();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [projectsList, onUpdateProject]);
 
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -4117,6 +4182,21 @@ export default function GanttView({
 
               <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
 
+              {/* Oracle Primavera P6 Run Schedule (F9) Button */}
+              <button
+                onClick={handleRunP6Schedule}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/15 hover:bg-red-600/25 text-red-600 dark:text-red-400 border border-red-500/40 hover:border-red-500/70 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 shadow-xs active:scale-95 group"
+                title="Oracle Primavera P6 Schedule (F9): Run CPM Forward & Backward passes to recalculate Early/Late dates, Total Float, and identify the Critical Path chain."
+              >
+                <span className="px-1 py-0.2 rounded bg-red-600 text-white text-[8px] font-mono font-black shadow-2xs">F9</span>
+                <span>P6 Schedule</span>
+                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30">
+                  {criticalPathIds.size} CP
+                </span>
+              </button>
+
+              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
+
               {/* Smart Schedule Button */}
               <button
                 onClick={handleSmartSchedule}
@@ -4318,9 +4398,18 @@ export default function GanttView({
           totalTableWidth={totalTableWidth}
           leftScrollRef={leftScrollRef}
           handleLeftWheel={handleLeftWheel}
+          colActIdWidth={75}
           colWbsWidth={colWbsWidth}
           colNameWidth={colNameWidth}
           colDurWidth={colDurWidth}
+          colOdWidth={48}
+          colRdWidth={48}
+          colTotalFloatWidth={72}
+          colFreeFloatWidth={68}
+          colEarlyStartWidth={80}
+          colEarlyFinishWidth={80}
+          colLateStartWidth={80}
+          colLateFinishWidth={80}
           colPlanHrsWidth={colPlanHrsWidth}
           colActHrsWidth={colActHrsWidth}
           colVarianceWidth={colVarianceWidth}
@@ -5303,6 +5392,113 @@ export default function GanttView({
             </div>
           );
         })()}
+
+        {/* ── ORACLE PRIMAVERA P6 SCHEDULE CALCULATION REPORT MODAL ── */}
+        {p6ModalData && p6ModalData.isOpen && (
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fade-in font-sans">
+            <div className="bg-base-surface border border-base-border rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden flex flex-col animate-scale-up">
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-base-border bg-gradient-to-r from-red-600/10 via-base-surface to-base-surface flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center font-mono font-black text-xs shadow-md">
+                    P6
+                  </div>
+                  <div>
+                    <h3 className="font-condensed font-extrabold text-base text-base-text uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Schedule Calculation Log (F9)</span>
+                      <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/40">
+                        CPM ENGINE
+                      </span>
+                    </h3>
+                    <p className="text-[11px] text-base-muted font-normal">
+                      Critical Path Method — Forward & Backward Pass Execution Report
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setP6ModalData(prev => prev ? { ...prev, isOpen: false } : null)}
+                  className="p-1.5 rounded-lg hover:bg-base-surface3 text-base-muted hover:text-base-text transition-colors cursor-pointer"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Body */}
+              <div className="p-5 space-y-4 text-xs">
+                {/* Status Banner */}
+                <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-2.5 text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-500" />
+                  <div className="text-[11px] leading-relaxed">
+                    <span className="font-bold">Penjadwalan Berhasil Dihitung.</span> Jaringan dependensi (FS, SS, FF, SF) dan tenggat waktu telah disinkronkan secara matematis.
+                  </div>
+                </div>
+
+                {/* Metrics Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Data Date</span>
+                    <span className="text-sm font-mono font-black text-base-text mt-0.5">{p6ModalData.dataDate}</span>
+                    <span className="text-[9px] text-base-muted/70">Waktu acuan CPM</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Total Aktivitas</span>
+                    <span className="text-sm font-mono font-black text-base-text mt-0.5">{p6ModalData.totalTasks}</span>
+                    <span className="text-[9px] text-base-muted/70">Elemen WBS terjadwal</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-red-500/10 border border-red-500/30 flex flex-col">
+                    <span className="text-[10px] text-red-600 dark:text-red-400 uppercase font-condensed font-bold">Aktivitas Kritis</span>
+                    <span className="text-sm font-mono font-black text-red-600 dark:text-red-400 mt-0.5">{p6ModalData.criticalCount}</span>
+                    <span className="text-[9px] text-red-600/70 dark:text-red-400/70">Total Float = 0 hari</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Longest Path</span>
+                    <span className="text-sm font-mono font-black text-base-text mt-0.5">{p6ModalData.longestPath} Hari</span>
+                    <span className="text-[9px] text-base-muted/70">Durasi rantai kritis</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Jadwal Disesuaikan</span>
+                    <span className="text-sm font-mono font-black text-amber-600 dark:text-amber-400 mt-0.5">{p6ModalData.shiftedCount}</span>
+                    <span className="text-[9px] text-base-muted/70">Tanggal bergeser logis</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Loop Sirkular</span>
+                    <span className="text-sm font-mono font-black text-emerald-600 dark:text-emerald-400 mt-0.5">
+                      {p6ModalData.hasLoops ? 'Terdeteksi' : '0 (Bersih)'}
+                    </span>
+                    <span className="text-[9px] text-base-muted/70">Integritas jaringan</span>
+                  </div>
+                </div>
+
+                {/* Explanation */}
+                <div className="p-3 rounded-xl bg-base-surface2/60 border border-base-border text-[11px] text-base-muted space-y-1">
+                  <div className="font-bold text-base-text">Fitur Primavera P6 yang Aktif:</div>
+                  <ul className="list-disc list-inside space-y-0.5">
+                    <li><span className="font-medium text-base-text">Bar Merah & Badge CP</span>: Semua aktivitas di jalur kritis otomatis ditandai.</li>
+                    <li><span className="font-medium text-base-text">Total Float (TF) & Free Float (FF)</span>: Nilai float dihitung secara presisi per aktivitas.</li>
+                    <li><span className="font-medium text-base-text">P6 Activity ID</span>: Setiap task memiliki kode unik (misal: A1010, A1020).</li>
+                  </ul>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-3 border-t border-base-border bg-base-surface2/50 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setP6ModalData(prev => prev ? { ...prev, isOpen: false } : null)}
+                  className="px-4 py-2 bg-base-accent hover:bg-base-accent2 text-white rounded-xl text-xs font-bold transition-all shadow-xs cursor-pointer"
+                >
+                  Lihat Hasil Gantt Chart
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -5,6 +5,7 @@ import { getAuth } from 'firebase/auth';
 import AICenterModal from './AICenterModal';
 import { calcPct, calcTaskCounts, getTotalManHours, fmtHrs } from '../utils/projectUtils';
 import { calcProjectRiskScore } from '../utils/riskScore';
+import { PredictiveScheduleDelayAlert } from './PredictiveScheduleDelayAlert';
 import { Folder, Clock, CheckCircle, AlertTriangle, Users, ShieldAlert, ArrowRight, ExternalLink, AlertCircle, TrendingUp, Package, X, Layers, Siren, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Calendar, BookmarkCheck, Sparkles, Sliders, Gauge, Target, MapPin, Activity } from 'lucide-react';
 import {
   RadialBarChart,
@@ -16,7 +17,11 @@ import {
   YAxis,
   Tooltip,
   ResponsiveContainer,
-  CartesianGrid
+  CartesianGrid,
+  BarChart,
+  Bar,
+  Cell,
+  Legend
 } from 'recharts';
 
 interface DashboardViewProps {
@@ -1804,6 +1809,24 @@ export default function DashboardView({
           </div>
         </div>
       </div>
+
+      {/* PREDICTIVE SCHEDULE DELAY ALERT (Uses historical timesheets & problem reports) */}
+      <PredictiveScheduleDelayAlert
+        projects={filteredProjects}
+        timesheets={timesheets}
+        problemReports={problemReports}
+        inspections={inspections}
+        todayStr={dashDate}
+        openSpotlight={openSpotlight}
+        onNavigateToSchedule={() => {
+          if (setActiveTab) {
+            setActiveTab('schedule');
+          }
+        }}
+        onNavigateToProblemCenter={() => {
+          setActiveModal('problem-center');
+        }}
+      />
 
       {/* SHIFT PULSE & FOCUS NOW */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">

@@ -170,9 +170,18 @@ export interface GanttGridProps {
   handleLeftWheel: (e: React.WheelEvent) => void;
 
   // Column widths
+  colActIdWidth?: number;
   colWbsWidth: number;
   colNameWidth: number;
   colDurWidth: number;
+  colOdWidth?: number;
+  colRdWidth?: number;
+  colTotalFloatWidth?: number;
+  colFreeFloatWidth?: number;
+  colEarlyStartWidth?: number;
+  colEarlyFinishWidth?: number;
+  colLateStartWidth?: number;
+  colLateFinishWidth?: number;
   colPlanHrsWidth: number;
   colActHrsWidth: number;
   colVarianceWidth: number;
@@ -261,39 +270,76 @@ export interface GanttGridProps {
 }
 
 export type ColumnId =
+  | 'activityId'
   | 'wbs'
   | 'name'
+  | 'od'
+  | 'rd'
   | 'dur'
+  | 'totalFloat'
+  | 'freeFloat'
+  | 'earlyStart'
+  | 'earlyFinish'
+  | 'lateStart'
+  | 'lateFinish'
+  | 'start'
+  | 'finish'
+  | 'pct'
+  | 'pred'
   | 'planHrs'
   | 'actHrs'
   | 'variance'
+  | 'baseStart'
+  | 'baseFinish'
   | 'crew'
   | 'company'
   | 'assignee'
-  | 'start'
-  | 'finish'
-  | 'baseStart'
-  | 'baseFinish'
-  | 'pred'
-  | 'pct'
   | 'status';
 
-export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
+export const P6_COLUMN_ORDER: ColumnId[] = [
+  'activityId',
+  'wbs',
+  'name',
+  'od',
+  'rd',
+  'totalFloat',
+  'start',
+  'finish',
+  'pct',
+  'pred',
+  'status',
+];
+
+export const STANDARD_COLUMN_ORDER: ColumnId[] = [
   'wbs',
   'name',
   'dur',
+  'start',
+  'finish',
+  'pct',
+  'pred',
+  'status',
+];
+
+export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
+  'activityId',
+  'wbs',
+  'name',
+  'od',
+  'rd',
+  'totalFloat',
+  'start',
+  'finish',
+  'pct',
+  'pred',
   'planHrs',
   'actHrs',
   'variance',
-  'crew',
-  'company',
-  'assignee',
-  'start',
-  'finish',
-  'baseStart',
-  'baseFinish',
-  'pred',
-  'pct',
+  'baseStart' as ColumnId,
+  'baseFinish' as ColumnId,
+  'crew' as ColumnId,
+  'company' as ColumnId,
+  'assignee' as ColumnId,
   'status',
 ];
 
@@ -303,9 +349,18 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   leftScrollRef,
   handleLeftWheel,
 
+  colActIdWidth = 75,
   colWbsWidth,
   colNameWidth,
   colDurWidth,
+  colOdWidth = 48,
+  colRdWidth = 48,
+  colTotalFloatWidth = 72,
+  colFreeFloatWidth = 68,
+  colEarlyStartWidth = 80,
+  colEarlyFinishWidth = 80,
+  colLateStartWidth = 80,
+  colLateFinishWidth = 80,
   colPlanHrsWidth,
   colActHrsWidth,
   colVarianceWidth,
@@ -447,12 +502,30 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
   const getColConfig = (colId: ColumnId) => {
     switch (colId) {
+      case 'activityId':
+        return { width: colActIdWidth, title: 'Oracle Primavera P6 Activity ID', label: 'Act ID', align: 'center', className: 'text-amber-500 font-mono font-bold' };
       case 'wbs':
         return { width: colWbsWidth, title: 'WBS Code', label: 'WBS', align: 'center' };
       case 'name':
-        return { width: colNameWidth, title: 'Task Name', label: 'Task Name', align: 'left' };
+        return { width: colNameWidth, title: 'Task Name / Description', label: 'Activity Name', align: 'left' };
+      case 'od':
+        return { width: colOdWidth, title: 'Original Duration (Days)', label: 'OD', align: 'center', className: 'font-mono' };
+      case 'rd':
+        return { width: colRdWidth, title: 'Remaining Duration (Days)', label: 'RD', align: 'center', className: 'font-mono' };
       case 'dur':
         return { width: colDurWidth, title: 'Duration (Days)', label: 'Duration', align: 'center' };
+      case 'totalFloat':
+        return { width: colTotalFloatWidth, title: 'Total Float / Slack (Days)', label: 'Total Float', align: 'center', className: 'font-mono font-bold' };
+      case 'freeFloat':
+        return { width: colFreeFloatWidth, title: 'Free Float (Days)', label: 'Free Float', align: 'center', className: 'font-mono' };
+      case 'earlyStart':
+        return { width: colEarlyStartWidth, title: 'CPM Early Start Date', label: 'Early Start', align: 'center', className: 'text-emerald-600 dark:text-emerald-400' };
+      case 'earlyFinish':
+        return { width: colEarlyFinishWidth, title: 'CPM Early Finish Date', label: 'Early Finish', align: 'center', className: 'text-emerald-600 dark:text-emerald-400' };
+      case 'lateStart':
+        return { width: colLateStartWidth, title: 'CPM Late Start Date', label: 'Late Start', align: 'center', className: 'text-orange-500 dark:text-orange-400' };
+      case 'lateFinish':
+        return { width: colLateFinishWidth, title: 'CPM Late Finish Date', label: 'Late Finish', align: 'center', className: 'text-orange-500 dark:text-orange-400' };
       case 'planHrs':
         return { width: colPlanHrsWidth, title: 'Planned/Budgeted Man-Hours', label: 'Plan Hrs', align: 'center', className: 'text-indigo-600 dark:text-indigo-400' };
       case 'actHrs':
@@ -622,6 +695,95 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
               <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
             )}
+          </div>
+        );
+
+      case 'activityId':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colActIdWidth}px` }} className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full">
+            <span className={`px-1.5 py-0.5 rounded font-extrabold font-mono tracking-tight ${
+              row.level === 0 ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30' :
+              row.level === 1 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
+              row.isCritical ? 'bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/40 font-black' :
+              'bg-base-surface2 text-base-text font-bold'
+            }`}>
+              {row.activityId || row.wbs}
+            </span>
+          </div>
+        );
+
+      case 'od':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colOdWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-text font-bold">
+            {row.isMilestone ? '0d' : `${row.od ?? row.duration}d`}
+          </div>
+        );
+
+      case 'rd':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colRdWidth}px` }} className="shrink-0 text-center text-[10px] font-mono font-bold">
+            <span className={row.rd === 0 ? 'text-emerald-500 font-extrabold' : 'text-amber-600 dark:text-amber-400'}>
+              {row.isMilestone ? '0d' : `${row.rd ?? (row.done ? 0 : row.duration)}d`}
+            </span>
+          </div>
+        );
+
+      case 'totalFloat': {
+        const tf = row.totalFloat ?? 0;
+        const isCrit = row.level === 2 ? (row.isCritical || tf <= 0.001) : (tf <= 0.001);
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colTotalFloatWidth}px` }} className="shrink-0 text-center text-[10px] font-mono font-black flex items-center justify-center h-full px-1">
+            {row.level === 2 ? (
+              isCrit ? (
+                <span className="px-1.5 py-0.2 rounded bg-red-600 text-white border border-red-500 shadow-2xs text-[9px] uppercase tracking-wider font-extrabold animate-pulse" title="Zero Float: Critical Path driving overall schedule">
+                  0d (CP)
+                </span>
+              ) : (
+                <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9.5px]">
+                  {tf}d
+                </span>
+              )
+            ) : (
+              <span className={`text-[9.5px] ${isCrit ? 'text-red-500 font-extrabold' : 'text-base-muted'}`}>
+                {tf}d
+              </span>
+            )}
+          </div>
+        );
+      }
+
+      case 'freeFloat':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colFreeFloatWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-medium">
+            {row.level === 2 ? `${row.freeFloat ?? 0}d` : '—'}
+          </div>
+        );
+
+      case 'earlyStart':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyStartWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+            {row.earlyStart || row.start || '—'}
+          </div>
+        );
+
+      case 'earlyFinish':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyFinishWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+            {row.earlyFinish || row.finish || '—'}
+          </div>
+        );
+
+      case 'lateStart':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateStartWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-orange-500 dark:text-orange-400">
+            {row.lateStart || '—'}
+          </div>
+        );
+
+      case 'lateFinish':
+        return (
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateFinishWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-orange-500 dark:text-orange-400 font-bold">
+            {row.lateFinish || '—'}
           </div>
         );
 
@@ -1298,8 +1460,35 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       >
         {/* Header row 1 */}
         <div className="h-7 px-3 flex items-center justify-between text-[10px] font-bold text-base-muted uppercase tracking-wider">
-          <div className="flex items-center gap-2">
-            <span>Task Sheet & Scheduling Grid</span>
+          <div className="flex items-center gap-1.5">
+            <span className="flex items-center gap-1 text-base-text font-black tracking-wider">
+              <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 text-[9px] font-mono">P6</span>
+              <span>Activity Table</span>
+            </span>
+            <div className="w-[1px] h-3 bg-base-border mx-0.5" />
+            <span className="text-[9px] font-normal text-base-muted hidden md:inline">Layout:</span>
+            <button
+              type="button"
+              onClick={() => {
+                setColumnOrder(P6_COLUMN_ORDER);
+                try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(P6_COLUMN_ORDER)); } catch {}
+              }}
+              className="text-[9px] font-sans font-bold text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 transition-colors cursor-pointer"
+              title="Aktifkan Kolom Standar Primavera P6 (Act ID, WBS, OD, RD, Total Float, Dates)"
+            >
+              Primavera P6
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setColumnOrder(STANDARD_COLUMN_ORDER);
+                try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(STANDARD_COLUMN_ORDER)); } catch {}
+              }}
+              className="text-[9px] font-sans font-medium text-base-muted hover:text-base-text px-1.5 py-0.5 rounded border border-base-border bg-base-surface transition-colors cursor-pointer"
+              title="Tampilan Kolom Minimalis"
+            >
+              Standard
+            </button>
             <button
               type="button"
               onClick={handleResetColumnOrder}
@@ -1307,7 +1496,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               title="Kembalikan susunan kolom ke default"
             >
               <RotateCcw className="h-2.5 w-2.5" />
-              <span>Reset Kolom</span>
+              <span>Reset</span>
             </button>
           </div>
           <div className="flex items-center gap-1.5 text-[9px] text-base-muted/80 font-normal lowercase">

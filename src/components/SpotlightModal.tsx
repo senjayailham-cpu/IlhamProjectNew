@@ -2,9 +2,10 @@ import React, { useState, useMemo } from 'react';
 import { User, Project, Assembly, Task, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
 import { useAppStore, useUIStore } from '../store';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2 } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2, QrCode } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
+import ProjectQrModal from './ProjectQrModal';
 
 // Spotlight Modular Components
 import { AddTaskModal } from './spotlight/AddTaskModal';
@@ -97,6 +98,7 @@ export default function SpotlightModal({
   const currentUser = propUser || storeCurrentUser;
 
   const isAdmin = currentUser?.role === 'admin';
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'assemblies' | 'processing'>('overview');
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
@@ -334,7 +336,18 @@ export default function SpotlightModal({
               </span>
             </div>
           </div>
-          <button onClick={onClose} className="absolute top-4 right-4 p-1 rounded-lg text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer font-bold text-sm">✕</button>
+          <div className="absolute top-3.5 right-4 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setIsQrModalOpen(true)}
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border transition-all cursor-pointer shadow-xs"
+              title="View and print Project QR Code"
+            >
+              <QrCode className="h-3.5 w-3.5 text-base-accent" />
+              <span className="hidden sm:inline">QR Code</span>
+            </button>
+            <button onClick={onClose} className="p-1 rounded-lg text-base-muted hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer font-bold text-sm">✕</button>
+          </div>
         </div>
 
         {/* Stats segment grid */}
@@ -710,6 +723,15 @@ export default function SpotlightModal({
       onCancel={() => setDeleteConfirm(prev => ({ ...prev, isOpen: false }))}
       onConfirm={deleteConfirm.onConfirm}
     />
+
+    {/* Project QR Code Modal */}
+    {p && (
+      <ProjectQrModal
+        isOpen={isQrModalOpen}
+        onClose={() => setIsQrModalOpen(false)}
+        project={p}
+      />
+    )}
   </>
 );
 }

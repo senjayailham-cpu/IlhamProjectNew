@@ -5,6 +5,7 @@ import { calcPct, calcTaskCounts } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
 import Focus24View from './Focus24View';
 import ShiftHandoverSection from './shopfloor/ShiftHandoverSection';
+import QrScannerModal from './QrScannerModal';
 import { 
   Clock, 
   TrendingUp, 
@@ -20,7 +21,9 @@ import {
   AlertTriangle,
   Play,
   Users,
-  Layers
+  Layers,
+  Scan,
+  QrCode
 } from 'lucide-react';
 
 interface ShopFloorViewProps {
@@ -36,6 +39,7 @@ interface ShopFloorViewProps {
   onUpdateProblemStatus?: (id: string, status: 'Open' | 'Resolved', resolutionNote?: string) => void;
   onDeleteProblemReport?: (id: string) => void;
   openSpotlight?: (pid: string) => void;
+  onOpenQrPanel?: (pid: string) => void;
 }
 
 export default function ShopFloorView({
@@ -50,7 +54,8 @@ export default function ShopFloorView({
   onAddProblemReport,
   onUpdateProblemStatus,
   onDeleteProblemReport,
-  openSpotlight: propOpenSpotlight
+  openSpotlight: propOpenSpotlight,
+  onOpenQrPanel: propOpenQrPanel
 }: ShopFloorViewProps) {
   const storeProjects = useAppStore((s) => s.projects);
   const storeTimesheets = useAppStore((s) => s.timesheets);
@@ -63,6 +68,7 @@ export default function ShopFloorView({
   const setActiveTab = useUIStore((s) => s.setActiveTab);
   const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
   const setShopFloorMode = useUIStore((s) => s.setShopFloorMode);
+  const storeOpenQrPanel = useUIStore((s) => s.openQrPanel);
 
   const projects = propProjects || storeProjects;
   const timesheets = propTimesheets || storeTimesheets;
@@ -72,6 +78,9 @@ export default function ShopFloorView({
   const employees = propEmployees || storeEmployees;
   const currentUser = propCurrentUser || storeCurrentUser;
   const openSpotlight = propOpenSpotlight || storeOpenSpotlight;
+  const openQrPanel = propOpenQrPanel || storeOpenQrPanel;
+
+  const [isScanModalOpen, setIsScanModalOpen] = React.useState(false);
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -136,7 +145,42 @@ export default function ShopFloorView({
       {/* Shift Handover Pinboard Banner (Coordinators note & status for next shift) */}
       <ShiftHandoverSection currentUser={currentUser} />
 
-      {/* 2. Four Big Action Touch Cards (min-h ~64-80px, high contrast, tablet-friendly) */}
+      {/* 2. PROMINENT BIG SCAN QR TOUCH ACTION */}
+      <button
+        onClick={() => setIsScanModalOpen(true)}
+        className="w-full p-4 sm:p-5 rounded-2xl bg-linear-to-r from-base-accent/25 via-base-accent/10 to-base-surface border-2 border-base-accent hover:border-base-accent shadow-md hover:shadow-xl transition-all duration-150 flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] group text-left relative overflow-hidden"
+      >
+        <div className="absolute right-0 top-0 bottom-0 w-32 bg-linear-to-l from-base-accent/10 to-transparent pointer-events-none" />
+        <div className="flex items-center gap-4 relative z-10">
+          <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-base-accent text-white flex items-center justify-center font-black shadow-lg group-hover:scale-105 transition-transform shrink-0">
+            <Scan className="w-8 h-8" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 rounded bg-base-accent text-white font-condensed font-black text-[10px] uppercase tracking-wider">
+                Mobile QR Scanner
+              </span>
+              <span className="text-xs text-base-muted font-bold font-condensed uppercase tracking-wider">
+                Aksi Cepat Lapangan
+              </span>
+            </div>
+            <h2 className="text-xl sm:text-2xl font-condensed font-black uppercase text-base-text tracking-wide group-hover:text-base-accent transition-colors mt-0.5">
+              Scan QR Proyek / Gambar
+            </h2>
+            <p className="text-xs sm:text-sm text-base-muted mt-0.5">
+              Arahkan kamera ke drawing atau masukkan No WO untuk buka panel aksi (progress, timesheet, & status)
+            </p>
+          </div>
+        </div>
+
+        <div className="hidden sm:flex items-center gap-2 px-5 py-3 bg-base-accent text-white font-condensed font-black text-xs uppercase tracking-wider rounded-xl shrink-0 group-hover:translate-x-1 transition-transform shadow-md relative z-10">
+          <QrCode className="w-4 h-4" />
+          <span>Scan QR</span>
+          <ArrowRight className="w-4 h-4" />
+        </div>
+      </button>
+
+      {/* 3. Four Big Action Touch Cards (min-h ~64-80px, high contrast, tablet-friendly) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
         
         {/* Card 1: Timesheet */}
@@ -354,6 +398,13 @@ export default function ShopFloorView({
           openSpotlight={openSpotlight}
         />
       </div>
+
+      <QrScannerModal
+        isOpen={isScanModalOpen}
+        onClose={() => setIsScanModalOpen(false)}
+        projects={projects}
+        onSelectProject={(pid) => openQrPanel(pid)}
+      />
 
     </div>
   );

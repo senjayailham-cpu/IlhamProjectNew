@@ -28,8 +28,7 @@ export default function BottomNav({
         { id: 'timesheet', label: 'Timesheet', icon: Clock },
         { id: 'progress', label: 'Progress', icon: TrendingUp },
         { id: 'materials', label: 'Materials', icon: Package },
-        { id: 'inspections', label: 'QC', icon: ClipboardCheck },
-        { id: 'more', label: 'More', icon: Menu, isMenuTrigger: true }
+        { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
       ];
     }
 
@@ -40,7 +39,7 @@ export default function BottomNav({
         { id: 'projects', label: 'Projects', icon: Folder },
         { id: 'materials', label: 'Materials', icon: Package },
         { id: 'inspections', label: 'QC', icon: ClipboardCheck },
-        { id: 'more', label: 'More', icon: Menu, isMenuTrigger: true }
+        { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
       ];
     }
 
@@ -50,7 +49,7 @@ export default function BottomNav({
         { id: 'focus24', label: '24h Focus', icon: AlertTriangle },
         { id: 'projects', label: 'Projects', icon: Folder },
         { id: 'materials', label: 'Materials', icon: Package },
-        { id: 'more', label: 'More', icon: Menu, isMenuTrigger: true }
+        { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
       ];
     }
 
@@ -60,7 +59,7 @@ export default function BottomNav({
       { id: 'projects', label: 'Projects', icon: Folder },
       { id: 'schedule', label: 'Schedule', icon: Calendar },
       { id: 'materials', label: 'Materials', icon: Package },
-      { id: 'more', label: 'More', icon: Menu, isMenuTrigger: true }
+      { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
     ];
   }, [shopFloorMode, currentUser?.role]);
 

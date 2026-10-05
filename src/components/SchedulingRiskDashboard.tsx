@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { Project, ProblemReport, InspectionRequest, User } from '../types';
+import { Project, ProblemReport, InspectionRequest, User, TimesheetEntry } from '../types';
 import { getCompanyColorClass } from './GanttView';
+import { PredictiveScheduleDelayAlert } from './PredictiveScheduleDelayAlert';
 import { 
   TrendingUp, 
   AlertTriangle, 
@@ -35,10 +36,12 @@ import {
 
 export interface SchedulingRiskDashboardProps {
   projects: Project[];
+  timesheets?: TimesheetEntry[];
   problemReports?: ProblemReport[];
   inspections?: InspectionRequest[];
   currentUser?: User | null;
   openSpotlight?: (id: string) => void;
+  onNavigateToSchedule?: (projectId?: string) => void;
 }
 
 // Circular progress badge from Bagian 1
@@ -131,9 +134,11 @@ const BAR_COLOR_PALETTE = [
 
 export default function SchedulingRiskDashboard({
   projects,
+  timesheets = [],
   problemReports = [],
   inspections = [],
-  openSpotlight
+  openSpotlight,
+  onNavigateToSchedule
 }: SchedulingRiskDashboardProps) {
   const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
   const todayDate = useMemo(() => new Date(), []);
@@ -480,6 +485,16 @@ export default function SchedulingRiskDashboard({
           </div>
         </div>
       </div>
+
+      {/* PREDICTIVE SCHEDULE DELAY ALERT */}
+      <PredictiveScheduleDelayAlert
+        projects={projects}
+        timesheets={timesheets}
+        problemReports={problemReports}
+        inspections={inspections}
+        openSpotlight={openSpotlight}
+        onNavigateToSchedule={onNavigateToSchedule}
+      />
 
       {/* CHARTS GRID (BAR CHART + 2 DONUT CHARTS) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
@@ -10,6 +10,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useAppStore, useUIStore } from '../store';
 import { can as canUtil } from '../utils/permissions';
 import { ColdStorageArchiveModal } from '../components/ColdStorageArchiveModal';
+import ProjectQrModal from '../components/ProjectQrModal';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
 
@@ -209,6 +210,7 @@ export function ProjectsPage({
   });
 
   const [coldStorageOpen, setColdStorageOpen] = React.useState(false);
+  const [qrModalProject, setQrModalProject] = React.useState<Project | null>(null);
 
   React.useEffect(() => {
     if (prefs?.projectsFilterTab) {
@@ -1522,6 +1524,13 @@ export function ProjectsPage({
                             >
                               <BookOpen className="h-4 w-4" />
                             </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setQrModalProject(p); }}
+                              className="p-1.5 text-base-muted hover:text-base-accent hover:bg-base-surface2 rounded-lg cursor-pointer transition-colors"
+                              title="View and print Project QR Code"
+                            >
+                              <QrCode className="h-4 w-4 text-base-accent" />
+                            </button>
                             {can('editProject') && (
                               <button
                                 onClick={() => openEditProjectForm(p.id)}
@@ -1716,8 +1725,19 @@ export function ProjectsPage({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5">
-                    {p.status === 'completed' && (
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setQrModalProject(p);
+                        }}
+                        className="px-2.5 py-1.5 text-xs font-condensed font-extrabold bg-base-surface2 hover:bg-base-surface3 border border-base-border text-base-text rounded-lg cursor-pointer transition-all uppercase tracking-wider flex items-center gap-1.5"
+                        title="View and print Project QR Code"
+                      >
+                        <QrCode className="w-3.5 h-3.5 text-base-accent" />
+                        <span>QR</span>
+                      </button>
+                      {p.status === 'completed' && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -1783,6 +1803,12 @@ export function ProjectsPage({
         archivedProjects={projects.filter(p => p.isArchived === true)}
         onRestoreProject={async (id) => { unarchiveProject(id); }}
         currentUser={currentUser}
+      />
+
+      <ProjectQrModal
+        isOpen={!!qrModalProject}
+        onClose={() => setQrModalProject(null)}
+        project={qrModalProject}
       />
     </div>
   );

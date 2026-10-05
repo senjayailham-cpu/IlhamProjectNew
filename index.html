@@ -21,6 +21,22 @@
     <!-- MS/PWA color -->
     <meta name="msapplication-TileColor" content="#9b1c2e" />
     <script>
+      // Instant dark theme initializer (prevents light flash on load)
+      (function() {
+        try {
+          var stored = localStorage.getItem('theme');
+          var isDark = stored ? stored === 'dark' || (stored === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) : true;
+          if (isDark) {
+            document.documentElement.classList.add('dark');
+            document.documentElement.style.colorScheme = 'dark';
+          } else {
+            document.documentElement.classList.remove('dark');
+            document.documentElement.style.colorScheme = 'light';
+          }
+        } catch(e) {}
+      })();
+    </script>
+    <script>
       // Early cross-origin and sandbox error filter
       (function() {
         var trap = function(msg) {

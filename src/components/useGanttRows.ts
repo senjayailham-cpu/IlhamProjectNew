@@ -1,6 +1,12 @@
 import React, { useState, useMemo } from 'react';
 import { Project, Dependency, WorkflowStatusType, TimesheetEntry } from '../types';
 import { calcPct } from '../utils/projectUtils';
+import { 
+  calculateMultiProjectCPM, 
+  getP6ActivityId, 
+  diffDays, 
+  parsePureDate 
+} from '../utils/cpmEngine';
 
 export interface GanttRow {
   id: string;
@@ -8,9 +14,20 @@ export interface GanttRow {
   name: string;
   level: 0 | 1 | 2;
   wbs: string;
+  activityId?: string; // Oracle Primavera P6 Activity ID (e.g., A1010, WBS.1.1, PRJ-1)
   start?: string;
   finish?: string;
   duration: number;
+  od?: number; // Original Duration (days)
+  rd?: number; // Remaining Duration (days)
+  totalFloat?: number; // Total Float in days (TF)
+  freeFloat?: number;  // Free Float in days (FF)
+  isCritical?: boolean; // Critical Path flag (TF <= 0)
+  earlyStart?: string; // CPM Early Start
+  earlyFinish?: string; // CPM Early Finish
+  lateStart?: string; // CPM Late Start
+  lateFinish?: string; // CPM Late Finish
+  varianceDays?: number; // Schedule variance vs Baseline Finish
   pct: number;
   done: boolean;
   isMilestone?: boolean;
@@ -212,7 +229,12 @@ export function useGanttRows({
     }) || null;
   };
 
-  // Generate full unfiltered list of Gantt rows (including WBS numbering)
+  // Oracle Primavera P6 Multi-Project CPM Calculation
+  const cpmData = useMemo(() => {
+    return calculateMultiProjectCPM(projectsList);
+  }, [projectsList]);
+
+  // Generate full unfiltered list of Gantt rows (including WBS numbering and P6 CPM attributes)
   const allRows = useMemo(() => {
     const result: GanttRow[] = [];
     const usedIds = new Set<string>();
@@ -336,6 +358,11 @@ export function useGanttRows({
       const pDuration = Math.max(1, daysBetween(pStartD_local, pDueD_local) + 1);
 
       const projectWbs = `${pIdx + 1}`;
+      const pCpm = cpmData.projectResults.get(p.id);
+      const pCriticalCount = pCpm?.criticalCount || 0;
+      const pFloatValues = pCpm ? Array.from(pCpm.floatMap.values()) : [];
+      const pMinTF = pFloatValues.length > 0 ? Math.min(...pFloatValues) : 0;
+      const pVarianceDays = p.baselineFinish ? diffDays(parsePureDate(p.baselineFinish), parsePureDate(pDueStr)) : undefined;
 
       result.push({
         id: getUniqueRowId(p.id),
@@ -343,9 +370,20 @@ export function useGanttRows({
         name: p.name,
         level: 0,
         wbs: projectWbs,
+        activityId: getP6ActivityId('project', projectWbs),
         start: pStartStr,
         finish: pDueStr,
         duration: pDuration,
+        od: pDuration,
+        rd: pPct >= 100 ? 0 : Math.max(0, Math.round(pDuration * (1 - pPct / 100))),
+        totalFloat: pMinTF,
+        freeFloat: 0,
+        isCritical: pCriticalCount > 0,
+        earlyStart: pStartStr,
+        earlyFinish: pDueStr,
+        lateStart: pStartStr,
+        lateFinish: pDueStr,
+        varianceDays: pVarianceDays,
         pct: pPct,
         done: pPct >= 100,
         predecessors: p.predecessors,
@@ -396,6 +434,11 @@ export function useGanttRows({
 
           const assemblyWbs = `${projectWbs}.${asmIdx + 1}`;
           const asmStats = asmHoursRollup.get(asm.id) || { planHours: 0, actualHours: 0, count: 0 };
+          const isAsmCritical = cpmData.criticalAssemblyIds.has(asm.id);
+          const asmTasks = asm.tasks || [];
+          const asmFloatValues = asmTasks.map(t => cpmData.floatMap.get(t.id) ?? 0);
+          const asmMinTF = asmFloatValues.length > 0 ? Math.min(...asmFloatValues) : 0;
+          const aVarianceDays = asm.baselineFinish ? diffDays(parsePureDate(asm.baselineFinish), parsePureDate(aFinish)) : undefined;
 
           result.push({
             id: getUniqueRowId(asm.id),
@@ -403,9 +446,20 @@ export function useGanttRows({
             name: asm.name,
             level: 1,
             wbs: assemblyWbs,
+            activityId: getP6ActivityId('assembly', assemblyWbs, asmIdx),
             start: aStart,
             finish: aFinish,
             duration: aDuration,
+            od: aDuration,
+            rd: aPct >= 100 ? 0 : Math.max(0, Math.round(aDuration * (1 - aPct / 100))),
+            totalFloat: asmMinTF,
+            freeFloat: 0,
+            isCritical: isAsmCritical,
+            earlyStart: aStart,
+            earlyFinish: aFinish,
+            lateStart: aStart,
+            lateFinish: aFinish,
+            varianceDays: aVarianceDays,
             pct: aPct,
             done: aPct >= 100,
             predecessors: asm.predecessors,
@@ -433,15 +487,34 @@ export function useGanttRows({
               const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
               const tStats = taskHoursRollup.get(t.id) || { planHours: 0, actualHours: 0, count: 0 };
 
+              const cpmNode = cpmData.taskMap.get(t.id);
+              const tTotalFloat = cpmNode?.totalFloat ?? 0;
+              const tFreeFloat = cpmNode?.freeFloat ?? 0;
+              const isTaskCritical = cpmNode?.isCritical ?? (tTotalFloat <= 0.001);
+              const taskWbs = `${assemblyWbs}.${taskIdx + 1}`;
+              const taskActId = cpmNode?.activityId || getP6ActivityId('task', taskWbs, asmIdx, taskIdx, (t as any).activityId);
+              const tVarianceDays = t.baselineFinish ? diffDays(parsePureDate(t.baselineFinish), parsePureDate(tFinish)) : undefined;
+
               result.push({
                 id: getUniqueRowId(t.id),
                 type: 'task',
                 name: t.name,
                 level: 2,
-                wbs: `${assemblyWbs}.${taskIdx + 1}`,
+                wbs: taskWbs,
+                activityId: taskActId,
                 start: tStart,
                 finish: tFinish,
                 duration: tDuration,
+                od: tDuration,
+                rd: t.done ? 0 : Math.max(0, Math.round(tDuration * (1 - (t.pct || 0) / 100))),
+                totalFloat: tTotalFloat,
+                freeFloat: tFreeFloat,
+                isCritical: isTaskCritical,
+                earlyStart: cpmNode?.earlyStart || tStart,
+                earlyFinish: cpmNode?.earlyFinish || tFinish,
+                lateStart: cpmNode?.lateStart || tStart,
+                lateFinish: cpmNode?.lateFinish || tFinish,
+                varianceDays: tVarianceDays,
                 pct: t.pct || 0,
                 done: !!t.done,
                 isMilestone: !!t.isMilestone,
@@ -465,7 +538,7 @@ export function useGanttRows({
     });
 
     return result;
-  }, [projectsList, expandedIds, collapsedAsms, timesheetSummary]);
+  }, [projectsList, expandedIds, collapsedAsms, timesheetSummary, cpmData]);
 
   // Overall Project Plan vs Actual hours statistics
   const totalHoursStats = useMemo(() => {
@@ -580,5 +653,6 @@ export function useGanttRows({
     collapseAllAssemblies,
     findProject,
     totalHoursStats,
+    cpmData,
   };
 }

@@ -163,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id: portalId,
               name: data.name || firebaseUser.displayName || portalId || 'Team User',
               role: isDev ? 'admin' : (data.role || 'coordinator'),
-              allowedFeatures: data.allowedFeatures || [],
+              allowedFeatures: (data.allowedFeatures && Array.isArray(data.allowedFeatures) && data.allowedFeatures.length > 0) ? data.allowedFeatures : undefined,
               allowedPermissions: data.allowedPermissions || {},
               currentSessionId: data.currentSessionId || undefined
             };
@@ -208,7 +208,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               id: portalId,
               name: defaultName,
               role: defaultRole,
-              allowedFeatures: [],
+              allowedFeatures: undefined,
               allowedPermissions: {}
             };
             
@@ -254,7 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: portalId,
             name: firebaseUser.displayName || portalId || 'Team Member',
             role: isDev ? 'admin' : 'coordinator',
-            allowedFeatures: [],
+            allowedFeatures: undefined,
             allowedPermissions: {}
           };
           setCurrentUser(session);
@@ -262,7 +262,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         const sess = sessionStorage.getItem('w2proj_session_v1');
         if (sess) {
-          setCurrentUser(JSON.parse(sess));
+          try {
+            const parsed = JSON.parse(sess);
+            if (parsed.allowedFeatures && Array.isArray(parsed.allowedFeatures) && parsed.allowedFeatures.length === 0) {
+              parsed.allowedFeatures = undefined;
+            }
+            setCurrentUser(parsed);
+          } catch {
+            setCurrentUser(null);
+          }
         } else {
           setCurrentUser(null);
         }
@@ -450,7 +458,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         id: testUser.id, 
         name: testUser.name, 
         role: testUser.role,
-        allowedFeatures: testUser.allowedFeatures || [],
+        allowedFeatures: (testUser.allowedFeatures && Array.isArray(testUser.allowedFeatures) && testUser.allowedFeatures.length > 0) ? testUser.allowedFeatures : undefined,
         allowedPermissions: testUser.allowedPermissions || {},
         currentSessionId: nextSessionId
       };

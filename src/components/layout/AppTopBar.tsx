@@ -22,7 +22,10 @@ import {
   Sparkles,
   Award,
   ListTree,
-  Factory
+  Factory,
+  QrCode,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 
 interface AppTopBarProps {
@@ -40,7 +43,11 @@ interface AppTopBarProps {
   employees?: Employee[];
   materials?: MaterialItem[];
   bomTemplates?: BomTemplate[];
-  setActiveTab?: (tab: string) => void;
+  allowedTabs?: { id: string; label: string; icon: string; access: any }[];
+  sectionGroups?: { title: string; items: string[] }[];
+  activeTab?: string;
+  setActiveTab?: (tabId: string) => void;
+  toggleSidebar?: () => void;
   openSpotlight?: (id: string) => void;
   readNotificationIds?: string[];
   onMarkRead?: (ids: string[]) => void;
@@ -73,6 +80,10 @@ export function AppTopBar({
   employees: propEmployees,
   materials: propMaterials,
   bomTemplates: propBomTemplates,
+  allowedTabs: propAllowedTabs,
+  sectionGroups: propSectionGroups,
+  activeTab: propActiveTab,
+  toggleSidebar,
   setActiveTab: propSetActiveTab,
   openSpotlight: propOpenSpotlight,
   readNotificationIds,
@@ -87,10 +98,12 @@ export function AppTopBar({
   const storeCurrentUser = useAppStore((s) => s.currentUser);
   const storeIsOffline = useAppStore((s) => s.isOffline);
 
+  const storeActiveTab = useUIStore((s) => s.activeTab);
   const storeSetActiveTab = useUIStore((s) => s.setActiveTab);
   const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
   const shopFloorMode = useUIStore((s) => s.shopFloorMode);
   const toggleShopFloorMode = useUIStore((s) => s.toggleShopFloorMode);
+  const setQrScannerOpen = useUIStore((s) => s.setQrScannerOpen);
 
   const projects = propProjects?.length ? propProjects : storeProjects;
   const activities = propActivities?.length ? propActivities : storeActivities;
@@ -101,7 +114,10 @@ export function AppTopBar({
   const isOffline = propIsOffline !== undefined ? propIsOffline : storeIsOffline;
 
   const setActiveTab = propSetActiveTab || storeSetActiveTab;
+  const activeTab = propActiveTab || storeActiveTab;
   const openSpotlight = propOpenSpotlight || storeOpenSpotlight;
+
+
 
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -293,39 +309,62 @@ export function AppTopBar({
 
   return (
     <>
-      <header className="hidden md:flex h-14 bg-base-surface/85 backdrop-blur-md border-b border-base-border px-6 items-center justify-between sticky top-0 z-30 select-none shadow-card shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-condensed font-extrabold uppercase tracking-widest text-base-accent bg-base-accent-dim px-3 py-1 rounded-lg border border-base-accent/20 flex items-center gap-1.5">
+      <header className="hidden md:flex h-14 bg-base-surface/85 backdrop-blur-md border-b border-base-border px-4 lg:px-6 items-center justify-between sticky top-0 z-30 select-none shadow-card shrink-0 gap-2">
+        {/* Left Side: Sidebar Toggle + Active Module + All Menus Button + Quick Tabs */}
+        <div className="flex items-center gap-2 lg:gap-3 flex-1 min-w-0">
+          {/* Sidebar Toggle Button */}
+          {toggleSidebar && (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                sidebarCollapsed 
+                  ? 'bg-[#9b1c2e]/10 text-[#9b1c2e] border-[#9b1c2e]/30 hover:bg-[#9b1c2e]/20 font-black' 
+                  : 'bg-base-surface2 border-base-border text-base-muted hover:text-base-text hover:bg-base-surface3'
+              }`}
+              title={sidebarCollapsed ? "Buka Sidebar Menu (Expand Sidebar)" : "Tutup Sidebar Menu (Collapse Sidebar)"}
+            >
+              {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4 text-[#9b1c2e]" /> : <PanelLeftClose className="h-4 w-4" />}
+              <span className="text-[11px] font-condensed font-bold uppercase tracking-wider hidden xl:inline">
+                {sidebarCollapsed ? 'Buka Sidebar' : 'Sidebar'}
+              </span>
+            </button>
+          )}
+
+          {/* Active Tab Badge */}
+          <span className="text-[11px] font-condensed font-extrabold uppercase tracking-widest text-base-accent bg-base-accent-dim px-2.5 py-1 rounded-lg border border-base-accent/20 flex items-center gap-1.5 shrink-0">
             <span className="w-1.5 h-1.5 rounded-full bg-base-accent animate-pulse" />
             {activeTabLabel}
           </span>
 
+
+
           {/* System Status HUD Pill */}
-          <div className="hidden lg:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-[11px] font-condensed font-bold text-base-muted">
+          <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-[11px] font-condensed font-bold text-base-muted shrink-0">
             <div className="flex items-center gap-1 text-base-text">
               <span className="w-1.5 h-1.5 rounded-full bg-base-green" />
-              <span>{projects.filter(p => p.status === 'active').length} Active Proj</span>
+              <span>{projects.filter(p => p.status === 'active').length} Proj</span>
             </div>
             <span className="text-base-border">|</span>
             <div className="flex items-center gap-1 text-base-text">
               <Users className="h-3 w-3 text-base-blue" />
-              <span>{employees.filter(e => !e.isExEmployee).length} Workforce</span>
+              <span>{employees.filter(e => !e.isExEmployee).length} Team</span>
             </div>
           </div>
 
           {isOffline && (
-            <span className="px-2 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-danger-dim text-base-danger border border-base-danger/30 tracking-wider animate-pulse">
-              OFFLINE (CACHE ACTIVE)
+            <span className="px-2 py-0.5 rounded-full font-condensed font-extrabold text-[9px] uppercase bg-base-danger-dim text-base-danger border border-base-danger/30 tracking-wider animate-pulse shrink-0">
+              OFFLINE
             </span>
           )}
 
           {/* Inline Search Bar Trigger */}
           <div 
             onClick={() => setIsSearchOpen(true)}
-            className="flex items-center bg-base-surface3 hover:bg-base-surface2 border border-base-border rounded-xl px-3.5 py-1.5 gap-2.5 text-base-muted hover:text-base-text hover:border-base-border2 cursor-pointer transition-all duration-150 w-64 shadow-xs"
+            className="hidden lg:flex items-center bg-base-surface3 hover:bg-base-surface2 border border-base-border rounded-xl px-3 py-1.5 gap-2 text-base-muted hover:text-base-text hover:border-base-border2 cursor-pointer transition-all duration-150 w-48 xl:w-56 shadow-xs shrink-0"
           >
             <Search className="h-3.5 w-3.5 text-base-accent" />
-            <span className="text-xs text-base-muted select-none flex-1 font-sans">Quick search or CMD+K...</span>
+            <span className="text-xs text-base-muted select-none flex-1 font-sans truncate">Cari... (⌘K)</span>
             <kbd className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-base-surface border border-base-border text-[9px] font-mono font-bold text-base-muted select-none shadow-xs">
               <span>⌘</span>K
             </kbd>
@@ -344,6 +383,16 @@ export function AppTopBar({
               </div>
             </div>
           )}
+
+          {/* Scan QR Traveler Button */}
+          <button
+            onClick={() => setQrScannerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#9b1c2e]/10 hover:bg-[#9b1c2e]/20 border border-[#9b1c2e]/30 text-[#9b1c2e] dark:text-[#f87171] font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer shadow-xs"
+            title="Scan Smart QR Traveler Tag di Bengkel"
+          >
+            <QrCode className="h-4 w-4" />
+            <span className="hidden sm:inline">Scan QR</span>
+          </button>
 
           <ThemeToggle />
           

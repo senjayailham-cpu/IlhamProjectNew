@@ -488,6 +488,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                         {row.level === 2 && !row.isMilestone && (() => {
                           const rowConflicts = dependencyViolationsMap.get(row.id);
                           const hasConflict = rowConflicts && rowConflicts.length > 0;
+                          const isCrit = (row.isCritical ?? false) || (showCriticalPath && criticalPathIds.has(row.id));
 
                           return (
                             <div
@@ -497,15 +498,15 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                                   : cascadedTaskIds.has(row.id)
                                     ? 'border-2 border-amber-400 ring-2 ring-amber-400/40 ring-offset-0 animate-[pulse_0.6s_ease-in-out_3] bg-amber-500'
                                     : row.done
-                                      ? 'bg-base-green border-base-green'
-                                      : showCriticalPath && criticalPathIds.has(row.id)
-                                        ? 'bg-red-600 border-red-600'
+                                      ? 'bg-emerald-600 border-emerald-600'
+                                      : isCrit
+                                        ? 'bg-red-600 border-red-600 shadow-xs'
                                         : (() => {
                                             const todayStr = new Date().toISOString().slice(0, 10);
                                             const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
                                             return isOverdue
-                                              ? 'bg-base-red border-base-red animate-pulse'
-                                              : 'bg-base-blue border-base-blue';
+                                              ? 'bg-rose-700 border-rose-600 animate-pulse'
+                                              : 'bg-emerald-600 border-emerald-600';
                                           })()
                               } ${hasEarlyWarning ? 'border-l-2 border-l-amber-400 pl-1' : ''}`}
                               style={{ cursor: onUpdateProject ? 'move' : 'default' }}
@@ -530,14 +531,21 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                               {/* Task name inside label if wide enough */}
                               {barCoords.width > 80 && (
                                 <span className={`relative z-10 truncate select-none leading-none px-2 pointer-events-none pr-8 ${row.pct === 100 ? 'line-through opacity-75' : ''}`}>
-                                  {row.pct === 100 ? `✓ — ${row.name}` : row.name} ({row.pct}%)
+                                  {row.activityId ? `${row.activityId}: ` : ''}{row.pct === 100 ? `✓ ${row.name}` : row.name} ({row.pct}%)
                                 </span>
                               )}
 
-                              {/* Critical Path Indicator Badge inside bar */}
-                              {showCriticalPath && criticalPathIds.has(row.id) && !row.done && !hasConflict && barCoords.width > 40 && (
-                                <span className="absolute right-2.5 text-[7px] bg-white/20 px-1 rounded-sm text-white select-none pointer-events-none z-10 uppercase tracking-wider font-extrabold font-mono">
-                                  CP
+                              {/* Critical Path Indicator Badge inside bar (P6 Standard) */}
+                              {isCrit && !row.done && !hasConflict && barCoords.width > 35 && (
+                                <span className="absolute right-1 text-[7.5px] bg-black/50 px-1 py-0.2 rounded text-white select-none pointer-events-none z-10 uppercase tracking-wider font-extrabold font-mono border border-white/20">
+                                  CP (0d)
+                                </span>
+                              )}
+
+                              {/* Positive Float Badge for non-critical tasks */}
+                              {!isCrit && !row.done && !hasConflict && (row.totalFloat ?? 0) > 0 && barCoords.width > 120 && (
+                                <span className="absolute right-1 text-[7.5px] bg-black/30 px-1 py-0.2 rounded text-emerald-200 select-none pointer-events-none z-10 font-mono font-bold">
+                                  TF: {row.totalFloat}d
                                 </span>
                               )}
 

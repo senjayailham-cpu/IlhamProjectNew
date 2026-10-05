@@ -3,7 +3,7 @@ import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { useAppStore, useUIStore } from '../../store';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory, Settings
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -26,7 +26,9 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Database,
   Trophy,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  Factory,
+  Settings
 };
 
 interface AppSidebarProps {

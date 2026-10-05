@@ -13,8 +13,9 @@ export function LoginPage() {
   } = useAuth();
 
   return (
-    <div className="fixed inset-0 flex items-center justify-center p-4 bg-linear-to-b from-[#e8e8e8] to-[#f4f5f7] dark:from-[#0d1014] dark:to-[#151921] overflow-y-auto z-50 animate-fade-in">
-      <div className="bg-base-surface shadow-modal border border-base-border2 p-8 rounded-2xl w-full max-w-md flex flex-col space-y-6 animate-in zoom-in-95 ease-out duration-150 relative overflow-hidden">
+    <div className="fixed inset-0 flex items-center justify-center p-4 overflow-y-auto z-50 animate-fade-in bg-base-bg">
+
+      <div className="bg-base-surface/95 dark:bg-base-surface/90 backdrop-blur-xl shadow-2xl border border-white/20 dark:border-base-border2 p-8 rounded-2xl w-full max-w-md flex flex-col space-y-6 animate-in zoom-in-95 ease-out duration-150 relative overflow-hidden z-10">
         
         {/* Corner Ornament */}
         <div className="absolute top-0 right-0 w-24 h-24 pointer-events-none select-none overflow-hidden rounded-tr-2xl">
@@ -72,13 +73,12 @@ export function LoginPage() {
           <button
             id="login-submit-btn"
             type="submit"
-            className="w-full py-2.5 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-sm tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2"
+            className="w-full py-2.5 bg-base-accent hover:bg-base-accent2 text-white font-condensed font-bold text-sm tracking-wider uppercase rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1.5 mt-2 shadow-xs"
           >
             <Lock className="h-4 w-4" />
             <span>Log in to portal</span>
           </button>
         </form>
-
       </div>
     </div>
   );

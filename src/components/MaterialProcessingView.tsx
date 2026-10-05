@@ -15,6 +15,7 @@ import {
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import { ProjectSearchSelector } from './ProjectSearchSelector';
 import { CopyBomModal } from './CopyBomModal';
+import { can } from '../utils/permissions';
 import {
   Plus,
   Search,
@@ -282,7 +283,7 @@ export default function MaterialProcessingView({
 
   // Authorization level helper
   const isReadOnly = useMemo(() => {
-    return currentUser?.role !== 'admin' && currentUser?.role !== 'manager';
+    return !can(currentUser, 'manageMatProcessing');
   }, [currentUser]);
 
   // Sub-Assembly filter & grouping states

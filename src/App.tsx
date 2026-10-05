@@ -16,6 +16,7 @@ import { useAppStore, useUIStore } from './store';
 import ThemeToggle from './components/ThemeToggle';
 import FormsAndModals from './components/FormsAndModals';
 import SpotlightModal from './components/SpotlightModal';
+import QrProjectPanel from './components/QrProjectPanel';
 import { GaAutoMatchModal } from './components/GaAutoMatchModal';
 import { IndustryTemplatePicker } from './components/IndustryTemplatePicker';
 import { ToastContainer } from './components/Toast';
@@ -93,7 +94,7 @@ const IconMap: Record<string, React.ComponentType<any>> = {
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'projects', 'schedule', 'progress']
+    items: ['dash', 'projects', 'schedule', 'scheduling-risk', 'progress', 'focus24']
   },
   {
     title: 'Shop Floor',
@@ -101,7 +102,7 @@ const sectionGroups = [
   },
   {
     title: 'Engineering',
-    items: ['drawings', 'bom', 'consumable']
+    items: ['drawings', 'bom', 'consumable', 'kpi']
   },
   {
     title: 'Admin',
@@ -295,31 +296,17 @@ function AppContent() {
     useAppStore.setState({ currentUser, users });
   }, [currentUser, users]);
 
-  // Helper to remap deprecated tabs
+  // Helper to remap legacy tab names
   const getMappedTab = (tab: string) => {
     switch (tab) {
-      case 'focus':
-      case 'focus24': return 'shopfloor';
-      case 'scheduling-risk': return 'schedule';
-      case 'kpi': return 'dash';
+      case 'focus': return 'focus24';
       default: return tab;
     }
   };
 
   // Central Navigation Handler (single source of truth for tab switches)
   const navigateTo = (tab: string) => {
-    let mapped = getMappedTab(tab);
-
-    // Guard: Shop Floor is restricted to coordinator and admin roles
-    if (mapped === 'shopfloor' && currentUser) {
-      const isAllowedRole = currentUser.role === 'coordinator' || currentUser.role === 'admin';
-      const hasExplicitFeature = currentUser.allowedFeatures?.includes('shopfloor');
-      const isForbidden = !isAllowedRole && !hasExplicitFeature;
-      if (isForbidden) {
-        mapped = getDefaultLandingTabForRole(currentUser.role, currentUser.allowedFeatures) || 'dash';
-      }
-    }
-
+    const mapped = getMappedTab(tab);
     setActiveTab(mapped);
     useUIStore.setState({ activeTab: mapped });
   };
@@ -523,6 +510,115 @@ function AppContent() {
 
   const timesheetsHook = useTimesheets(verifyMarkChanged, setDeleteConfirm);
   const { timesheets, setTimesheets } = timesheetsHook;
+
+  // QR Deep Link State & Handlers
+  const [qrProjectId, setQrProjectId] = useState<string | null>(null);
+  const storeQrProjectId = useUIStore((s) => s.qrProjectId);
+  const storeCloseQrPanel = useUIStore((s) => s.closeQrPanel);
+  const activeQrProjectId = qrProjectId || storeQrProjectId;
+
+  // 1. Immediately cache deep link to sessionStorage if present in URL (survives login redirect/session establishment)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const pid = params.get('projectId');
+      const mode = params.get('mode');
+      if (pid && mode === 'qr') {
+        sessionStorage.setItem('pending_qr_projectId', pid);
+      }
+    } catch {}
+  }, []);
+
+  // 2. When currentUser is ready and projects are loaded, process pending QR deep link
+  useEffect(() => {
+    if (!currentUser || projects.length === 0) return;
+
+    let targetId: string | null = null;
+    const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+    const urlPid = params?.get('projectId');
+    const urlMode = params?.get('mode');
+
+    if (urlPid && urlMode === 'qr') {
+      targetId = urlPid;
+    } else if (typeof window !== 'undefined') {
+      try {
+        targetId = sessionStorage.getItem('pending_qr_projectId');
+      } catch {}
+    }
+
+    if (!targetId) return;
+
+    const targetIdClean = targetId.trim().toLowerCase();
+    const matchedProject = projects.find(
+      (p) => p.id.toLowerCase() === targetIdClean || (p.client && p.client.toLowerCase() === targetIdClean)
+    );
+
+    if (matchedProject) {
+      setQrProjectId(matchedProject.id);
+      try {
+        sessionStorage.removeItem('pending_qr_projectId');
+      } catch {}
+
+      // Clean query parameters to avoid loop on refresh
+      if (typeof window !== 'undefined' && window.history?.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('projectId');
+        url.searchParams.delete('mode');
+        window.history.replaceState({}, document.title, url.pathname + (url.search ? url.search : ''));
+      }
+    }
+  }, [currentUser, projects]);
+
+  const handleSaveTimesheetEntry = async (entry: Partial<TimesheetEntry>) => {
+    const today = entry.date || new Date().toISOString().slice(0, 10);
+    const targetWo = (entry.workOrder || '').trim().toLowerCase();
+    const targetTaskId = (entry.taskId || '').trim();
+
+    // Honor multi-WO & Task: check if entry already exists for date + empId + workOrder + taskId
+    const existing = timesheets.find(
+      (x) =>
+        x.date === today &&
+        x.empId === entry.empId &&
+        (x.workOrder || '').trim().toLowerCase() === targetWo &&
+        (targetTaskId ? (x.taskId || '').trim() === targetTaskId : (!x.taskId || x.taskId.trim() === ''))
+    );
+
+    const finalEntry: TimesheetEntry = {
+      id: entry.id || (existing ? existing.id : uid()),
+      date: today,
+      empId: entry.empId!,
+      empName: entry.empName || '',
+      position: entry.position || '',
+      workOrder: entry.workOrder || '',
+      category: entry.category || '',
+      totalHours: Number(entry.totalHours) || 8,
+      status: (entry.status as any) || 'present',
+      desc: entry.desc || '',
+      assemblyId: entry.assemblyId,
+      assemblyName: entry.assemblyName,
+      taskId: entry.taskId,
+      taskName: entry.taskName,
+      projectId: entry.projectId
+    };
+
+    setTimesheets((prev) => {
+      const idx = prev.findIndex((x) => x.id === finalEntry.id);
+      if (idx > -1) {
+        const copy = [...prev];
+        copy[idx] = finalEntry;
+        return copy;
+      }
+      return [finalEntry, ...prev];
+    });
+
+    await saveItem('timesheets', finalEntry);
+    verifyMarkChanged();
+    logActivity(
+      'project_edit',
+      `Timesheet logged via QR for ${finalEntry.empName} (${finalEntry.totalHours}h) on WO ${finalEntry.workOrder}`
+    );
+  };
 
   // Firestore Real-time Syncer Listener (Zero LocalStorage)
   useEffect(() => {
@@ -1485,10 +1581,12 @@ function AppContent() {
 
   const activeTabsList = React.useMemo(() => [
     { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
-    { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: ['admin', 'coordinator'] },
+    { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: 'all' },
     { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
     { id: 'schedule', label: 'Schedule', icon: 'Calendar', access: 'all' },
+    { id: 'scheduling-risk', label: 'Scheduling Risk', icon: 'AlertTriangle', access: 'all' },
     { id: 'progress', label: 'Update Progress', icon: 'TrendingUp', access: 'all' },
+    { id: 'focus24', label: '24h Focus', icon: 'Flame', access: 'all' },
     { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
     { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
     { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
@@ -1497,12 +1595,42 @@ function AppContent() {
     { id: 'drawings', label: 'Drawing Register', icon: 'FileBadge', access: 'all' },
     { id: 'bom', label: 'BOM', icon: 'ListTree', access: 'all' },
     { id: 'consumable', label: orgSettings?.terminology?.wireConsumableLabel || 'Consumable', icon: 'Flame', access: 'all' },
-    { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager'] },
+    { id: 'kpi', label: 'KPI & Analytics', icon: 'BarChart2', access: 'all' },
+    { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: 'all' },
     { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
     { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
-    { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] },
+    { id: 'masterdata', label: 'Master Data', icon: 'Database', access: 'all' },
     { id: 'orgsettings', label: 'Settings', icon: 'Settings', access: ['admin'] }
   ], [orgSettings]);
+
+  // Filter list of tabs allowed for current user session
+  const allowedTabs = React.useMemo(() => {
+    if (!currentUser) return [];
+    if (currentUser.role === 'admin') {
+      return activeTabsList;
+    }
+    return activeTabsList.filter(t => {
+      if (t.id === 'users') {
+        if (currentUser.allowedFeatures && Array.isArray(currentUser.allowedFeatures)) {
+          return currentUser.allowedFeatures.includes('users');
+        }
+        return can('manageUsers') || currentUser.role === 'admin';
+      }
+      if (currentUser.allowedFeatures && Array.isArray(currentUser.allowedFeatures) && currentUser.allowedFeatures.length > 0) {
+        return currentUser.allowedFeatures.includes(t.id);
+      }
+      return t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role));
+    });
+  }, [currentUser, activeTabsList, can]);
+
+  // Guard against navigating to or remaining on an unauthorized tab
+  React.useEffect(() => {
+    if (currentUser && allowedTabs.length > 0 && !allowedTabs.some(t => t.id === activeTab)) {
+      const fallbackTab = getDefaultLandingTabForRole(currentUser.role, currentUser.allowedFeatures);
+      const safeTab = allowedTabs.some(t => t.id === fallbackTab) ? fallbackTab : allowedTabs[0].id;
+      setActiveTab(safeTab);
+    }
+  }, [currentUser, allowedTabs, activeTab]);
 
   if (isAuthLoading) {
     return (
@@ -1517,28 +1645,13 @@ function AppContent() {
     return <LoginPage />;
   }
 
-  // Filter list of tabs allowed for current user session
-  const allowedTabs = activeTabsList.filter(t => {
-    if (t.id === 'users') {
-      if (currentUser.allowedFeatures && currentUser.allowedFeatures.length > 0) {
-        return currentUser.allowedFeatures.includes('users');
-      }
-      return can('manageUsers');
-    }
-    if (currentUser.allowedFeatures && currentUser.allowedFeatures.length > 0) {
-      return currentUser.allowedFeatures.includes(t.id);
-    }
-    return t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role));
-  });
-
   const activeTabItem = activeTabsList.find(t => t.id === activeTab);
   const activeTabLabel = activeTabItem ? activeTabItem.label : 'Project Workspace';
 
   const effectiveSidebarCollapsed = shopFloorMode || sidebarCollapsed;
 
   return (
-    <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans select-none antialiased">
-      
+    <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans select-none antialiased relative">
       {/* 1. DESKTOP LEFT SIDEBAR */}
       <AppSidebar
         sidebarCollapsed={effectiveSidebarCollapsed}
@@ -1678,6 +1791,7 @@ function AppContent() {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);
                   }}
+                  onOpenQrPanel={(id) => setQrProjectId(id)}
                 />
               )}
 
@@ -1917,6 +2031,8 @@ function AppContent() {
                 <ProjectSchedulePage
                   projects={projects}
                   timesheets={timesheets}
+                  problemReports={problemReports}
+                  inspections={inspections}
                   prefs={prefs}
                   onSetPref={(key, val) => setPref(key as any, val)}
                   onUpdateProject={(updatedProj) => {
@@ -1941,6 +2057,10 @@ function AppContent() {
                   orgSettings={orgSettings}
                   defaultView={activeTab === 'timeline' ? 'timeline' : 'gantt'}
                   onNavigateToProgress={() => navigateTo('progress')}
+                  openSpotlight={(id) => {
+                    projectsHook.setSpotlightProjectId(id);
+                    projectsHook.setSpotlightOpen(true);
+                  }}
                 />
               )}
 
@@ -2054,6 +2174,7 @@ function AppContent() {
                   activeTabsList={activeTabsList}
                   defaultPermissions={PERMISSIONS}
                   sha256={sha256}
+                  sectionGroups={sectionGroups}
                 />
               )}
 
@@ -2152,6 +2273,22 @@ function AppContent() {
         currentUser={currentUser}
         canUpdateTask={can(currentUser, 'updateTask')}
       />
+
+      {activeQrProjectId && (
+        <QrProjectPanel
+          projectId={activeQrProjectId}
+          onClose={() => {
+            setQrProjectId(null);
+            storeCloseQrPanel();
+          }}
+          projects={projects}
+          employees={employees}
+          timesheets={timesheets}
+          currentUser={currentUser}
+          onSaveProject={handleUpdateProject}
+          onSaveTimesheet={handleSaveTimesheetEntry}
+        />
+      )}
     </div>
   );
 }
