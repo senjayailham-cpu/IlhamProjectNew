@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { can } from '../utils/permissions';
 import { useAppStore } from '../store';
-import { formatIDR, getConsumableRate } from '../utils/costEngine';
+import { formatCurrency, getConsumableRate } from '../utils/costEngine';
 
 interface ConsumableViewProps {
   wireLogs?: WireLog[];
@@ -99,6 +99,8 @@ export default function ConsumableView({
   const storeEmployees = useAppStore((s) => s.employees);
   const storeCurrentUser = useAppStore((s) => s.currentUser);
   const storeMaterialRequests = useAppStore((s) => s.materialRequests);
+  const currency = useAppStore((s) => s.currency);
+  const exchangeRates = useAppStore((s) => s.exchangeRates);
 
   const wireLogs = propWireLogs?.length ? propWireLogs : storeWireLogs;
   const consumptionLogs = propConsumptionLogs?.length ? propConsumptionLogs : storeConsumptionLogs;
@@ -2369,12 +2371,12 @@ export default function ConsumableView({
                               />
                             ) : (
                               <span className="text-emerald-600 dark:text-emerald-400 font-bold">
-                                {formatIDR(m.unitCost || getConsumableRate(m.id, m.name))}
+                                {formatCurrency(m.unitCost || getConsumableRate(m.id, m.name), currency, exchangeRates)}
                               </span>
                             )}
                           </td>
                           <td className="py-3 px-4 text-right font-mono text-xs text-base-text font-bold">
-                            {formatIDR((m.currentStock || 0) * (m.unitCost || getConsumableRate(m.id, m.name)))}
+                            {formatCurrency((m.currentStock || 0) * (m.unitCost || getConsumableRate(m.id, m.name)), currency, exchangeRates)}
                           </td>
                           <td className="py-3 px-4 text-center font-mono text-base-muted">
                             {isEditing ? (

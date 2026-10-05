@@ -3,9 +3,10 @@ import { Project, TimesheetEntry, WireLog, MaterialConsumptionLog } from '../typ
 import { useAppStore } from '../store';
 import { 
   calculateProjectCostSummary, 
-  formatIDR, 
-  formatCompactIDR 
+  formatCurrency, 
+  formatCompactCurrency 
 } from '../utils/costEngine';
+import { CurrencySelector } from './CurrencySelector';
 import { 
   DollarSign, 
   Users, 
@@ -39,6 +40,11 @@ export function SpotlightCostTab({
 }: SpotlightCostTabProps) {
   const employees = useAppStore((s) => s.employees);
   const materials = useAppStore((s) => s.materials);
+  const currency = useAppStore((s) => s.currency);
+  const exchangeRates = useAppStore((s) => s.exchangeRates);
+
+  const fmt = (val: number | undefined | null) => formatCurrency(val, currency, exchangeRates);
+  const fmtCompact = (val: number | undefined | null) => formatCompactCurrency(val, currency, exchangeRates);
 
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState<string>(
@@ -86,6 +92,14 @@ export function SpotlightCostTab({
 
   return (
     <div className="p-4 space-y-6 text-xs font-sans overflow-y-auto max-h-[calc(85vh-160px)]">
+      {/* ── HEADER CONTROLS & CURRENCY SELECTOR ── */}
+      <div className="flex items-center justify-between pb-1 border-b border-base-border/50">
+        <div className="text-[11px] text-base-muted font-medium">
+          Financial & Cost Tracking Proyek: <span className="font-bold text-base-text">{project.name}</span>
+        </div>
+        <CurrencySelector />
+      </div>
+
       {/* ── TOP KPI EXECUTIVE CARDS ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {/* Card 1: Budget At Completion (BAC) */}
@@ -145,7 +159,7 @@ export function SpotlightCostTab({
           ) : (
             <>
               <div className="text-lg font-mono font-black text-base-text">
-                {formatIDR(budgetCost)}
+                {fmt(budgetCost)}
               </div>
               <div className="text-[10px] text-base-muted mt-0.5">
                 {project.budgetCost ? 'Plafon Anggaran Ditentukan' : 'Estimasi Otomatis (Budget Hours × Rate)'}
@@ -164,7 +178,7 @@ export function SpotlightCostTab({
             <span className="text-[10px] font-mono text-indigo-500 font-bold">{totalLaborHours} Jam</span>
           </div>
           <div className="text-lg font-mono font-black text-indigo-600 dark:text-indigo-400">
-            {formatIDR(totalLaborCost)}
+            {fmt(totalLaborCost)}
           </div>
           <div className="text-[10px] text-base-muted mt-0.5">
             Dari {timesheets.filter(t => t.projectId === project.id || (t.workOrder && t.workOrder.toLowerCase() === (project.client || '').toLowerCase())).length} log timesheet karyawan
@@ -181,10 +195,10 @@ export function SpotlightCostTab({
             <span className="text-[10px] font-mono text-amber-500 font-bold">{totalWireKg} kg wire</span>
           </div>
           <div className="text-lg font-mono font-black text-amber-600 dark:text-amber-400">
-            {formatIDR(totalConsumableCost)}
+            {fmt(totalConsumableCost)}
           </div>
           <div className="text-[10px] text-base-muted mt-0.5">
-            Wire: {formatIDR(totalWireCost)} | Lainnya: {formatIDR(otherConsumableCost)}
+            Wire: {fmt(totalWireCost)} | Lainnya: {fmt(otherConsumableCost)}
           </div>
         </div>
 
@@ -206,13 +220,13 @@ export function SpotlightCostTab({
             </span>
           </div>
           <div className="text-lg font-mono font-black text-base-text">
-            {formatIDR(totalActualCost)}
+            {fmt(totalActualCost)}
           </div>
           <div className={`text-[10px] font-mono font-bold mt-0.5 flex items-center gap-1 ${
             isOverBudget ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'
           }`}>
             {isOverBudget ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-            <span>Variance: {isOverBudget ? `-${formatIDR(Math.abs(varianceCost))}` : `+${formatIDR(varianceCost)} (Hemat)`}</span>
+            <span>Variance: {isOverBudget ? `-${fmt(Math.abs(varianceCost))}` : `+${fmt(varianceCost)} (Hemat)`}</span>
           </div>
         </div>
       </div>
@@ -223,7 +237,7 @@ export function SpotlightCostTab({
           <div className="flex items-center gap-2">
             <span className="font-bold text-base-text font-condensed uppercase tracking-wider">Penyerapan Anggaran (Cost Burn Rate)</span>
             <span className="text-[10px] text-base-muted">
-              {formatIDR(totalActualCost)} terpakai dari plafon {formatIDR(budgetCost)}
+              {fmt(totalActualCost)} terpakai dari plafon {fmt(budgetCost)}
             </span>
           </div>
           <span className={`font-mono font-black text-xs ${
@@ -291,19 +305,19 @@ export function SpotlightCostTab({
                         {asm.laborHours} jam
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-indigo-600 dark:text-indigo-400">
-                        {formatIDR(asm.laborCost)}
+                        {fmt(asm.laborCost)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-base-muted">
                         {asm.wireKg > 0 ? `${asm.wireKg} kg` : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-bold text-amber-600 dark:text-amber-400">
-                        {asm.wireCost > 0 ? formatIDR(asm.wireCost) : '—'}
+                        {asm.wireCost > 0 ? fmt(asm.wireCost) : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-base-muted">
-                        {asm.otherConsumableCost > 0 ? formatIDR(asm.otherConsumableCost) : '—'}
+                        {asm.otherConsumableCost > 0 ? fmt(asm.otherConsumableCost) : '—'}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono font-black text-base-text">
-                        {formatIDR(asm.totalActualCost)}
+                        {fmt(asm.totalActualCost)}
                       </td>
                       <td className="py-2.5 px-3 text-right font-mono text-[11px]">
                         {asm.budgetCost > 0 ? (
@@ -312,7 +326,7 @@ export function SpotlightCostTab({
                               ? 'bg-red-500/10 text-red-500 border border-red-500/20' 
                               : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'
                           }`}>
-                            {asm.isOverBudget ? `Over ${formatCompactIDR(Math.abs(asm.varianceCost))}` : `Sisa ${formatCompactIDR(asm.varianceCost)}`}
+                            {asm.isOverBudget ? `Over ${fmtCompact(Math.abs(asm.varianceCost))}` : `Sisa ${fmtCompact(asm.varianceCost)}`}
                           </span>
                         ) : (
                           <span className="text-base-muted/60">—</span>
@@ -369,10 +383,10 @@ export function SpotlightCostTab({
                         {row.hours} jam
                       </td>
                       <td className="py-2 px-3 text-right font-mono text-base-muted text-[11px]">
-                        {formatIDR(row.avgHourlyRate)}/j
+                        {fmt(row.avgHourlyRate)}/j
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-black text-indigo-600 dark:text-indigo-400">
-                        {formatIDR(row.cost)}
+                        {fmt(row.cost)}
                       </td>
                     </tr>
                   ))
@@ -422,10 +436,10 @@ export function SpotlightCostTab({
                         {row.unit}
                       </td>
                       <td className="py-2 px-3 text-right font-mono text-base-muted text-[11px]">
-                        {formatIDR(row.avgUnitCost)}
+                        {fmt(row.avgUnitCost)}
                       </td>
                       <td className="py-2 px-3 text-right font-mono font-black text-amber-600 dark:text-amber-400">
-                        {formatIDR(row.totalCost)}
+                        {fmt(row.totalCost)}
                       </td>
                     </tr>
                   ))

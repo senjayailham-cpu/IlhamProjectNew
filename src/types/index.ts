@@ -528,6 +528,14 @@ export interface ProjectCostSummary {
   assemblySummaries: AssemblyCostSummary[];
 }
 
+export type CurrencyCode = 'IDR' | 'USD' | 'AUD';
+
+export interface ExchangeRates {
+  IDR: number;
+  USD: number;
+  AUD: number;
+}
+
 // ─── MATERIAL PROCESSING ──────────────────────────────────────────────────
 
 export type ProcessingStageKey = string;

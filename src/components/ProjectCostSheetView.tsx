@@ -2,9 +2,12 @@ import React, { useState, useMemo } from 'react';
 import { Project, TimesheetEntry, WireLog, MaterialConsumptionLog, Employee, MaterialItem } from '../types';
 import { 
   calculateProjectCostSummary, 
-  formatIDR, 
-  formatCompactIDR 
+  formatCurrency, 
+  formatCompactCurrency,
+  CURRENCY_SYMBOLS 
 } from '../utils/costEngine';
+import { useAppStore } from '../store';
+import { CurrencySelector } from './CurrencySelector';
 import { 
   DollarSign, 
   Users, 
@@ -49,6 +52,12 @@ export function ProjectCostSheetView({
   const [statusFilter, setStatusFilter] = useState<'all' | 'in-progress' | 'over-budget' | 'under-budget'>('all');
   const [editingBudgetId, setEditingBudgetId] = useState<string | null>(null);
   const [budgetInputVal, setBudgetInputVal] = useState<string>('');
+
+  const currency = useAppStore((s) => s.currency);
+  const exchangeRates = useAppStore((s) => s.exchangeRates);
+
+  const fmt = (val: number | undefined | null) => formatCurrency(val, currency, exchangeRates);
+  const fmtCompact = (val: number | undefined | null) => formatCompactCurrency(val, currency, exchangeRates);
 
   // Calculate cost summary for each project
   const projectSummaries = useMemo(() => {
@@ -156,7 +165,7 @@ export function ProjectCostSheetView({
             <span className="text-[10px] font-mono text-base-muted">{enterpriseTotals.projectCount} Proyek</span>
           </div>
           <div className="mt-2 text-2xl font-mono font-black text-base-text">
-            {formatIDR(enterpriseTotals.totalBudget)}
+            {fmt(enterpriseTotals.totalBudget)}
           </div>
           <div className="text-[11px] text-base-muted mt-1">
             Total alokasi pagu biaya seluruh proyek
@@ -173,7 +182,7 @@ export function ProjectCostSheetView({
             <span className="text-[10px] font-mono text-indigo-500 font-bold">{enterpriseTotals.totalLaborHours} Jam</span>
           </div>
           <div className="mt-2 text-2xl font-mono font-black text-indigo-600 dark:text-indigo-400">
-            {formatIDR(enterpriseTotals.totalLaborCost)}
+            {fmt(enterpriseTotals.totalLaborCost)}
           </div>
           <div className="text-[11px] text-base-muted mt-1">
             Terekam presisi dari jam timesheet karyawan
@@ -190,10 +199,10 @@ export function ProjectCostSheetView({
             <span className="text-[10px] font-mono text-amber-500 font-bold">{enterpriseTotals.totalWireKg} kg wire</span>
           </div>
           <div className="mt-2 text-2xl font-mono font-black text-amber-600 dark:text-amber-400">
-            {formatIDR(enterpriseTotals.totalConsumableCost)}
+            {fmt(enterpriseTotals.totalConsumableCost)}
           </div>
           <div className="text-[11px] text-base-muted mt-1">
-            Wire: {formatCompactIDR(enterpriseTotals.totalWireCost)} + Consumables gudang
+            Wire: {fmtCompact(enterpriseTotals.totalWireCost)} + Consumables gudang
           </div>
         </div>
 
@@ -219,19 +228,19 @@ export function ProjectCostSheetView({
             </span>
           </div>
           <div className="mt-2 text-2xl font-mono font-black text-base-text">
-            {formatIDR(enterpriseTotals.totalActualCost)}
+            {fmt(enterpriseTotals.totalActualCost)}
           </div>
           <div className={`text-[11px] font-mono font-bold mt-1 flex items-center gap-1 ${
             enterpriseTotals.totalVariance < 0 ? 'text-red-500' : 'text-emerald-600 dark:text-emerald-400'
           }`}>
             {enterpriseTotals.totalVariance < 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-            <span>Net Variance: {enterpriseTotals.totalVariance < 0 ? `-${formatIDR(Math.abs(enterpriseTotals.totalVariance))}` : `+${formatIDR(enterpriseTotals.totalVariance)} (Hemat)`}</span>
+            <span>Net Variance: {enterpriseTotals.totalVariance < 0 ? `-${fmt(Math.abs(enterpriseTotals.totalVariance))}` : `+${fmt(enterpriseTotals.totalVariance)} (Hemat)`}</span>
           </div>
         </div>
       </div>
 
       {/* ── SEARCH & FILTER CONTROLS ── */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-base-surface p-3 rounded-2xl border border-base-border shadow-xs">
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 bg-base-surface p-3 rounded-2xl border border-base-border shadow-xs">
         <div className="relative flex-1 max-w-md">
           <Search className="h-4 w-4 text-base-muted absolute left-3 top-1/2 -translate-y-1/2" />
           <input
@@ -243,7 +252,12 @@ export function ProjectCostSheetView({
           />
         </div>
 
-        <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-condensed font-bold uppercase tracking-wider">
+        <div className="flex items-center gap-3 flex-wrap justify-between sm:justify-end">
+          {/* Currency Switcher (IDR / USD / AUD) */}
+          <CurrencySelector />
+
+          {/* Status Filters */}
+          <div className="flex items-center gap-1.5 overflow-x-auto text-xs font-condensed font-bold uppercase tracking-wider">
           <span className="text-[10px] text-base-muted hidden md:inline mr-1">Filter:</span>
           <button
             onClick={() => setStatusFilter('all')}
@@ -290,6 +304,7 @@ export function ProjectCostSheetView({
           </button>
         </div>
       </div>
+    </div>
 
       {/* ── JOB ORDER COST TABLE ── */}
       <div className="bg-base-surface border border-base-border rounded-2xl overflow-hidden shadow-card">
@@ -379,7 +394,7 @@ export function ProjectCostSheetView({
                           </div>
                         ) : (
                           <div className="flex items-center justify-end gap-1.5 group">
-                            <span>{formatIDR(summary.budgetCost)}</span>
+                            <span>{fmt(summary.budgetCost)}</span>
                             {onUpdateProject && (
                               <button
                                 type="button"
@@ -397,7 +412,7 @@ export function ProjectCostSheetView({
                       {/* Labor Cost */}
                       <td className="py-3 px-4 text-right font-mono">
                         <div className="font-bold text-indigo-600 dark:text-indigo-400">
-                          {formatIDR(summary.totalLaborCost)}
+                          {fmt(summary.totalLaborCost)}
                         </div>
                         <div className="text-[10px] text-base-muted font-normal">
                           {summary.totalLaborHours} jam
@@ -407,7 +422,7 @@ export function ProjectCostSheetView({
                       {/* Consumable & Wire Cost */}
                       <td className="py-3 px-4 text-right font-mono">
                         <div className="font-bold text-amber-600 dark:text-amber-400">
-                          {formatIDR(summary.totalConsumableCost)}
+                          {fmt(summary.totalConsumableCost)}
                         </div>
                         <div className="text-[10px] text-base-muted font-normal">
                           {summary.totalWireKg > 0 ? `${summary.totalWireKg} kg wire` : '0 kg'}
@@ -416,7 +431,7 @@ export function ProjectCostSheetView({
 
                       {/* Total Actual Cost */}
                       <td className="py-3 px-4 text-right font-mono font-black text-sm text-base-text">
-                        {formatIDR(summary.totalActualCost)}
+                        {fmt(summary.totalActualCost)}
                       </td>
 
                       {/* Cost Variance */}
@@ -429,12 +444,12 @@ export function ProjectCostSheetView({
                           {summary.isOverBudget ? (
                             <>
                               <TrendingUp className="h-3 w-3" />
-                              <span>-{formatCompactIDR(Math.abs(summary.varianceCost))}</span>
+                              <span>-{fmtCompact(Math.abs(summary.varianceCost))}</span>
                             </>
                           ) : (
                             <>
                               <TrendingDown className="h-3 w-3" />
-                              <span>+{formatCompactIDR(summary.varianceCost)}</span>
+                              <span>+{fmtCompact(summary.varianceCost)}</span>
                             </>
                           )}
                         </span>

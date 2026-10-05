@@ -23,7 +23,8 @@ import {
   DollarSign
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import { formatIDR, getEmployeeRate } from '../utils/costEngine';
+import { formatCurrency, getEmployeeRate } from '../utils/costEngine';
+import { useAppStore } from '../store';
 import {
   ResponsiveContainer,
   BarChart,
@@ -214,6 +215,9 @@ export default function EmployeesView({
 
   const canManageEmployees = can(currentUser as any, 'manageEmployees');
   const canDeleteEmployee = can(currentUser as any, 'deleteEmployee');
+
+  const currency = useAppStore((s) => s.currency);
+  const exchangeRates = useAppStore((s) => s.exchangeRates);
 
   const toggleGroup = (coord: string) => {
     setCollapsedGroups(prev => ({ ...prev, [coord]: !prev[coord] }));
@@ -1073,11 +1077,11 @@ export default function EmployeesView({
                                   <td className="px-3 py-1.5 text-right font-mono text-xs">
                                     {hasCustomRate ? (
                                       <span className="text-emerald-600 dark:text-emerald-400 font-bold" title="Tarif khusus karyawan">
-                                        {formatIDR(emp.hourlyRate)}/j
+                                        {formatCurrency(emp.hourlyRate, currency, exchangeRates)}/j
                                       </span>
                                     ) : (
                                       <span className="text-base-muted/70 text-[10.5px]" title="Mengikuti standar tarif posisi">
-                                        {formatIDR(standardRate)}/j*
+                                        {formatCurrency(standardRate, currency, exchangeRates)}/j*
                                       </span>
                                     )}
                                   </td>

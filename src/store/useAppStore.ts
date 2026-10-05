@@ -12,12 +12,19 @@ import {
   BomTemplate, 
   Employee, 
   TimesheetEntry, 
-  User 
+  User,
+  CurrencyCode,
+  ExchangeRates
 } from '../types';
 
 type StateSetter<T> = T | ((prev: T) => T);
 
 interface AppStore {
+  // Currency Preferences
+  currency: CurrencyCode;
+  setCurrency: (currency: CurrencyCode) => void;
+  exchangeRates: ExchangeRates;
+  setExchangeRates: (rates: StateSetter<ExchangeRates>) => void;
   // Collections
   projects: Project[];
   setProjects: (projects: StateSetter<Project[]>) => void;
@@ -76,6 +83,27 @@ interface AppStore {
 }
 
 export const useAppStore = create<AppStore>((set, get) => ({
+  // Currency Preferences
+  currency: (localStorage.getItem('app_currency') as CurrencyCode) || 'IDR',
+  setCurrency: (currency) => {
+    localStorage.setItem('app_currency', currency);
+    set({ currency });
+  },
+
+  exchangeRates: (() => {
+    try {
+      const saved = localStorage.getItem('app_exchange_rates');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return { IDR: 1, USD: 16000, AUD: 10500 };
+  })(),
+  setExchangeRates: (rates) =>
+    set((state) => {
+      const next = typeof rates === 'function' ? rates(state.exchangeRates) : rates;
+      localStorage.setItem('app_exchange_rates', JSON.stringify(next));
+      return { exchangeRates: next };
+    }),
+
   // Collections
   projects: [],
   setProjects: (projects) =>

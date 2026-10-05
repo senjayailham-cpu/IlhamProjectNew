@@ -8,7 +8,9 @@ import {
   ProjectCostSummary, 
   AssemblyCostSummary, 
   LaborPositionCostBreakdown, 
-  ConsumableItemCostBreakdown 
+  ConsumableItemCostBreakdown,
+  CurrencyCode,
+  ExchangeRates
 } from '../types';
 
 /**
@@ -30,6 +32,130 @@ export const DEFAULT_OVERTIME_MULTIPLIER = 1.5;
 export const DEFAULT_WIRE_COST_PER_KG = 35000; // Standar Kawat Las Flux-Cored / Mig Wire (Rp/kg)
 
 /**
+ * Default Exchange Rates against IDR (Base = IDR)
+ */
+export const DEFAULT_EXCHANGE_RATES: ExchangeRates = {
+  IDR: 1,
+  USD: 16000,
+  AUD: 10500,
+};
+
+export const CURRENCY_SYMBOLS: Record<CurrencyCode, string> = {
+  IDR: 'Rp',
+  USD: '$',
+  AUD: 'A$',
+};
+
+export const CURRENCY_LABELS: Record<CurrencyCode, string> = {
+  IDR: 'Indonesian Rupiah (Rp)',
+  USD: 'US Dollar ($)',
+  AUD: 'Australian Dollar (A$)',
+};
+
+/**
+ * Convert base IDR amount into target currency
+ */
+export function convertFromIDR(
+  amountInIDR: number,
+  currency: CurrencyCode = 'IDR',
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES
+): number {
+  if (!amountInIDR || isNaN(amountInIDR)) return 0;
+  if (currency === 'IDR') return amountInIDR;
+  const rate = rates?.[currency] || DEFAULT_EXCHANGE_RATES[currency] || 1;
+  return amountInIDR / rate;
+}
+
+/**
+ * Convert target currency amount back to base IDR
+ */
+export function convertToIDR(
+  amountInCurrency: number,
+  currency: CurrencyCode = 'IDR',
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES
+): number {
+  if (!amountInCurrency || isNaN(amountInCurrency)) return 0;
+  if (currency === 'IDR') return amountInCurrency;
+  const rate = rates?.[currency] || DEFAULT_EXCHANGE_RATES[currency] || 1;
+  return amountInCurrency * rate;
+}
+
+/**
+ * Formats a currency amount based on selected currency code
+ */
+export function formatCurrency(
+  amountInIDR: number | undefined | null,
+  currency: CurrencyCode = 'IDR',
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES
+): string {
+  if (amountInIDR === undefined || amountInIDR === null || isNaN(amountInIDR)) {
+    return `${CURRENCY_SYMBOLS[currency] || 'Rp'} 0`;
+  }
+
+  const converted = convertFromIDR(amountInIDR, currency, rates);
+  const symbol = CURRENCY_SYMBOLS[currency] || 'Rp';
+
+  if (currency === 'IDR') {
+    const rounded = Math.round(converted);
+    return `${symbol} ${rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.')}`;
+  }
+
+  // USD / AUD: Show with comma separators
+  if (Math.abs(converted) >= 1000) {
+    return `${symbol}${converted.toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+  } else {
+    return `${symbol}${converted.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+}
+
+/**
+ * Formats a compact currency representation (e.g. "Rp 4.5 Jt" or "$280K")
+ */
+export function formatCompactCurrency(
+  amountInIDR: number | undefined | null,
+  currency: CurrencyCode = 'IDR',
+  rates: ExchangeRates = DEFAULT_EXCHANGE_RATES
+): string {
+  if (amountInIDR === undefined || amountInIDR === null || isNaN(amountInIDR)) {
+    return `${CURRENCY_SYMBOLS[currency] || 'Rp'} 0`;
+  }
+
+  const converted = convertFromIDR(amountInIDR, currency, rates);
+  const symbol = CURRENCY_SYMBOLS[currency] || 'Rp';
+  const abs = Math.abs(converted);
+  const sign = converted < 0 ? '-' : '';
+
+  if (currency === 'IDR') {
+    if (abs >= 1_000_000_000) {
+      return `${sign}${symbol} ${(abs / 1_000_000_000).toFixed(1)} M`;
+    }
+    if (abs >= 1_000_000) {
+      return `${sign}${symbol} ${(abs / 1_000_000).toFixed(1)} Jt`;
+    }
+    if (abs >= 1_000) {
+      return `${sign}${symbol} ${(abs / 1_000).toFixed(0)} Rb`;
+    }
+    return `${sign}${symbol} ${abs.toFixed(0)}`;
+  }
+
+  if (abs >= 1_000_000) {
+    return `${sign}${symbol}${(abs / 1_000_000).toFixed(2)}M`;
+  }
+  if (abs >= 1_000) {
+    return `${sign}${symbol}${(abs / 1_000).toFixed(1)}K`;
+  }
+  return `${sign}${symbol}${abs.toFixed(2)}`;
+}
+
+export function formatIDR(amount: number | undefined | null): string {
+  return formatCurrency(amount, 'IDR');
+}
+
+export function formatCompactIDR(amount: number | undefined | null): string {
+  return formatCompactCurrency(amount, 'IDR');
+}
+
+/**
  * Default consumable unit costs in IDR
  */
 export const DEFAULT_CONSUMABLE_UNIT_COSTS: Record<string, number> = {
@@ -45,34 +171,6 @@ export const DEFAULT_CONSUMABLE_UNIT_COSTS: Record<string, number> = {
   nozzle: 35000, // Contact tip / nozzle
   tip: 25000,
 };
-
-/**
- * Formats a number into Indonesian Rupiah currency string (e.g. "Rp 4.500.000")
- */
-export function formatIDR(amount: number | undefined | null): string {
-  if (amount === undefined || amount === null || isNaN(amount)) return 'Rp 0';
-  const rounded = Math.round(amount);
-  return 'Rp ' + rounded.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-}
-
-/**
- * Formats a compact currency representation (e.g. "Rp 4.5 jt" or "Rp 500 rb")
- */
-export function formatCompactIDR(amount: number | undefined | null): string {
-  if (amount === undefined || amount === null || isNaN(amount)) return 'Rp 0';
-  const abs = Math.abs(amount);
-  const sign = amount < 0 ? '-' : '';
-  if (abs >= 1_000_000_000) {
-    return `${sign}Rp ${(abs / 1_000_000_000).toFixed(1)} M`;
-  }
-  if (abs >= 1_000_000) {
-    return `${sign}Rp ${(abs / 1_000_000).toFixed(1)} Jt`;
-  }
-  if (abs >= 1_000) {
-    return `${sign}Rp ${(abs / 1_000).toFixed(0)} Rb`;
-  }
-  return `${sign}Rp ${abs.toFixed(0)}`;
-}
 
 /**
  * Resolve hourly rate for an employee
