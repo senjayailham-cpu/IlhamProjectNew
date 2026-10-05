@@ -31,6 +31,7 @@ export function useEmployees(
   const [joinDate, setJoinDate] = useState<string>('');
   const [eoc, setEoc] = useState<string>('');
   const [employmentStatus, setEmploymentStatus] = useState<string>('Permanent');
+  const [hourlyRate, setHourlyRate] = useState<number | ''>('');
 
   const { saveItem, removeItem, saveBatch, removeBatch } = useFirestore();
 
@@ -45,6 +46,7 @@ export function useEmployees(
     setJoinDate('');
     setEoc('');
     setEmploymentStatus('Permanent');
+    setHourlyRate('');
     setEmpModalOpen(true);
   };
 
@@ -61,11 +63,14 @@ export function useEmployees(
     setJoinDate(e.joinDate || '');
     setEoc(e.eoc || '');
     setEmploymentStatus(e.employmentStatus || 'Permanent');
+    setHourlyRate(typeof e.hourlyRate === 'number' ? e.hourlyRate : '');
     setEmpModalOpen(true);
   };
 
   const saveEmployeeForm = () => {
     if (!empName.trim()) return alert('Name required.');
+    const parsedRate = typeof hourlyRate === 'number' && hourlyRate > 0 ? hourlyRate : undefined;
+
     if (editingEmpId) {
       const existing = employees.find(e => e.id === editingEmpId);
       const updatedEmp = {
@@ -80,6 +85,7 @@ export function useEmployees(
         joinDate: joinDate,
         eoc: eoc,
         employmentStatus: employmentStatus,
+        hourlyRate: parsedRate,
       };
       setEmployees(prev => prev.map(e => {
         if (e.id === editingEmpId) {
@@ -100,6 +106,7 @@ export function useEmployees(
         joinDate: joinDate,
         eoc: eoc,
         employmentStatus: employmentStatus,
+        hourlyRate: parsedRate,
         isExEmployee: false,
       };
       setEmployees(prev => [...prev, newEmp]);
@@ -186,6 +193,8 @@ export function useEmployees(
     setEoc,
     employmentStatus,
     setEmploymentStatus,
+    hourlyRate,
+    setHourlyRate,
     openAddEmp,
     openEditEmp,
     saveEmployeeForm,

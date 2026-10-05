@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { User, Project, Assembly, Task, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage } from '../types';
 import { useAppStore, useUIStore } from '../store';
 import { calcPct, calcTaskCounts, getManHoursForWorkOrder, getManHoursForAssembly, fmtHrs, esc } from '../utils/projectUtils';
-import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2, QrCode } from 'lucide-react';
+import { ClipboardList, Users, MapPin, Calendar, Clock, BookOpen, AlertTriangle, FileText, ChevronRight, Edit2, Trash2, Plus, Flame, Download, Target, Lock, Layers, BarChart2, QrCode, DollarSign } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { downloadProjectPDF } from '../utils/pdfGenerator';
 import ProjectQrModal from './ProjectQrModal';
@@ -12,6 +12,7 @@ import { AddTaskModal } from './spotlight/AddTaskModal';
 import { DeleteConfirmModal } from './spotlight/DeleteConfirmModal';
 import { SpotlightOverviewTab } from './spotlight/SpotlightOverviewTab';
 import { SpotlightProcessingTab } from './spotlight/SpotlightProcessingTab';
+import { SpotlightCostTab } from './SpotlightCostTab';
 
 interface SpotlightModalProps {
   isOpen: boolean;
@@ -99,7 +100,7 @@ export default function SpotlightModal({
 
   const isAdmin = currentUser?.role === 'admin';
   const [isQrModalOpen, setIsQrModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'assemblies' | 'processing'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'assemblies' | 'processing' | 'cost'>('overview');
   const [collapsedAsms, setCollapsedAsms] = useState<Record<string, boolean>>({});
   const [quickTaskNames, setQuickTaskNames] = useState<Record<string, string>>({});
   const [quickTaskDifficulty, setQuickTaskDifficulty] = useState<Record<string, number>>({});
@@ -417,6 +418,17 @@ export default function SpotlightModal({
             <Layers className="h-3.5 w-3.5" />
             <span>Processing</span>
           </button>
+          <button
+            onClick={() => setActiveTab('cost')}
+            className={`px-2.5 sm:px-4 py-1.5 rounded-lg font-condensed font-bold uppercase text-xs tracking-wider transition whitespace-nowrap flex-shrink-0 flex items-center gap-1.5 cursor-pointer ${
+              activeTab === 'cost'
+                ? 'bg-base-accent text-black font-extrabold'
+                : 'text-base-muted hover:text-base-text hover:bg-base-surface3'
+            }`}
+          >
+            <DollarSign className="h-3.5 w-3.5" />
+            <span>Cost Control & Budget</span>
+          </button>
         </div>
 
         {/* Center body columns */}
@@ -645,6 +657,16 @@ export default function SpotlightModal({
             onUpdateStage={(mpId, stageKey, stageData) => onUpdateProcessingStage!(p.id, mpId, stageKey, stageData)}
             onDelete={(mpId) => onDeleteMaterialProcessing!(p.id, mpId)}
             setDeleteConfirm={setDeleteConfirm}
+          />
+        )}
+
+        {activeTab === 'cost' && (
+          <SpotlightCostTab
+            project={p}
+            timesheets={modalTimesheets}
+            wireLogs={wireLogs}
+            consumptionLogs={consumptionLogs}
+            onUpdateProject={onUpdateProject}
           />
         )}
 

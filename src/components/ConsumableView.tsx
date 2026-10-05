@@ -32,10 +32,12 @@ import {
   X,
   ShoppingCart,
   AlertTriangle,
-  ChevronRight
+  ChevronRight,
+  DollarSign
 } from 'lucide-react';
 import { can } from '../utils/permissions';
 import { useAppStore } from '../store';
+import { formatIDR, getConsumableRate } from '../utils/costEngine';
 
 interface ConsumableViewProps {
   wireLogs?: WireLog[];
@@ -128,6 +130,7 @@ export default function ConsumableView({
     unit: 'pcs' as MaterialUnit,
     currentStock: 0,
     minStock: 0,
+    unitCost: 0,
     location: '',
     notes: ''
   });
@@ -2162,6 +2165,18 @@ export default function ConsumableView({
                   />
                 </div>
                 <div className="space-y-1">
+                  <label className="text-base-muted uppercase font-bold text-[10px] tracking-wider">Harga Satuan Beli (Rp/Unit)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="500"
+                    placeholder="e.g. 35000"
+                    value={newStockForm.unitCost === 0 ? '' : newStockForm.unitCost}
+                    onChange={e => setNewStockForm(p => ({ ...p, unitCost: parseFloat(e.target.value) || 0 }))}
+                    className="w-full px-3 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs outline-none focus:ring-1 focus:ring-amber-500 text-base-text font-semibold font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
                   <label className="text-base-muted uppercase font-bold text-[10px] tracking-wider">Storage Location</label>
                   <input
                     type="text"
@@ -2205,6 +2220,7 @@ export default function ConsumableView({
                       unit: 'pcs' as MaterialUnit,
                       currentStock: 0,
                       minStock: 0,
+                      unitCost: 0,
                       location: '',
                       notes: ''
                     });
@@ -2228,6 +2244,8 @@ export default function ConsumableView({
                     <th className="py-3 px-4">Category</th>
                     <th className="py-3 px-4">Unit</th>
                     <th className="py-3 px-4 text-center">Current Stock</th>
+                    <th className="py-3 px-4 text-right">Harga Satuan</th>
+                    <th className="py-3 px-4 text-right">Nilai Stock</th>
                     <th className="py-3 px-4 text-center">Min Threshold</th>
                     <th className="py-3 px-4">Location</th>
                     <th className="py-3 px-4">Notes</th>
@@ -2238,7 +2256,7 @@ export default function ConsumableView({
                 <tbody className="divide-y divide-base-border font-medium">
                   {consumableMaterials.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-8 px-4 text-center text-base-muted italic">
+                      <td colSpan={11} className="py-8 px-4 text-center text-base-muted italic">
                         No consumable items match your search/filter criteria.
                       </td>
                     </tr>
@@ -2338,6 +2356,25 @@ export default function ConsumableView({
                                 {m.currentStock}
                               </span>
                             )}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-xs">
+                            {isEditing ? (
+                              <input
+                                type="number"
+                                min="0"
+                                step="500"
+                                value={editingFields.unitCost ?? 0}
+                                onChange={e => setEditingFields(p => ({ ...p, unitCost: parseFloat(e.target.value) || 0 }))}
+                                className="w-24 text-right px-1 py-1 bg-base-surface border border-base-border rounded text-xs outline-none focus:ring-1 focus:ring-amber-500 font-bold"
+                              />
+                            ) : (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                                {formatIDR(m.unitCost || getConsumableRate(m.id, m.name))}
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-right font-mono text-xs text-base-text font-bold">
+                            {formatIDR((m.currentStock || 0) * (m.unitCost || getConsumableRate(m.id, m.name)))}
                           </td>
                           <td className="py-3 px-4 text-center font-mono text-base-muted">
                             {isEditing ? (

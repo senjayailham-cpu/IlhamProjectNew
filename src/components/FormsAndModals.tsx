@@ -642,6 +642,24 @@ export function FormsAndModals({
                     <option value="Finish Contract">Finish Contract</option>
                   </select>
                 </div>
+                <div className="space-y-1 col-span-2">
+                  <label className="field-label flex items-center justify-between">
+                    <span>Tarif per Jam / Hourly Rate (Rp)</span>
+                    <span className="text-[10px] text-base-muted font-normal">Kosongkan untuk pakai standar posisi</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-base-muted font-bold">Rp</span>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      step="1000"
+                      value={employeesHook.hourlyRate} 
+                      onChange={(e) => employeesHook.setHourlyRate(e.target.value === '' ? '' : Number(e.target.value))} 
+                      placeholder="e.g. 45000 (Welder) / 40000 (Fitter)" 
+                      className="input-field min-h-[44px] pl-9 font-mono" 
+                    />
+                  </div>
+                </div>
               </div>
             </div>
             <div className="flex gap-2 justify-end text-xs pt-2">

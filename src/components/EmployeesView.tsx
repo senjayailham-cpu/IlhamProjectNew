@@ -19,9 +19,11 @@ import {
   ArrowRight,
   FileText,
   Info,
-  MapPin
+  MapPin,
+  DollarSign
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import { formatIDR, getEmployeeRate } from '../utils/costEngine';
 import {
   ResponsiveContainer,
   BarChart,
@@ -999,14 +1001,17 @@ export default function EmployeesView({
                               <th className="px-3 py-2">Nama</th>
                               <th className="px-3 py-2">Position</th>
                               <th className="px-3 py-2">Site Location</th>
-                              <th className="px-3 py-2">Join Date</th>
+                               <th className="px-3 py-2">Join Date</th>
                               <th className="px-3 py-2">EOC</th>
                               <th className="px-3 py-2">Status</th>
+                              <th className="px-3 py-2 text-right">Tarif/Jam</th>
                               <th className="px-3 py-2 text-center w-24">Aksi</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-base-border text-xs">
                             {list.map(emp => {
+                              const standardRate = getEmployeeRate(emp.id, emp.position, employees);
+                              const hasCustomRate = typeof emp.hourlyRate === 'number' && emp.hourlyRate > 0;
                               return (
                                 <tr key={emp.id} className="hover:bg-base-surface3/30 transition duration-150 h-[38px]">
                                   <td className="px-3 py-1.5 text-center">
@@ -1062,6 +1067,17 @@ export default function EmployeesView({
                                     ) : (
                                       <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-green-500/10 text-green-400 border border-green-500/20">
                                         Permanent
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="px-3 py-1.5 text-right font-mono text-xs">
+                                    {hasCustomRate ? (
+                                      <span className="text-emerald-600 dark:text-emerald-400 font-bold" title="Tarif khusus karyawan">
+                                        {formatIDR(emp.hourlyRate)}/j
+                                      </span>
+                                    ) : (
+                                      <span className="text-base-muted/70 text-[10.5px]" title="Mengikuti standar tarif posisi">
+                                        {formatIDR(standardRate)}/j*
                                       </span>
                                     )}
                                   </td>

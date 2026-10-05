@@ -162,6 +162,7 @@ export interface Assembly {
   baselineFinish?: string;
   tasks: Task[];
   budgetHours?: number;
+  budgetCost?: number; // Anggaran biaya komponen assembly (Rp)
   predecessors?: Dependency[];
   successors?: Dependency[];
 }
@@ -186,6 +187,9 @@ export interface Project {
   predecessors?: Dependency[];
   successors?: Dependency[];
   budgetHours?: number;
+  budgetCost?: number; // Total Plafon Anggaran Biaya Proyek / BAC (Rp)
+  budgetLaborCost?: number; // Anggaran Biaya Tenaga Kerja (Rp)
+  budgetMaterialCost?: number; // Anggaran Biaya Material & Consumable (Rp)
   isArchived?: boolean;
   archivedAt?: string;
   archivedBy?: string;
@@ -211,6 +215,8 @@ export interface Employee {
   isExEmployee?: boolean;
   resignDate?: string;
   resignReason?: string;
+  hourlyRate?: number; // Tarif reguler per jam (Rp/jam)
+  overtimeRate?: number; // Tarif lembur per jam (Rp/jam)
 }
 
 export interface TimesheetEntry {
@@ -226,6 +232,10 @@ export interface TimesheetEntry {
   taskName?: string;
   category?: string; // Job Category: Welder (Hot Pass, Root Pass, Capping, Cleaning, Others), Fitter (Fit-Up, Cleaning, Others), Grinder (Cleaning, Others), Coordinator (Monitoring, Others)
   totalHours: number;
+  regularHours?: number; // Jam kerja normal (<= 8 jam)
+  overtimeHours?: number; // Jam kerja lembur (> 8 jam)
+  hourlyRate?: number; // Tarif per jam saat entri dicatat
+  totalCost?: number; // Biaya tenaga kerja terhitung (Rp)
   status: TimesheetStatusType;
   desc?: string;
   projectId?: string;
@@ -350,6 +360,8 @@ export interface WireLog {
   assemblyId: string;
   assemblyName: string;
   amountKg: number;
+  unitCost?: number; // Biaya per kg (default Rp 35.000)
+  totalCost?: number; // amountKg * unitCost
   notes?: string;
 }
 
@@ -394,6 +406,7 @@ export interface MaterialItem {
   unit: MaterialUnit;
   currentStock: number;
   minStock: number;
+  unitCost?: number; // Harga beli satuan per unit/kg (Rp)
   location?: string;
   notes?: string;
   createdAt: string;
@@ -441,6 +454,8 @@ export interface MaterialConsumptionLog {
   materialName: string;
   unit: MaterialUnit;
   qtyUsed: number;
+  unitCost?: number; // Biaya per unit saat dikeluarkan (Rp)
+  totalCost?: number; // qtyUsed * unitCost (Rp)
   projectId: string;
   projectName: string;
   assemblyId?: string;
@@ -453,6 +468,64 @@ export interface MaterialConsumptionLog {
   employeeName?: string;   // name of employee who used it
   employeePosition?: string; // 'WELDER'|'FITTER'|'GRINDER'|'COORDINATOR'|etc
   category?: MaterialCategory; // which category of consumable
+}
+
+// ============================================================================
+// COST CONTROL & JOB ORDER COSTING TYPES
+// ============================================================================
+
+export interface LaborPositionCostBreakdown {
+  position: string;
+  hours: number;
+  cost: number;
+  workerCount: number;
+  avgHourlyRate: number;
+}
+
+export interface ConsumableItemCostBreakdown {
+  id: string;
+  name: string;
+  category: string;
+  unit: string;
+  qty: number;
+  avgUnitCost: number;
+  totalCost: number;
+}
+
+export interface AssemblyCostSummary {
+  assemblyId: string;
+  assemblyName: string;
+  budgetCost: number;
+  laborHours: number;
+  laborCost: number;
+  wireKg: number;
+  wireCost: number;
+  otherConsumableCost: number;
+  totalConsumableCost: number;
+  totalActualCost: number;
+  varianceCost: number; // budgetCost - totalActualCost (>0 hemat, <0 over)
+  isOverBudget: boolean;
+  costBurnPct: number;
+}
+
+export interface ProjectCostSummary {
+  projectId: string;
+  projectName: string;
+  client: string;
+  budgetCost: number; // BAC (Budget At Completion)
+  totalLaborHours: number;
+  totalLaborCost: number; // Actual Labor Cost
+  totalWireKg: number;
+  totalWireCost: number;
+  otherConsumableCost: number;
+  totalConsumableCost: number;
+  totalActualCost: number; // AC (Actual Cost = Labor + Consumables)
+  varianceCost: number; // CV (Cost Variance = BAC - AC)
+  isOverBudget: boolean;
+  costBurnPct: number; // (AC / BAC) * 100
+  laborBreakdown: LaborPositionCostBreakdown[];
+  consumableBreakdown: ConsumableItemCostBreakdown[];
+  assemblySummaries: AssemblyCostSummary[];
 }
 
 // ─── MATERIAL PROCESSING ──────────────────────────────────────────────────

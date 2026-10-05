@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode, DollarSign } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
@@ -11,6 +11,7 @@ import { useAppStore, useUIStore } from '../store';
 import { can as canUtil } from '../utils/permissions';
 import { ColdStorageArchiveModal } from '../components/ColdStorageArchiveModal';
 import ProjectQrModal from '../components/ProjectQrModal';
+import { ProjectCostSheetView } from '../components/ProjectCostSheetView';
 import * as XLSX from 'xlsx';
 import { uid } from '../utils';
 
@@ -200,9 +201,9 @@ export function ProjectsPage({
     return prefs?.projectsFilterTab || (localStorage.getItem('projectsFilterTab') as any) || 'current';
   });
 
-  const [viewMode, setViewMode] = React.useState<'list' | 'radial'>(() => {
+  const [viewMode, setViewMode] = React.useState<'list' | 'radial' | 'cost'>(() => {
     const saved = (prefs?.projectsViewMode as any) || (localStorage.getItem('gantt_projects_viewMode') as any) || 'list';
-    return saved === 'radial' ? 'radial' : 'list';
+    return saved === 'radial' ? 'radial' : saved === 'cost' ? 'cost' : 'list';
   });
 
   const [projectSortBy, setProjectSortBy] = React.useState<'deadline' | 'risk' | 'priority' | 'alphabetical'>(() => {
@@ -236,7 +237,7 @@ export function ProjectsPage({
     else localStorage.setItem('projectsFilterTab', tab);
   };
 
-  const handleSetViewMode = (mode: 'list' | 'radial') => {
+  const handleSetViewMode = (mode: 'list' | 'radial' | 'cost') => {
     setViewMode(mode);
     if (onSetPref) onSetPref('projectsViewMode', mode);
     else localStorage.setItem('gantt_projects_viewMode', mode);
@@ -998,6 +999,25 @@ export function ProjectsPage({
                 <Gauge className="h-4 w-4" />
                 <span>Radial Gauge</span>
               </button>
+              <button
+                onClick={() => handleSetViewMode('cost')}
+                className={`relative z-10 flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-colors duration-200 cursor-pointer ${
+                  viewMode === 'cost'
+                    ? 'text-white font-extrabold'
+                    : 'text-base-muted hover:text-base-text'
+                }`}
+                title="Job Order Cost Control & Financial Sheet"
+              >
+                {viewMode === 'cost' && (
+                  <motion.div
+                    layoutId="activeTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <DollarSign className="h-4 w-4" />
+                <span>Cost Sheet</span>
+              </button>
             </div>
 
             {/* Real-time Search Box */}
@@ -1089,7 +1109,23 @@ export function ProjectsPage({
         </div>
 
         {/* List current active cards */}
-        {viewMode === 'radial' ? (
+        {viewMode === 'cost' ? (
+          <ProjectCostSheetView
+            projects={filteredProjects}
+            timesheets={timesheets || scopedTimesheetsForPage}
+            wireLogs={wireLogs || []}
+            consumptionLogs={consumptionLogs || []}
+            employees={useAppStore.getState().employees}
+            materials={useAppStore.getState().materials}
+            onOpenSpotlight={(pid) => {
+              if (setSpotlightProjectId && setSpotlightOpen) {
+                setSpotlightProjectId(pid);
+                setSpotlightOpen(true);
+              }
+            }}
+            onUpdateProject={onUpdateProject}
+          />
+        ) : viewMode === 'radial' ? (
           <div className="bg-base-surface border border-base-border rounded-xl p-6 shadow-xs space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-base-border/50 pb-4">
               <div className="space-y-1">
