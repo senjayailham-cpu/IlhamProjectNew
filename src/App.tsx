@@ -1868,6 +1868,7 @@ function AppContent() {
                   importProjectsExcel={projectsHook.importProjectsExcel}
                   deleteProjectDetails={projectsHook.deleteProjectDetails}
                   deleteProjectsExceptTarget={projectsHook.deleteProjectsExceptTarget}
+                  bulkDeleteProjects={projectsHook.bulkDeleteProjects}
                   // Gantt interactivity handlers
                   onUpdateProject={(updatedProj) => {
                     setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));

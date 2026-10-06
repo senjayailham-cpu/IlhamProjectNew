@@ -78,7 +78,7 @@ export function useProjects(
   const [copyTasks, setCopyTasks] = useState<boolean>(true);
   const [copyKeepClient, setCopyKeepClient] = useState<boolean>(true);
 
-  const { saveItem, removeItem, saveBatch } = useFirestore();
+  const { saveItem, removeItem, saveBatch, removeBatch } = useFirestore();
 
   const openAddProject = () => {
     setEditingProjectId(null);
@@ -403,6 +403,94 @@ export function useProjects(
     createProjectNow(baseProjectData, generatedAsms, generatedMaterials);
   };
 
+  const cleanupAssociatedProjectData = async (pids: string[]) => {
+    if (!pids || pids.length === 0) return;
+    const pidSet = new Set(pids);
+    const store = useAppStore.getState();
+
+    // 1. Reset modals if viewing/editing deleted project
+    if (spotlightProjectId && pidSet.has(spotlightProjectId)) {
+      setSpotlightOpen(false);
+      setSpotlightProjectId(null);
+    }
+    if (editingProjectId && pidSet.has(editingProjectId)) {
+      setEditingProjectId(null);
+      setProjectFormOpen(false);
+    }
+
+    // 2. Cascade delete QC Inspections
+    try {
+      const relatedInspections = (store.inspections || []).filter(ins => ins.projectId && pidSet.has(ins.projectId));
+      if (relatedInspections.length > 0) {
+        const insIds = relatedInspections.map(i => i.id);
+        await removeBatch('inspections', insIds);
+        store.setInspections((store.inspections || []).filter(i => !insIds.includes(i.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up inspections:', e);
+    }
+
+    // 3. Cascade delete Problem Reports
+    try {
+      const relatedProblems = (store.problemReports || []).filter(pr => pr.projectId && pidSet.has(pr.projectId));
+      if (relatedProblems.length > 0) {
+        const prIds = relatedProblems.map(p => p.id);
+        await removeBatch('problemReports', prIds);
+        store.setProblemReports((store.problemReports || []).filter(p => !prIds.includes(p.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up problem reports:', e);
+    }
+
+    // 4. Cascade delete Wire Logs
+    try {
+      const relatedWireLogs = (store.wireLogs || []).filter(wl => wl.projectId && pidSet.has(wl.projectId));
+      if (relatedWireLogs.length > 0) {
+        const wlIds = relatedWireLogs.map(w => w.id);
+        await removeBatch('wireLogs', wlIds);
+        store.setWireLogs((store.wireLogs || []).filter(w => !wlIds.includes(w.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up wire logs:', e);
+    }
+
+    // 5. Cascade delete Material Requests
+    try {
+      const relatedMatRequests = (store.materialRequests || []).filter(mr => mr.projectId && pidSet.has(mr.projectId));
+      if (relatedMatRequests.length > 0) {
+        const mrIds = relatedMatRequests.map(m => m.id);
+        await removeBatch('materialRequests', mrIds);
+        store.setMaterialRequests((store.materialRequests || []).filter(m => !mrIds.includes(m.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up material requests:', e);
+    }
+
+    // 6. Cascade delete Consumption Logs
+    try {
+      const relatedConsumption = (store.consumptionLogs || []).filter(cl => cl.projectId && pidSet.has(cl.projectId));
+      if (relatedConsumption.length > 0) {
+        const clIds = relatedConsumption.map(c => c.id);
+        await removeBatch('consumptionLogs', clIds);
+        store.setConsumptionLogs((store.consumptionLogs || []).filter(c => !clIds.includes(c.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up consumption logs:', e);
+    }
+
+    // 7. Cascade delete Drawings
+    try {
+      const relatedDrawings = (store.drawings || []).filter(d => (d as any).projectId && pidSet.has((d as any).projectId));
+      if (relatedDrawings.length > 0) {
+        const dIds = relatedDrawings.map(d => d.id);
+        await removeBatch('drawings', dIds);
+        store.setDrawings((store.drawings || []).filter(d => !dIds.includes(d.id)));
+      }
+    } catch (e) {
+      console.error('Error cleaning up drawings:', e);
+    }
+  };
+
   const deleteProjectDetails = (pid: string) => {
     const p = projects.find(x => x.id === pid);
     if (!p) return;
@@ -410,11 +498,15 @@ export function useProjects(
       isOpen: true,
       title: 'Delete Project Details',
       message: `Are you sure you want to permanently delete project "${p.name}"? This will delete all sub-assemblies and tasks inside.`,
-      onConfirm: () => {
+      onConfirm: async () => {
         setProjects(prev => prev.filter(x => x.id !== pid));
-        removeItem('projects', pid);
+        try {
+          await removeItem('projects', pid);
+        } catch (err) {
+          console.error(`Failed to delete project ${pid}:`, err);
+        }
+        await cleanupAssociatedProjectData([pid]);
         logActivity('project_delete', 'Deleted project', pid, p.name);
-        setProjectFormOpen(false);
         verifyMarkChanged();
         setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
       }
@@ -441,6 +533,7 @@ export function useProjects(
         setProjects(prev => prev.filter(x => (x.client || '').trim().toUpperCase() === targetWorkOrder.trim().toUpperCase()));
         
         // Remove from Firestore
+        const nonTargetIds = nonTargetProjects.map(p => p.id);
         for (const p of nonTargetProjects) {
           try {
             await removeItem('projects', p.id);
@@ -449,7 +542,34 @@ export function useProjects(
             console.error(`Failed to delete project ${p.id}:`, err);
           }
         }
+        await cleanupAssociatedProjectData(nonTargetIds);
         
+        verifyMarkChanged();
+        setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const bulkDeleteProjects = (pids: string[]) => {
+    if (!pids || pids.length === 0) return;
+    const targets = projects.filter(x => pids.includes(x.id));
+    if (targets.length === 0) return;
+
+    setDeleteConfirm({
+      isOpen: true,
+      title: `Hapus ${targets.length} Proyek Sekaligus`,
+      message: `Apakah Anda yakin ingin menghapus permanen ${targets.length} proyek yang dipilih? Tindakan ini tidak dapat dibatalkan dan akan menghapus semua sub-assembly serta task di dalamnya.`,
+      onConfirm: async () => {
+        setProjects(prev => prev.filter(x => !pids.includes(x.id)));
+        for (const p of targets) {
+          try {
+            await removeItem('projects', p.id);
+            logActivity('project_delete', 'Deleted project during bulk delete', p.id, p.name);
+          } catch (err) {
+            console.error(`Failed to delete project ${p.id}:`, err);
+          }
+        }
+        await cleanupAssociatedProjectData(pids);
         verifyMarkChanged();
         setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
       }
@@ -941,6 +1061,7 @@ export function useProjects(
     saveProjectForm,
     deleteProjectDetails,
     deleteProjectsExceptTarget,
+    bulkDeleteProjects,
     archiveProject,
     unarchiveProject,
     openAssemblyAddForm,

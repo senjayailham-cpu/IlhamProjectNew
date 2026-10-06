@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
-import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode, DollarSign } from 'lucide-react';
+import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode, DollarSign, CheckSquare } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';
 import { calcPct, calcTaskCounts, fmtHrs, getManHoursForWorkOrder } from '../utils/projectUtils';
 import { calcProjectRiskScore, getRiskBadgeClasses } from '../utils/riskScore';
@@ -125,6 +125,7 @@ interface ProjectsPageProps {
   importProjectsExcel?: (projects: Project[]) => void;
   deleteProjectDetails?: (pid: string) => void;
   deleteProjectsExceptTarget?: (targetWorkOrder: string) => void;
+  bulkDeleteProjects?: (pids: string[]) => void;
   openCopyModalLauncher?: (pid: string) => void;
   // GANTT INTERACTIVE PROPS
   onUpdateProject?: (project: Project) => void;
@@ -160,6 +161,7 @@ export function ProjectsPage({
   importProjectsExcel,
   deleteProjectDetails,
   deleteProjectsExceptTarget,
+  bulkDeleteProjects,
   openCopyModalLauncher,
   onUpdateProject,
   onOpenDepModal,
@@ -212,6 +214,74 @@ export function ProjectsPage({
 
   const [coldStorageOpen, setColdStorageOpen] = React.useState(false);
   const [qrModalProject, setQrModalProject] = React.useState<Project | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = React.useState<string[]>([]);
+
+  const handleToggleSelectProject = (pid: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setSelectedProjectIds(prev => 
+      prev.includes(pid) ? prev.filter(id => id !== pid) : [...prev, pid]
+    );
+  };
+
+  const handleClearSelection = () => {
+    setSelectedProjectIds([]);
+  };
+
+  const handleExecuteBulkDelete = () => {
+    if (selectedProjectIds.length === 0) return;
+    if (bulkDeleteProjects) {
+      bulkDeleteProjects(selectedProjectIds);
+      setSelectedProjectIds([]);
+    }
+  };
+
+  const renderFloatingBulkBar = (totalCount = selectedProjectIds.length, onSelectAll?: () => void, allSelected = false) => {
+    if (selectedProjectIds.length === 0) return null;
+    return (
+      <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-base-surface/95 backdrop-blur-md border-2 border-base-accent shadow-2xl rounded-2xl px-5 py-3 flex items-center gap-4 flex-wrap animate-in slide-in-from-bottom-5 duration-200">
+        <div className="flex items-center gap-2">
+          <span className="w-2.5 h-2.5 rounded-full bg-base-accent animate-ping" />
+          <span className="text-xs font-condensed font-extrabold uppercase tracking-wider text-base-text">
+            {selectedProjectIds.length} Proyek Dipilih
+          </span>
+        </div>
+
+        <div className="h-4 w-[1px] bg-base-border" />
+
+        <div className="flex items-center gap-2">
+          {onSelectAll && (
+            <button
+              type="button"
+              onClick={onSelectAll}
+              className="px-2.5 py-1 text-xs font-condensed font-bold uppercase tracking-wider bg-base-surface2 hover:bg-base-surface3 rounded-lg text-base-text border border-base-border transition cursor-pointer"
+            >
+              {allSelected ? 'Batal Pilih Semua' : `Pilih Semua (${totalCount})`}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={handleClearSelection}
+            className="px-2.5 py-1 text-xs font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-text transition cursor-pointer"
+          >
+            Batal
+          </button>
+        </div>
+
+        <div className="h-4 w-[1px] bg-base-border" />
+
+        {can('deleteProject') && (
+          <button
+            type="button"
+            onClick={handleExecuteBulkDelete}
+            className="px-4 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-condensed font-black uppercase tracking-wider flex items-center gap-2 shadow-md transition cursor-pointer active:scale-95"
+          >
+            <Trash2 className="w-4 h-4" />
+            <span>Hapus {selectedProjectIds.length} Proyek Sekaligus</span>
+          </button>
+        )}
+      </div>
+    );
+  };
 
   React.useEffect(() => {
     if (prefs?.projectsFilterTab) {
@@ -876,6 +946,18 @@ export function ProjectsPage({
       return 0;
     });
 
+    const areAllFilteredSelected = filteredProjects.length > 0 && filteredProjects.every(p => selectedProjectIds.includes(p.id));
+
+    const handleToggleSelectAll = () => {
+      if (areAllFilteredSelected) {
+        const filteredSet = new Set(filteredProjects.map(p => p.id));
+        setSelectedProjectIds(prev => prev.filter(id => !filteredSet.has(id)));
+      } else {
+        const newIds = new Set([...selectedProjectIds, ...filteredProjects.map(p => p.id)]);
+        setSelectedProjectIds(Array.from(newIds));
+      }
+    };
+
     const todayIso = new Date().toISOString().slice(0, 10);
     const totalActiveCount = activePendingProjects.length;
     let overdueCount = 0;
@@ -1104,6 +1186,24 @@ export function ProjectsPage({
                 <Plus className="h-4 w-4" />
                 <span>Add project</span>
               </button>
+
+              {can('deleteProject') && filteredProjects.length > 0 && (
+                <button
+                  type="button"
+                  onClick={handleToggleSelectAll}
+                  className={`px-3 py-2 rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-1.5 border shadow-xs ${
+                    areAllFilteredSelected
+                      ? 'bg-base-accent text-white dark:text-black border-base-accent'
+                      : selectedProjectIds.length > 0
+                      ? 'bg-base-accent/15 text-base-accent border-base-accent/40'
+                      : 'bg-base-surface hover:bg-base-surface2 text-base-muted hover:text-base-text border-base-border'
+                  }`}
+                  title="Pilih semua proyek yang ditampilkan untuk aksi massal"
+                >
+                  <CheckSquare className="h-4 w-4" />
+                  <span>{selectedProjectIds.length > 0 ? `${selectedProjectIds.length} Dipilih` : 'Pilih Banyak'}</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1187,11 +1287,23 @@ export function ProjectsPage({
                         setSpotlightProjectId(p.id);
                         setSpotlightOpen(true);
                       }}
-                      className="bg-base-surface hover:bg-base-surface2/40 border border-base-border hover:border-base-accent/60 p-5 rounded-2xl shadow-xs hover:shadow-card transition-all cursor-pointer group flex flex-col justify-between text-left relative overflow-hidden space-y-3.5"
+                      className={`bg-base-surface hover:bg-base-surface2/40 border p-5 rounded-2xl shadow-xs hover:shadow-card transition-all cursor-pointer group flex flex-col justify-between text-left relative overflow-hidden space-y-3.5 ${
+                        selectedProjectIds.includes(p.id) ? 'ring-2 ring-base-accent border-base-accent bg-base-accent/5' : 'border-base-border hover:border-base-accent/60'
+                      }`}
                     >
                       {/* Top Bar Info */}
                       <div className="w-full flex items-center justify-between gap-2">
                         <div className="min-w-0 flex items-center gap-1.5 truncate">
+                          {can('deleteProject') && (
+                            <input
+                              type="checkbox"
+                              checked={selectedProjectIds.includes(p.id)}
+                              onChange={(e) => handleToggleSelectProject(p.id, e as any)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="w-4 h-4 rounded border-base-border text-base-accent cursor-pointer accent-base-accent mr-1 shrink-0"
+                              title="Pilih proyek untuk aksi massal"
+                            />
+                          )}
                           <span className="text-xs font-mono font-bold text-base-blue uppercase tracking-wide truncate max-w-[150px]" title={p.client}>
                             {p.client || 'WO N/A'}
                           </span>
@@ -1334,6 +1446,17 @@ export function ProjectsPage({
             <table className="w-full text-left border-collapse text-sm">
               <thead>
                 <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border text-xs">
+                  {can('deleteProject') && (
+                    <th className="w-10 px-3 py-3.5 text-center">
+                      <input
+                        type="checkbox"
+                        checked={areAllFilteredSelected}
+                        onChange={handleToggleSelectAll}
+                        className="w-4 h-4 rounded border-base-border text-base-accent cursor-pointer accent-base-accent"
+                        title={areAllFilteredSelected ? "Batal pilih semua" : "Pilih semua proyek di tabel"}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3.5">Project</th>
                   <th className="px-4 py-3.5">Schedule</th>
                   <th className="px-4 py-3.5 text-center">Location</th>
@@ -1348,7 +1471,7 @@ export function ProjectsPage({
               <tbody className="divide-y divide-base-border text-base-text text-sm">
                 {filteredProjects.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="px-6 py-14 text-center text-base-muted italic">
+                    <td colSpan={can('deleteProject') ? 10 : 9} className="px-6 py-14 text-center text-base-muted italic">
                       <div className="flex flex-col items-center gap-3">
                         <span className="text-sm">No current schedules match your filters.</span>
                         <div className="flex gap-2 justify-center not-italic">
@@ -1388,9 +1511,19 @@ export function ProjectsPage({
                       <tr
                         key={p.id}
                         className={`hover:bg-base-surface2/40 transition-colors ${
-                          hasActiveSearch ? 'bg-base-accent/5' : ''
+                          selectedProjectIds.includes(p.id) ? 'bg-base-accent/10 border-l-2 border-l-base-accent' : hasActiveSearch ? 'bg-base-accent/5' : ''
                         }`}
                       >
+                        {can('deleteProject') && (
+                          <td className="w-10 px-3 py-4 text-center" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={selectedProjectIds.includes(p.id)}
+                              onChange={(e) => handleToggleSelectProject(p.id, e as any)}
+                              className="w-4 h-4 rounded border-base-border text-base-accent cursor-pointer accent-base-accent"
+                            />
+                          </td>
+                        )}
                         {/* Kolom 1: Project name + client + status dot */}
                         <td className="px-4 py-4 max-w-[240px]">
                           <div className="flex items-center gap-2.5">
@@ -1595,6 +1728,8 @@ export function ProjectsPage({
             </table>
           </div>
         )}
+
+        {renderFloatingBulkBar(filteredProjects.length, handleToggleSelectAll, areAllFilteredSelected)}
       </div>
     );
   }
@@ -1613,6 +1748,18 @@ export function ProjectsPage({
     
     return false;
   });
+
+  const areAllMatchedSelected = matchedProjects.length > 0 && matchedProjects.every(p => selectedProjectIds.includes(p.id));
+
+  const handleToggleSelectAllMatched = () => {
+    if (areAllMatchedSelected) {
+      const matchedSet = new Set(matchedProjects.map(p => p.id));
+      setSelectedProjectIds(prev => prev.filter(id => !matchedSet.has(id)));
+    } else {
+      const newIds = new Set([...selectedProjectIds, ...matchedProjects.map(p => p.id)]);
+      setSelectedProjectIds(Array.from(newIds));
+    }
+  };
 
   return (
     <div className="space-y-4 animate-fade-in">
@@ -1648,9 +1795,21 @@ export function ProjectsPage({
               <div
                 key={p.id}
                 onClick={() => { setSpotlightProjectId(p.id); setSpotlightOpen(true); }}
-                className="bg-base-surface border border-base-border hover:border-base-border2 rounded-xl p-4 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative group"
+                className={`bg-base-surface border rounded-xl p-4 shadow-xs hover:shadow-sm transition-all cursor-pointer flex flex-col lg:flex-row lg:items-center justify-between gap-3 relative group ${
+                  selectedProjectIds.includes(p.id) ? 'ring-2 ring-base-accent border-base-accent bg-base-accent/5' : 'border-base-border hover:border-base-border2'
+                }`}
               >
                 <div className="flex items-center gap-3 min-w-0 flex-1">
+                  {can('deleteProject') && (
+                    <input
+                      type="checkbox"
+                      checked={selectedProjectIds.includes(p.id)}
+                      onChange={(e) => handleToggleSelectProject(p.id, e as any)}
+                      onClick={(e) => e.stopPropagation()}
+                      className="w-4 h-4 rounded border-base-border text-base-accent cursor-pointer accent-base-accent shrink-0"
+                      title="Pilih proyek untuk aksi massal"
+                    />
+                  )}
                   <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${pct === 100 ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' : 'bg-base-accent shadow-[0_0_6px_var(--base-accent)]'}`} />
                   <div className="min-w-0">
                     <h3 className="font-condensed font-bold text-base text-base-text leading-snug truncate">{p.name}</h3>
@@ -1846,6 +2005,8 @@ export function ProjectsPage({
         onClose={() => setQrModalProject(null)}
         project={qrModalProject}
       />
+
+      {renderFloatingBulkBar(matchedProjects.length, handleToggleSelectAllMatched, areAllMatchedSelected)}
     </div>
   );
 }
