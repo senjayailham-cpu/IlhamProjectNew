@@ -3599,45 +3599,6 @@ export default function GanttView({
 
         {/* Row 2: Action Controls (stable, overflow-visible container, wraps on small screens) */}
         <div className="flex items-center gap-3 text-xs overflow-visible py-1 w-full flex-wrap shrink-0">
-          {/* Target Month Selector inside Fullscreen Toolbar */}
-          {setSelectedMonth && availableMonths && (
-            <div className="flex items-center gap-1.5 bg-base-surface border border-base-border rounded-xl px-2.5 py-1 h-[34px] shrink-0 shadow-2xs">
-              <span className="text-[10px] font-condensed font-bold uppercase text-base-accent shrink-0 flex items-center gap-1">
-                <Calendar className="h-3.5 w-3.5" />
-                <span>Target Month:</span>
-              </span>
-              <select
-                value={selectedMonth || 'ALL'}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="bg-transparent text-xs font-condensed font-bold uppercase tracking-wide text-base-text outline-none cursor-pointer min-w-[150px]"
-              >
-                <option value="ALL" className="bg-base-surface text-base-text">ALL PROJECTS (SEMUA PROYEK)</option>
-                {availableMonths.map((m) => {
-                  const [yr, mo] = m.split('-').map(Number);
-                  const date = new Date(yr, mo - 1, 1);
-                  const label = isNaN(date.getTime()) ? m : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
-                  return (
-                    <option key={m} value={m} className="bg-base-surface text-base-text">
-                      {label}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-          )}
-
-          <label className="flex items-center gap-1.5 px-2.5 py-1 bg-base-surface border border-base-border rounded-xl h-[34px] text-[10px] font-condensed font-bold text-base-muted hover:text-base-text uppercase tracking-wider cursor-pointer select-none shrink-0 shadow-2xs">
-            <input
-              type="checkbox"
-              checked={!!showCompleted}
-              onChange={(e) => setShowCompleted(e.target.checked)}
-              className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
-            />
-            <span>Show Completed</span>
-          </label>
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
           {/* Main View Tab Switcher: Gantt vs Lookahead */}
           <div className="relative flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             <button
@@ -4182,21 +4143,6 @@ export default function GanttView({
 
               <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
 
-              {/* Oracle Primavera P6 Run Schedule (F9) Button */}
-              <button
-                onClick={handleRunP6Schedule}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-red-600/15 hover:bg-red-600/25 text-red-600 dark:text-red-400 border border-red-500/40 hover:border-red-500/70 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 shadow-xs active:scale-95 group"
-                title="Oracle Primavera P6 Schedule (F9): Run CPM Forward & Backward passes to recalculate Early/Late dates, Total Float, and identify the Critical Path chain."
-              >
-                <span className="px-1 py-0.2 rounded bg-red-600 text-white text-[8px] font-mono font-black shadow-2xs">F9</span>
-                <span>P6 Schedule</span>
-                <span className="text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/30">
-                  {criticalPathIds.size} CP
-                </span>
-              </button>
-
-              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
-
               {/* Smart Schedule Button */}
               <button
                 onClick={handleSmartSchedule}
@@ -4254,19 +4200,8 @@ export default function GanttView({
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
-          {/* Layout & File Export Actions */}
+          {/* File Export Actions */}
           <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
-            {/* Fullscreen Exit */}
-            <button 
-              onClick={handleExitFullscreen}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-accent hover:bg-base-accent/15 transition-colors cursor-pointer shrink-0"
-              title="Keluar dari Fullscreen"
-            >
-              <Minimize2 className="h-3 w-3 shrink-0" />
-              <span>Keluar Full Screen</span>
-            </button>
-
-            <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
 
             {/* Export */}
             <div className="relative shrink-0" ref={exportDropdownRef}>

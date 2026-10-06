@@ -2024,6 +2024,8 @@ function AppContent() {
                   }}
                   openPrintView={() => window.print()}
                   timesheets={timesheets}
+                  orgSettings={orgSettings}
+                  currentUser={currentUser}
                 />
               )}
 

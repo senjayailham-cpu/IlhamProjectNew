@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { ActivityLog, Project, TimesheetEntry, InspectionRequest, ProblemReport } from '../types';
+import { ActivityLog, Project, TimesheetEntry, InspectionRequest, ProblemReport, OrgSettings, User } from '../types';
 import { calcPct, esc } from '../utils/projectUtils';
 import { useAppStore, useUIStore } from '../store';
-import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2, FileCheck, AlertTriangle } from 'lucide-react';
+import { FileText, Printer, Trash2, ArrowUp, ArrowDown, HelpCircle, Activity, TrendingUp, Users, Clock, BarChart2, FileCheck, AlertTriangle, Download, Loader2 } from 'lucide-react';
+import { downloadDailyReportPDF } from '../utils/dailyReportPdf';
 import { db } from '../services/firebase';
 import { collection, onSnapshot } from 'firebase/firestore';
 import {
@@ -24,6 +25,8 @@ interface DailyReportViewProps {
   clearActivityLogs?: () => void;
   openPrintView?: () => void;
   timesheets?: TimesheetEntry[];
+  orgSettings?: OrgSettings;
+  currentUser?: User | null;
 }
 
 const ACT_ICONS: Record<string, { label: string; color: string; bg: string }> = {
@@ -51,7 +54,9 @@ export default function DailyReportView({
   setReportDate: propSetReportDate,
   clearActivityLogs = () => {},
   openPrintView = () => {},
-  timesheets: propTimesheets
+  timesheets: propTimesheets,
+  orgSettings,
+  currentUser: propCurrentUser
 }: DailyReportViewProps) {
   const storeProjects = useAppStore((s) => s.projects);
   const storeActivityLogs = useAppStore((s) => s.activities);
@@ -71,9 +76,34 @@ export default function DailyReportView({
   const [userCollapsed, setUserCollapsed] = useState<Record<string, boolean>>({});
   const [trendPeriod, setTrendPeriod] = useState<'weekly' | 'monthly'>('weekly');
   const [attendanceMetric, setAttendanceMetric] = useState<'hours' | 'headcount'>('hours');
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const [inspections, setInspections] = useState<InspectionRequest[]>([]);
   const [problemReports, setProblemReports] = useState<ProblemReport[]>([]);
+
+  const activeUser = propCurrentUser || useAppStore((s) => s.currentUser);
+
+  const handleDownloadPDF = async () => {
+    try {
+      setIsGeneratingPdf(true);
+      setTimeout(() => {
+        downloadDailyReportPDF({
+          reportDate,
+          activityLogs,
+          inspections,
+          projects,
+          timesheets,
+          problemReports,
+          orgSettings,
+          generatedBy: activeUser?.name || 'Site Coordinator'
+        });
+        setIsGeneratingPdf(false);
+      }, 100);
+    } catch (err) {
+      console.error('Failed to generate daily report PDF:', err);
+      setIsGeneratingPdf(false);
+    }
+  };
 
   useEffect(() => {
     if (storeInspections.length > 0) setInspections(storeInspections);
@@ -538,19 +568,38 @@ export default function DailyReportView({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Official Formatted PDF Export Button for Off-Site Stakeholders */}
+          <button
+            onClick={handleDownloadPDF}
+            disabled={isGeneratingPdf}
+            className="px-3.5 py-1.5 bg-base-accent hover:opacity-90 text-white dark:text-black font-condensed font-black text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-2 shadow-xs active:scale-95 disabled:opacity-50"
+            title="Export official formatted daily site & QC inspection report (PDF) for off-site stakeholders"
+          >
+            {isGeneratingPdf ? (
+              <Loader2 className="h-4 w-4 animate-spin text-current" />
+            ) : (
+              <Download className="h-4 w-4 text-current" />
+            )}
+            <span>{isGeneratingPdf ? 'Generating PDF...' : 'Export Daily PDF'}</span>
+          </button>
+
+          {/* Browser Print Fallback */}
           <button
             onClick={openPrintView}
-            className="btn btn-sm btn-ghost border border-base-border flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider text-base-muted2 hover:text-base-text hover:bg-base-surface3 transition-all cursor-pointer"
+            className="px-3 py-1.5 border border-base-border hover:bg-base-surface3 text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+            title="Print current page via browser printer"
           >
-            <Printer className="h-4 w-4 text-base-accent" />
-            <span>Print PDF</span>
+            <Printer className="h-4 w-4 text-base-muted" />
+            <span className="hidden sm:inline">Print</span>
           </button>
+
           <button
             onClick={clearActivityLogs}
-            className="btn btn-sm btn-danger flex items-center gap-1.5 font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer"
+            className="px-3 py-1.5 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+            title="Clear activity log entries"
           >
             <Trash2 className="h-4 w-4" />
-            <span>Clear Logs</span>
+            <span className="hidden sm:inline">Clear Logs</span>
           </button>
         </div>
       </div>

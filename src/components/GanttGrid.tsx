@@ -322,16 +322,14 @@ export const STANDARD_COLUMN_ORDER: ColumnId[] = [
 ];
 
 export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
-  'activityId',
   'wbs',
   'name',
-  'od',
-  'rd',
-  'totalFloat',
+  'dur',
   'start',
   'finish',
   'pct',
   'pred',
+  'status',
   'planHrs',
   'actHrs',
   'variance',
@@ -340,7 +338,10 @@ export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
   'crew' as ColumnId,
   'company' as ColumnId,
   'assignee' as ColumnId,
-  'status',
+  'activityId',
+  'od',
+  'rd',
+  'totalFloat',
 ];
 
 export const GanttGrid: React.FC<GanttGridProps> = ({
@@ -446,7 +447,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   // Column Reordering State with LocalStorage Persistence
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     try {
-      const saved = localStorage.getItem('austin_gantt_column_order_v1');
+      const saved = localStorage.getItem('austin_gantt_column_order_v2');
       if (saved) {
         const parsed = JSON.parse(saved) as ColumnId[];
         const valid = parsed.filter(id => DEFAULT_COLUMN_ORDER.includes(id));
@@ -474,7 +475,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       const insertIdx = side === 'right' ? targetIdx + 1 : targetIdx;
       const next = [...filtered.slice(0, insertIdx), draggedCol, ...filtered.slice(insertIdx)];
       try {
-        localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(next));
+        localStorage.setItem('austin_gantt_column_order_v2', JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -487,7 +488,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   const handleResetColumnOrder = () => {
     setColumnOrder(DEFAULT_COLUMN_ORDER);
     try {
-      localStorage.removeItem('austin_gantt_column_order_v1');
+      localStorage.removeItem('austin_gantt_column_order_v2');
     } catch {}
   };
 

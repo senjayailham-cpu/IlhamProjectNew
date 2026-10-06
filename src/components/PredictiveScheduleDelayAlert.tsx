@@ -22,7 +22,9 @@ import {
   Flame, 
   Info,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 
 export interface PredictiveScheduleDelayAlertProps {
@@ -50,6 +52,15 @@ export function PredictiveScheduleDelayAlert({
   onNavigateToProblemCenter,
   className = ''
 }: PredictiveScheduleDelayAlertProps) {
+  const [isVisible, setIsVisible] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('gantt_predictive_delay_alert_visible');
+      return saved === 'true'; // Default is FALSE: always hidden until user explicitly chooses to show it
+    } catch {
+      return false;
+    }
+  });
+
   const [isExpanded, setIsExpanded] = useState(true);
   const [selectedProjectForDetail, setSelectedProjectForDetail] = useState<PredictiveDelayResult | null>(null);
   const [activeTabFilter, setActiveTabFilter] = useState<'all' | 'critical' | 'high'>('all');
@@ -64,6 +75,13 @@ export function PredictiveScheduleDelayAlert({
     );
   }, [projects, timesheets, problemReports, inspections, todayStr]);
 
+  const handleToggleVisible = (show: boolean) => {
+    setIsVisible(show);
+    try {
+      localStorage.setItem('gantt_predictive_delay_alert_visible', show ? 'true' : 'false');
+    } catch {}
+  };
+
   // Projects to display based on filter
   const displayedProjects = useMemo(() => {
     if (activeTabFilter === 'critical') {
@@ -75,7 +93,50 @@ export function PredictiveScheduleDelayAlert({
     return summary.flaggedProjects;
   }, [summary.flaggedProjects, activeTabFilter]);
 
-  // If no projects are flagged and no high risk, show positive status or compact banner
+  // When HIDDEN: show compact, unobtrusive mini-bar with explicit "Tampilkan Alert" button
+  if (!isVisible) {
+    if (variant === 'compact') return null;
+
+    return (
+      <div className={`flex items-center justify-between p-2.5 sm:px-4 rounded-xl bg-base-surface border border-base-border/70 hover:border-base-border shadow-2xs transition-all ${className}`}>
+        <div className="flex items-center gap-2.5 text-xs">
+          <div className={`p-1.5 rounded-lg ${
+            summary.flaggedCount > 0 
+              ? 'bg-rose-500/15 text-rose-500' 
+              : 'bg-emerald-500/15 text-emerald-500'
+          }`}>
+            <ShieldAlert className="w-4 h-4" />
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-condensed font-bold uppercase tracking-wider text-[11px] text-base-muted">
+              Predictive Schedule Delay Alert
+            </span>
+            {summary.flaggedCount > 0 ? (
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-rose-500/15 text-rose-600 dark:text-rose-400 border border-rose-500/30">
+                {summary.flaggedCount} Proyek Berisiko (+{summary.maxDelayDays}d)
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded-md text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                Status Normal
+              </span>
+            )}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => handleToggleVisible(true)}
+          className="flex items-center gap-1.5 px-3 py-1 bg-base-surface2 hover:bg-base-accent hover:text-black rounded-lg text-xs font-condensed font-bold uppercase tracking-wider text-base-text border border-base-border transition-all cursor-pointer shadow-2xs shrink-0"
+          title="Tampilkan rincian Predictive Schedule Delay Alert"
+        >
+          <Eye className="w-3.5 h-3.5" />
+          <span>Tampilkan Alert</span>
+        </button>
+      </div>
+    );
+  }
+
+  // If visible AND no projects are flagged, show positive status with hide button
   if (summary.flaggedCount === 0) {
     if (variant === 'compact') return null;
 
@@ -94,9 +155,20 @@ export function PredictiveScheduleDelayAlert({
             </p>
           </div>
         </div>
-        <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 px-3 py-1 bg-emerald-500/15 rounded-full whitespace-nowrap">
-          {projects.filter(p => !p.isArchived && p.status !== 'completed').length} Proyek On-Track
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400 px-3 py-1 bg-emerald-500/15 rounded-full whitespace-nowrap">
+            {projects.filter(p => !p.isArchived && p.status !== 'completed').length} Proyek On-Track
+          </span>
+          <button
+            type="button"
+            onClick={() => handleToggleVisible(false)}
+            className="flex items-center gap-1 px-2.5 py-1 text-xs font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-text bg-base-surface border border-base-border rounded-lg transition-colors cursor-pointer"
+            title="Sembunyikan"
+          >
+            <EyeOff className="w-3.5 h-3.5" />
+            <span>Sembunyikan</span>
+          </button>
+        </div>
       </div>
     );
   }
@@ -142,11 +214,13 @@ export function PredictiveScheduleDelayAlert({
           </div>
 
           <button
-            onClick={() => setIsExpanded(!isExpanded)}
-            className="p-1.5 rounded-xl border border-base-border bg-base-surface hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer"
-            title={isExpanded ? 'Sembunyikan rincian' : 'Tampilkan rincian'}
+            type="button"
+            onClick={() => handleToggleVisible(false)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-xs font-condensed font-bold uppercase tracking-wider transition-colors cursor-pointer"
+            title="Sembunyikan Predictive Delay Alert"
           >
-            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+            <EyeOff className="w-3.5 h-3.5" />
+            <span>Sembunyikan</span>
           </button>
         </div>
       </div>
