@@ -3424,6 +3424,7 @@ export default function GanttView({
   const colWbsWidth = 56;
   const colNameWidth = 200;
   const colDurWidth = 64;
+  const colBaseDurWidth = 64;
   const colPlanHrsWidth = 68;
   const colActHrsWidth = 68;
   const colVarianceWidth = 72;
@@ -3437,7 +3438,7 @@ export default function GanttView({
   const colPredWidth = 90;
   const colPctWidth = 64;
   const colStatusWidth = 100;
-  const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth 
+  const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth + colBaseDurWidth
     + (showHoursTracking ? (colPlanHrsWidth + colActHrsWidth + colVarianceWidth) : 0)
     + (showBaseline ? (colBaseStartWidth + colBaseFinishWidth) : 0)
     + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
@@ -4337,6 +4338,7 @@ export default function GanttView({
           colWbsWidth={colWbsWidth}
           colNameWidth={colNameWidth}
           colDurWidth={colDurWidth}
+          colBaseDurWidth={colBaseDurWidth}
           colOdWidth={48}
           colRdWidth={48}
           colTotalFloatWidth={72}

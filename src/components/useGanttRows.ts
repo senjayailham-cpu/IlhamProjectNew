@@ -40,6 +40,7 @@ export interface GanttRow {
   budgetHours?: number;
   baselineStart?: string;
   baselineFinish?: string;
+  baselineDuration?: number;
   planHours: number;
   actualHours: number;
   timesheetCount: number;
@@ -56,6 +57,19 @@ export const daysBetween = (d1: Date, d2: Date): number => {
   const ut1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
   const ut2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
   return Math.floor((ut2 - ut1) / (1000 * 60 * 60 * 24));
+};
+
+export const calcBaselineDuration = (bStart?: string, bFinish?: string, isMilestone?: boolean): number | undefined => {
+  if (!bStart || !bFinish) return undefined;
+  if (isMilestone) return 0;
+  try {
+    const d1 = parseLocalDate(bStart);
+    const d2 = parseLocalDate(bFinish);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return undefined;
+    return Math.max(1, daysBetween(d1, d2) + 1);
+  } catch {
+    return undefined;
+  }
 };
 
 // Format a Date object back to YYYY-MM-DD timezone-safe local string
@@ -390,6 +404,7 @@ export function useGanttRows({
         budgetHours: p.budgetHours,
         baselineStart: p.baselineStart,
         baselineFinish: p.baselineFinish,
+        baselineDuration: calcBaselineDuration(p.baselineStart, p.baselineFinish, false),
         planHours: pPlanHours,
         actualHours: pActualHours,
         timesheetCount: pTimesheetCountTotal
@@ -466,6 +481,7 @@ export function useGanttRows({
             budgetHours: (asm as any).budgetHours,
             baselineStart: asm.baselineStart,
             baselineFinish: asm.baselineFinish,
+            baselineDuration: calcBaselineDuration(asm.baselineStart, asm.baselineFinish, false),
             planHours: asmStats.planHours,
             actualHours: asmStats.actualHours,
             timesheetCount: asmStats.count
@@ -527,6 +543,7 @@ export function useGanttRows({
                 budgetHours: t.budgetHours,
                 baselineStart: t.baselineStart,
                 baselineFinish: t.baselineFinish,
+                baselineDuration: calcBaselineDuration(t.baselineStart, t.baselineFinish, !!t.isMilestone),
                 planHours: tStats.planHours,
                 actualHours: tStats.actualHours,
                 timesheetCount: tStats.count

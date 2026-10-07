@@ -174,6 +174,7 @@ export interface GanttGridProps {
   colWbsWidth: number;
   colNameWidth: number;
   colDurWidth: number;
+  colBaseDurWidth?: number;
   colOdWidth?: number;
   colRdWidth?: number;
   colTotalFloatWidth?: number;
@@ -276,6 +277,7 @@ export type ColumnId =
   | 'od'
   | 'rd'
   | 'dur'
+  | 'baseDur'
   | 'totalFloat'
   | 'freeFloat'
   | 'earlyStart'
@@ -302,6 +304,7 @@ export const P6_COLUMN_ORDER: ColumnId[] = [
   'name',
   'od',
   'rd',
+  'baseDur',
   'totalFloat',
   'start',
   'finish',
@@ -314,6 +317,7 @@ export const STANDARD_COLUMN_ORDER: ColumnId[] = [
   'wbs',
   'name',
   'dur',
+  'baseDur',
   'start',
   'finish',
   'pct',
@@ -325,6 +329,7 @@ export const DEFAULT_COLUMN_ORDER: ColumnId[] = [
   'wbs',
   'name',
   'dur',
+  'baseDur',
   'start',
   'finish',
   'pct',
@@ -354,6 +359,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   colWbsWidth,
   colNameWidth,
   colDurWidth,
+  colBaseDurWidth = 64,
   colOdWidth = 48,
   colRdWidth = 48,
   colTotalFloatWidth = 72,
@@ -515,6 +521,8 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         return { width: colRdWidth, title: 'Remaining Duration (Days)', label: 'RD', align: 'center', className: 'font-mono' };
       case 'dur':
         return { width: colDurWidth, title: 'Duration (Days)', label: 'Duration', align: 'center' };
+      case 'baseDur':
+        return { width: colBaseDurWidth, title: 'Baseline Duration (Target Rencana Hari)', label: 'Base Dur', align: 'center', className: 'text-slate-500 font-mono font-bold' };
       case 'totalFloat':
         return { width: colTotalFloatWidth, title: 'Total Float / Slack (Days)', label: 'Total Float', align: 'center', className: 'font-mono font-bold' };
       case 'freeFloat':
@@ -792,6 +800,20 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         return (
           <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
             {row.isMilestone ? '0 days' : `${row.duration}d`}
+          </div>
+        );
+
+      case 'baseDur':
+        return (
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colBaseDurWidth}px` }}
+            className="shrink-0 text-center text-[10px] font-mono text-slate-600 dark:text-slate-300 font-bold flex items-center justify-center h-full bg-slate-500/5"
+            title={row.baselineDuration !== undefined ? `Baseline Duration: ${row.baselineDuration} days` : 'Belum di-set baseline'}
+          >
+            {row.baselineDuration !== undefined
+              ? (row.isMilestone ? '0d' : `${row.baselineDuration}d`)
+              : '—'}
           </div>
         );
 
