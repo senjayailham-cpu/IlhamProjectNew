@@ -307,13 +307,15 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
 
                       {/* Actions */}
                       <td className="py-1 px-3 text-center">
-                        <button
-                          onClick={() => handleDelete(item.id, item.value)}
-                          className="p-1.5 rounded-md hover:bg-red-500/10 text-base-muted hover:text-red-500 transition-colors cursor-pointer"
-                          title="Hapus data referensi"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {currentUser.role === 'admin' && (
+                          <button
+                            onClick={() => handleDelete(item.id, item.value)}
+                            className="p-1.5 rounded-md hover:bg-red-500/10 text-base-muted hover:text-red-500 transition-colors cursor-pointer"
+                            title="Hapus data referensi"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );

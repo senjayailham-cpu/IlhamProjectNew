@@ -164,6 +164,10 @@ export default function MaterialsView({
     return can(currentUser, 'issueMaterial');
   }, [currentUser]);
 
+  const canDeleteMaterials = useMemo(() => {
+    return currentUser?.role === 'admin';
+  }, [currentUser]);
+
   // Tab 1 — Stock State & Filters
   const [stockSearch, setStockSearch] = useState('');
   const [stockCategoryFilter, setStockCategoryFilter] = useState<string>('');
@@ -1221,7 +1225,7 @@ export default function MaterialsView({
 
                         {/* 7. Actions */}
                         <td className="p-0 text-center">
-                          {canManageMaterials && (
+                          {canDeleteMaterials && (
                             <button
                               type="button"
                               onClick={() => {
@@ -1687,20 +1691,22 @@ export default function MaterialsView({
                                     </button>
                                   )}
 
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      handleDeleteClick(
-                                        'Delete Material Request',
-                                        `Are you sure you want to delete Material Request "${mr.mrNo}"?`,
-                                        () => onDeleteMaterialRequest(mr.id)
-                                      );
-                                    }}
-                                    className="p-1 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
-                                    title="Delete MR"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  {canDeleteMaterials && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        handleDeleteClick(
+                                          'Delete Material Request',
+                                          `Are you sure you want to delete Material Request "${mr.mrNo}"?`,
+                                          () => onDeleteMaterialRequest(mr.id)
+                                        );
+                                      }}
+                                      className="p-1 text-base-muted hover:text-red-500 rounded hover:bg-red-500/10 cursor-pointer"
+                                      title="Delete MR"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </>
                               )}
                             </div>

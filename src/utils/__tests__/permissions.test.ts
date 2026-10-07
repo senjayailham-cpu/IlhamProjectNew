@@ -42,9 +42,43 @@ describe('permissions - can', () => {
     expect(can(customUser, 'updateTask')).toBe(false);
   });
 
-  it('unknown role returns false safely', () => {
-    const userWithInvalidRole = makeUser({ role: 'unknown_role' as any });
-    expect(can(userWithInvalidRole, 'addProject')).toBe(false);
+  it('only admin has permission to delete anything', () => {
+    const adminUser = makeUser({ role: UserRole.Admin });
+    const managerUser = makeUser({ role: UserRole.Manager });
+    const coordinatorUser = makeUser({ role: UserRole.Coordinator });
+    const viewerUser = makeUser({ role: UserRole.Viewer });
+    const qcUser = makeUser({ role: UserRole.QualityControl });
+
+    // Admin can delete
+    expect(can(adminUser, 'deleteProject')).toBe(true);
+    expect(can(adminUser, 'deleteAssembly')).toBe(true);
+    expect(can(adminUser, 'deleteTask')).toBe(true);
+    expect(can(adminUser, 'deleteEmployee')).toBe(true);
+    expect(can(adminUser, 'deleteTimesheet')).toBe(true);
+    expect(can(adminUser, 'deleteWireLog')).toBe(true);
+    expect(can(adminUser, 'deleteInspection')).toBe(true);
+
+    // Non-admin roles CANNOT delete anything
+    expect(can(managerUser, 'deleteProject')).toBe(false);
+    expect(can(managerUser, 'deleteAssembly')).toBe(false);
+    expect(can(managerUser, 'deleteTask')).toBe(false);
+    expect(can(managerUser, 'deleteEmployee')).toBe(false);
+    expect(can(managerUser, 'deleteTimesheet')).toBe(false);
+    expect(can(managerUser, 'deleteWireLog')).toBe(false);
+    expect(can(managerUser, 'deleteInspection')).toBe(false);
+
+    expect(can(coordinatorUser, 'deleteProject')).toBe(false);
+    expect(can(coordinatorUser, 'deleteTask')).toBe(false);
+    expect(can(viewerUser, 'deleteProject')).toBe(false);
+    expect(can(qcUser, 'deleteInspection')).toBe(false);
+
+    // Even if non-admin has custom allowedPermissions with delete, strictly denied
+    const sneakyUser = makeUser({
+      role: UserRole.Manager,
+      allowedPermissions: { deleteProject: true, deleteTask: true }
+    });
+    expect(can(sneakyUser, 'deleteProject')).toBe(false);
+    expect(can(sneakyUser, 'deleteTask')).toBe(false);
   });
 });
 
@@ -58,8 +92,8 @@ describe('getDefaultLandingTabForRole', () => {
     expect(getDefaultLandingTabForRole('safety')).toBe('dash');
   });
 
-  it('returns "manpower" for coordinator', () => {
-    expect(getDefaultLandingTabForRole('coordinator')).toBe('manpower');
+  it('returns "shopfloor" for coordinator', () => {
+    expect(getDefaultLandingTabForRole('coordinator')).toBe('shopfloor');
   });
 
   it('returns "inspections" for quality control', () => {

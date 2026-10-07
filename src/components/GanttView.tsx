@@ -5292,7 +5292,7 @@ export default function GanttView({
                   </div>
 
                   {/* Action 4: Reset / Delete Baseline */}
-                  {hasBaseline && (
+                  {hasBaseline && currentUser?.role === 'admin' && (
                     <div className="pt-2 border-t border-base-border flex items-center justify-between">
                       <span className="text-[11px] text-base-muted">
                         Ingin mengosongkan target jadwal baseline?

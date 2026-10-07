@@ -530,18 +530,20 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm('Hapus catatan handover ini?')) {
-                              deleteNote(note.id);
-                            }
-                          }}
-                          className="p-1 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
-                          title="Hapus Catatan"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {currentUser?.role === 'admin' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('Hapus catatan handover ini?')) {
+                                deleteNote(note.id);
+                              }
+                            }}
+                            className="p-1 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
+                            title="Hapus Catatan"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -773,18 +775,20 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
                         >
                           <Edit3 className="h-3.5 w-3.5" />
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (confirm('Hapus catatan handover ini?')) {
-                              deleteNote(note.id);
-                            }
-                          }}
-                          className="p-1.5 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
-                          title="Hapus Catatan"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
+                        {currentUser?.role === 'admin' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (confirm('Hapus catatan handover ini?')) {
+                                deleteNote(note.id);
+                              }
+                            }}
+                            className="p-1.5 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
+                            title="Hapus Catatan"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        )}
                       </div>
                     </div>
 

@@ -593,14 +593,16 @@ export default function DailyReportView({
             <span className="hidden sm:inline">Print</span>
           </button>
 
-          <button
-            onClick={clearActivityLogs}
-            className="px-3 py-1.5 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
-            title="Clear activity log entries"
-          >
-            <Trash2 className="h-4 w-4" />
-            <span className="hidden sm:inline">Clear Logs</span>
-          </button>
+          {activeUser?.role === 'admin' && (
+            <button
+              onClick={clearActivityLogs}
+              className="px-3 py-1.5 border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-600 dark:text-red-400 rounded-lg font-condensed font-bold text-xs uppercase tracking-wider transition-all cursor-pointer flex items-center gap-1.5"
+              title="Clear activity log entries (Admin only)"
+            >
+              <Trash2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Clear Logs</span>
+            </button>
+          )}
         </div>
       </div>
 

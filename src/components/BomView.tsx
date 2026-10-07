@@ -44,7 +44,7 @@ export default function BomView({
 }: BomViewProps) {
   // Permission checks
   const canEdit = can(currentUser, 'manageBom');
-  const canDelete = can(currentUser, 'manageBom') && ['admin', 'manager'].includes((currentUser?.role || '').toLowerCase());
+  const canDelete = (currentUser?.role || '').toLowerCase() === 'admin';
 
   // State Filters (Sidebar)
   const [searchQuery, setSearchQuery] = useState('');
@@ -2432,7 +2432,9 @@ export default function BomView({
                                     {canEdit && (
                                       <div className="flex items-center justify-end gap-1">
                                         <button onClick={() => handleOpenItemModal(item)} className="p-1 text-base-muted hover:text-base-text cursor-pointer"><Edit3 className="h-3.5 w-3.5" /></button>
-                                        <button onClick={() => handleDeleteItem(item.id)} className="p-1 text-base-muted hover:text-base-red cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+                                        {canDelete && (
+                                          <button onClick={() => handleDeleteItem(item.id)} className="p-1 text-base-muted hover:text-base-red cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></button>
+                                        )}
                                       </div>
                                     )}
                                   </td>
@@ -2633,13 +2635,15 @@ export default function BomView({
                                   >
                                     <Edit3 className="h-3.5 w-3.5" />
                                   </button>
-                                  <button
-                                    onClick={() => handleDeleteItem(item.id)}
-                                    title="Delete Item"
-                                    className="p-1 text-base-muted hover:text-base-red cursor-pointer"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
+                                  {canDelete && (
+                                    <button
+                                      onClick={() => handleDeleteItem(item.id)}
+                                      title="Delete Item"
+                                      className="p-1 text-base-muted hover:text-base-red cursor-pointer"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               )}
                             </td>

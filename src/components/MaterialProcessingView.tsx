@@ -938,7 +938,7 @@ export default function MaterialProcessingView({
               >
                 <Clipboard className="h-4 w-4 text-base-accent" /> Paste Cutting List
               </button>
-              {filteredProcessings.length > 0 && (
+              {currentUser?.role === 'admin' && filteredProcessings.length > 0 && (
                 <button
                   onClick={handleDeleteAll}
                   className="px-4 py-2 bg-red-500/10 hover:bg-red-500/20 text-red-500 hover:text-red-400 font-condensed font-bold uppercase rounded-lg border border-red-500/30 transition duration-200 flex items-center gap-1.5 cursor-pointer text-sm"
@@ -1224,7 +1224,7 @@ export default function MaterialProcessingView({
                           return (
                             <tr key={mp.id} className={`transition-colors h-[38px] ${isItemSelected ? 'bg-red-500/10' : 'hover:bg-base-surface2/25'}`}>
                               {/* Checkbox Column */}
-                              {!isReadOnly && (
+                              {!isReadOnly && currentUser?.role === 'admin' && (
                                 <td className="py-1 px-3 text-center">
                                   <input
                                     type="checkbox"
@@ -1388,7 +1388,7 @@ export default function MaterialProcessingView({
                              </td>
 
                              {/* Action Column */}
-                             {!isReadOnly && (
+                             {!isReadOnly && currentUser?.role === 'admin' && (
                                <td className="py-1 px-3 text-center">
                                  <button
                                    type="button"

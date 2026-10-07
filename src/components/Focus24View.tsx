@@ -829,8 +829,8 @@ export default function Focus24View({
                       </button>
                     )}
 
-                    {/* Delete Report option for Admins and Managers */}
-                    {(currentUser?.role === 'admin' || currentUser?.role === 'manager') && (
+                    {/* Delete Report option for Admins only */}
+                    {currentUser?.role === 'admin' && (
                       <button
                         onClick={() => {
                           setDeleteConfirm({
