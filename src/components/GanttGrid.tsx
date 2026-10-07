@@ -799,7 +799,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       case 'dur':
         return (
           <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
-            {row.isMilestone ? '0 days' : `${row.duration}d`}
+            {row.isMilestone ? '0 days' : (row.start && row.finish && row.duration > 0 ? `${row.duration}d` : '—')}
           </div>
         );
 

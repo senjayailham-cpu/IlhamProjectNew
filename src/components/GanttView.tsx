@@ -470,9 +470,11 @@ const cascadeSchedule = (
 
   cloned.assemblies?.forEach(asm => {
     asm.tasks?.forEach(t => {
-      const tStart = t.date || asm.start || cloned.start || '';
-      let tFinish = t.finishDate || tStart || '';
-      if (new Date(tFinish) < new Date(tStart)) {
+      // Do not automatically assign dates to unstarted tasks
+      if (!t.date && !t.startDate) return;
+      const tStart = t.date || t.startDate || '';
+      let tFinish = t.finishDate || t.endDate || tStart;
+      if (tStart && tFinish && new Date(tFinish) < new Date(tStart)) {
         tFinish = tStart;
       }
       const tStartD = parseLocalDate(tStart);
@@ -1912,7 +1914,7 @@ export default function GanttView({
 
   // Inline Date Saving handler
   const saveDate = (rowId: string, field: 'start' | 'finish', newVal: string) => {
-    if (!newVal || !onUpdateProject) return;
+    if (!onUpdateProject) return;
 
     const res = findAndCloneProject(rowId);
     if (!res) return;
@@ -1920,25 +1922,25 @@ export default function GanttView({
 
     if (rowId === updated.id) {
       // Project level
-      if (field === 'start') updated.start = newVal;
-      else updated.due = newVal;
+      if (field === 'start') updated.start = newVal || '';
+      else updated.due = newVal || '';
     } else {
       // Find in assemblies
       const asm = updated.assemblies?.find(a => a.id === rowId);
       if (asm) {
-        if (field === 'start') asm.start = newVal;
-        else asm.finish = newVal;
+        if (field === 'start') asm.start = newVal || undefined;
+        else asm.finish = newVal || undefined;
       } else {
         // Find in tasks
         for (const a of updated.assemblies || []) {
           const t = a.tasks?.find(t => t.id === rowId);
           if (t) {
             if (field === 'start') {
-              t.date = newVal;
-              t.startDate = newVal;
+              t.date = newVal || undefined;
+              t.startDate = newVal || undefined;
             } else {
-              t.finishDate = newVal;
-              t.endDate = newVal;
+              t.finishDate = newVal || undefined;
+              t.endDate = newVal || undefined;
             }
             break;
           }

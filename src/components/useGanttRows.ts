@@ -283,11 +283,15 @@ export function useGanttRows({
         let asmTaskCount = 0;
 
         (asm.tasks || []).forEach(t => {
-          const tStart = t.date || asm.start || p.start || new Date().toISOString().slice(0, 10);
-          const tFinish = t.finishDate || tStart;
-          const tStartD = parseLocalDate(tStart);
-          const tFinishD = parseLocalDate(tFinish);
-          const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+          const tStart = t.date || t.startDate || '';
+          const tFinish = t.finishDate || t.endDate || '';
+          const baseDur = calcBaselineDuration(t.baselineStart, t.baselineFinish, t.isMilestone);
+          let tDuration = 1;
+          if (tStart && tFinish) {
+            tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(parseLocalDate(tStart), parseLocalDate(tFinish)) + 1);
+          } else if (baseDur !== undefined) {
+            tDuration = baseDur;
+          }
 
           // Task planned hours: explicit budgetHours, or estimated from (crew * duration * 8) or (difficulty * 8)
           const tPlanHours = (typeof t.budgetHours === 'number' && t.budgetHours >= 0)
@@ -422,20 +426,17 @@ export function useGanttRows({
             if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
           });
 
-          // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks
+          // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks ONLY IF tasks have dates
           if (taskDates.length > 0) {
             const minDate = new Date(Math.min(...taskDates.map(d => d.getTime())));
             const maxDate = new Date(Math.max(...taskDates.map(d => d.getTime())));
             aStart = formatLocalDate(minDate);
             aFinish = formatLocalDate(maxDate);
-          } else {
-            if (!aStart) aStart = pStartStr;
-            if (!aFinish) aFinish = pDueStr;
           }
 
-          const aStartD = parseLocalDate(aStart);
-          const aFinishD = parseLocalDate(aFinish);
-          const aDuration = Math.max(1, daysBetween(aStartD, aFinishD) + 1);
+          const aDuration = (aStart && aFinish)
+            ? Math.max(1, daysBetween(parseLocalDate(aStart), parseLocalDate(aFinish)) + 1)
+            : 0;
 
           const aWeightResult = (asm.tasks || []).reduce((acc, t) => {
             const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
@@ -462,18 +463,18 @@ export function useGanttRows({
             level: 1,
             wbs: assemblyWbs,
             activityId: getP6ActivityId('assembly', assemblyWbs, asmIdx),
-            start: aStart,
-            finish: aFinish,
+            start: aStart || undefined,
+            finish: aFinish || undefined,
             duration: aDuration,
             od: aDuration,
-            rd: aPct >= 100 ? 0 : Math.max(0, Math.round(aDuration * (1 - aPct / 100))),
+            rd: aPct >= 100 ? 0 : (aDuration ? Math.max(0, Math.round(aDuration * (1 - aPct / 100))) : 0),
             totalFloat: asmMinTF,
             freeFloat: 0,
             isCritical: isAsmCritical,
-            earlyStart: aStart,
-            earlyFinish: aFinish,
-            lateStart: aStart,
-            lateFinish: aFinish,
+            earlyStart: aStart || undefined,
+            earlyFinish: aFinish || undefined,
+            lateStart: aStart || undefined,
+            lateFinish: aFinish || undefined,
             varianceDays: aVarianceDays,
             pct: aPct,
             done: aPct >= 100,
@@ -491,16 +492,23 @@ export function useGanttRows({
           const isAsmCollapsed = collapsedAsms[asm.id] === true;
           if (!isAsmCollapsed) {
             asm.tasks?.forEach((t, taskIdx) => {
-              const tStart = t.date || aStart || pStartStr;
-              let tFinish = t.finishDate || tStart;
+              // Actual task start & finish: only populated if task explicitly has actual dates!
+              const tStart = t.date || t.startDate || '';
+              let tFinish = t.finishDate || t.endDate || '';
 
-              if (new Date(tFinish) < new Date(tStart)) {
+              if (tStart && tFinish && new Date(tFinish) < new Date(tStart)) {
                 tFinish = tStart;
               }
 
-              const tStartD = parseLocalDate(tStart);
-              const tFinishD = parseLocalDate(tFinish);
-              const tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+              let tDuration = 0;
+              if (tStart && tFinish) {
+                const tStartD = parseLocalDate(tStart);
+                const tFinishD = parseLocalDate(tFinish);
+                tDuration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
+              } else if (t.isMilestone) {
+                tDuration = 0;
+              }
+
               const tStats = taskHoursRollup.get(t.id) || { planHours: 0, actualHours: 0, count: 0 };
 
               const cpmNode = cpmData.taskMap.get(t.id);
@@ -509,7 +517,7 @@ export function useGanttRows({
               const isTaskCritical = cpmNode?.isCritical ?? (tTotalFloat <= 0.001);
               const taskWbs = `${assemblyWbs}.${taskIdx + 1}`;
               const taskActId = cpmNode?.activityId || getP6ActivityId('task', taskWbs, asmIdx, taskIdx, (t as any).activityId);
-              const tVarianceDays = t.baselineFinish ? diffDays(parsePureDate(t.baselineFinish), parsePureDate(tFinish)) : undefined;
+              const tVarianceDays = (t.baselineFinish && tFinish) ? diffDays(parsePureDate(t.baselineFinish), parsePureDate(tFinish)) : undefined;
 
               result.push({
                 id: getUniqueRowId(t.id),
@@ -518,18 +526,18 @@ export function useGanttRows({
                 level: 2,
                 wbs: taskWbs,
                 activityId: taskActId,
-                start: tStart,
-                finish: tFinish,
+                start: tStart || undefined,
+                finish: tFinish || undefined,
                 duration: tDuration,
                 od: tDuration,
-                rd: t.done ? 0 : Math.max(0, Math.round(tDuration * (1 - (t.pct || 0) / 100))),
+                rd: t.done ? 0 : (tDuration ? Math.max(0, Math.round(tDuration * (1 - (t.pct || 0) / 100))) : 0),
                 totalFloat: tTotalFloat,
                 freeFloat: tFreeFloat,
                 isCritical: isTaskCritical,
-                earlyStart: cpmNode?.earlyStart || tStart,
-                earlyFinish: cpmNode?.earlyFinish || tFinish,
-                lateStart: cpmNode?.lateStart || tStart,
-                lateFinish: cpmNode?.lateFinish || tFinish,
+                earlyStart: tStart ? (cpmNode?.earlyStart || tStart) : undefined,
+                earlyFinish: tFinish ? (cpmNode?.earlyFinish || tFinish) : undefined,
+                lateStart: tStart ? (cpmNode?.lateStart || tStart) : undefined,
+                lateFinish: tFinish ? (cpmNode?.lateFinish || tFinish) : undefined,
                 varianceDays: tVarianceDays,
                 pct: t.pct || 0,
                 done: !!t.done,
