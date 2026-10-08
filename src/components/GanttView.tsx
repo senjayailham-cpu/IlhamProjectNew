@@ -2368,7 +2368,7 @@ export default function GanttView({
         updated.baselineFinish = undefined;
       }
     } else {
-      const asm = updated.assemblies?.find(a => a.id === rowId || rowId.startsWith(a.id));
+      const asm = updated.assemblies?.find(a => a.id === rowId || rowId.startsWith(a.id) || a.id.startsWith(rowId));
       if (asm) {
         if (field === 'start') asm.baselineStart = newVal || undefined;
         else if (field === 'finish') asm.baselineFinish = newVal || undefined;
@@ -2378,7 +2378,7 @@ export default function GanttView({
         }
       } else {
         for (const a of updated.assemblies || []) {
-          const t = a.tasks?.find(task => task.id === rowId || rowId.startsWith(task.id));
+          const t = a.tasks?.find(task => task.id === rowId || rowId.startsWith(task.id) || task.id.startsWith(rowId));
           if (t) {
             if (field === 'start') t.baselineStart = newVal || undefined;
             else if (field === 'finish') t.baselineFinish = newVal || undefined;

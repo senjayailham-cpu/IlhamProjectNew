@@ -8,11 +8,27 @@ export function useEmployees(
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void
 ) {
-  const [employees, setEmployeesState] = useState<Employee[]>([]);
+  const [employees, setEmployeesState] = useState<Employee[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('austin_employees_cache_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
 
   const setEmployees = (action: React.SetStateAction<Employee[]>) => {
     setEmployeesState((prev) => {
       const next = typeof action === 'function' ? (action as (e: Employee[]) => Employee[])(prev) : action;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('austin_employees_cache_v1', JSON.stringify(next));
+        }
+      } catch (e) {}
       queueMicrotask(() => {
         useAppStore.getState().setEmployees(next);
       });

@@ -235,10 +235,11 @@ export function useGanttRows({
   };
 
   const findProject = (rowId: string): Project | null => {
+    if (!rowId) return null;
     return projectsList.find(p => {
-      if (p.id === rowId) return true;
-      if (p.assemblies?.some(a => a.id === rowId)) return true;
-      if (p.assemblies?.some(a => a.tasks?.some(t => t.id === rowId))) return true;
+      if (p.id === rowId || rowId.startsWith(p.id) || p.id.startsWith(rowId)) return true;
+      if (p.assemblies?.some(a => a.id === rowId || rowId.startsWith(a.id) || a.id.startsWith(rowId))) return true;
+      if (p.assemblies?.some(a => a.tasks?.some(t => t.id === rowId || rowId.startsWith(t.id) || t.id.startsWith(rowId)))) return true;
       return false;
     }) || null;
   };

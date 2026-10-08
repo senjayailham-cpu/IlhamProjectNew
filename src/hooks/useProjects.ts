@@ -13,11 +13,34 @@ export function useProjects(
   onEnsureMasterData?: (category: 'material' | 'partNo' | 'client' | 'customer' | 'subAssembly' | 'gaNumber', value: string, gaNumber?: string) => Promise<void>,
   bomTemplates?: BomTemplate[]
 ) {
-  const [projects, setProjectsState] = useState<Project[]>([]);
+  const [projects, setProjectsState] = useState<Project[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('austin_projects_cache_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Could not read projects from localStorage cache:', e);
+    }
+    return [];
+  });
 
   const setProjects = (action: React.SetStateAction<Project[]>) => {
     setProjectsState((prev) => {
       const next = typeof action === 'function' ? (action as (p: Project[]) => Project[])(prev) : action;
+      // Instant synchronous cache to browser storage (resists immediate page reload)
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('austin_projects_cache_v1', JSON.stringify(next));
+        }
+      } catch (e) {
+        console.warn('Failed to cache projects to localStorage:', e);
+      }
       queueMicrotask(() => {
         useAppStore.getState().setProjects(next);
       });

@@ -696,13 +696,36 @@ function AppContent() {
               }
               list.push(data);
             });
+            // Guard against temporary empty snapshot wiping local cache
+            if (colName === 'projects' && list.length === 0) {
+              const currentProjs = useAppStore.getState().projects;
+              if (currentProjs && currentProjs.length > 0) {
+                return;
+              }
+            }
+
             stateSetter(list);
 
             // Sync to Zustand Store for global real-time access
             const store = useAppStore.getState();
-            if (colName === 'projects') store.setProjects(list);
-            else if (colName === 'employees') store.setEmployees(list);
-            else if (colName === 'timesheets') store.setTimesheets(list);
+            if (colName === 'projects') {
+              store.setProjects(list);
+              try {
+                if (list.length > 0) localStorage.setItem('austin_projects_cache_v1', JSON.stringify(list));
+              } catch (e) {}
+            }
+            else if (colName === 'employees') {
+              store.setEmployees(list);
+              try {
+                if (list.length > 0) localStorage.setItem('austin_employees_cache_v1', JSON.stringify(list));
+              } catch (e) {}
+            }
+            else if (colName === 'timesheets') {
+              store.setTimesheets(list);
+              try {
+                if (list.length > 0) localStorage.setItem('austin_timesheets_cache_v1', JSON.stringify(list));
+              } catch (e) {}
+            }
             else if (colName === 'activities') store.setActivities(list);
             else if (colName === 'problemReports') store.setProblemReports(list);
             else if (colName === 'inspections') store.setInspections(list);

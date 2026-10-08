@@ -185,7 +185,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 if (needsUpdate) {
                   const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
                   const isFullyAuth = auth.currentUser && auth.currentUser.uid === firebaseUser.uid;
-                  if (isOnline && isFullyAuth && !firebaseUser.isAnonymous) {
+                  if (isOnline && isFullyAuth) {
                     await setDoc(uidDocRef, cleanFirestoreData({
                       ...session,
                       id: portalId,
@@ -214,7 +214,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             
             const isOnline = typeof window !== 'undefined' ? window.navigator.onLine : true;
             const isFullyAuth = auth.currentUser && auth.currentUser.uid === firebaseUser.uid;
-            if (isOnline && isFullyAuth && !firebaseUser.isAnonymous) {
+            if (isOnline && isFullyAuth) {
               await setDoc(docRef, cleanFirestoreData(session));
               setCurrentUser(session);
               sessionStorage.setItem('w2proj_session_v1', JSON.stringify(session));

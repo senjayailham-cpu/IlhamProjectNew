@@ -87,7 +87,8 @@ service cloud.firestore {
         (hasPermission('updateTask')) && 
         (incoming().diff(existing()).affectedKeys().hasOnly([
           'assemblies', 'notes', 'status', 'completedDate',
-          'materialProcessing'
+          'materialProcessing', 'start', 'due', 'baselineStart', 'baselineFinish',
+          'budgetHours', 'updatedAt'
         ]) || incoming() == existing())
       );
       allow delete: if isAdmin() || hasPermission('deleteProject');

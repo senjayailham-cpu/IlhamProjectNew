@@ -8,11 +8,27 @@ export function useTimesheets(
   verifyMarkChanged: () => void,
   setDeleteConfirm: (confirm: any) => void
 ) {
-  const [timesheets, setTimesheetsState] = useState<TimesheetEntry[]>([]);
+  const [timesheets, setTimesheetsState] = useState<TimesheetEntry[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('austin_timesheets_cache_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
 
   const setTimesheets = (action: React.SetStateAction<TimesheetEntry[]>) => {
     setTimesheetsState((prev) => {
       const next = typeof action === 'function' ? (action as (ts: TimesheetEntry[]) => TimesheetEntry[])(prev) : action;
+      try {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('austin_timesheets_cache_v1', JSON.stringify(next));
+        }
+      } catch (e) {}
       queueMicrotask(() => {
         useAppStore.getState().setTimesheets(next);
       });
