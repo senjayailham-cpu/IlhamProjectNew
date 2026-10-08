@@ -101,7 +101,7 @@ export default function DashboardView({
   }, [projects]);
 
   const [dashLoc, setDashLoc] = useState<'all' | 'workshop1' | 'workshop2'>('all');
-  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | 'ai-command-center' | null>(null);
+  const [activeModal, setActiveModal] = useState<'project' | 'active' | 'completed' | 'overdue' | 'man-hours' | 'present' | 'absent' | 'problem-center' | 'ai-command-center' | 'baseline' | null>(null);
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
   const [showProjectScopeTable, setShowProjectScopeTable] = useState<boolean>(false);
   const [gaugeFilter, setGaugeFilter] = useState<'active' | 'all' | 'overdue' | 'completed'>('active');
@@ -1167,10 +1167,22 @@ export default function DashboardView({
   // Circular BASELINE Statistics (Scope = filteredProjects)
   // Only projects with baselineStart & baselineFinish
   // Evaluation point = dashDate
-  // plannedPct from baseline window s/d dashDate (clamped 0 - 100%)
-  // actualPct = calcPct aggregate of projects with baseline in scope
+  // Circular BASELINE Statistics (Scope = filteredProjects)
+  // Calculates cumulative planned progress as of dashDate:
+  // For each task in baseline:
+  // - dashDate < task.baselineStart => 0%
+  // - dashDate >= task.baselineFinish => 100%
+  // - task.baselineStart <= dashDate < task.baselineFinish => (elapsedDays / totalDays) * 100%
+  // Tasks are weighted by difficulty (matching calcPct), yielding the authentic planned earned %!
   const baselineStats = useMemo(() => {
-    const scopedProjects = filteredProjects.filter(p => Boolean(p.baselineStart && p.baselineFinish));
+    // 1. Identify all projects that have baseline dates (at project, assembly, or task level)
+    const scopedProjects = filteredProjects.filter(p => {
+      if (p.baselineStart && p.baselineFinish) return true;
+      return (p.assemblies || []).some(a => 
+        (a.baselineStart && a.baselineFinish) || 
+        (a.tasks || []).some(t => Boolean(t.baselineStart && t.baselineFinish))
+      );
+    });
 
     if (scopedProjects.length === 0) {
       return {
@@ -1179,37 +1191,116 @@ export default function DashboardView({
         plannedPct: 0,
         actualPct: 0,
         variance: 0,
-        projects: []
+        projects: [],
+        projectDetails: []
       };
     }
 
     let totalWeight = 0;
     let sumPlanned = 0;
     let sumActual = 0;
+    const projectDetails: Array<{
+      id: string;
+      name: string;
+      baselineStart?: string;
+      baselineFinish?: string;
+      plannedPct: number;
+      actualPct: number;
+      variance: number;
+      taskCount: number;
+    }> = [];
 
     scopedProjects.forEach(p => {
-      const taskCount = (p.assemblies || []).reduce((acc, a) => acc + (a.tasks?.length || 0), 0);
-      const weight = Math.max(1, taskCount);
+      let pTotalWeight = 0;
+      let pAccumPlannedWeighted = 0;
+      let tasksWithBaselineCount = 0;
+      let taskTotalCount = 0;
+
+      (p.assemblies || []).forEach(asm => {
+        (asm.tasks || []).forEach(t => {
+          taskTotalCount++;
+          const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+          pTotalWeight += difficulty;
+
+          const tBStart = t.baselineStart || asm.baselineStart || p.baselineStart;
+          const tBFinish = t.baselineFinish || asm.baselineFinish || p.baselineFinish;
+
+          if (tBStart && tBFinish) {
+            tasksWithBaselineCount++;
+            let taskPlanned = 0;
+
+            if (dashDate < tBStart) {
+              taskPlanned = 0;
+            } else if (dashDate >= tBFinish) {
+              taskPlanned = 100;
+            } else {
+              // Task is actively scheduled in baseline window on dashDate
+              const [sy, sm, sd] = tBStart.split('-').map(Number);
+              const [fy, fm, fd] = tBFinish.split('-').map(Number);
+              const [cy, cm, cd] = dashDate.split('-').map(Number);
+              const sUtc = Date.UTC(sy, sm - 1, sd);
+              const fUtc = Date.UTC(fy, fm - 1, fd);
+              const cUtc = Date.UTC(cy, cm - 1, cd);
+
+              const totalTaskDays = Math.max(1, Math.round((fUtc - startUtcSafe(sUtc)) / 86400000) + 1);
+              const elapsedDays = Math.max(1, Math.round((cUtc - startUtcSafe(sUtc)) / 86400000) + 1);
+              taskPlanned = Math.min(100, Math.max(0, (elapsedDays / totalTaskDays) * 100));
+            }
+
+            pAccumPlannedWeighted += taskPlanned * difficulty;
+          } else {
+            // Task has no explicit baseline; if project baseline finish is past dashDate, count as 100%
+            if (p.baselineFinish && dashDate >= p.baselineFinish) {
+              pAccumPlannedWeighted += 100 * difficulty;
+            }
+          }
+        });
+      });
+
+      function startUtcSafe(val: number) {
+        return val;
+      }
 
       let projPlanned = 0;
-      if (dashDate < p.baselineStart!) {
-        projPlanned = 0;
-      } else if (dashDate >= p.baselineFinish!) {
-        projPlanned = 100;
-      } else {
-        const startMs = new Date(p.baselineStart!).getTime();
-        const finishMs = new Date(p.baselineFinish!).getTime();
-        const currentMs = new Date(dashDate).getTime();
-        const span = Math.max(1, finishMs - startMs);
-        const elapsed = Math.max(0, currentMs - startMs);
-        projPlanned = Math.min(100, Math.max(0, Math.round((elapsed / span) * 100)));
+      if (pTotalWeight > 0 && tasksWithBaselineCount > 0) {
+        projPlanned = Math.min(100, Math.max(0, Math.round(pAccumPlannedWeighted / pTotalWeight)));
+      } else if (p.baselineStart && p.baselineFinish) {
+        // Fallback for projects with only project-level baseline dates and no task baselines
+        if (dashDate < p.baselineStart) {
+          projPlanned = 0;
+        } else if (dashDate >= p.baselineFinish) {
+          projPlanned = 100;
+        } else {
+          const [sy, sm, sd] = p.baselineStart.split('-').map(Number);
+          const [fy, fm, fd] = p.baselineFinish.split('-').map(Number);
+          const [cy, cm, cd] = dashDate.split('-').map(Number);
+          const sUtc = Date.UTC(sy, sm - 1, sd);
+          const fUtc = Date.UTC(fy, fm - 1, fd);
+          const cUtc = Date.UTC(cy, cm - 1, cd);
+
+          const totalDays = Math.max(1, Math.round((fUtc - sUtc) / 86400000) + 1);
+          const elapsedDays = Math.max(1, Math.round((cUtc - sUtc) / 86400000) + 1);
+          projPlanned = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
+        }
       }
 
       const projActual = calcPct(p);
+      const projWeight = Math.max(1, pTotalWeight);
 
-      sumPlanned += projPlanned * weight;
-      sumActual += projActual * weight;
-      totalWeight += weight;
+      sumPlanned += projPlanned * projWeight;
+      sumActual += projActual * projWeight;
+      totalWeight += projWeight;
+
+      projectDetails.push({
+        id: p.id,
+        name: p.name,
+        baselineStart: p.baselineStart,
+        baselineFinish: p.baselineFinish,
+        plannedPct: projPlanned,
+        actualPct: projActual,
+        variance: projActual - projPlanned,
+        taskCount: taskTotalCount
+      });
     });
 
     const plannedPct = totalWeight === 0 ? 0 : Math.round(sumPlanned / totalWeight);
@@ -1222,7 +1313,8 @@ export default function DashboardView({
       plannedPct,
       actualPct,
       variance,
-      projects: scopedProjects
+      projects: scopedProjects,
+      projectDetails
     };
   }, [filteredProjects, dashDate]);
 
@@ -1652,14 +1744,15 @@ export default function DashboardView({
 
             {/* 2. Baseline circular */}
             <div 
-              className="flex flex-col items-center justify-between gap-2 p-4 sm:p-5 rounded-2xl bg-base-surface2/80 border border-base-border shadow-2xs text-center min-w-[155px] sm:min-w-[170px]"
+              onClick={() => setActiveModal('baseline')}
+              className="flex flex-col items-center justify-between gap-2 p-4 sm:p-5 rounded-2xl bg-base-surface2/80 hover:bg-base-surface2 border border-base-border hover:border-base-border2 transition-all cursor-pointer group shadow-2xs text-center min-w-[155px] sm:min-w-[170px]"
               title={
                 baselineStats.hasBaseline
-                  ? `Baseline Schedule per ${dashDate}: Planned ${baselineStats.plannedPct}% vs Actual ${baselineStats.actualPct}%`
+                  ? `Baseline Schedule per ${dashDate}: Planned ${baselineStats.plannedPct}% vs Actual ${baselineStats.actualPct}%. Klik untuk detail per project.`
                   : 'Belum ada project dengan Baseline Start & Finish di scope ini'
               }
             >
-              <div className="relative">
+              <div className="relative transform group-hover:scale-105 transition-transform duration-200">
                 <svg className="h-24 w-24 sm:h-26 sm:w-26" viewBox="0 0 90 90">
                   <circle cx="45" cy="45" r={radius} fill="none" stroke="currentColor" className="text-base-border/50" strokeWidth="8" />
                   {baselineStats.hasBaseline ? (
@@ -2747,6 +2840,7 @@ export default function DashboardView({
                 {activeModal === 'active' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
                 {activeModal === 'completed' && <CheckCircle className="h-5.5 w-5.5 text-base-green" />}
                 {activeModal === 'overdue' && <AlertTriangle className="h-5.5 w-5.5 text-base-red" />}
+                {activeModal === 'baseline' && <BookmarkCheck className="h-5.5 w-5.5 text-slate-500" />}
                 {activeModal === 'man-hours' && <Clock className="h-5.5 w-5.5 text-base-blue" />}
                 {activeModal === 'present' && <Users className="h-5.5 w-5.5 text-base-green" />}
                 {activeModal === 'absent' && <ShieldAlert className="h-5.5 w-5.5 text-base-red" />}
@@ -2757,6 +2851,7 @@ export default function DashboardView({
                   {activeModal === 'active' && 'Active Projects'}
                   {activeModal === 'completed' && 'Completed Projects'}
                   {activeModal === 'overdue' && 'Overdue Items'}
+                  {activeModal === 'baseline' && `Baseline Schedule Progress (${dashDate})`}
                   {activeModal === 'man-hours' && 'Man-hours Log Detail'}
                   {activeModal === 'present' && 'Present Personnel Today'}
                   {activeModal === 'absent' && 'Absent/Leave Personnel Today'}
@@ -2768,6 +2863,7 @@ export default function DashboardView({
                   {activeModal === 'active' && activeCount}
                   {activeModal === 'completed' && completedCount}
                   {activeModal === 'overdue' && (overdueProjectsList.length + overdueTasksList.length)}
+                  {activeModal === 'baseline' && baselineStats.count}
                   {activeModal === 'man-hours' && scopedTimesheets.length}
                   {activeModal === 'present' && presentPersonnelToday.length}
                   {activeModal === 'absent' && absentPersonnelToday.length}
@@ -3208,6 +3304,7 @@ export default function DashboardView({
                     (activeModal === 'completed' && completedCount === 0) ||
                     (activeModal === 'overdue' && overdueTab === 'projects' && overdueProjectsList.length === 0) ||
                     (activeModal === 'overdue' && overdueTab === 'tasks' && overdueTasksList.length === 0) ||
+                    (activeModal === 'baseline' && baselineStats.projectDetails.length === 0) ||
                     (activeModal === 'man-hours' && scopedTimesheets.length === 0) ||
                     (activeModal === 'present' && presentPersonnelToday.length === 0) ||
                     (activeModal === 'absent' && absentPersonnelToday.length === 0)) ? (
@@ -3532,6 +3629,69 @@ export default function DashboardView({
                           </tbody>
                         </table>
                       )}
+                    </div>
+                  )}
+
+                  {/* Category 4b: Baseline Schedule breakdown per project */}
+                  {activeModal === 'baseline' && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-base-border bg-base-surface2 text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted select-none">
+                            <th className="py-2.5 px-4 font-bold">Project Name</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Baseline Target Window</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Target Plan (per {dashDate})</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Actual Progress</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Variance</th>
+                            <th className="py-2.5 px-4 font-bold text-center">Tasks</th>
+                            <th className="py-2.5 px-4 font-bold text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/50 text-xs text-base-text">
+                          {baselineStats.projectDetails.map(item => (
+                            <tr key={item.id} className="hover:bg-base-surface2/50 transition-colors">
+                              <td className="py-3 px-4 font-semibold text-base-text">
+                                {item.name}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-xs text-base-muted">
+                                {item.baselineStart || '—'} s/d {item.baselineFinish || '—'}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono font-bold text-slate-500">
+                                {item.plannedPct}%
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono font-bold text-base-accent">
+                                {item.actualPct}%
+                              </td>
+                              <td className="py-3 px-4 text-center">
+                                <span className={`text-[10px] font-condensed font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full ${
+                                  item.variance >= 0
+                                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                                    : 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                }`}>
+                                  {item.variance >= 0 ? `+${item.variance}% Ahead` : `${item.variance}% Behind`}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-base-muted">
+                                {item.taskCount}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                {openSpotlight && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      openSpotlight(item.id);
+                                      setActiveModal(null);
+                                    }}
+                                    className="px-2.5 py-1 text-[11px] font-condensed font-bold uppercase rounded bg-base-surface3 hover:bg-base-accent/20 hover:text-base-accent border border-base-border transition-colors cursor-pointer"
+                                  >
+                                    Spotlight
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
                   )}
 

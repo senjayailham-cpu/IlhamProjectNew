@@ -1913,7 +1913,7 @@ export default function GanttView({
   };
 
   // Inline Date Saving handler
-  const saveDate = (rowId: string, field: 'start' | 'finish', newVal: string) => {
+  const saveDate = (rowId: string, field: 'start' | 'finish' | 'both', newVal: string) => {
     if (!onUpdateProject) return;
 
     const res = findAndCloneProject(rowId);
@@ -1923,24 +1923,38 @@ export default function GanttView({
     if (rowId === updated.id) {
       // Project level
       if (field === 'start') updated.start = newVal || '';
-      else updated.due = newVal || '';
+      else if (field === 'finish') updated.due = newVal || '';
+      else {
+        updated.start = '';
+        updated.due = '';
+      }
     } else {
       // Find in assemblies
-      const asm = updated.assemblies?.find(a => a.id === rowId);
+      const asm = updated.assemblies?.find(a => a.id === rowId || rowId.startsWith(a.id));
       if (asm) {
         if (field === 'start') asm.start = newVal || undefined;
-        else asm.finish = newVal || undefined;
+        else if (field === 'finish') asm.finish = newVal || undefined;
+        else {
+          asm.start = undefined;
+          asm.finish = undefined;
+        }
       } else {
         // Find in tasks
         for (const a of updated.assemblies || []) {
-          const t = a.tasks?.find(t => t.id === rowId);
+          const t = a.tasks?.find(task => task.id === rowId || rowId.startsWith(task.id));
           if (t) {
             if (field === 'start') {
               t.date = newVal || undefined;
               t.startDate = newVal || undefined;
-            } else {
+            } else if (field === 'finish') {
               t.finishDate = newVal || undefined;
               t.endDate = newVal || undefined;
+            } else {
+              // 'both' -> clear both start and finish
+              t.date = undefined;
+              t.startDate = undefined;
+              t.finishDate = undefined;
+              t.endDate = undefined;
             }
             break;
           }
@@ -1948,15 +1962,15 @@ export default function GanttView({
       }
     }
     // AUTO-SCHEDULE FEATURE
-    if (autoSchedule) {
-      // Auto-Schedule ON: cascade successor tasks
+    if (autoSchedule && newVal) {
+      // Auto-Schedule ON: cascade successor tasks only if a valid non-empty date was assigned
       const { updatedProject, shiftedIds } = cascadeSchedule(updated, rowId);
       if (shiftedIds.size > 0) {
         setCascadedTaskIds(shiftedIds);
       }
       onUpdateProject(updatedProject);
     } else {
-      // Auto-Schedule OFF: save only the dragged/edited task, no cascade
+      // Auto-Schedule OFF or clearing date: save directly without shifting other tasks
       onUpdateProject(updated);
     }
   };
@@ -2339,7 +2353,7 @@ export default function GanttView({
   };
 
   // Inline Baseline Date Saving handler (per task, per assembly, or per project)
-  const saveBaselineDate = (rowId: string, field: 'start' | 'finish', newVal: string) => {
+  const saveBaselineDate = (rowId: string, field: 'start' | 'finish' | 'both', newVal: string) => {
     if (!onUpdateProject) return;
 
     const res = findAndCloneProject(rowId);
@@ -2348,18 +2362,30 @@ export default function GanttView({
 
     if (rowId === updated.id) {
       if (field === 'start') updated.baselineStart = newVal || undefined;
-      else updated.baselineFinish = newVal || undefined;
+      else if (field === 'finish') updated.baselineFinish = newVal || undefined;
+      else {
+        updated.baselineStart = undefined;
+        updated.baselineFinish = undefined;
+      }
     } else {
-      const asm = updated.assemblies?.find(a => a.id === rowId);
+      const asm = updated.assemblies?.find(a => a.id === rowId || rowId.startsWith(a.id));
       if (asm) {
         if (field === 'start') asm.baselineStart = newVal || undefined;
-        else asm.baselineFinish = newVal || undefined;
+        else if (field === 'finish') asm.baselineFinish = newVal || undefined;
+        else {
+          asm.baselineStart = undefined;
+          asm.baselineFinish = undefined;
+        }
       } else {
         for (const a of updated.assemblies || []) {
-          const t = a.tasks?.find(t => t.id === rowId);
+          const t = a.tasks?.find(task => task.id === rowId || rowId.startsWith(task.id));
           if (t) {
             if (field === 'start') t.baselineStart = newVal || undefined;
-            else t.baselineFinish = newVal || undefined;
+            else if (field === 'finish') t.baselineFinish = newVal || undefined;
+            else {
+              t.baselineStart = undefined;
+              t.baselineFinish = undefined;
+            }
 
             // Recalculate parent assembly baseline bounds
             let minAsmBaseStart: string | null = null;
@@ -2372,8 +2398,8 @@ export default function GanttView({
                 if (!maxAsmBaseFinish || task.baselineFinish > maxAsmBaseFinish) maxAsmBaseFinish = task.baselineFinish;
               }
             });
-            if (minAsmBaseStart) a.baselineStart = minAsmBaseStart;
-            if (maxAsmBaseFinish) a.baselineFinish = maxAsmBaseFinish;
+            a.baselineStart = minAsmBaseStart || undefined;
+            a.baselineFinish = maxAsmBaseFinish || undefined;
             break;
           }
         }
@@ -2387,8 +2413,8 @@ export default function GanttView({
       if (a.baselineStart && (!pMinBase || a.baselineStart < pMinBase)) pMinBase = a.baselineStart;
       if (a.baselineFinish && (!pMaxBase || a.baselineFinish > pMaxBase)) pMaxBase = a.baselineFinish;
     });
-    if (pMinBase) updated.baselineStart = pMinBase;
-    if (pMaxBase) updated.baselineFinish = pMaxBase;
+    updated.baselineStart = pMinBase || undefined;
+    updated.baselineFinish = pMaxBase || undefined;
 
     onUpdateProject(updated);
     setToastMsg(`Baseline diperbarui: ${newVal || 'Dikosongkan'}`);
@@ -3424,7 +3450,7 @@ export default function GanttView({
 
   // Fixed widths representing authentic MS Project layout columns (with WBS column)
   const colWbsWidth = 56;
-  const colNameWidth = 200;
+  const colNameWidth = 210;
   const colDurWidth = 64;
   const colBaseDurWidth = 64;
   const colPlanHrsWidth = 68;
@@ -3433,10 +3459,10 @@ export default function GanttView({
   const colCrewWidth = 50;
   const colCompanyWidth = 105;
   const colAssigneeWidth = 105;
-  const colBaseStartWidth = 75;
-  const colBaseFinishWidth = 75;
-  const colStartWidth = 85;
-  const colFinishWidth = 85;
+  const colBaseStartWidth = 92;
+  const colBaseFinishWidth = 92;
+  const colStartWidth = 104;
+  const colFinishWidth = 104;
   const colPredWidth = 90;
   const colPctWidth = 64;
   const colStatusWidth = 100;
@@ -4341,14 +4367,14 @@ export default function GanttView({
           colNameWidth={colNameWidth}
           colDurWidth={colDurWidth}
           colBaseDurWidth={colBaseDurWidth}
-          colOdWidth={48}
-          colRdWidth={48}
-          colTotalFloatWidth={72}
-          colFreeFloatWidth={68}
-          colEarlyStartWidth={80}
-          colEarlyFinishWidth={80}
-          colLateStartWidth={80}
-          colLateFinishWidth={80}
+          colOdWidth={52}
+          colRdWidth={52}
+          colTotalFloatWidth={74}
+          colFreeFloatWidth={70}
+          colEarlyStartWidth={88}
+          colEarlyFinishWidth={88}
+          colLateStartWidth={88}
+          colLateFinishWidth={88}
           colPlanHrsWidth={colPlanHrsWidth}
           colActHrsWidth={colActHrsWidth}
           colVarianceWidth={colVarianceWidth}

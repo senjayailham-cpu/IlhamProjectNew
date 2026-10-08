@@ -10,10 +10,14 @@ import {
   Search,
   Users,
   GripVertical,
-  RotateCcw
+  RotateCcw,
+  X,
+  Trash2,
+  Calendar
 } from 'lucide-react';
 import { Project, WorkflowStatusType } from '../types';
 import { GanttRow } from './useGanttRows';
+import { GanttDatePickerPopover } from './GanttDatePickerPopover';
 
 export const WORKFLOW_STATUS_CONFIG: Record<WorkflowStatusType, { label: string; dotColor: string; badgeClass: string }> = {
   verify: {
@@ -233,10 +237,10 @@ export interface GanttGridProps {
   saveTaskField: (taskId: string, field: 'crew' | 'company' | 'assigned', val: any) => void;
   editingCell: { rowId: string; field: 'start' | 'finish' } | null;
   setEditingCell: (val: { rowId: string; field: 'start' | 'finish' } | null) => void;
-  saveDate: (rowId: string, field: 'start' | 'finish', value: string) => void;
+  saveDate: (rowId: string, field: 'start' | 'finish' | 'both', value: string) => void;
   editingBaselineCell?: { rowId: string; field: 'start' | 'finish' } | null;
   setEditingBaselineCell?: (val: { rowId: string; field: 'start' | 'finish' } | null) => void;
-  saveBaselineDate?: (rowId: string, field: 'start' | 'finish', value: string) => void;
+  saveBaselineDate?: (rowId: string, field: 'start' | 'finish' | 'both', value: string) => void;
   editingPred: string | null;
   setEditingPred: (id: string | null) => void;
   predInputVal: string;
@@ -603,7 +607,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           setDragOverSide(null);
         }}
         style={{ width: `${conf.width}px` }}
-        className={`shrink-0 text-[9px] font-bold uppercase tracking-wider truncate h-full flex items-center justify-between px-1 cursor-grab active:cursor-grabbing hover:bg-base-accent-dim/40 transition-all group relative select-none ${
+        className={`shrink-0 text-xs font-black uppercase tracking-wider truncate h-full flex items-center justify-between px-1.5 cursor-grab active:cursor-grabbing hover:bg-base-accent-dim/40 transition-all group relative select-none text-base-text ${
           conf.align === 'center' ? 'text-center' : 'text-left'
         } ${conf.className || ''} ${
           isBeingDragged ? 'opacity-30 bg-base-accent/20' : ''
@@ -630,7 +634,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
     switch (colId) {
       case 'wbs':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-base-muted font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colWbsWidth}px` }} className="shrink-0 text-center font-mono text-xs text-base-text/80 font-bold">
             {row.wbs}
           </div>
         );
@@ -691,8 +695,8 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
             <span className={`truncate select-none ${
               row.level === 0 ? 'font-condensed font-extrabold text-base-accent text-sm tracking-wide' :
-              row.level === 1 ? 'font-condensed font-bold text-xs text-base-text uppercase tracking-wide' :
-              'font-medium text-xs text-base-muted2'
+              row.level === 1 ? 'font-condensed font-bold text-xs sm:text-[13px] text-base-text uppercase tracking-wide' :
+              'font-semibold text-xs sm:text-[13px] text-base-text'
             } ${row.pct === 100 ? 'line-through opacity-50 decoration-emerald-500/70' : ''}`} title={row.name}>
               {row.pct === 100 && (
                 <span className="no-underline inline-flex items-center text-emerald-500 font-bold mr-1" title="Completed">
@@ -709,8 +713,8 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
       case 'activityId':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colActIdWidth}px` }} className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full">
-            <span className={`px-1.5 py-0.5 rounded font-extrabold font-mono tracking-tight ${
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colActIdWidth}px` }} className="shrink-0 text-center font-mono text-xs truncate px-1 flex items-center justify-center h-full">
+            <span className={`px-1.5 py-0.5 rounded font-extrabold font-mono tracking-tight text-[11px] ${
               row.level === 0 ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30' :
               row.level === 1 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30' :
               row.isCritical ? 'bg-red-500/20 text-red-600 dark:text-red-400 border border-red-500/40 font-black' :
@@ -723,14 +727,14 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
       case 'od':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colOdWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-text font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colOdWidth}px` }} className="shrink-0 text-center text-xs font-mono text-base-text font-bold">
             {row.isMilestone ? '0d' : `${row.od ?? row.duration}d`}
           </div>
         );
 
       case 'rd':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colRdWidth}px` }} className="shrink-0 text-center text-[10px] font-mono font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colRdWidth}px` }} className="shrink-0 text-center text-xs font-mono font-bold">
             <span className={row.rd === 0 ? 'text-emerald-500 font-extrabold' : 'text-amber-600 dark:text-amber-400'}>
               {row.isMilestone ? '0d' : `${row.rd ?? (row.done ? 0 : row.duration)}d`}
             </span>
@@ -741,19 +745,19 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         const tf = row.totalFloat ?? 0;
         const isCrit = row.level === 2 ? (row.isCritical || tf <= 0.001) : (tf <= 0.001);
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colTotalFloatWidth}px` }} className="shrink-0 text-center text-[10px] font-mono font-black flex items-center justify-center h-full px-1">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colTotalFloatWidth}px` }} className="shrink-0 text-center text-xs font-mono font-black flex items-center justify-center h-full px-1">
             {row.level === 2 ? (
               isCrit ? (
-                <span className="px-1.5 py-0.2 rounded bg-red-600 text-white border border-red-500 shadow-2xs text-[9px] uppercase tracking-wider font-extrabold animate-pulse" title="Zero Float: Critical Path driving overall schedule">
+                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white border border-red-500 shadow-2xs text-[10px] uppercase tracking-wider font-extrabold animate-pulse" title="Zero Float: Critical Path driving overall schedule">
                   0d (CP)
                 </span>
               ) : (
-                <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[9.5px]">
+                <span className="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 text-[10px]">
                   {tf}d
                 </span>
               )
             ) : (
-              <span className={`text-[9.5px] ${isCrit ? 'text-red-500 font-extrabold' : 'text-base-muted'}`}>
+              <span className={`text-[10.5px] ${isCrit ? 'text-red-500 font-extrabold' : 'text-base-muted'}`}>
                 {tf}d
               </span>
             )}
@@ -763,42 +767,42 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
       case 'freeFloat':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colFreeFloatWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-medium">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colFreeFloatWidth}px` }} className="shrink-0 text-center text-xs font-mono text-base-muted font-semibold">
             {row.level === 2 ? `${row.freeFloat ?? 0}d` : '—'}
           </div>
         );
 
       case 'earlyStart':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyStartWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-emerald-600 dark:text-emerald-400">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyStartWidth}px` }} className="shrink-0 text-center font-mono text-xs text-emerald-600 dark:text-emerald-400 font-bold">
             {row.earlyStart || row.start || '—'}
           </div>
         );
 
       case 'earlyFinish':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyFinishWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-emerald-600 dark:text-emerald-400 font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colEarlyFinishWidth}px` }} className="shrink-0 text-center font-mono text-xs text-emerald-600 dark:text-emerald-400 font-bold">
             {row.earlyFinish || row.finish || '—'}
           </div>
         );
 
       case 'lateStart':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateStartWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-orange-500 dark:text-orange-400">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateStartWidth}px` }} className="shrink-0 text-center font-mono text-xs text-orange-500 dark:text-orange-400 font-medium">
             {row.lateStart || '—'}
           </div>
         );
 
       case 'lateFinish':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateFinishWidth}px` }} className="shrink-0 text-center font-mono text-[10px] text-orange-500 dark:text-orange-400 font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colLateFinishWidth}px` }} className="shrink-0 text-center font-mono text-xs text-orange-500 dark:text-orange-400 font-bold">
             {row.lateFinish || '—'}
           </div>
         );
 
       case 'dur':
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-[10px] font-mono text-base-muted font-bold">
+          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-xs font-mono text-base-text font-bold">
             {row.isMilestone ? '0 days' : (row.start && row.finish && row.duration > 0 ? `${row.duration}d` : '—')}
           </div>
         );
@@ -808,7 +812,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colBaseDurWidth}px` }}
-            className="shrink-0 text-center text-[10px] font-mono text-slate-600 dark:text-slate-300 font-bold flex items-center justify-center h-full bg-slate-500/5"
+            className="shrink-0 text-center text-xs font-mono text-slate-700 dark:text-slate-300 font-bold flex items-center justify-center h-full bg-slate-500/5"
             title={row.baselineDuration !== undefined ? `Baseline Duration: ${row.baselineDuration} days` : 'Belum di-set baseline'}
           >
             {row.baselineDuration !== undefined
@@ -822,7 +826,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colPlanHrsWidth}px` }}
-            className="shrink-0 text-center font-mono text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            className="shrink-0 text-center font-mono text-xs truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
             onClick={() => {
               if (onUpdateProject) {
                 setEditingHoursCell(row.id);
@@ -868,11 +872,11 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colActHrsWidth}px` }}
-            className="shrink-0 text-center font-mono text-[10px] truncate px-1 flex items-center justify-center h-full"
+            className="shrink-0 text-center font-mono text-xs truncate px-1 flex items-center justify-center h-full"
             title={`${row.actualHours.toFixed(1)} actual hours logged across ${row.timesheetCount} timesheet entries`}
           >
             {row.actualHours > 0 ? (
-              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[9px]">
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded font-bold font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 text-[10px]">
                 <Clock className="w-2.5 h-2.5 shrink-0" />
                 <span>{row.actualHours % 1 === 0 ? row.actualHours : row.actualHours.toFixed(1)}h</span>
               </span>
@@ -1068,12 +1072,15 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           </div>
         );
 
-      case 'start':
+      case 'start': {
+        const hasStart = !!row.start;
         return (
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colStartWidth}px` }}
-            className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            className={`shrink-0 text-center font-mono text-xs text-base-text truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full ${
+              editingCell?.rowId === row.id && editingCell.field === 'start' ? 'z-50' : ''
+            }`}
             onClick={() => {
               if (onUpdateProject) {
                 setEditingCell({ rowId: row.id, field: 'start' });
@@ -1081,39 +1088,61 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             }}
           >
             {editingCell?.rowId === row.id && editingCell.field === 'start' ? (
-              <input
-                type="date"
-                autoFocus
-                defaultValue={row.start || ''}
-                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  saveDate(row.id, 'start', e.target.value);
+              <GanttDatePickerPopover
+                row={row}
+                field="start"
+                onSave={(val) => {
+                  saveDate(row.id, 'start', val);
                   setEditingCell(null);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    saveDate(row.id, 'start', e.currentTarget.value);
-                    setEditingCell(null);
-                  }
-                  if (e.key === 'Escape') setEditingCell(null);
+                onClear={() => {
+                  saveDate(row.id, 'start', '');
+                  setEditingCell(null);
                 }}
+                onClearBoth={row.finish ? () => {
+                  saveDate(row.id, 'both', '');
+                  setEditingCell(null);
+                } : undefined}
+                onClose={() => setEditingCell(null)}
               />
             ) : (
-              <span className="flex items-center gap-1 select-none" title="Click to edit">
-                {row.start || '—'}
-                {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-              </span>
+              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasStart ? `Start: ${row.start} (Klik untuk ubah / klik ikon tempat sampah untuk hapus)` : 'Klik untuk tentukan tanggal mulai aktual'}>
+                <span className={`truncate flex-1 font-mono text-xs ${hasStart ? 'text-base-text font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
+                  {hasStart ? row.start : '—'}
+                </span>
+                {hasStart && onUpdateProject && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveDate(row.id, 'start', '');
+                    }}
+                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    title="Hapus tanggal mulai (1-klik)"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+                {!hasStart && onUpdateProject && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-base-accent font-bold transition-opacity">
+                    +Set
+                  </span>
+                )}
+              </div>
             )}
           </div>
         );
+      }
 
-      case 'finish':
+      case 'finish': {
+        const hasFinish = !!row.finish;
         return (
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colFinishWidth}px` }}
-            className="shrink-0 text-center font-mono text-[10px] text-base-muted truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
+            className={`shrink-0 text-center font-mono text-xs text-base-text truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full ${
+              editingCell?.rowId === row.id && editingCell.field === 'finish' ? 'z-50' : ''
+            }`}
             onClick={() => {
               if (onUpdateProject) {
                 setEditingCell({ rowId: row.id, field: 'finish' });
@@ -1121,130 +1150,177 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             }}
           >
             {editingCell?.rowId === row.id && editingCell.field === 'finish' ? (
-              <input
-                type="date"
-                autoFocus
-                defaultValue={row.finish || ''}
-                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  saveDate(row.id, 'finish', e.target.value);
+              <GanttDatePickerPopover
+                row={row}
+                field="finish"
+                onSave={(val) => {
+                  saveDate(row.id, 'finish', val);
                   setEditingCell(null);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    saveDate(row.id, 'finish', e.currentTarget.value);
-                    setEditingCell(null);
-                  }
-                  if (e.key === 'Escape') setEditingCell(null);
+                onClear={() => {
+                  saveDate(row.id, 'finish', '');
+                  setEditingCell(null);
                 }}
+                onClearBoth={row.start ? () => {
+                  saveDate(row.id, 'both', '');
+                  setEditingCell(null);
+                } : undefined}
+                onClose={() => setEditingCell(null)}
               />
             ) : (
-              <span className="flex items-center gap-1 select-none" title="Click to edit">
-                {row.finish || '—'}
-                {onUpdateProject && <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-1">✏️</span>}
-              </span>
+              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasFinish ? `Finish: ${row.finish} (Klik untuk ubah / klik ikon tempat sampah untuk hapus)` : 'Klik untuk tentukan tanggal selesai aktual'}>
+                <span className={`truncate flex-1 font-mono text-xs ${hasFinish ? 'text-base-text font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
+                  {hasFinish ? row.finish : '—'}
+                </span>
+                {hasFinish && onUpdateProject && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveDate(row.id, 'finish', '');
+                    }}
+                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    title="Hapus tanggal selesai (1-klik)"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
+                {!hasFinish && onUpdateProject && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-base-accent font-bold transition-opacity">
+                    +Set
+                  </span>
+                )}
+              </div>
             )}
           </div>
         );
+      }
 
-      case 'baseStart':
+      case 'baseStart': {
+        const hasBaseStart = !!row.baselineStart;
         return (
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colBaseStartWidth}px` }}
-            className={`shrink-0 text-center font-mono text-[9.5px] truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
+            className={`shrink-0 text-center font-mono text-xs truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
               saveBaselineDate ? 'cursor-pointer hover:bg-slate-500/20' : ''
-            }`}
+            } ${editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'start' ? 'z-50' : ''}`}
             onClick={() => {
               if (saveBaselineDate && setEditingBaselineCell) {
                 setEditingBaselineCell({ rowId: row.id, field: 'start' });
               }
             }}
-            title={
-              saveBaselineDate
-                ? `Baseline Start: ${row.baselineStart || '—'} (Klik untuk merubah tanggal)`
-                : (row.baselineStart ? `Baseline Start: ${row.baselineStart}` : 'Belum di-set baseline')
-            }
           >
             {editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'start' && saveBaselineDate ? (
-              <input
-                type="date"
-                autoFocus
-                defaultValue={row.baselineStart || row.start || ''}
-                className="w-full text-[9.5px] font-mono bg-base-surface border border-slate-500 rounded px-1 py-0 outline-none text-base-text"
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  saveBaselineDate(row.id, 'start', e.target.value);
+              <GanttDatePickerPopover
+                row={row}
+                field="start"
+                isBaseline={true}
+                onSave={(val) => {
+                  saveBaselineDate(row.id, 'start', val);
                   setEditingBaselineCell && setEditingBaselineCell(null);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    saveBaselineDate(row.id, 'start', e.currentTarget.value);
-                    setEditingBaselineCell && setEditingBaselineCell(null);
-                  }
-                  if (e.key === 'Escape') setEditingBaselineCell && setEditingBaselineCell(null);
+                onClear={() => {
+                  saveBaselineDate(row.id, 'start', '');
+                  setEditingBaselineCell && setEditingBaselineCell(null);
                 }}
+                onClearBoth={row.baselineFinish ? () => {
+                  saveBaselineDate(row.id, 'both', '');
+                  setEditingBaselineCell && setEditingBaselineCell(null);
+                } : undefined}
+                onClose={() => setEditingBaselineCell && setEditingBaselineCell(null)}
               />
             ) : (
-              <span className="flex items-center gap-1 select-none text-slate-600 dark:text-slate-300">
-                {row.baselineStart || '—'}
-                {saveBaselineDate && (
-                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-slate-500">✏️</span>
+              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasBaseStart ? `Baseline Start: ${row.baselineStart} (Klik untuk ubah / hapus)` : 'Belum di-set baseline start'}>
+                <span className={`truncate flex-1 font-mono text-xs ${hasBaseStart ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
+                  {hasBaseStart ? row.baselineStart : '—'}
+                </span>
+                {hasBaseStart && saveBaselineDate && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveBaselineDate(row.id, 'start', '');
+                    }}
+                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    title="Hapus baseline start (1-klik)"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 )}
-              </span>
+                {!hasBaseStart && saveBaselineDate && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-slate-500 font-bold transition-opacity">
+                    +Set
+                  </span>
+                )}
+              </div>
             )}
           </div>
         );
+      }
 
-      case 'baseFinish':
+      case 'baseFinish': {
+        const hasBaseFinish = !!row.baselineFinish;
         return (
           <div
             key={`cell-${colId}-${row.id}`}
             style={{ width: `${colBaseFinishWidth}px` }}
-            className={`shrink-0 text-center font-mono text-[9.5px] truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
+            className={`shrink-0 text-center font-mono text-xs truncate px-1 flex items-center justify-center h-full bg-slate-500/5 group relative ${
               saveBaselineDate ? 'cursor-pointer hover:bg-slate-500/20' : ''
-            }`}
+            } ${editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'finish' ? 'z-50' : ''}`}
             onClick={() => {
               if (saveBaselineDate && setEditingBaselineCell) {
                 setEditingBaselineCell({ rowId: row.id, field: 'finish' });
               }
             }}
-            title={
-              saveBaselineDate
-                ? `Baseline Finish: ${row.baselineFinish || '—'} (Klik untuk merubah tanggal)`
-                : (row.baselineFinish ? `Baseline Finish: ${row.baselineFinish}` : 'Belum di-set baseline')
-            }
           >
             {editingBaselineCell?.rowId === row.id && editingBaselineCell.field === 'finish' && saveBaselineDate ? (
-              <input
-                type="date"
-                autoFocus
-                defaultValue={row.baselineFinish || row.finish || ''}
-                className="w-full text-[9.5px] font-mono bg-base-surface border border-slate-500 rounded px-1 py-0 outline-none text-base-text"
-                onClick={(e) => e.stopPropagation()}
-                onBlur={(e) => {
-                  saveBaselineDate(row.id, 'finish', e.target.value);
+              <GanttDatePickerPopover
+                row={row}
+                field="finish"
+                isBaseline={true}
+                onSave={(val) => {
+                  saveBaselineDate(row.id, 'finish', val);
                   setEditingBaselineCell && setEditingBaselineCell(null);
                 }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    saveBaselineDate(row.id, 'finish', e.currentTarget.value);
-                    setEditingBaselineCell && setEditingBaselineCell(null);
-                  }
-                  if (e.key === 'Escape') setEditingBaselineCell && setEditingBaselineCell(null);
+                onClear={() => {
+                  saveBaselineDate(row.id, 'finish', '');
+                  setEditingBaselineCell && setEditingBaselineCell(null);
                 }}
+                onClearBoth={row.baselineStart ? () => {
+                  saveBaselineDate(row.id, 'both', '');
+                  setEditingBaselineCell && setEditingBaselineCell(null);
+                } : undefined}
+                onClose={() => setEditingBaselineCell && setEditingBaselineCell(null)}
               />
             ) : (
-              <span className="flex items-center gap-1 select-none text-slate-600 dark:text-slate-300">
-                {row.baselineFinish || '—'}
-                {saveBaselineDate && (
-                  <span className="opacity-0 group-hover:opacity-100 text-[8px] transition-opacity select-none absolute right-0.5 text-slate-500">✏️</span>
+              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasBaseFinish ? `Baseline Finish: ${row.baselineFinish} (Klik untuk ubah / hapus)` : 'Belum di-set baseline finish'}>
+                <span className={`truncate flex-1 font-mono text-xs ${hasBaseFinish ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
+                  {hasBaseFinish ? row.baselineFinish : '—'}
+                </span>
+                {hasBaseFinish && saveBaselineDate && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      saveBaselineDate(row.id, 'finish', '');
+                    }}
+                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
+                    title="Hapus baseline finish (1-klik)"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
                 )}
-              </span>
+                {!hasBaseFinish && saveBaselineDate && (
+                  <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-slate-500 font-bold transition-opacity">
+                    +Set
+                  </span>
+                )}
+              </div>
             )}
           </div>
         );
+      }
 
       case 'pred':
         return (
@@ -1482,21 +1558,21 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         style={{ width: `${totalTableWidth}px` }}
       >
         {/* Header row 1 */}
-        <div className="h-7 px-3 flex items-center justify-between text-[10px] font-bold text-base-muted uppercase tracking-wider">
-          <div className="flex items-center gap-1.5">
-            <span className="flex items-center gap-1 text-base-text font-black tracking-wider">
-              <span className="px-1 py-0.2 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 text-[9px] font-mono">P6</span>
-              <span>Activity Table</span>
+        <div className="h-7 px-3 flex items-center justify-between text-xs font-bold text-base-text uppercase tracking-wider">
+          <div className="flex items-center gap-2">
+            <span className="flex items-center gap-1.5 text-base-text font-black tracking-wider">
+              <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/40 text-[10px] font-mono font-bold">P6</span>
+              <span className="text-xs font-black">Activity Table</span>
             </span>
-            <div className="w-[1px] h-3 bg-base-border mx-0.5" />
-            <span className="text-[9px] font-normal text-base-muted hidden md:inline">Layout:</span>
+            <div className="w-[1px] h-3.5 bg-base-border mx-0.5" />
+            <span className="text-[10px] font-normal text-base-muted hidden md:inline">Layout:</span>
             <button
               type="button"
               onClick={() => {
                 setColumnOrder(P6_COLUMN_ORDER);
                 try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(P6_COLUMN_ORDER)); } catch {}
               }}
-              className="text-[9px] font-sans font-bold text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 px-1.5 py-0.5 rounded border border-amber-500/40 bg-amber-500/10 transition-colors cursor-pointer"
+              className="text-[10.5px] font-sans font-bold text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 px-2 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/10 transition-colors cursor-pointer"
               title="Aktifkan Kolom Standar Primavera P6 (Act ID, WBS, OD, RD, Total Float, Dates)"
             >
               Primavera P6
@@ -1507,7 +1583,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 setColumnOrder(STANDARD_COLUMN_ORDER);
                 try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(STANDARD_COLUMN_ORDER)); } catch {}
               }}
-              className="text-[9px] font-sans font-medium text-base-muted hover:text-base-text px-1.5 py-0.5 rounded border border-base-border bg-base-surface transition-colors cursor-pointer"
+              className="text-[10.5px] font-sans font-semibold text-base-muted hover:text-base-text px-2 py-0.5 rounded-md border border-base-border bg-base-surface transition-colors cursor-pointer"
               title="Tampilan Kolom Minimalis"
             >
               Standard
@@ -1515,20 +1591,20 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             <button
               type="button"
               onClick={handleResetColumnOrder}
-              className="text-[9px] font-sans font-medium text-base-muted hover:text-base-accent px-1.5 py-0.5 rounded border border-base-border/60 hover:border-base-accent/50 bg-base-surface transition-colors cursor-pointer flex items-center gap-1"
+              className="text-[10.5px] font-sans font-semibold text-base-muted hover:text-base-accent px-2 py-0.5 rounded-md border border-base-border/60 hover:border-base-accent/50 bg-base-surface transition-colors cursor-pointer flex items-center gap-1"
               title="Kembalikan susunan kolom ke default"
             >
-              <RotateCcw className="h-2.5 w-2.5" />
+              <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
             </button>
           </div>
-          <div className="flex items-center gap-1.5 text-[9px] text-base-muted/80 font-normal lowercase">
+          <div className="flex items-center gap-1.5 text-[10px] text-base-muted font-normal lowercase">
             <span className="hidden sm:inline">drag header untuk geser kolom</span>
-            <Layers className="h-3 w-3 text-base-muted/70" />
+            <Layers className="h-3.5 w-3.5 text-base-muted/70" />
           </div>
         </div>
         {/* Header row 2 */}
-        <div className="h-7 flex text-[9px] font-bold text-base-muted uppercase tracking-wider items-center divide-x divide-base-border/30">
+        <div className="h-7 flex text-xs font-bold text-base-muted uppercase tracking-wider items-center divide-x divide-base-border/30">
           {activeColumns.map(colId => renderColumnHeader(colId))}
         </div>
       </div>

@@ -182,7 +182,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
               <div
                 key={`${m.label}-${idx}`}
                 style={{ width: `${m.width}px` }}
-                className="h-full border-r border-base-border/30 flex items-center justify-center font-condensed font-extrabold text-[10px] text-base-muted uppercase tracking-wider select-none shrink-0"
+                className="h-full border-r border-base-border/30 flex items-center justify-center font-condensed font-black text-xs text-base-text uppercase tracking-wider select-none shrink-0"
               >
                 {m.label}
               </div>
@@ -195,8 +195,8 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
               <div
                 key={`${w.label}-${idx}`}
                 style={{ width: `${w.width}px` }}
-                className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[9px] font-bold select-none shrink-0 ${
-                  w.isWeekend ? 'bg-base-red-dim text-base-red' : 'text-base-muted/80'
+                className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[11px] font-bold select-none shrink-0 ${
+                  w.isWeekend ? 'bg-base-red-dim text-base-red font-black' : 'text-base-text/80'
                 }`}
               >
                 {w.label}
@@ -236,10 +236,10 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
             className="absolute top-14 bottom-0 border-l-2 border-dashed border-base-red pointer-events-none z-15 select-none"
             style={{ left: `${todayX}px` }}
           >
-            <span className="absolute top-1 -left-4 px-1.5 py-0.5 rounded bg-base-red text-white font-condensed font-extrabold text-[8px] tracking-wider select-none">
+            <span className="absolute top-1 -left-4 px-1.5 py-0.5 rounded bg-base-red text-white font-condensed font-black text-[9.5px] tracking-wider select-none shadow-xs">
               TODAY
             </span>
-            <span className="absolute bottom-1 left-0 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded bg-base-red text-white font-mono text-[8px] select-none font-bold">
+            <span className="absolute bottom-1 left-0 -translate-x-1/2 whitespace-nowrap px-2 py-0.5 rounded bg-base-red text-white font-mono text-[10.5px] select-none font-bold shadow-xs">
               {todayFormattedFull}
             </span>
           </div>
@@ -623,31 +623,31 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
                         {/* Resource Labels & Hours Tracking shown to the right of the bar */}
                         {!row.isMilestone && (
-                          <div className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] z-10 pointer-events-none flex items-center gap-1.5">
+                          <div className="absolute left-[calc(100%+8px)] whitespace-nowrap text-xs z-10 pointer-events-none flex items-center gap-1.5">
                             {row.assigned && (
-                              <span className="font-semibold text-base-muted bg-base-surface/80 px-1.5 py-0.5 rounded border border-base-border/30 backdrop-blur-[2px]">
+                              <span className="font-semibold text-base-text bg-base-surface/90 px-1.5 py-0.5 rounded-md border border-base-border/50 shadow-2xs backdrop-blur-[2px]">
                                 {row.assigned}
                               </span>
                             )}
                             {showHoursTracking && (row.planHours > 0 || row.actualHours > 0) && (
-                              <span className={`inline-flex items-center gap-1 font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border backdrop-blur-[2px] ${
+                              <span className={`inline-flex items-center gap-1 font-mono text-[10.5px] font-bold px-1.5 py-0.5 rounded-md border shadow-2xs backdrop-blur-[2px] ${
                                 row.actualHours > row.planHours
                                   ? 'bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30'
                                   : row.actualHours > 0
                                     ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/30'
-                                    : 'bg-base-surface/80 text-base-muted border-base-border/30'
+                                    : 'bg-base-surface/90 text-base-muted border-base-border/50'
                               }`}>
-                                <Clock className="w-2.5 h-2.5 shrink-0" />
+                                <Clock className="w-3 h-3 shrink-0" />
                                 <span>{row.actualHours.toFixed(0)}h / {row.planHours.toFixed(0)}h</span>
                                 {row.actualHours > row.planHours && (
-                                  <span className="text-[7.5px] font-black uppercase text-red-500 bg-red-500/20 px-1 rounded">OVER</span>
+                                  <span className="text-[8.5px] font-black uppercase text-red-500 bg-red-500/20 px-1 rounded">OVER</span>
                                 )}
                               </span>
                             )}
                           </div>
                         )}
                         {row.isMilestone && (
-                          <span className="absolute left-[calc(100%+8px)] whitespace-nowrap text-[10px] text-yellow-600 dark:text-yellow-400 font-bold z-10 pointer-events-none bg-base-surface/60 px-1 rounded backdrop-blur-[1px]">
+                          <span className="absolute left-[calc(100%+8px)] whitespace-nowrap text-xs text-yellow-600 dark:text-yellow-400 font-bold z-10 pointer-events-none bg-base-surface/80 px-1.5 py-0.5 rounded-md border border-yellow-500/30 backdrop-blur-[1px]">
                             {row.name} (Milestone)
                           </span>
                         )}
