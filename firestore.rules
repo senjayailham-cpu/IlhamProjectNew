@@ -188,7 +188,7 @@ service cloud.firestore {
     }
 
     match /masterData/{entryId} {
-      allow read: if isAdmin() || isSignedIn();
+      allow read: if true;
       allow create, update: if isSignedIn();
       allow delete: if isAdmin() || hasRole(['manager']);
     }

@@ -436,7 +436,8 @@ function AppContent() {
   const [gaBackfillDone, setGaBackfillDone] = useState(false);
 
   useEffect(() => {
-    if (gaBackfillDone || projects.length === 0 || !masterData.entries) return;
+    // Only run GA backfill after Firebase Auth is fully initialized to avoid unauthenticated permission-denied errors
+    if (gaBackfillDone || projects.length === 0 || !masterData.entries || !fbUser || !currentUser || !auth.currentUser) return;
     const existingGaValues = new Set(
       masterData.entries
         .filter(e => e.category === 'gaNumber')
@@ -456,7 +457,7 @@ function AppContent() {
     } else {
       setGaBackfillDone(true);
     }
-  }, [projects, masterData.entries, gaBackfillDone]);
+  }, [projects, masterData.entries, gaBackfillDone, fbUser, currentUser]);
 
   const handleMarkExEmployee = async (id: string, resignDate: string, resignReason: string) => {
     setEmployees(prev => prev.map(e => {

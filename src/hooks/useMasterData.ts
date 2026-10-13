@@ -5,13 +5,23 @@ import { MasterDataEntry } from '../types';
 import { uid } from '../utils';
 
 export function useMasterData(enabled: boolean) {
-  const [entries, setEntries] = useState<MasterDataEntry[]>([]);
+  const [entries, setEntries] = useState<MasterDataEntry[]>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const cached = localStorage.getItem('austin_masterdata_cache_v1');
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      }
+    } catch (e) {}
+    return [];
+  });
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     if (!enabled) {
-      setEntries([]);
-      setLoading(true);
+      setLoading(false);
       return;
     }
 
@@ -25,9 +35,14 @@ export function useMasterData(enabled: boolean) {
         });
         setEntries(list);
         setLoading(false);
+        try {
+          if (typeof window !== 'undefined' && list.length > 0) {
+            localStorage.setItem('austin_masterdata_cache_v1', JSON.stringify(list));
+          }
+        } catch (e) {}
       },
       (error) => {
-        console.error('Firestore real-time error on masterData:', error);
+        console.warn('Firestore real-time sync notice on masterData:', error);
         setLoading(false);
       }
     );
@@ -41,13 +56,47 @@ export function useMasterData(enabled: boolean) {
     gaNumber?: string
   ): Promise<void> => {
     if (!value || !value.trim()) return;
-    try {
-      const trimmedValue = value.trim();
-      const normalizedValue = trimmedValue.toLowerCase();
-      const existing = entries.find(
-        (e) => e.category === category && e.normalizedValue === normalizedValue
-      );
+    const trimmedValue = value.trim();
+    const normalizedValue = trimmedValue.toLowerCase();
 
+    // Optimistically update local entries state immediately
+    const existing = entries.find(
+      (e) => e.category === category && e.normalizedValue === normalizedValue
+    );
+
+    if (existing) {
+      const updatedList = entries.map(e =>
+        e.id === existing.id
+          ? {
+              ...e,
+              usageCount: (e.usageCount || 0) + 1,
+              lastUsedAt: new Date().toISOString(),
+              ...(gaNumber && gaNumber.trim() && !e.gaNumber ? { gaNumber: gaNumber.trim().toUpperCase() } : {})
+            }
+          : e
+      );
+      setEntries(updatedList);
+    } else {
+      const tempEntry: MasterDataEntry = {
+        id: 'md_' + uid(),
+        category,
+        value: trimmedValue,
+        normalizedValue,
+        usageCount: 1,
+        createdAt: new Date().toISOString(),
+        lastUsedAt: new Date().toISOString(),
+        createdBy: auth.currentUser?.displayName || auth.currentUser?.email || 'System',
+        ...(gaNumber && gaNumber.trim() ? { gaNumber: gaNumber.trim().toUpperCase() } : {})
+      };
+      setEntries(prev => [...prev, tempEntry]);
+    }
+
+    // Only commit to Firestore cloud if user is fully authenticated
+    if (!auth.currentUser) {
+      return;
+    }
+
+    try {
       if (existing) {
         const docRef = doc(db, 'masterData', existing.id);
         const updates: any = {
@@ -76,8 +125,10 @@ export function useMasterData(enabled: boolean) {
         }
         await setDoc(docRef, newEntry);
       }
-    } catch (error) {
-      console.error('Error in ensureEntry:', error);
+    } catch (error: any) {
+      if (error?.code !== 'permission-denied') {
+        console.warn('Notice in ensureEntry Firestore sync:', error);
+      }
     }
   };
 

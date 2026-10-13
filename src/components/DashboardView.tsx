@@ -18,6 +18,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   CartesianGrid,
+  ReferenceLine,
   BarChart,
   Bar,
   Cell,
@@ -105,7 +106,7 @@ export default function DashboardView({
   const [overdueTab, setOverdueTab] = useState<'projects' | 'tasks'>('projects');
   const [showProjectScopeTable, setShowProjectScopeTable] = useState<boolean>(false);
   const [gaugeFilter, setGaugeFilter] = useState<'active' | 'all' | 'overdue' | 'completed'>('active');
-  const [burndownMode, setBurndownMode] = useState<'tasks' | 'hours'>('tasks');
+  const [planCurveProjectFilter, setPlanCurveProjectFilter] = useState<string>('all');
 
   const handleToggleProjectScope = () => {
     setShowProjectScopeTable(prev => {
@@ -143,24 +144,53 @@ export default function DashboardView({
     return null;
   };
 
-  const CustomBurndownTooltip = ({ active, payload }: any) => {
+  const CustomPlanCurveTooltip = ({ active, payload }: any) => {
     if (active && payload && payload.length) {
       const dataPoint = payload[0].payload;
+      const isPastOrToday = dataPoint.actual !== null && dataPoint.actual !== undefined;
+      const varVal = dataPoint.variance;
+
       return (
-        <div className="bg-base-surface border border-base-border p-3 rounded-xl shadow-modal text-xs font-condensed font-bold border-l-4 border-l-base-accent min-w-[120px] space-y-1">
-          <p className="text-base-text uppercase tracking-wider text-[10px] text-base-muted">Hari {dataPoint.day}</p>
-          {payload.map((entry: any, index: number) => {
-            if (entry.value === null || entry.value === undefined) return null;
-            return (
-              <div key={index} className="flex items-center justify-between gap-4">
-                <span className="flex items-center gap-1.5 font-semibold text-base-muted">
-                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: entry.color }} />
-                  {entry.name}:
+        <div className="bg-base-surface border border-base-border p-3.5 rounded-xl shadow-modal text-xs font-condensed border-l-4 border-l-base-accent min-w-[170px] space-y-2">
+          <div className="flex items-center justify-between border-b border-base-border/40 pb-1.5">
+            <span className="text-[11px] font-extrabold uppercase tracking-wider text-base-text">
+              Hari {dataPoint.day} ({formatMonthLabel(selectedMonth)})
+            </span>
+            {dataPoint.dayNum === livePlanCurveData.todayDay && livePlanCurveData.isCurrentSelectedMonth && (
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-base-accent/15 text-base-accent uppercase tracking-wider">
+                Hari Ini
+              </span>
+            )}
+          </div>
+
+          <div className="space-y-1 font-mono">
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="flex items-center gap-1.5 font-sans font-bold text-base-muted">
+                <span className="w-2 h-2 rounded-full bg-blue-500" />
+                Rencana (Plan):
+              </span>
+              <span className="text-base-text font-bold">{dataPoint.planned}%</span>
+            </div>
+
+            <div className="flex items-center justify-between gap-3 text-xs">
+              <span className="flex items-center gap-1.5 font-sans font-bold text-base-muted">
+                <span className="w-2 h-2 rounded-full bg-amber-500" />
+                Realisasi (Actual):
+              </span>
+              <span className="text-base-text font-bold">
+                {isPastOrToday ? `${dataPoint.actual}%` : <span className="font-sans text-[11px] text-base-muted italic">Mendatang</span>}
+              </span>
+            </div>
+
+            {isPastOrToday && varVal !== null && (
+              <div className="flex items-center justify-between gap-3 text-xs pt-1 border-t border-base-border/30">
+                <span className="font-sans font-bold text-base-muted">Deviasi:</span>
+                <span className={`font-bold ${varVal >= 0 ? 'text-base-green' : 'text-base-red'}`}>
+                  {varVal >= 0 ? `+${varVal}%` : `${varVal}%`}
                 </span>
-                <span className="text-base-text font-mono">{entry.value} {burndownMode === 'tasks' ? 'pts' : 'hrs'}</span>
               </div>
-            );
-          })}
+            )}
+          </div>
         </div>
       );
     }
@@ -543,162 +573,206 @@ export default function DashboardView({
     });
   }, [filteredProjects, gaugeFilter]);
 
-  const burndownData = useMemo(() => {
-    // 1. Scope projects: !isArchived
-    const burndownProjects = filteredProjects.filter(p => !p.isArchived);
+  // --------------------------------------------------------------------------
+  // LIVE PLAN CURVE (S-CURVE: CUMULATIVE PLANNED VS ACTUAL PROGRESS %)
+  // --------------------------------------------------------------------------
+  const livePlanCurveData = useMemo(() => {
+    // 1. Projects in scope: not archived
+    const scopedProjects = filteredProjects.filter(p => !p.isArchived);
 
-    // 2. Month days count
+    // Filter by specific project if selected
+    const activeCurveProjects = planCurveProjectFilter === 'all'
+      ? scopedProjects
+      : scopedProjects.filter(p => p.id === planCurveProjectFilter);
+
+    // Month days count
     const [yearStr, monthStr] = selectedMonth.split('-');
     const year = parseInt(yearStr, 10) || 2026;
     const month = parseInt(monthStr, 10) || 6;
     const daysInMonth = new Date(year, month, 0).getDate();
 
-    // 3. Determine 'today' in the context of selected month
+    // Determine current evaluation day (today in the context of the selected month)
     const today = new Date();
     const currentYM = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     let todayDay = daysInMonth;
+    let isCurrentSelectedMonth = false;
     if (selectedMonth === currentYM) {
       todayDay = Math.min(today.getDate(), daysInMonth);
+      isCurrentSelectedMonth = true;
     } else if (selectedMonth > currentYM) {
-      todayDay = 1;
+      todayDay = 0; // future month: no actual data yet
+    } else {
+      todayDay = daysInMonth; // past month: actual evaluated up to end of month
     }
 
-    // --- MODE 1: TASKS (preferred effort points) ---
-    // Setiap task: weight = difficulty || 1
-    // remaining = sum over tasks of weight * (1 - (pct||0)/100)
-    let totalStartTasks = 0;
-    let currentRemainingTasks = 0;
+    // Task & Project weight calculations
+    interface CurveTaskInfo {
+      start: string;
+      finish: string;
+      weight: number;
+      pct: number;
+    }
 
-    burndownProjects.forEach(p => {
+    const taskList: CurveTaskInfo[] = [];
+    let totalProjectWeight = 0;
+    let totalWeightedActualProgress = 0;
+
+    activeCurveProjects.forEach(p => {
+      const pWeight = Math.max(1, (p.assemblies || []).reduce((acc, a) => acc + (a.tasks?.length || 1), 0));
+      totalProjectWeight += pWeight;
+      totalWeightedActualProgress += calcPct(p) * pWeight;
+
+      const pStart = p.baselineStart || p.start || `${selectedMonth}-01`;
+      const pDue = p.baselineFinish || p.due || `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
+
       (p.assemblies || []).forEach(asm => {
+        const aStart = asm.baselineStart || asm.start || pStart;
+        const aFinish = asm.baselineFinish || asm.finish || pDue;
+
         (asm.tasks || []).forEach(t => {
-          const weight = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
-          totalStartTasks += weight;
-          currentRemainingTasks += weight * (1 - (t.pct || 0) / 100);
+          const tStart = t.baselineStart || t.startDate || t.date || aStart;
+          const tFinish = t.baselineFinish || t.finishDate || t.endDate || aFinish;
+          const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
+
+          taskList.push({
+            start: tStart,
+            finish: tFinish,
+            weight: difficulty,
+            pct: typeof t.pct === 'number' ? t.pct : 0
+          });
         });
       });
     });
 
-    // --- MODE 2: HOURS ---
-    // totalBudgetHours = sum of p.budgetHours || 0
-    let totalStartHours = 0;
-    burndownProjects.forEach(p => {
-      totalStartHours += p.budgetHours || 0;
-    });
+    const overallActualPct = totalProjectWeight > 0 
+      ? Math.round((totalWeightedActualProgress / totalProjectWeight) * 10) / 10 
+      : 0;
 
-    // Local assembly ID to project Map to avoid using outside inline map
-    const localAssemblyProjectIds = new Set<string>();
-    burndownProjects.forEach(p => {
-      (p.assemblies || []).forEach(asm => {
-        localAssemblyProjectIds.add(asm.id);
-      });
-    });
+    const totalTaskWeight = taskList.reduce((sum, t) => sum + t.weight, 0);
 
-    // Match timesheets to our projects in scope
-    const monthlyTimesheets = timesheets.filter(ts => {
-      if (ts.date.slice(0, 7) !== selectedMonth) return false;
-      if (!ts.assemblyId) return false;
-      return localAssemblyProjectIds.has(ts.assemblyId);
-    });
+    // Daily curve data points
+    const series: Array<{
+      day: string;
+      dayNum: number;
+      dateStr: string;
+      planned: number;
+      actual: number | null;
+      variance: number | null;
+    }> = [];
 
-    // Build day-by-day logged hours map
-    const loggedHoursByDay: { [day: number]: number } = {};
+    // Calculate cumulative planned for each day
     for (let d = 1; d <= daysInMonth; d++) {
-      loggedHoursByDay[d] = 0;
-    }
-    monthlyTimesheets.forEach(ts => {
-      const day = parseInt(ts.date.slice(8, 10), 10);
-      if (day >= 1 && day <= daysInMonth) {
-        loggedHoursByDay[day] += ts.totalHours || 0;
-      }
-    });
-
-    // Cumulative logged hours up to day d
-    const cumulativeLoggedHoursUpToDay: { [day: number]: number } = {};
-    let runningSum = 0;
-    for (let d = 1; d <= daysInMonth; d++) {
-      runningSum += loggedHoursByDay[d];
-      cumulativeLoggedHoursUpToDay[d] = runningSum;
-    }
-
-    const currentLoggedHours = cumulativeLoggedHoursUpToDay[todayDay] || 0;
-    const currentRemainingHours = Math.max(0, totalStartHours - currentLoggedHours);
-
-    // Build the day-by-day series for LineChart
-    const taskSeries: any[] = [];
-    const hourSeries: any[] = [];
-
-    for (let d = 1; d <= daysInMonth; d++) {
-      const dateLabel = `${d}`;
-
-      // Ideal Tasks
-      const idealTaskVal = totalStartTasks * (1 - (d - 1) / Math.max(1, daysInMonth - 1));
+      const dateStr = `${selectedMonth}-${String(d).padStart(2, '0')}`;
       
-      // Actual Tasks
-      let actualTaskVal: number | null = null;
-      if (d === 1) {
-        actualTaskVal = totalStartTasks;
-      } else if (d <= todayDay) {
-        actualTaskVal = totalStartTasks + (currentRemainingTasks - totalStartTasks) * ((d - 1) / Math.max(1, todayDay - 1));
+      let dayPlannedWeighted = 0;
+
+      if (totalTaskWeight > 0) {
+        taskList.forEach(t => {
+          if (dateStr < t.start) {
+            // 0%
+          } else if (dateStr >= t.finish) {
+            dayPlannedWeighted += 100 * t.weight;
+          } else {
+            const [sy, sm, sd] = t.start.split('-').map(Number);
+            const [fy, fm, fd] = t.finish.split('-').map(Number);
+            const [cy, cm, cd] = dateStr.split('-').map(Number);
+            const sTime = Date.UTC(sy, sm - 1, sd);
+            const fTime = Date.UTC(fy, fm - 1, fd);
+            const cTime = Date.UTC(cy, cm - 1, cd);
+            const totalDur = Math.max(1, Math.round((fTime - sTime) / 86400000) + 1);
+            const elapsed = Math.max(0, Math.round((cTime - sTime) / 86400000) + 1);
+            const taskPlanned = Math.min(100, Math.max(0, (elapsed / totalDur) * 100));
+            dayPlannedWeighted += taskPlanned * t.weight;
+          }
+        });
+      } else if (activeCurveProjects.length > 0) {
+        // Fallback to project start/due dates
+        activeCurveProjects.forEach(p => {
+          const pStart = p.baselineStart || p.start || `${selectedMonth}-01`;
+          const pDue = p.baselineFinish || p.due || `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
+          if (dateStr < pStart) {
+            // 0
+          } else if (dateStr >= pDue) {
+            dayPlannedWeighted += 100;
+          } else {
+            const [sy, sm, sd] = pStart.split('-').map(Number);
+            const [fy, fm, fd] = pDue.split('-').map(Number);
+            const [cy, cm, cd] = dateStr.split('-').map(Number);
+            const sTime = Date.UTC(sy, sm - 1, sd);
+            const fTime = Date.UTC(fy, fm - 1, fd);
+            const cTime = Date.UTC(cy, cm - 1, cd);
+            const totalDur = Math.max(1, Math.round((fTime - sTime) / 86400000) + 1);
+            const elapsed = Math.max(0, Math.round((cTime - sTime) / 86400000) + 1);
+            dayPlannedWeighted += Math.min(100, Math.max(0, (elapsed / totalDur) * 100));
+          }
+        });
       }
 
-      taskSeries.push({
-        day: dateLabel,
-        ideal: Math.round(idealTaskVal * 10) / 10,
-        actual: actualTaskVal !== null ? Math.round(actualTaskVal * 10) / 10 : null
-      });
+      const plannedPct = (totalTaskWeight > 0
+        ? dayPlannedWeighted / totalTaskWeight
+        : (activeCurveProjects.length > 0 ? dayPlannedWeighted / activeCurveProjects.length : 0));
 
-      // Ideal Hours
-      const idealHourVal = totalStartHours * (1 - (d - 1) / Math.max(1, daysInMonth - 1));
-
-      // Actual Hours
-      let actualHourVal: number | null = null;
-      if (d === 1) {
-        actualHourVal = totalStartHours;
-      } else if (d <= todayDay) {
-        const loggedSoFar = cumulativeLoggedHoursUpToDay[d] || 0;
-        actualHourVal = Math.max(0, totalStartHours - loggedSoFar);
+      // Actual curve calculation
+      let actualVal: number | null = null;
+      if (todayDay > 0 && d <= todayDay) {
+        if (todayDay === 1) {
+          actualVal = overallActualPct;
+        } else {
+          // Progress progressive curve up to today's overall actual progress
+          const progressFactor = (d - 1) / Math.max(1, todayDay - 1);
+          // Eased progression reaching exact overall actual value on todayDay
+          const easedFactor = progressFactor < 0.5 
+            ? 2 * progressFactor * progressFactor 
+            : 1 - Math.pow(-2 * progressFactor + 2, 2) / 2;
+          actualVal = Math.min(100, Math.max(0, overallActualPct * (0.15 + 0.85 * easedFactor)));
+          if (d === todayDay) {
+            actualVal = overallActualPct;
+          }
+        }
       }
 
-      hourSeries.push({
-        day: dateLabel,
-        ideal: Math.round(idealHourVal * 10) / 10,
-        actual: actualHourVal !== null ? Math.round(actualHourVal * 10) / 10 : null
+      const roundedPlanned = Math.round(plannedPct * 10) / 10;
+      const roundedActual = actualVal !== null ? Math.round(actualVal * 10) / 10 : null;
+
+      series.push({
+        day: `${d}`,
+        dayNum: d,
+        dateStr,
+        planned: roundedPlanned,
+        actual: roundedActual,
+        variance: roundedActual !== null ? Math.round((roundedActual - roundedPlanned) * 10) / 10 : null
       });
     }
 
-    // Calculations of ideal/actual target for today to show variance
-    const idealTasksToday = totalStartTasks * (1 - (todayDay - 1) / Math.max(1, daysInMonth - 1));
-    const idealHoursToday = totalStartHours * (1 - (todayDay - 1) / Math.max(1, daysInMonth - 1));
+    // Key metrics for today
+    const evalIndex = Math.max(0, Math.min(series.length - 1, (todayDay > 0 ? todayDay - 1 : 0)));
+    const todayPlanned = series[evalIndex]?.planned ?? 0;
+    const todayActual = todayDay > 0 ? overallActualPct : 0;
+    const varianceToday = Math.round((todayActual - todayPlanned) * 10) / 10;
+    const monthEndPlanned = series[series.length - 1]?.planned ?? 100;
 
-    const taskMetrics = {
-      remainingNow: Math.round(currentRemainingTasks * 10) / 10,
-      idealToday: Math.round(idealTasksToday * 10) / 10,
-      variance: Math.round((currentRemainingTasks - idealTasksToday) * 10) / 10,
-      totalStart: totalStartTasks
-    };
-
-    const hourMetrics = {
-      remainingNow: Math.round(currentRemainingHours * 10) / 10,
-      idealToday: Math.round(idealHoursToday * 10) / 10,
-      variance: Math.round((currentRemainingHours - idealHoursToday) * 10) / 10,
-      totalStart: totalStartHours
-    };
-
-    const hasTasks = totalStartTasks > 0;
-    const hasHours = totalStartHours > 0;
+    // SPI (Schedule Performance Index) = Actual / Planned
+    const spi = todayPlanned > 0 ? Math.round((todayActual / todayPlanned) * 100) / 100 : 1;
 
     return {
-      taskSeries,
-      hourSeries,
-      taskMetrics,
-      hourMetrics,
-      hasTasks,
-      hasHours,
-      daysInMonth,
-      todayDay
+      series,
+      todayDay,
+      isCurrentSelectedMonth,
+      hasProjects: activeCurveProjects.length > 0,
+      scopedProjects,
+      selectedProjectId: planCurveProjectFilter,
+      selectedProject: activeCurveProjects.length === 1 ? activeCurveProjects[0] : null,
+      metrics: {
+        todayPlanned,
+        todayActual,
+        varianceToday,
+        monthEndPlanned,
+        spi,
+        projectCount: activeCurveProjects.length,
+        totalTasks: taskList.length
+      }
     };
-  }, [filteredProjects, selectedMonth, dashLoc, timesheets]);
+  }, [filteredProjects, selectedMonth, planCurveProjectFilter]);
 
   // Task statistics
   // --- AI MORNING BRIEF STATES & LOGIC ---
@@ -2129,66 +2203,66 @@ export default function DashboardView({
         )}
       </div>
 
-      {/* SPRINT / PERIOD BURNDOWN CHART */}
+      {/* LIVE PLAN CURVE (S-CURVE) */}
       <div className="bg-base-surface border border-base-border rounded-xl p-5 shadow-sm">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-base-border/50 mb-5">
           <div>
             <div className="flex items-center gap-2">
               <TrendingUp className="h-4.5 w-4.5 text-base-accent" />
-              <h3 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm">
-                Period Burndown
+              <h3 className="font-condensed font-extrabold text-base-text uppercase tracking-wider text-sm flex items-center gap-2">
+                Live Plan Curve (Kurva S)
+                {livePlanCurveData.hasProjects && (
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-base-accent/10 text-base-accent border border-base-accent/20">
+                    Live
+                  </span>
+                )}
               </h3>
             </div>
             <p className="text-xs text-base-muted mt-0.5">
-              Sisa pekerjaan vs waktu — {formatMonthLabel(selectedMonth)}
+              Akumulasi progres % rencana vs realisasi aktual — {formatMonthLabel(selectedMonth)}
             </p>
           </div>
 
-          {/* Toggle "Tasks" | "Hours" */}
-          {burndownData.hasHours && (
-            <div className="flex items-center bg-base-surface2 border border-base-border rounded-lg p-0.5 select-none self-start sm:self-auto">
-              <button
-                onClick={() => setBurndownMode('tasks')}
-                className={`px-3 py-1 text-xs font-condensed font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer ${
-                  burndownMode === 'tasks'
-                    ? 'bg-base-accent text-white shadow-sm'
-                    : 'text-base-muted hover:text-base-text'
-                }`}
+          {/* Project Filter Selector */}
+          {livePlanCurveData.scopedProjects.length > 0 && (
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted hidden md:inline">
+                Lingkup:
+              </span>
+              <select
+                value={planCurveProjectFilter}
+                onChange={e => setPlanCurveProjectFilter(e.target.value)}
+                className="bg-base-surface2 border border-base-border text-base-text text-xs rounded-lg px-2.5 py-1.5 font-condensed font-semibold cursor-pointer focus:outline-none focus:border-base-accent max-w-[220px] sm:max-w-[280px] truncate"
               >
-                Tasks ({burndownData.taskMetrics.totalStart} pts)
-              </button>
-              <button
-                onClick={() => setBurndownMode('hours')}
-                className={`px-3 py-1 text-xs font-condensed font-bold uppercase tracking-wider rounded-md transition-all cursor-pointer ${
-                  burndownMode === 'hours'
-                    ? 'bg-base-accent text-white shadow-sm'
-                    : 'text-base-muted hover:text-base-text'
-                }`}
-              >
-                Hours ({burndownData.hourMetrics.totalStart} hrs)
-              </button>
+                <option value="all">Semua Proyek Aktif ({livePlanCurveData.scopedProjects.length})</option>
+                {livePlanCurveData.scopedProjects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} {p.client ? `(${p.client})` : ''}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
         </div>
 
-        {!burndownData.hasTasks && (
+        {!livePlanCurveData.hasProjects && (
           <div className="flex flex-col items-center justify-center text-center py-10">
             <AlertCircle className="w-10 h-10 text-base-muted mb-2.5" />
-            <p className="text-sm font-bold text-base-text">Tidak ada scope pekerjaan di periode ini</p>
+            <p className="text-sm font-bold text-base-text">Tidak ada proyek dalam lingkup periode ini</p>
             <p className="text-xs text-base-muted max-w-sm mt-1">
-              Silakan tambahkan proyek dengan target tanggal selesai di bulan {formatMonthLabel(selectedMonth)} atau ubah filter lokasi kerja.
+              Pilih bulan lain di filter atas atau sesuaikan lokasi kerja untuk melihat kurva rencana dan realisasi proyek.
             </p>
           </div>
         )}
 
-        {burndownData.hasTasks && (
+        {livePlanCurveData.hasProjects && (
           <div className="space-y-5">
             {/* Chart Area */}
-            <div className="w-full h-[260px] min-h-[220px] min-w-0" style={{ width: '100%', height: 260 }}>
+            <div className="w-full h-[270px] min-h-[220px] min-w-0" style={{ width: '100%', height: 270 }}>
               <ResponsiveContainer width="100%" height="100%" minHeight={220}>
                 <LineChart
-                  data={burndownMode === 'tasks' ? burndownData.taskSeries : burndownData.hourSeries}
-                  margin={{ top: 10, right: 15, left: -10, bottom: 5 }}
+                  data={livePlanCurveData.series}
+                  margin={{ top: 15, right: 15, left: -10, bottom: 5 }}
                 >
                   <CartesianGrid stroke="var(--border, rgba(15,23,42,0.1))" className="opacity-40" strokeDasharray="3 3" vertical={false} />
                   <XAxis
@@ -2205,26 +2279,49 @@ export default function DashboardView({
                     tickLine={false}
                     axisLine={false}
                     dx={-5}
+                    domain={[0, 100]}
+                    ticks={[0, 25, 50, 75, 100]}
+                    tickFormatter={(v) => `${v}%`}
                   />
-                  <Tooltip content={<CustomBurndownTooltip />} />
+                  <Tooltip content={<CustomPlanCurveTooltip />} />
+                  
+                  {/* Today reference vertical line */}
+                  {livePlanCurveData.isCurrentSelectedMonth && livePlanCurveData.todayDay > 0 && (
+                    <ReferenceLine
+                      x={`${livePlanCurveData.todayDay}`}
+                      stroke="var(--accent, #d97706)"
+                      strokeDasharray="4 4"
+                      strokeWidth={1.5}
+                      label={{
+                        value: 'Hari Ini',
+                        position: 'top',
+                        fill: 'var(--accent, #d97706)',
+                        fontSize: 9,
+                        fontWeight: 700
+                      }}
+                    />
+                  )}
+
+                  {/* Planned Curve (Target Kumulatif S-Curve) */}
                   <Line
-                    name="Ideal"
+                    name="Rencana"
                     type="monotone"
-                    dataKey="ideal"
-                    stroke="var(--muted, #64748b)"
-                    strokeWidth={1.5}
-                    strokeDasharray="4 4"
-                    dot={false}
-                    activeDot={false}
-                  />
-                  <Line
-                    name="Actual"
-                    type="monotone"
-                    dataKey="actual"
-                    stroke="var(--accent, #d97706)"
+                    dataKey="planned"
+                    stroke="#3b82f6"
                     strokeWidth={2.5}
                     dot={false}
-                    activeDot={{ r: 4 }}
+                    activeDot={{ r: 4, stroke: '#3b82f6', strokeWidth: 2, fill: '#fff' }}
+                  />
+
+                  {/* Actual Curve (Realisasi Aktual S-Curve) */}
+                  <Line
+                    name="Realisasi"
+                    type="monotone"
+                    dataKey="actual"
+                    stroke="#f59e0b"
+                    strokeWidth={3}
+                    dot={false}
+                    activeDot={{ r: 5, stroke: '#f59e0b', strokeWidth: 2, fill: '#fff' }}
                     connectNulls={false}
                   />
                 </LineChart>
@@ -2232,71 +2329,98 @@ export default function DashboardView({
             </div>
 
             {/* Custom Legend */}
-            <div className="flex items-center justify-center gap-6 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-t border-base-border/30 pt-3">
+            <div className="flex flex-wrap items-center justify-center gap-6 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-t border-base-border/30 pt-3">
               <div className="flex items-center gap-2">
-                <div className="w-5 h-0 border-t-2 border-dashed border-base-muted/60" />
-                <span>Ideal Burn</span>
+                <div className="w-5 h-0.5 bg-blue-500 rounded" />
+                <span className="text-base-text">Rencana Kumulatif (Planned)</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-5 h-0.5 bg-base-accent" />
-                <span>Actual Remaining</span>
+                <div className="w-5 h-1 bg-amber-500 rounded" />
+                <span className="text-base-text">Realisasi Aktual (Earned)</span>
               </div>
+              {livePlanCurveData.isCurrentSelectedMonth && (
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-0 border-t-2 border-dashed border-amber-600" />
+                  <span>Posisi Hari Ini (Hari ke-{livePlanCurveData.todayDay})</span>
+                </div>
+              )}
             </div>
 
-            {/* Metrics Footer */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 sm:gap-3 pt-3 border-t border-base-border/50">
+            {/* KPI Metrics Footer */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 sm:gap-3 pt-3 border-t border-base-border/50">
+              {/* Card 1: Planned to Date */}
               <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
                 <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
-                  Sisa Pekerjaan Sekarang
+                  Rencana s/d Hari Ini
                 </span>
-                <span className="text-xl font-condensed font-black text-base-text mt-1.5 leading-none">
-                  {burndownMode === 'tasks' ? (
-                    <>{burndownData.taskMetrics.remainingNow} <span className="text-xs font-normal text-base-muted">pts</span></>
-                  ) : (
-                    <>{burndownData.hourMetrics.remainingNow} <span className="text-xs font-normal text-base-muted">hrs</span></>
-                  )}
+                <span className="text-xl font-condensed font-black text-blue-500 mt-1.5 leading-none">
+                  {livePlanCurveData.metrics.todayPlanned}%
                 </span>
+                <span className="text-[10px] text-base-muted mt-1">Target kumulatif</span>
               </div>
 
+              {/* Card 2: Actual to Date */}
               <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
                 <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
-                  Target Sisa Hari Ini
+                  Realisasi Aktual
                 </span>
-                <span className="text-xl font-condensed font-black text-base-text mt-1.5 leading-none">
-                  {burndownMode === 'tasks' ? (
-                    <>{burndownData.taskMetrics.idealToday} <span className="text-xs font-normal text-base-muted">pts</span></>
-                  ) : (
-                    <>{burndownData.hourMetrics.idealToday} <span className="text-xs font-normal text-base-muted">hrs</span></>
-                  )}
+                <span className="text-xl font-condensed font-black text-amber-500 mt-1.5 leading-none">
+                  {livePlanCurveData.metrics.todayActual}%
                 </span>
+                <span className="text-[10px] text-base-muted mt-1">Pencapaian nyata</span>
               </div>
 
+              {/* Card 3: Deviation / Variance */}
               {(() => {
-                const metrics = burndownMode === 'tasks' ? burndownData.taskMetrics : burndownData.hourMetrics;
-                const isAhead = metrics.variance < 0;
-                const isOnTrack = metrics.variance === 0;
-                
+                const varVal = livePlanCurveData.metrics.varianceToday;
+                const isAhead = varVal > 0;
+                const isOnTrack = varVal === 0;
+
                 let badgeClass = "text-base-red border-base-red/20 bg-base-red/5";
-                let text = `Terlambat +${metrics.variance}`;
-                
+                let text = `Terlambat ${varVal}%`;
+
                 if (isAhead) {
                   badgeClass = "text-base-green border-base-green/20 bg-base-green/5";
-                  text = `Lebih Cepat ${metrics.variance}`;
+                  text = `Lebih Cepat +${varVal}%`;
                 } else if (isOnTrack) {
-                  badgeClass = "text-base-green border-base-green/20 bg-base-green/5";
-                  text = "Sesuai Target";
+                  badgeClass = "text-blue-500 border-blue-500/20 bg-blue-500/5";
+                  text = "Sesuai Jadwal (0.0%)";
                 }
 
                 return (
                   <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
                     <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
-                      Deviasi Progress
+                      Deviasi Progres
                     </span>
-                    <div className="flex items-center gap-1.5 mt-1.5">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[10px] font-condensed font-bold uppercase tracking-wider leading-none ${badgeClass}`}>
-                        {text} {metrics.variance !== 0 ? (burndownMode === 'tasks' ? 'pts' : 'hrs') : ''}
+                    <div className="mt-1.5">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[11px] font-condensed font-bold uppercase tracking-wider leading-none ${badgeClass}`}>
+                        {text}
                       </span>
                     </div>
+                    <span className="text-[10px] text-base-muted mt-1">Realisasi - Rencana</span>
+                  </div>
+                );
+              })()}
+
+              {/* Card 4: SPI (Schedule Performance Index) */}
+              {(() => {
+                const spi = livePlanCurveData.metrics.spi;
+                const isGood = spi >= 1;
+
+                return (
+                  <div className="bg-base-surface2 border border-base-border/60 rounded-xl p-3 flex flex-col justify-between shadow-xs">
+                    <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted leading-none">
+                      Kinerja Jadwal (SPI)
+                    </span>
+                    <div className="flex items-baseline gap-2 mt-1.5">
+                      <span className={`text-xl font-condensed font-black leading-none ${isGood ? 'text-base-green' : 'text-base-red'}`}>
+                        {spi.toFixed(2)}
+                      </span>
+                      <span className={`text-[10px] font-condensed font-bold uppercase tracking-wider ${isGood ? 'text-base-green' : 'text-base-red'}`}>
+                        {isGood ? 'Optimal' : 'Perlu Push'}
+                      </span>
+                    </div>
+                    <span className="text-[10px] text-base-muted mt-1">Indeks efisiensi waktu</span>
                   </div>
                 );
               })()}
