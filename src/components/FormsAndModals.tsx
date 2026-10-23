@@ -9,6 +9,7 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { Project, MaterialConsumptionLog, MaterialProcessing, ProcessingStageKey, ProcessingStage, MasterDataEntry, OrgSettings, BomTemplate } from '../types';
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import SpotlightModal from './SpotlightModal';
+import DatePicker from './common/DatePicker';
 
 interface FormsAndModalsProps {
   projects?: Project[];
@@ -94,6 +95,14 @@ export function FormsAndModals({
     ];
   }, [orgSettings]);
 
+  React.useEffect(() => {
+    if (projectsHook.projectFormOpen && !projectsHook.editingProjectId) {
+      if (!categoryOptions.find(o => o.key === projectsHook.pCat)) {
+        projectsHook.setPCat(categoryOptions[0]?.key || 'tray');
+      }
+    }
+  }, [projectsHook.projectFormOpen, projectsHook.editingProjectId, categoryOptions, projectsHook.pCat]);
+
   const locationOptions = React.useMemo(() => {
     if (orgSettings?.projectLocations && orgSettings.projectLocations.length > 0) {
       return orgSettings.projectLocations.map((item: any) => {
@@ -113,15 +122,12 @@ export function FormsAndModals({
   }, [orgSettings]);
 
   React.useEffect(() => {
-    if (projectsHook.projectFormOpen) {
-      if (categoryOptions.length > 0 && !categoryOptions.find(o => o.key === projectsHook.pCat)) {
-        projectsHook.setPCat(categoryOptions[0].key);
-      }
+    if (projectsHook.projectFormOpen && !projectsHook.editingProjectId) {
       if (locationOptions.length > 0 && !locationOptions.find(o => o.key === projectsHook.pLoc)) {
-        projectsHook.setPLoc(locationOptions[0].key);
+        projectsHook.setPLoc(locationOptions[0]?.key || 'workshop1');
       }
     }
-  }, [projectsHook.projectFormOpen, categoryOptions, locationOptions, projectsHook.pCat, projectsHook.pLoc]);
+  }, [projectsHook.projectFormOpen, projectsHook.editingProjectId, locationOptions, projectsHook.pLoc]);
 
   return (
     <>
@@ -268,24 +274,20 @@ export function FormsAndModals({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <DatePicker
+                  label="Start Date"
+                  value={projectsHook.pStart}
+                  onChange={(dateStr) => projectsHook.setPStart(dateStr)}
+                  placeholder="Pilih Tanggal Mulai..."
+                />
                 <div className="space-y-1">
-                  <label className="field-label">Start Date</label>
-                  <input
-                    type="date"
-                    value={projectsHook.pStart}
-                    onChange={(e) => projectsHook.setPStart(e.target.value)}
-                    className="input-field min-h-[44px]"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="field-label">Due Date</label>
-                  <input
-                    type="date"
+                  <DatePicker
+                    label="Due Date"
                     value={projectsHook.pDue}
-                    onChange={(e) => projectsHook.setPDue(e.target.value)}
-                    className="input-field min-h-[44px]"
+                    onChange={(dateStr) => projectsHook.setPDue(dateStr)}
+                    placeholder="Pilih Target Selesai..."
                   />
-                  <p className="text-[10px] text-base-muted italic">
+                  <p className="text-[10px] text-base-muted italic mt-1">
                     Jika GA Number ditemukan sama dengan project lain, tanggal ini akan otomatis dihitung ulang berdasarkan durasi struktur yang disalin.
                   </p>
                 </div>
@@ -417,24 +419,18 @@ export function FormsAndModals({
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Start Date</label>
-                  <input
-                    type="date"
-                    value={projectsHook.aStart}
-                    onChange={(e) => projectsHook.setAStart(e.target.value)}
-                    className="w-full px-4 py-2 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-[11px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Finish Date</label>
-                  <input
-                    type="date"
-                    value={projectsHook.aFinish}
-                    onChange={(e) => projectsHook.setAFinish(e.target.value)}
-                    className="w-full px-4 py-2 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-sm font-semibold text-base-text transition-all"
-                  />
-                </div>
+                <DatePicker
+                  label="Start Date"
+                  value={projectsHook.aStart}
+                  onChange={(dateStr) => projectsHook.setAStart(dateStr)}
+                  placeholder="Pilih Tanggal Mulai Sub-Assy..."
+                />
+                <DatePicker
+                  label="Finish Date"
+                  value={projectsHook.aFinish}
+                  onChange={(dateStr) => projectsHook.setAFinish(dateStr)}
+                  placeholder="Pilih Tanggal Selesai Sub-Assy..."
+                />
               </div>
 
               <div className="space-y-1.5">
@@ -561,14 +557,18 @@ export function FormsAndModals({
                 <input type="text" inputMode="text" value={projectsHook.copyName} onChange={(e) => projectsHook.setCopyName(e.target.value)} className="input-field min-h-[44px]" />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="field-label">New Start</label>
-                  <input type="date" value={projectsHook.copyStart} onChange={(e) => projectsHook.setCopyStart(e.target.value)} className="input-field min-h-[44px]" />
-                </div>
-                <div className="space-y-1">
-                  <label className="field-label">New Due</label>
-                  <input type="date" value={projectsHook.copyDue} onChange={(e) => projectsHook.setCopyDue(e.target.value)} className="input-field min-h-[44px]" />
-                </div>
+                <DatePicker
+                  label="New Start"
+                  value={projectsHook.copyStart}
+                  onChange={(dateStr) => projectsHook.setCopyStart(dateStr)}
+                  placeholder="Tanggal Mulai Baru..."
+                />
+                <DatePicker
+                  label="New Due"
+                  value={projectsHook.copyDue}
+                  onChange={(dateStr) => projectsHook.setCopyDue(dateStr)}
+                  placeholder="Target Selesai Baru..."
+                />
               </div>
               <div className="bg-base-surface2 border border-base-border p-3.5 rounded-lg space-y-2">
                 <label className="flex items-center gap-2 min-h-[44px] cursor-pointer font-bold font-condensed uppercase text-xs tracking-wider text-base-muted2">
@@ -626,14 +626,18 @@ export function FormsAndModals({
                   <label className="field-label">Coordinator PPC</label>
                   <input type="text" inputMode="text" value={employeesHook.empCoordinator} onChange={(e) => employeesHook.setEmpCoordinator(e.target.value)} placeholder="e.g. Rizki PPC, Hasrad PPC" className="input-field min-h-[44px]" />
                 </div>
-                <div className="space-y-1">
-                  <label className="field-label">Join Date</label>
-                  <input type="date" value={employeesHook.joinDate} onChange={(e) => employeesHook.setJoinDate(e.target.value)} className="input-field min-h-[44px]" />
-                </div>
-                <div className="space-y-1">
-                  <label className="field-label">End of Contract (EOC)</label>
-                  <input type="date" value={employeesHook.eoc} onChange={(e) => employeesHook.setEoc(e.target.value)} className="input-field min-h-[44px]" />
-                </div>
+                <DatePicker
+                  label="Join Date"
+                  value={employeesHook.joinDate}
+                  onChange={(dateStr) => employeesHook.setJoinDate(dateStr)}
+                  placeholder="Pilih Tanggal Masuk..."
+                />
+                <DatePicker
+                  label="End of Contract (EOC)"
+                  value={employeesHook.eoc}
+                  onChange={(dateStr) => employeesHook.setEoc(dateStr)}
+                  placeholder="Pilih Tanggal Selesai Kontrak..."
+                />
                 <div className="space-y-1 col-span-2">
                   <label className="field-label">Employment Status</label>
                   <select value={employeesHook.employmentStatus} onChange={(e) => employeesHook.setEmploymentStatus(e.target.value)} className="select-field min-h-[44px]">

@@ -43,7 +43,32 @@ export default defineConfig(() => {
       alias: {
         '@': path.resolve(__dirname, './src'),
       },
-      dedupe: ['react', 'react-dom'],
+      dedupe: ['react', 'react-dom', 'react-dom/client'],
+    },
+    optimizeDeps: {
+      include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
+        'react/jsx-runtime',
+        'react/jsx-dev-runtime',
+        'lucide-react',
+        'recharts',
+        'zustand',
+        'firebase/app',
+        'firebase/auth',
+        'firebase/firestore',
+        'firebase/storage',
+        'jspdf',
+        'html2canvas',
+        'xlsx',
+        'qrcode',
+        'jsqr',
+        'js-sha256',
+        'motion/react',
+        'date-fns',
+        'date-fns/locale',
+      ],
     },
     build: {
       rollupOptions: {

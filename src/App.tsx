@@ -1783,6 +1783,14 @@ function AppContent() {
                   >
                     4. QC
                   </button>
+                  <button
+                    onClick={() => navigateTo('matprocessing')}
+                    className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
+                      activeTab === 'matprocessing' || activeTab === 'matkiosk' ? 'bg-red-600 text-white border-red-600 font-black' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                    }`}
+                  >
+                    5. Cutting & Kiosk
+                  </button>
                 </div>
               </div>
               <button
@@ -2008,12 +2016,13 @@ function AppContent() {
                 />
               )}
 
-              {activeTab === 'matprocessing' && (
+              {(activeTab === 'matprocessing' || activeTab === 'matkiosk' || activeTab === 'matvariance') && (
                 <MaterialProcessingView
                   orgSettings={orgSettings}
                   projects={projects}
                   currentUser={currentUser!}
                   prefs={prefs}
+                  initialSubTab={activeTab === 'matkiosk' ? 'kiosk' : activeTab === 'matvariance' ? 'variance' : 'stages'}
                   onSetPref={(key, val) => setPref(key as any, val)}
                   onAdd={handleAddMaterialProcessing}
                   onUpdateStage={handleUpdateProcessingStage}

@@ -821,3 +821,4 @@ export const INDUSTRY_TEMPLATES: Record<string, Omit<OrgSettings, 'id' | 'update
   },
 };
 
+export * from './materialProcessing';

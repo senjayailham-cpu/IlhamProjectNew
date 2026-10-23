@@ -537,10 +537,15 @@ export default function DashboardView({
     return selectedMonth === curYM;
   };
 
-  const formatMonthLabel = (ym: string) => {
-    const [y, m] = ym.split('-').map(Number);
+  const formatMonthLabel = (ym?: string | null) => {
+    if (!ym || typeof ym !== 'string') return '';
+    const cleanYM = ym.trim().slice(0, 7);
+    const parts = cleanYM.split('-');
+    if (parts.length < 2) return ym;
+    const [y, m] = parts.map(Number);
+    if (!y || !m || isNaN(y) || isNaN(m)) return ym;
     const date = new Date(y, m - 1, 1);
-    return date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
+    return isNaN(date.getTime()) ? ym : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
   };
 
   // Filter projects by month and workshop
@@ -586,7 +591,8 @@ export default function DashboardView({
       : scopedProjects.filter(p => p.id === planCurveProjectFilter);
 
     // Month days count
-    const [yearStr, monthStr] = selectedMonth.split('-');
+    const cleanYM = (selectedMonth || '').trim().slice(0, 7);
+    const [yearStr, monthStr] = cleanYM.split('-');
     const year = parseInt(yearStr, 10) || 2026;
     const month = parseInt(monthStr, 10) || 6;
     const daysInMonth = new Date(year, month, 0).getDate();
@@ -622,16 +628,22 @@ export default function DashboardView({
       totalProjectWeight += pWeight;
       totalWeightedActualProgress += calcPct(p) * pWeight;
 
-      const pStart = p.baselineStart || p.start || `${selectedMonth}-01`;
-      const pDue = p.baselineFinish || p.due || `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
+      const rawPStart = p.baselineStart || p.start || `${cleanYM}-01`;
+      const rawPDue = p.baselineFinish || p.due || `${cleanYM}-${String(daysInMonth).padStart(2, '0')}`;
+      const pStart = String(rawPStart || '').trim().slice(0, 10);
+      const pDue = String(rawPDue || '').trim().slice(0, 10);
 
       (p.assemblies || []).forEach(asm => {
-        const aStart = asm.baselineStart || asm.start || pStart;
-        const aFinish = asm.baselineFinish || asm.finish || pDue;
+        const rawAStart = asm.baselineStart || asm.start || pStart;
+        const rawAFinish = asm.baselineFinish || asm.finish || pDue;
+        const aStart = String(rawAStart || '').trim().slice(0, 10);
+        const aFinish = String(rawAFinish || '').trim().slice(0, 10);
 
         (asm.tasks || []).forEach(t => {
-          const tStart = t.baselineStart || t.startDate || t.date || aStart;
-          const tFinish = t.baselineFinish || t.finishDate || t.endDate || aFinish;
+          const rawTStart = t.baselineStart || t.startDate || t.date || aStart;
+          const rawTFinish = t.baselineFinish || t.finishDate || t.endDate || aFinish;
+          const tStart = String(rawTStart || '').trim().slice(0, 10);
+          const tFinish = String(rawTFinish || '').trim().slice(0, 10);
           const difficulty = typeof t.difficulty === 'number' && t.difficulty > 0 ? t.difficulty : 1;
 
           taskList.push({
@@ -662,48 +674,55 @@ export default function DashboardView({
 
     // Calculate cumulative planned for each day
     for (let d = 1; d <= daysInMonth; d++) {
-      const dateStr = `${selectedMonth}-${String(d).padStart(2, '0')}`;
+      const dateStr = `${cleanYM}-${String(d).padStart(2, '0')}`;
       
       let dayPlannedWeighted = 0;
 
       if (totalTaskWeight > 0) {
         taskList.forEach(t => {
-          if (dateStr < t.start) {
+          const cleanStart = String(t.start || '').trim().slice(0, 10);
+          const cleanFinish = String(t.finish || '').trim().slice(0, 10);
+
+          if (dateStr < cleanStart) {
             // 0%
-          } else if (dateStr >= t.finish) {
+          } else if (dateStr >= cleanFinish) {
             dayPlannedWeighted += 100 * t.weight;
           } else {
-            const [sy, sm, sd] = t.start.split('-').map(Number);
-            const [fy, fm, fd] = t.finish.split('-').map(Number);
+            const [sy, sm, sd] = cleanStart.split('-').map(Number);
+            const [fy, fm, fd] = cleanFinish.split('-').map(Number);
             const [cy, cm, cd] = dateStr.split('-').map(Number);
-            const sTime = Date.UTC(sy, sm - 1, sd);
-            const fTime = Date.UTC(fy, fm - 1, fd);
-            const cTime = Date.UTC(cy, cm - 1, cd);
+            const sTime = Date.UTC(sy, (sm || 1) - 1, sd || 1);
+            const fTime = Date.UTC(fy, (fm || 1) - 1, fd || 1);
+            const cTime = Date.UTC(cy, (cm || 1) - 1, cd || 1);
             const totalDur = Math.max(1, Math.round((fTime - sTime) / 86400000) + 1);
             const elapsed = Math.max(0, Math.round((cTime - sTime) / 86400000) + 1);
             const taskPlanned = Math.min(100, Math.max(0, (elapsed / totalDur) * 100));
-            dayPlannedWeighted += taskPlanned * t.weight;
+            dayPlannedWeighted += (isNaN(taskPlanned) ? 0 : taskPlanned) * t.weight;
           }
         });
       } else if (activeCurveProjects.length > 0) {
         // Fallback to project start/due dates
         activeCurveProjects.forEach(p => {
-          const pStart = p.baselineStart || p.start || `${selectedMonth}-01`;
-          const pDue = p.baselineFinish || p.due || `${selectedMonth}-${String(daysInMonth).padStart(2, '0')}`;
-          if (dateStr < pStart) {
+          const rawPStart = p.baselineStart || p.start || `${cleanYM}-01`;
+          const rawPDue = p.baselineFinish || p.due || `${cleanYM}-${String(daysInMonth).padStart(2, '0')}`;
+          const cleanStart = String(rawPStart || '').trim().slice(0, 10);
+          const cleanDue = String(rawPDue || '').trim().slice(0, 10);
+
+          if (dateStr < cleanStart) {
             // 0
-          } else if (dateStr >= pDue) {
+          } else if (dateStr >= cleanDue) {
             dayPlannedWeighted += 100;
           } else {
-            const [sy, sm, sd] = pStart.split('-').map(Number);
-            const [fy, fm, fd] = pDue.split('-').map(Number);
+            const [sy, sm, sd] = cleanStart.split('-').map(Number);
+            const [fy, fm, fd] = cleanDue.split('-').map(Number);
             const [cy, cm, cd] = dateStr.split('-').map(Number);
-            const sTime = Date.UTC(sy, sm - 1, sd);
-            const fTime = Date.UTC(fy, fm - 1, fd);
-            const cTime = Date.UTC(cy, cm - 1, cd);
+            const sTime = Date.UTC(sy, (sm || 1) - 1, sd || 1);
+            const fTime = Date.UTC(fy, (fm || 1) - 1, fd || 1);
+            const cTime = Date.UTC(cy, (cm || 1) - 1, cd || 1);
             const totalDur = Math.max(1, Math.round((fTime - sTime) / 86400000) + 1);
             const elapsed = Math.max(0, Math.round((cTime - sTime) / 86400000) + 1);
-            dayPlannedWeighted += Math.min(100, Math.max(0, (elapsed / totalDur) * 100));
+            const projPlanned = Math.min(100, Math.max(0, (elapsed / totalDur) * 100));
+            dayPlannedWeighted += isNaN(projPlanned) ? 0 : projPlanned;
           }
         });
       }

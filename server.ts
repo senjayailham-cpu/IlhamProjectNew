@@ -5,6 +5,7 @@ import { GoogleGenAI } from "@google/genai";
 import { initializeApp, getApps } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
 import rateLimit from "express-rate-limit";
+import { materialRouter } from "./src/server/materialRoutes";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -87,6 +88,9 @@ app.get("/api/health", (_req, res) => {
   });
 });
 
+// Endpoint: Shop-Floor Material Processing & Offcut Management
+app.use("/api/materials", materialRouter);
+
 // Endpoint: AI Center Chat Q&A
 app.post("/api/gemini/chat", geminiLimiter, requireAuth, async (req, res) => {
   try {
@@ -108,7 +112,7 @@ ${prompt}
 Instructions: Analyze the system context above and give a direct, highly accurate, site-operational answer addressing the user's question. Reference specific project names, client names, employee names, material stock numbers, or work orders where appropriate.`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: fullPrompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -153,7 +157,7 @@ Perform an AI Audit covering:
 4. 3 Actionable Recommendations for Site Managers`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,
@@ -189,7 +193,7 @@ Include:
 - Key Objectives for Next Shift`;
 
     const response = await ai.models.generateContent({
-      model: "gemini-3.6-flash",
+      model: "gemini-2.5-flash",
       contents: prompt,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION,

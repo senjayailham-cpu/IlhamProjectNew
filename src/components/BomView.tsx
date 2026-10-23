@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { BomTemplate, BomItem, MaterialItem, MaterialProcessing, DrawingRevision, Project, User } from '../types';
 import { can } from '../utils/permissions';
-import jsPDF from 'jspdf';
+import { jsPDF } from 'jspdf';
 import { 
   ListTree, Plus, Search, Filter, Layers, FileText, CheckCircle2, 
   AlertTriangle, AlertCircle, X, Copy, Edit3, Archive, Trash2, Download, 

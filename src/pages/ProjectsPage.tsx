@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import { Project, TimesheetEntry, WireLog, Assembly, Task, MaterialConsumptionLog, OrgSettings } from '../types';
 import { Search, Plus, Download, BookOpen, Edit, Clock, Flame, Archive, RotateCcw, Upload, Trash2, List, Calendar, Gauge, CheckCircle2, AlertTriangle, Layers, TrendingUp, QrCode, DollarSign, CheckSquare } from 'lucide-react';
 import { ResponsiveContainer, RadialBarChart, RadialBar, PolarAngleAxis } from 'recharts';

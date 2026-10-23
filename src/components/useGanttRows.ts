@@ -47,13 +47,19 @@ export interface GanttRow {
 }
 
 // Utility to parse ISO date strictly without timezone shifts
-export const parseLocalDate = (dateStr: string): Date => {
-  const parts = dateStr.split('-');
-  return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+// Utility to parse ISO date strictly without timezone shifts
+export const parseLocalDate = (dateStr?: string | null): Date => {
+  if (!dateStr || typeof dateStr !== 'string') return new Date();
+  const clean = dateStr.trim().slice(0, 10);
+  const parts = clean.split('-');
+  return new Date(parseInt(parts[0], 10) || 2026, (parseInt(parts[1], 10) || 1) - 1, parseInt(parts[2], 10) || 1);
 };
 
 // Calculate days between two pure local dates
-export const daysBetween = (d1: Date, d2: Date): number => {
+export const daysBetween = (d1?: Date | null, d2?: Date | null): number => {
+  if (!d1 || !d2 || !(d1 instanceof Date) || !(d2 instanceof Date) || isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    return 0;
+  }
   const ut1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
   const ut2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
   return Math.floor((ut2 - ut1) / (1000 * 60 * 60 * 24));
@@ -381,7 +387,7 @@ export function useGanttRows({
       const pCriticalCount = pCpm?.criticalCount || 0;
       const pFloatValues = pCpm ? Array.from(pCpm.floatMap.values()) : [];
       const pMinTF = pFloatValues.length > 0 ? Math.min(...pFloatValues) : 0;
-      const pVarianceDays = p.baselineFinish ? diffDays(parsePureDate(p.baselineFinish), parsePureDate(pDueStr)) : undefined;
+      const pVarianceDays = (p.baselineFinish && pDueStr) ? diffDays(parsePureDate(p.baselineFinish), parsePureDate(pDueStr)) : undefined;
 
       result.push({
         id: getUniqueRowId(p.id),
@@ -455,7 +461,7 @@ export function useGanttRows({
           const asmTasks = asm.tasks || [];
           const asmFloatValues = asmTasks.map(t => cpmData.floatMap.get(t.id) ?? 0);
           const asmMinTF = asmFloatValues.length > 0 ? Math.min(...asmFloatValues) : 0;
-          const aVarianceDays = asm.baselineFinish ? diffDays(parsePureDate(asm.baselineFinish), parsePureDate(aFinish)) : undefined;
+          const aVarianceDays = (asm.baselineFinish && aFinish) ? diffDays(parsePureDate(asm.baselineFinish), parsePureDate(aFinish)) : undefined;
 
           result.push({
             id: getUniqueRowId(asm.id),

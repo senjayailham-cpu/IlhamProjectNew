@@ -15,6 +15,8 @@ import {
 import { MasterDataAutocomplete } from './MasterDataAutocomplete';
 import { ProjectSearchSelector } from './ProjectSearchSelector';
 import { CopyBomModal } from './CopyBomModal';
+import { MaterialProcessingKiosk } from './MaterialProcessingKiosk';
+import { MaterialVarianceDashboard } from './MaterialVarianceDashboard';
 import { can } from '../utils/permissions';
 import {
   Plus,
@@ -35,7 +37,10 @@ import {
   Folder,
   FileText,
   Package,
-  Clipboard
+  Clipboard,
+  Scan,
+  BarChart3,
+  Sparkles
 } from 'lucide-react';
 
 interface MaterialProcessingViewProps {
@@ -55,6 +60,7 @@ interface MaterialProcessingViewProps {
     matProcessingViewMode?: string;
   };
   onSetPref?: (key: string, value: any) => void;
+  initialSubTab?: 'stages' | 'kiosk' | 'variance';
 }
 
 const normalizeMonth = (m: string | undefined): string => {
@@ -127,8 +133,17 @@ export default function MaterialProcessingView({
   initialProjectId,
   orgSettings,
   prefs,
-  onSetPref
+  onSetPref,
+  initialSubTab
 }: MaterialProcessingViewProps) {
+  const [activeSubTab, setActiveSubTab] = useState<'stages' | 'kiosk' | 'variance'>(initialSubTab || 'stages');
+
+  React.useEffect(() => {
+    if (initialSubTab) {
+      setActiveSubTab(initialSubTab);
+    }
+  }, [initialSubTab]);
+
   const configuredStages = useMemo(() => {
     if (orgSettings?.processingStages && orgSettings.processingStages.length > 0) {
       return orgSettings.processingStages;
@@ -963,7 +978,65 @@ export default function MaterialProcessingView({
         </div>
       </div>
 
-      <>
+      {/* MODULE SUB-NAVIGATION TABS */}
+      <div className="flex items-center gap-2 border-b border-base-border pb-3 overflow-x-auto scrollbar-none">
+        <button
+          onClick={() => setActiveSubTab('stages')}
+          className={`px-4 py-2 rounded-lg text-xs font-condensed font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'stages'
+              ? 'bg-base-accent text-black shadow-sm'
+              : 'bg-base-surface hover:bg-base-surface2 text-base-muted hover:text-base-text border border-base-border'
+          }`}
+        >
+          <Layers className="h-4 w-4" />
+          <span>Stages Pipeline</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('kiosk')}
+          className={`px-4 py-2 rounded-lg text-xs font-condensed font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'kiosk'
+              ? 'bg-red-600 text-white shadow-sm ring-1 ring-red-400'
+              : 'bg-base-surface hover:bg-base-surface2 text-base-muted hover:text-base-text border border-base-border'
+          }`}
+        >
+          <Scan className="h-4 w-4 text-red-400" />
+          <span>Shop-Floor Kiosk</span>
+          <span className="px-1.5 py-0.2 rounded text-[10px] bg-red-500/20 text-red-300 font-mono">OPERATOR</span>
+        </button>
+
+        <button
+          onClick={() => setActiveSubTab('variance')}
+          className={`px-4 py-2 rounded-lg text-xs font-condensed font-black uppercase tracking-wider transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubTab === 'variance'
+              ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400'
+              : 'bg-base-surface hover:bg-base-surface2 text-base-muted hover:text-base-text border border-base-border'
+          }`}
+        >
+          <BarChart3 className="h-4 w-4 text-emerald-400" />
+          <span>Yield & Variance Analytics</span>
+        </button>
+      </div>
+
+      {activeSubTab === 'kiosk' && (
+        <MaterialProcessingKiosk
+          currentUser={currentUser}
+          projects={projects}
+          onNavigateToVariance={() => setActiveSubTab('variance')}
+          onNavigateToStock={() => setActiveSubTab('stages')}
+        />
+      )}
+
+      {activeSubTab === 'variance' && (
+        <MaterialVarianceDashboard
+          currentUser={currentUser}
+          projects={projects}
+          onNavigateToKiosk={() => setActiveSubTab('kiosk')}
+        />
+      )}
+
+      {activeSubTab === 'stages' && (
+        <>
           {/* KPI GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* KPI 1 */}
@@ -1474,6 +1547,7 @@ export default function MaterialProcessingView({
               </div>
           </div>
         </>
+      )}
 
       {/* ================= ADD MATERIAL MODAL ================= */}
       {isAddModalOpen && (

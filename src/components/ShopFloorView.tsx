@@ -307,6 +307,37 @@ export default function ShopFloorView({
           </div>
         </button>
 
+        {/* Card 5: Material Cutting & Kiosk */}
+        <button
+          onClick={() => setActiveTab('matprocessing')}
+          className="group relative flex flex-col justify-between p-6 rounded-2xl bg-base-surface border-2 border-base-border hover:border-red-500/80 shadow-md hover:shadow-xl transition-all duration-150 text-left cursor-pointer min-h-[140px] active:scale-[0.98] bg-linear-to-br hover:from-red-500/5 hover:to-transparent sm:col-span-2 lg:col-span-1"
+        >
+          <div className="flex items-start justify-between gap-4 w-full">
+            <div className="flex items-center gap-3.5">
+              <div className="w-14 h-14 rounded-2xl bg-red-500/15 border border-red-500/30 text-red-500 flex items-center justify-center group-hover:bg-red-500 group-hover:text-white transition-all shrink-0">
+                <Layers className="h-7 w-7" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-condensed font-black uppercase text-base-text tracking-wide group-hover:text-red-500 transition-colors">
+                  5. Cutting & Kiosk
+                </h2>
+                <p className="text-sm text-base-muted mt-0.5">
+                  Scan QR plat, verifikasi MTC, & log yield
+                </p>
+              </div>
+            </div>
+            <ArrowRight className="h-6 w-6 text-base-muted group-hover:text-red-500 group-hover:translate-x-1 transition-all shrink-0 mt-1" />
+          </div>
+
+          <div className="mt-4 pt-3 border-t border-base-border flex items-center justify-between text-xs font-condensed font-bold uppercase tracking-wider text-base-muted">
+            <span className="flex items-center gap-1.5 text-red-400 font-bold">
+              <Scan className="h-3.5 w-3.5" />
+              MES Operator Kiosk & Offcuts
+            </span>
+            <span className="text-base-accent font-black">Buka Kiosk →</span>
+          </div>
+        </button>
+
       </div>
 
       {/* 3. Quick Touch List: Top Active Projects for Instant Spotlight Access */}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Assembly } from '../../types';
 import { Plus } from 'lucide-react';
+import DatePicker from '../common/DatePicker';
 
 interface AddTaskModalProps {
   isOpen: boolean;
@@ -86,24 +87,18 @@ export function AddTaskModal({
           )}
 
           <div className="grid grid-cols-2 gap-3.5">
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Start Date (S)</label>
-              <input
-                type="date"
-                value={taskStart}
-                onChange={(e) => setTaskStart(e.target.value)}
-                className="w-full px-3 py-1.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-[11px] font-semibold text-base-text transition-all cursor-pointer"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2 block">Finish Date (F)</label>
-              <input
-                type="date"
-                value={taskFinish}
-                onChange={(e) => setTaskFinish(e.target.value)}
-                className="w-full px-3 py-1.5 bg-base-bg border border-base-border hover:border-base-border2 rounded-lg outline-none focus:border-base-accent text-[11px] font-semibold text-emerald-600 transition-all cursor-pointer"
-              />
-            </div>
+            <DatePicker
+              label="Start Date (S)"
+              value={taskStart}
+              onChange={(val) => setTaskStart(val)}
+              placeholder="Tanggal Mulai..."
+            />
+            <DatePicker
+              label="Finish Date (F)"
+              value={taskFinish}
+              onChange={(val) => setTaskFinish(val)}
+              placeholder="Target Selesai..."
+            />
           </div>
         </div>
 

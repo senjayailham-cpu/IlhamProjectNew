@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion } from 'motion/react';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { Project, Assembly, Task, Dependency, User, WorkflowStatusType, OrgSettings, TimesheetEntry } from '../types';
@@ -1422,11 +1422,11 @@ export default function GanttView({
 
     projectsList.forEach(p => {
       const pStartStr = p.start || p.created || '';
-      if (pStartStr) {
+      if (pStartStr && typeof pStartStr === 'string') {
         const d = parseLocalDate(pStartStr.slice(0, 10));
         if (!overallMinDate || d < overallMinDate) overallMinDate = d;
       }
-      if (p.due) {
+      if (p.due && typeof p.due === 'string') {
         const d = parseLocalDate(p.due.slice(0, 10));
         if (!overallMaxDate || d > overallMaxDate) overallMaxDate = d;
       }

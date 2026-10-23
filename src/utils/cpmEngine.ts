@@ -63,8 +63,12 @@ export interface CPMProjectResult {
 }
 
 // Strictly parse ISO YYYY-MM-DD without timezone shift
-export const parsePureDate = (dateStr: string): Date => {
-  const parts = dateStr.slice(0, 10).split('-');
+export const parsePureDate = (dateStr?: string | null): Date => {
+  if (!dateStr || typeof dateStr !== 'string') {
+    return new Date();
+  }
+  const clean = dateStr.trim().slice(0, 10);
+  const parts = clean.split('-');
   const y = parseInt(parts[0], 10) || 2026;
   const m = (parseInt(parts[1], 10) || 1) - 1;
   const d = parseInt(parts[2], 10) || 1;
@@ -72,7 +76,10 @@ export const parsePureDate = (dateStr: string): Date => {
 };
 
 // Format pure Date back to YYYY-MM-DD
-export const formatPureDate = (d: Date): string => {
+export const formatPureDate = (d?: Date | null): string => {
+  if (!d || !(d instanceof Date) || isNaN(d.getTime())) {
+    d = new Date();
+  }
   const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
@@ -80,14 +87,18 @@ export const formatPureDate = (d: Date): string => {
 };
 
 // Days between two dates
-export const diffDays = (d1: Date, d2: Date): number => {
+export const diffDays = (d1?: Date | null, d2?: Date | null): number => {
+  if (!d1 || !d2 || !(d1 instanceof Date) || !(d2 instanceof Date) || isNaN(d1.getTime()) || isNaN(d2.getTime())) {
+    return 0;
+  }
   const ut1 = Date.UTC(d1.getFullYear(), d1.getMonth(), d1.getDate());
   const ut2 = Date.UTC(d2.getFullYear(), d2.getMonth(), d2.getDate());
   return Math.floor((ut2 - ut1) / (1000 * 60 * 60 * 24));
 };
 
 // Add days to ISO date
-export const addDays = (dateStr: string, days: number): string => {
+export const addDays = (dateStr?: string | null, days = 0): string => {
+  if (!dateStr || typeof dateStr !== 'string') return formatPureDate(new Date());
   const d = parsePureDate(dateStr);
   d.setDate(d.getDate() + days);
   return formatPureDate(d);
