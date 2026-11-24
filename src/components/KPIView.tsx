@@ -478,7 +478,7 @@ export default function KPIView({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `austin_consumables_kpi_report_${startStr}_to_${endStr}.csv`);
+    link.setAttribute('download', `epc_consumables_kpi_report_${startStr}_to_${endStr}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);

@@ -23,7 +23,8 @@ import {
   Users,
   Layers,
   Scan,
-  QrCode
+  QrCode,
+  ShoppingCart
 } from 'lucide-react';
 
 interface ShopFloorViewProps {
@@ -69,6 +70,7 @@ export default function ShopFloorView({
   const storeOpenSpotlight = useUIStore((s) => s.openSpotlight);
   const setShopFloorMode = useUIStore((s) => s.setShopFloorMode);
   const storeOpenQrPanel = useUIStore((s) => s.openQrPanel);
+  const openQuickOrder = useUIStore((s) => s.openQuickOrder);
 
   const projects = propProjects || storeProjects;
   const timesheets = propTimesheets || storeTimesheets;
@@ -178,6 +180,31 @@ export default function ShopFloorView({
           <span>Scan QR</span>
           <ArrowRight className="w-4 h-4" />
         </div>
+      </button>
+
+      {/* 2B. QUICK MATERIAL & CONSUMABLE ORDER SHORTCUT */}
+      <button
+        type="button"
+        onClick={() => openQuickOrder({ category: 'all' })}
+        className="w-full p-4 rounded-2xl bg-base-surface border-2 border-base-border hover:border-amber-500/70 shadow-sm hover:shadow-md transition-all duration-150 flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] group text-left"
+      >
+        <div className="flex items-center gap-3.5 min-w-0">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-500 flex items-center justify-center shrink-0 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
+            <ShoppingCart className="w-6 h-6" />
+          </div>
+          <div className="min-w-0">
+            <h2 className="text-lg sm:text-xl font-condensed font-black uppercase text-base-text tracking-wide group-hover:text-amber-500 transition-colors">
+              Order Cepat Material &amp; Consumable
+            </h2>
+            <p className="text-xs sm:text-sm text-base-muted mt-0.5 truncate">
+              Pesan kawat las, batu gerinda, PPE, atau pelat langsung ke keranjang dalam 2 klik
+            </p>
+          </div>
+        </div>
+        <span className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-amber-500 text-slate-950 font-condensed font-black text-xs uppercase tracking-wider whitespace-nowrap shrink-0">
+          <span>Order Sekarang</span>
+          <ArrowRight className="w-4 h-4" />
+        </span>
       </button>
 
       {/* 3. Four Big Action Touch Cards (min-h ~64-80px, high contrast, tablet-friendly) */}

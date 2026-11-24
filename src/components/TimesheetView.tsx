@@ -460,10 +460,10 @@ export default function TimesheetView({
         <body>
           <div class="header-wrap">
             <div>
-              <h1 class="title">Austin Batam Performance</h1>
+              <h1 class="title">EPC Control System Performance</h1>
               <div class="sub">PROJECT-LEVEL MAN-HOURS AUDIT LOG — ${activePeriod.label}</div>
             </div>
-            <div class="logo-placeholder">AUSTIN SERVICES</div>
+            <div class="logo-placeholder">EPC CONTROL SYSTEM</div>
           </div>
           
           <div class="meta-grid">
@@ -505,7 +505,7 @@ export default function TimesheetView({
           </table>
 
           <div style="font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:15px;display:flex;justify-content:space-between">
-            <span>Report generated automatically of Austin Production Sync Dashboard on: ${new Date().toLocaleString()}</span>
+            <span>Report generated automatically by EPC Control System on: ${new Date().toLocaleString()}</span>
             <span>Signature Verified PPC</span>
           </div>
         </body>

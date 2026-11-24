@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ShiftHandoverNote } from '../types';
 
-const STORAGE_KEY = 'austin_shift_handover_notes';
+const STORAGE_KEY = 'epc_shift_handover_notes';
+const LEGACY_STORAGE_KEY = 'austin_shift_handover_notes';
 
 const INITIAL_NOTES: ShiftHandoverNote[] = [
   {
@@ -69,7 +70,7 @@ const INITIAL_NOTES: ShiftHandoverNote[] = [
 export function useShiftHandover(currentUser?: { name: string; role?: string } | null) {
   const [notes, setNotes] = useState<ShiftHandoverNote[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
+      const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -98,7 +99,7 @@ export function useShiftHandover(currentUser?: { name: string; role?: string } |
     setNotes(newNotes);
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(newNotes));
-      window.dispatchEvent(new Event('austin_shift_handover_update'));
+      window.dispatchEvent(new Event('epc_shift_handover_update'));
     } catch (e) {
       console.error('Failed to save shift handover notes:', e);
     }
@@ -108,7 +109,7 @@ export function useShiftHandover(currentUser?: { name: string; role?: string } |
   useEffect(() => {
     const handleStorageUpdate = () => {
       try {
-        const saved = localStorage.getItem(STORAGE_KEY);
+        const saved = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
           if (Array.isArray(parsed)) {
@@ -121,11 +122,11 @@ export function useShiftHandover(currentUser?: { name: string; role?: string } |
     };
 
     window.addEventListener('storage', handleStorageUpdate);
-    window.addEventListener('austin_shift_handover_update', handleStorageUpdate);
+    window.addEventListener('epc_shift_handover_update', handleStorageUpdate);
 
     return () => {
       window.removeEventListener('storage', handleStorageUpdate);
-      window.removeEventListener('austin_shift_handover_update', handleStorageUpdate);
+      window.removeEventListener('epc_shift_handover_update', handleStorageUpdate);
     };
   }, []);
 

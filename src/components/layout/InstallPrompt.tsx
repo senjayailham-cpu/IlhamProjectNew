@@ -72,7 +72,7 @@ export default function InstallPrompt() {
           </div>
           <div className="min-w-0">
             <h4 className="font-condensed font-bold text-xs uppercase tracking-wide leading-tight">
-              Install AB Console ke Homescreen
+              Install EPC Control System ke Homescreen
             </h4>
             <p className="text-[11px] text-white/90 leading-tight truncate">
               {showIosBanner

@@ -69,7 +69,7 @@ export const parsePureDate = (dateStr?: string | null): Date => {
   }
   const clean = dateStr.trim().slice(0, 10);
   const parts = clean.split('-');
-  const y = parseInt(parts[0], 10) || 2026;
+  const y = parseInt(parts[0], 10) || new Date().getFullYear();
   const m = (parseInt(parts[1], 10) || 1) - 1;
   const d = parseInt(parts[2], 10) || 1;
   return new Date(y, m, d);
@@ -139,7 +139,7 @@ export function calculateProjectCPM(project: Project): CPMProjectResult {
 
   (project.assemblies || []).forEach(asm => {
     (asm.tasks || []).forEach(t => {
-      const dStr = t.date || asm.start || pStartStr;
+      const dStr = t.date || t.startDate || asm.start || pStartStr;
       if (dStr) {
         const d = parsePureDate(dStr);
         if (!minRawDate || d < minRawDate) minRawDate = d;
@@ -160,13 +160,14 @@ export function calculateProjectCPM(project: Project): CPMProjectResult {
   (project.assemblies || []).forEach((asm, asmIdx) => {
     (asm.tasks || []).forEach((t, taskIdx) => {
       globalTaskCounter++;
-      const tStart = t.date || asm.start || projectStartDate;
-      let tFinish = t.finishDate || tStart;
-      if (new Date(tFinish) < new Date(tStart)) {
-        tFinish = tStart;
-      }
+      const tStart = t.date || t.startDate || asm.start || projectStartDate;
+      let tFinish = t.finishDate || t.endDate || tStart;
       const tStartD = parsePureDate(tStart);
-      const tFinishD = parsePureDate(tFinish);
+      let tFinishD = parsePureDate(tFinish);
+      if (diffDays(tStartD, tFinishD) < 0) {
+        tFinish = tStart;
+        tFinishD = tStartD;
+      }
       const duration = t.isMilestone ? 0 : Math.max(1, diffDays(tStartD, tFinishD) + 1);
       const rawOffsetDays = Math.max(0, diffDays(pStartD, tStartD));
 
@@ -377,21 +378,36 @@ export function calculateProjectCPM(project: Project): CPMProjectResult {
     node.totalFloat = tf;
     floatMap.set(node.id, tf);
 
-    // Free Float: min(succ.es - lag) - node.ef
+    // Free Float: amount an activity can slip without delaying the early start/finish of any successor
     const successors = successorsMap.get(node.id);
     if (!successors || successors.length === 0) {
       node.freeFloat = tf;
     } else {
-      let minSuccES = Infinity;
+      let minSuccFF = Infinity;
       successors.forEach(({ succId, dep }) => {
         const succ = taskMap.get(succId);
         if (succ) {
           const lag = dep.lag || 0;
-          const cand = dep.type === 'SS' ? succ.es - lag : succ.es - lag;
-          if (cand < minSuccES) minSuccES = cand;
+          let candGap = tf;
+          switch (dep.type) {
+            case 'SS':
+              candGap = (succ.es - lag) - node.es;
+              break;
+            case 'FF':
+              candGap = (succ.ef - lag) - node.ef;
+              break;
+            case 'SF':
+              candGap = (succ.ef - lag) - node.es;
+              break;
+            case 'FS':
+            default:
+              candGap = (succ.es - lag) - node.ef;
+              break;
+          }
+          if (candGap < minSuccFF) minSuccFF = candGap;
         }
       });
-      node.freeFloat = minSuccES !== Infinity ? Math.max(0, minSuccES - node.ef) : tf;
+      node.freeFloat = minSuccFF !== Infinity ? Math.min(tf, Math.max(0, minSuccFF)) : tf;
     }
     freeFloatMap.set(node.id, node.freeFloat);
 

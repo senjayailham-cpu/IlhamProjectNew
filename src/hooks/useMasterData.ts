@@ -8,7 +8,7 @@ export function useMasterData(enabled: boolean) {
   const [entries, setEntries] = useState<MasterDataEntry[]>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('austin_masterdata_cache_v1');
+        const cached = localStorage.getItem('epc_masterdata_cache_v1') || localStorage.getItem('austin_masterdata_cache_v1');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -37,7 +37,7 @@ export function useMasterData(enabled: boolean) {
         setLoading(false);
         try {
           if (typeof window !== 'undefined' && list.length > 0) {
-            localStorage.setItem('austin_masterdata_cache_v1', JSON.stringify(list));
+            localStorage.setItem('epc_masterdata_cache_v1', JSON.stringify(list));
           }
         } catch (e) {}
       },

@@ -1,4 +1,20 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="100%" height="100%">
-  <circle cx="256" cy="256" r="256" fill="#9b1c2e"/>
-  <text x="50%" y="54%" dominant-baseline="middle" text-anchor="middle" fill="#ffffff" font-family="sans-serif" font-weight="900" font-size="220">AB</text>
+  <defs>
+    <linearGradient id="bg-grad" x1="64" y1="48" x2="448" y2="464" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#9b1c2e"/>
+      <stop offset="100%" stop-color="#6e101e"/>
+    </linearGradient>
+    <linearGradient id="amber-grad" x1="160" y1="128" x2="384" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+  </defs>
+  <path d="M144 48H368L464 144V368L368 464H144L48 368V144L144 48Z" fill="url(#bg-grad)"/>
+  <path d="M156 76H356L436 156V356L356 436H156L76 356V156L156 76Z" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="12"/>
+  <path d="M168 160V352" stroke="#ffffff" stroke-width="34" stroke-linecap="square"/>
+  <path d="M168 160H296" stroke="#ffffff" stroke-width="34" stroke-linecap="square"/>
+  <path d="M168 352H296" stroke="#ffffff" stroke-width="34" stroke-linecap="square"/>
+  <path d="M168 256H272" stroke="url(#amber-grad)" stroke-width="34" stroke-linecap="square"/>
+  <path d="M312 160L360 208V304L312 352" fill="none" stroke="url(#amber-grad)" stroke-width="28" stroke-linecap="square" stroke-linejoin="miter"/>
+  <rect x="264" y="232" width="48" height="48" rx="8" fill="#ffffff"/>
 </svg>

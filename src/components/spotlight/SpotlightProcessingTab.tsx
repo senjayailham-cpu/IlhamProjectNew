@@ -9,6 +9,7 @@ import {
   PROCESSING_STAGES,
   OrgSettings
 } from '../../types';
+import ConfirmDialog from '../common/ConfirmDialog';
 import {
   Plus,
   Trash2,
@@ -70,6 +71,7 @@ export function SpotlightProcessingTab({
   };
   // Filters and Add State
   const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [localDeleteTarget, setLocalDeleteTarget] = useState<{ id: string; materialName: string } | null>(null);
 
   // Add Form state
   const [formAssemblyId, setFormAssemblyId] = useState('');
@@ -874,8 +876,8 @@ export function SpotlightProcessingTab({
                                   setDeleteConfirm((prev: any) => ({ ...prev, isOpen: false }));
                                 }
                               });
-                            } else if (confirm('Remove material processing tracker for this item?')) {
-                              onDelete(mp.id);
+                            } else {
+                              setLocalDeleteTarget({ id: mp.id, materialName: mp.materialName });
                             }
                           }}
                           className="p-1 text-base-muted hover:text-red-500 rounded transition"
@@ -1035,6 +1037,20 @@ export function SpotlightProcessingTab({
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={Boolean(localDeleteTarget)}
+        title="Remove Material Processing"
+        message={`Apakah Anda yakin ingin menghapus tracking material processing untuk "${localDeleteTarget?.materialName || ''}"?`}
+        confirmLabel="Ya, Hapus"
+        tone="danger"
+        onCancel={() => setLocalDeleteTarget(null)}
+        onConfirm={() => {
+          if (localDeleteTarget) {
+            onDelete(localDeleteTarget.id);
+          }
+          setLocalDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

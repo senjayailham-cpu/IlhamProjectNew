@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { ShiftHandoverNote, UserRoleType } from '../../types';
 import { useShiftHandover } from '../../hooks/useShiftHandover';
+import ConfirmDialog from '../common/ConfirmDialog';
 import { 
   Pin, 
   MessageSquare, 
@@ -45,6 +46,7 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
   const [editingNote, setEditingNote] = useState<ShiftHandoverNote | null>(null);
   const [isHistorySectionExpanded, setIsHistorySectionExpanded] = useState(true);
   const [selectedShiftFilter, setSelectedShiftFilter] = useState<string>('all');
+  const [noteToDelete, setNoteToDelete] = useState<ShiftHandoverNote | null>(null);
 
   // Compose form states
   const [formText, setFormText] = useState('');
@@ -533,11 +535,7 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
                         {currentUser?.role === 'admin' && (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm('Hapus catatan handover ini?')) {
-                                deleteNote(note.id);
-                              }
-                            }}
+                            onClick={() => setNoteToDelete(note)}
                             className="p-1 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
                             title="Hapus Catatan"
                           >
@@ -778,11 +776,7 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
                         {currentUser?.role === 'admin' && (
                           <button
                             type="button"
-                            onClick={() => {
-                              if (confirm('Hapus catatan handover ini?')) {
-                                deleteNote(note.id);
-                              }
-                            }}
+                            onClick={() => setNoteToDelete(note)}
                             className="p-1.5 text-base-muted hover:text-base-red hover:bg-base-surface2 rounded text-xs transition-colors cursor-pointer"
                             title="Hapus Catatan"
                           >
@@ -831,6 +825,20 @@ export default function ShiftHandoverSection({ currentUser }: ShiftHandoverSecti
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={Boolean(noteToDelete)}
+        title="Hapus Catatan Shift Handover"
+        message={`Hapus catatan handover untuk "${noteToDelete?.targetShift || ''}"? Catatan yang sudah dihapus tidak dapat dikembalikan.`}
+        confirmLabel="Ya, Hapus"
+        tone="danger"
+        onCancel={() => setNoteToDelete(null)}
+        onConfirm={() => {
+          if (noteToDelete) {
+            deleteNote(noteToDelete.id);
+          }
+          setNoteToDelete(null);
+        }}
+      />
     </div>
   );
 }

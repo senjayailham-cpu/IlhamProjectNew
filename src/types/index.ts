@@ -190,6 +190,8 @@ export interface Project {
   budgetCost?: number; // Total Plafon Anggaran Biaya Proyek / BAC (Rp)
   budgetLaborCost?: number; // Anggaran Biaya Tenaga Kerja (Rp)
   budgetMaterialCost?: number; // Anggaran Biaya Material & Consumable (Rp)
+  bomTemplateId?: string; // Referensi template BOM yang dipakai menghitung BAC
+  bomMultiplier?: number; // Jumlah unit/set produk terhadap BOM (default 1)
   isArchived?: boolean;
   archivedAt?: string;
   archivedBy?: string;
@@ -696,6 +698,7 @@ export interface BomItem {
   grade?: string;            // grade material (contoh: "350", "AMS140")
   pros?: string;             // proses/cad spec (contoh: "DXF", "F DXF")
   subAssembly?: string;      // nama sub assembly (contoh: "Body Assembly", "Floor Assembly")
+  unitCost?: number;         // harga satuan opsional (Rp per kg atau per unit)
 }
 
 export interface BomTemplate {

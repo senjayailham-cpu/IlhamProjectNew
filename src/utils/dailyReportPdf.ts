@@ -97,7 +97,7 @@ export function downloadDailyReportPDF({
   doc.setFont('Helvetica', 'bold');
   doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
-  const orgName = 'AUSTIN BATAM FABRICATION';
+  const orgName = 'EPC CONTROL SYSTEM';
   doc.text(orgName, margin + 6, currentY + 6);
 
   doc.setFont('Helvetica', 'normal');

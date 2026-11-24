@@ -2,9 +2,10 @@ import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { useAppStore, useUIStore } from '../../store';
 import ThemeToggle from '../ThemeToggle';
+import BrandLogo from '../common/BrandLogo';
 import { 
-  Menu, X, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory, Settings
+  Menu, X, Folder, Key, LogOut, Search, WifiOff,
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, UserCheck, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory, Settings, Droplets
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -20,6 +21,7 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   FileBadge,
   ListTree,
   Users,
+  UserCheck,
   ShieldCheck,
   BarChart2,
   Package,
@@ -29,7 +31,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Calendar,
   TrendingUp,
   Factory,
-  Settings
+  Settings,
+  Droplets
 };
 
 interface AppMobileMenuProps {
@@ -81,24 +84,54 @@ export function AppMobileMenu({
   const projects = propProjects?.length ? propProjects : storeProjects;
   const problemReports = propProblemReports?.length ? propProblemReports : storeProblemReports;
   const inspections = propInspections?.length ? propInspections : storeInspections;
+
+  const [isOffline, setIsOffline] = React.useState(
+    typeof navigator !== 'undefined' ? !navigator.onLine : false
+  );
+
+  React.useEffect(() => {
+    const goOnline = () => setIsOffline(false);
+    const goOffline = () => setIsOffline(true);
+    window.addEventListener('online', goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online', goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, []);
+
   return (
     <>
       {/* MOBILE TOP HEADER BAR */}
-      <header className="md:hidden h-14 bg-base-surface border-b border-base-border px-4 flex items-center justify-between sticky top-0 z-40 select-none shadow-sm shrink-0">
-        <div className="flex items-center gap-2">
+      <header className="md:hidden h-14 bg-base-surface border-b border-base-border px-3 flex items-center justify-between sticky top-0 z-40 select-none shadow-sm shrink-0">
+        <div className="flex items-center gap-1.5 min-w-0">
           <button 
             onClick={() => setMobileMenuOpen(true)} 
-            className="p-1.5 rounded-lg hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer" 
+            className="p-1.5 rounded-lg hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer shrink-0" 
             title="Open Workspace Menu"
+            aria-label="Open Workspace Menu"
           >
             <Menu className="h-5 w-5" />
           </button>
-          <div className="font-condensed font-black text-lg tracking-widest text-[#9b1c2e]">
-            AUSTIN <span className="text-base-text">BATAM</span>
-          </div>
+          <BrandLogo variant="mobile" />
+          {isOffline && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-base-danger-dim text-base-danger border border-base-danger/30 text-[9px] font-condensed font-extrabold uppercase tracking-wider shrink-0">
+              <WifiOff className="h-2.5 w-2.5" />
+              Offline
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button
+            type="button"
+            onClick={() => window.dispatchEvent(new CustomEvent('open-global-search'))}
+            className="p-1.5 rounded-lg hover:bg-base-surface2 text-base-muted hover:text-base-accent transition-colors cursor-pointer"
+            title="Cari Proyek, Material, Menu (⌘K)"
+            aria-label="Global Search"
+          >
+            <Search className="h-4.5 w-4.5" />
+          </button>
           {/* Mobile Shop Floor Mode Toggle */}
           {(currentUser.role === 'coordinator' || currentUser.role === 'admin' || currentUser.allowedFeatures?.includes('shopfloor')) && (
             <button 
@@ -139,9 +172,7 @@ export function AppMobileMenu({
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
           >
             <div className="h-14 border-b border-base-border flex items-center justify-between px-4 shrink-0 bg-base-surface">
-              <div className="font-condensed font-black text-lg tracking-widest text-[#9b1c2e] flex items-center gap-1.5">
-                <span>AUSTIN</span> <span className="text-base-text">BATAM</span>
-              </div>
+              <BrandLogo variant="sidebar" />
               <button 
                 onClick={() => setMobileMenuOpen(false)} 
                 className="p-2 rounded-lg hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer touch-manipulation"
@@ -165,21 +196,14 @@ export function AppMobileMenu({
                       const IconComponent = IconMap[t.icon] || Folder;
                       const isTabActive = activeTab === t.id;
 
-                      const hasCountsComp = t.id === 'completed';
-                      const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
-                      const hasCountsArc = t.id === 'archive';
-                      const arcCount = projects.filter(p => p.isArchived).length;
                       const hasCountsInsp = t.id === 'inspections';
-                      const pendingInspCount = inspections.filter(ins => ins.status === 'Requested').length;
+                      const pendingInspCount = hasCountsInsp
+                        ? inspections.filter(ins => ins.status === 'Requested').length
+                        : 0;
 
                       let badgeCount = 0;
                       let badgeBg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
-                      if (hasCountsComp) {
-                        badgeCount = compCount;
-                        badgeBg = 'bg-base-ok-dim text-base-ok border border-base-ok/20';
-                      } else if (hasCountsArc) {
-                        badgeCount = arcCount;
-                      } else if (hasCountsInsp) {
+                      if (hasCountsInsp) {
                         badgeCount = pendingInspCount;
                         badgeBg = 'bg-base-warn-dim text-base-warn border border-base-warn/20';
                       }

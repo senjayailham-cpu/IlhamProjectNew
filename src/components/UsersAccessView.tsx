@@ -41,7 +41,8 @@ import {
   ChevronDown,
   ChevronRight,
   Eye,
-  RotateCcw
+  RotateCcw,
+  Droplets
 } from 'lucide-react';
 import UserSessionAuditView from './users/UserSessionAuditView';
 
@@ -52,13 +53,13 @@ const TabIconMap: Record<string, React.ComponentType<{ className?: string }>> = 
   progress: TrendingUp,
   shopfloor: Factory,
   timesheet: Clock,
-  manpower: LayoutGrid,
+  manpower: UserCheck,
   matprocessing: Layers,
   materials: Package,
   inspections: ClipboardCheck,
   drawings: FileBadge,
   bom: ListTree,
-  consumable: Flame,
+  consumable: Droplets,
   dailyreport: FileText,
   employees: Users,
   users: ShieldCheck,
@@ -69,19 +70,19 @@ const TabIconMap: Record<string, React.ComponentType<{ className?: string }>> = 
 const defaultSectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'projects', 'schedule', 'progress']
+    items: ['dash', 'projects', 'schedule']
   },
   {
     title: 'Shop Floor',
-    items: ['shopfloor', 'timesheet', 'manpower', 'matprocessing', 'materials', 'inspections']
+    items: ['shopfloor', 'timesheet', 'matprocessing', 'materials', 'inspections']
   },
   {
     title: 'Engineering',
-    items: ['drawings', 'bom', 'consumable']
+    items: ['drawings', 'bom']
   },
   {
-    title: 'Admin',
-    items: ['dailyreport', 'employees', 'users', 'masterdata', 'orgsettings']
+    title: 'Admin & Reports',
+    items: ['dailyreport', 'employees', 'masterdata', 'users', 'orgsettings']
   }
 ];
 

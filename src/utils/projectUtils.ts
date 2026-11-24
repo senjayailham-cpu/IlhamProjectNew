@@ -266,7 +266,7 @@ export function exportProjectsCSV(
   
   const d = new Date();
   const dateStr = d.toISOString().slice(0, 10);
-  link.setAttribute('download', `austin_batam_projects_${dateStr}.csv`);
+  link.setAttribute('download', `epc_projects_${dateStr}.csv`);
   link.style.visibility = 'hidden';
   document.body.appendChild(link);
   link.click();

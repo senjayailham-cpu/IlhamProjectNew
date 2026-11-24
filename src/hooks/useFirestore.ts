@@ -23,10 +23,10 @@ export function useFirestore() {
     if (typeof window === 'undefined') return;
     try {
       const cacheKeyMap: Record<string, string> = {
-        projects: 'austin_projects_cache_v1',
-        employees: 'austin_employees_cache_v1',
-        timesheets: 'austin_timesheets_cache_v1',
-        materials: 'austin_materials_cache_v1',
+        projects: 'epc_projects_cache_v1',
+        employees: 'epc_employees_cache_v1',
+        timesheets: 'epc_timesheets_cache_v1',
+        materials: 'epc_materials_cache_v1',
       };
       const cacheKey = cacheKeyMap[colName];
       if (!cacheKey) return;
@@ -51,6 +51,22 @@ export function useFirestore() {
     }
   };
 
+  let lastSyncWarnTs = 0;
+  const notifySyncPending = (colName: string) => {
+    if (typeof window === 'undefined') return;
+    const now = Date.now();
+    if (now - lastSyncWarnTs < 8000) return;
+    lastSyncWarnTs = now;
+    window.dispatchEvent(
+      new CustomEvent('app-toast', {
+        detail: {
+          message: `Perubahan (${colName}) tersimpan lokal & menunggu sinkronisasi cloud.`,
+          type: 'warning',
+        },
+      })
+    );
+  };
+
   const saveItem = async (colName: string, item: any) => {
     const cleaned = cleanFirestoreData(item);
     // Instant local disk update first (0ms persistence before network)
@@ -60,6 +76,7 @@ export function useFirestore() {
       await setDoc(doc(db, colName, item.id), cleaned, { merge: true });
     } catch (err) {
       console.warn(`Firestore saveItem deferred/warning on ${colName}/${item.id}:`, err);
+      notifySyncPending(colName);
     }
   };
 
@@ -69,6 +86,7 @@ export function useFirestore() {
       await deleteDoc(doc(db, colName, id));
     } catch (err) {
       console.warn(`Firestore removeItem warning on ${colName}/${id}:`, err);
+      notifySyncPending(colName);
     }
   };
 
@@ -90,6 +108,7 @@ export function useFirestore() {
         await batch.commit();
       } catch (err) {
         console.warn(`Firestore saveBatch error on ${colName}:`, err);
+        notifySyncPending(colName);
       }
     }
   };
@@ -110,6 +129,7 @@ export function useFirestore() {
         await batch.commit();
       } catch (err) {
         console.warn(`Firestore removeBatch error on ${colName}:`, err);
+        notifySyncPending(colName);
       }
     }
   };

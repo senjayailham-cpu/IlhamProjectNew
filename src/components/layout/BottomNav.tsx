@@ -38,7 +38,6 @@ export default function BottomNav({
         { id: 'timesheet', label: 'Timesheet', icon: Clock },
         { id: 'projects', label: 'Projects', icon: Folder },
         { id: 'materials', label: 'Materials', icon: Package },
-        { id: 'inspections', label: 'QC', icon: ClipboardCheck },
         { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
       ];
     }
@@ -46,9 +45,9 @@ export default function BottomNav({
     if (currentUser?.role === 'quality control' || (currentUser?.role as string) === 'qc') {
       return [
         { id: 'inspections', label: 'Inspections', icon: ClipboardCheck },
-        { id: 'focus24', label: '24h Focus', icon: AlertTriangle },
+        { id: 'shopfloor', label: 'Shop Floor', icon: Factory },
         { id: 'projects', label: 'Projects', icon: Folder },
-        { id: 'materials', label: 'Materials', icon: Package },
+        { id: 'materials', label: 'Warehouse', icon: Package },
         { id: 'more', label: 'Semua Menu', icon: Menu, isMenuTrigger: true }
       ];
     }
@@ -75,8 +74,10 @@ export default function BottomNav({
         {items.map((item) => {
           const Icon = item.icon;
           const isActive = !item.isMenuTrigger && (
-            activeTab === item.id || 
-            (item.id === 'schedule' && (activeTab === 'gantt' || activeTab === 'timeline')) ||
+            activeTab === item.id ||
+            (item.id === 'schedule' && (activeTab === 'gantt' || activeTab === 'timeline' || activeTab === 'scheduling-risk')) ||
+            (item.id === 'timesheet' && activeTab === 'manpower') ||
+            (item.id === 'materials' && (activeTab === 'consumable' || activeTab === 'kpi')) ||
             (item.id === 'projects' && (activeTab === 'current' || activeTab === 'completed' || activeTab === 'archived'))
           );
 

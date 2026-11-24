@@ -1133,7 +1133,7 @@ export const MaterialProcessingKiosk: React.FC<MaterialProcessingKioskProps> = (
                 >
                   <div className="border-b-2 border-black pb-2 flex items-center justify-between">
                     <div>
-                      <div className="font-black text-xs tracking-widest text-red-700">AUSTIN BATAM FABRICATION</div>
+                      <div className="font-black text-xs tracking-widest text-red-700">EPC CONTROL SYSTEM</div>
                       <div className="text-[10px] font-bold text-neutral-600 uppercase">Usable Remnant / Offcut Inventory</div>
                     </div>
                     <span className="px-2 py-0.5 bg-black text-white text-[11px] font-black rounded">

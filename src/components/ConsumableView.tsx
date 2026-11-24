@@ -36,7 +36,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { can } from '../utils/permissions';
-import { useAppStore } from '../store';
+import { useAppStore, useUIStore } from '../store';
 import { formatCurrency, getConsumableRate } from '../utils/costEngine';
 
 interface ConsumableViewProps {
@@ -642,7 +642,7 @@ export default function ConsumableView({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `austin_consumables_orders_registry_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `epc_consumables_orders_registry_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -748,19 +748,14 @@ export default function ConsumableView({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Standalone New Order Button */}
+          {/* Unified Quick Order Button */}
           <button
-            onClick={() => {
-              setOrderItems([]);
-              setOrderProject('');
-              setOrderUrgency('Normal');
-              setOrderNotes('');
-              setShowOrderPanel(true);
-            }}
-            className="flex items-center gap-1.5 px-3.5 py-1.8 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all shadow-xs"
+            type="button"
+            onClick={() => useUIStore.getState().openQuickOrder({ category: 'consumable' })}
+            className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold uppercase tracking-wider cursor-pointer transition-all shadow-xs whitespace-nowrap shrink-0"
           >
             <ShoppingCart className="w-4 h-4" />
-            <span>+ New Order</span>
+            <span>+ Order Cepat</span>
           </button>
 
           {/* Shortcut View KPI Button */}
@@ -844,22 +839,20 @@ export default function ConsumableView({
             </div>
           </div>
           <button
+            type="button"
             onClick={() => {
-              setOrderItems(lowStockItems.map(m => ({
-                materialId: m.id,
-                materialName: m.name,
-                unit: m.unit,
-                qtyRequested: Math.max(m.minStock * 2, 1),
-                currentStock: m.currentStock,
-                minStock: m.minStock,
-              })));
-              setOrderUrgency('Urgent');
-              setShowOrderPanel(true);
+              useUIStore.getState().openQuickOrder({
+                category: 'low_stock',
+                items: lowStockItems.map((m) => ({
+                  materialId: m.id,
+                  qty: Math.max(1, (m.minStock > 0 ? m.minStock * 2 : 5) - m.currentStock),
+                })),
+              });
             }}
-            className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 text-slate-950 hover:bg-amber-600 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer"
+            className="flex items-center gap-1 px-2.5 py-1.5 bg-amber-500 text-slate-950 hover:bg-amber-600 hover:text-white rounded-lg text-[10px] font-bold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap shrink-0"
           >
             <ShoppingCart className="w-3 h-3" />
-            Order Now
+            <span>Order Sekarang</span>
           </button>
         </div>
       )}
@@ -896,9 +889,18 @@ export default function ConsumableView({
         
         {/* ORDER CONSOLIDATED FORM VIEW (Part 3 & Part 5) */}
         <div className="bg-base-surface border border-base-border p-5 rounded-2xl shadow-card">
-          <div className="flex items-center gap-2 border-b border-base-border pb-3 mb-4">
-            <ShoppingCart className="h-4.5 w-4.5 text-amber-500" />
-            <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Order Consumable & PPE Request Form</span>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-base-border pb-3 mb-4">
+            <div className="flex items-center gap-2">
+              <ShoppingCart className="h-4.5 w-4.5 text-amber-500" />
+              <span className="font-condensed font-extrabold uppercase text-xs text-base-text tracking-wider">Order Consumable & PPE Request Form</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => useUIStore.getState().openQuickOrder({ category: 'consumable' })}
+              className="text-xs font-condensed font-bold uppercase tracking-wider text-base-accent hover:underline cursor-pointer"
+            >
+              Gunakan Mode Order Cepat (1-Layar) →
+            </button>
           </div>
 
           <form onSubmit={handleMainOrderSubmit} className="space-y-5 text-xs font-medium">

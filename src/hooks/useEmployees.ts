@@ -11,7 +11,7 @@ export function useEmployees(
   const [employees, setEmployeesState] = useState<Employee[]>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('austin_employees_cache_v1');
+        const cached = localStorage.getItem('epc_employees_cache_v1') || localStorage.getItem('austin_employees_cache_v1');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -26,7 +26,7 @@ export function useEmployees(
       const next = typeof action === 'function' ? (action as (e: Employee[]) => Employee[])(prev) : action;
       try {
         if (typeof window !== 'undefined') {
-          localStorage.setItem('austin_employees_cache_v1', JSON.stringify(next));
+          localStorage.setItem('epc_employees_cache_v1', JSON.stringify(next));
         }
       } catch (e) {}
       queueMicrotask(() => {

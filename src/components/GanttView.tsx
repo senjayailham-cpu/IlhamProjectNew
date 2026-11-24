@@ -60,7 +60,10 @@ import {
   Redo2,
   Monitor,
   BookmarkCheck,
-  BookmarkPlus
+  BookmarkPlus,
+  ArrowRight,
+  Scan,
+  FileSpreadsheet
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -284,170 +287,6 @@ function parsePredecessorInput(
   return results;
 }
 
-// CPM (Critical Path Method) helper to calculate critical path task IDs
-const calculateCriticalPath = (project: Project): { criticalIds: Set<string>; floatMap: Map<string, number> } => {
-  const criticalIds = new Set<string>();
-  const floatMap = new Map<string, number>();
-  
-  // 1. Gather all tasks in the project
-  const tasks: {
-    id: string;
-    duration: number;
-    predecessors: Dependency[];
-    es: number;
-    ef: number;
-    ls: number;
-    lf: number;
-  }[] = [];
-  
-  const taskMap = new Map<string, typeof tasks[0]>();
-  
-  project.assemblies?.forEach(asm => {
-    asm.tasks?.forEach(t => {
-      // Parse task dates
-      const tStart = t.date || asm.start || project.start || '';
-      let tFinish = t.finishDate || tStart || '';
-      if (new Date(tFinish) < new Date(tStart)) {
-        tFinish = tStart;
-      }
-      const tStartD = parseLocalDate(tStart);
-      const tFinishD = parseLocalDate(tFinish);
-      const duration = t.isMilestone ? 0 : Math.max(1, daysBetween(tStartD, tFinishD) + 1);
-      
-      const cTask = {
-        id: t.id,
-        duration,
-        predecessors: t.predecessors || [],
-        es: 0,
-        ef: 0,
-        ls: 0,
-        lf: 0
-      };
-      
-      tasks.push(cTask);
-      taskMap.set(t.id, cTask);
-    });
-  });
-  
-  if (tasks.length === 0) {
-    return { criticalIds, floatMap };
-  }
-  
-  // 2. Topological Sort with cycle detection
-  const topoOrder: string[] = [];
-  const visited = new Map<string, number>(); // 0: unvisited, 1: visiting, 2: visited
-  
-  const visit = (id: string) => {
-    const state = visited.get(id) || 0;
-    if (state === 1) {
-      // Cycle detected! Skip back-edge
-      return;
-    }
-    if (state === 2) {
-      return;
-    }
-    visited.set(id, 1);
-    
-    const task = taskMap.get(id);
-    if (task) {
-      task.predecessors.forEach(dep => {
-        if (taskMap.has(dep.key)) {
-          visit(dep.key);
-        }
-      });
-    }
-    
-    visited.set(id, 2);
-    topoOrder.push(id);
-  };
-  
-  tasks.forEach(t => {
-    if ((visited.get(t.id) || 0) === 0) {
-      visit(t.id);
-    }
-  });
-  
-  // 3. Forward Pass (ES & EF)
-  topoOrder.forEach(id => {
-    const s = taskMap.get(id);
-    if (!s) return;
-    
-    let maxES = 0;
-    s.predecessors.forEach(dep => {
-      const p = taskMap.get(dep.key);
-      if (!p) return;
-      
-      const lag = dep.lag || 0;
-      let candidate = 0;
-      if (dep.type === 'FS') {
-        candidate = p.ef + lag;
-      } else if (dep.type === 'SS') {
-        candidate = p.es + lag;
-      } else if (dep.type === 'FF') {
-        candidate = p.ef + lag - s.duration;
-      } else if (dep.type === 'SF') {
-        candidate = p.es + lag - s.duration;
-      } else {
-        candidate = p.ef + lag;
-      }
-      
-      maxES = Math.max(maxES, candidate);
-    });
-    
-    s.es = maxES;
-    s.ef = s.es + s.duration;
-  });
-  
-  // 4. Backward Pass (LS & LF)
-  const maxEF = Math.max(0, ...tasks.map(t => t.ef));
-  
-  // Initialize late finish (LF) of all tasks to maxEF
-  tasks.forEach(t => {
-    t.lf = maxEF;
-  });
-  
-  // Iterate in reverse topological order to propagate late dates
-  for (let i = topoOrder.length - 1; i >= 0; i--) {
-    const id = topoOrder[i];
-    const s = taskMap.get(id);
-    if (!s) continue;
-    
-    s.ls = s.lf - s.duration;
-    
-    s.predecessors.forEach(dep => {
-      const p = taskMap.get(dep.key);
-      if (!p) return;
-      
-      const lag = dep.lag || 0;
-      let maxLF = p.lf;
-      if (dep.type === 'FS') {
-        maxLF = s.ls - lag;
-      } else if (dep.type === 'SS') {
-        maxLF = s.ls - lag + p.duration;
-      } else if (dep.type === 'FF') {
-        maxLF = s.lf - lag;
-      } else if (dep.type === 'SF') {
-        maxLF = s.lf - lag + p.duration;
-      } else {
-        maxLF = s.ls - lag;
-      }
-      
-      p.lf = Math.min(p.lf, maxLF);
-    });
-  }
-  
-  // 5. Identify critical path tasks (Total Float = 0)
-  tasks.forEach(t => {
-    const totalFloat = t.lf - t.ef;
-    floatMap.set(t.id, totalFloat);
-    if (Math.abs(totalFloat) < 0.001) {
-      criticalIds.add(t.id);
-    }
-  });
-  
-  return { criticalIds, floatMap };
-};
-
 // Cascade Schedule helper function for cascading shifts to successor tasks
 const cascadeSchedule = (
   updatedProject: Project,
@@ -474,7 +313,7 @@ const cascadeSchedule = (
       if (!t.date && !t.startDate) return;
       const tStart = t.date || t.startDate || '';
       let tFinish = t.finishDate || t.endDate || tStart;
-      if (tStart && tFinish && new Date(tFinish) < new Date(tStart)) {
+      if (tStart && tFinish && daysBetween(parseLocalDate(tStart), parseLocalDate(tFinish)) < 0) {
         tFinish = tStart;
       }
       const tStartD = parseLocalDate(tStart);
@@ -717,6 +556,8 @@ export default function GanttView({
     collapseAllAssemblies,
     findProject,
     totalHoursStats,
+    cpmData,
+    fullTreeRows,
   } = useGanttRows({
     project,
     projects,
@@ -738,6 +579,7 @@ export default function GanttView({
   };
 
   const getProjectIdOfRow = (row: GanttRow): string => {
+    if (row.projectId) return row.projectId;
     if (row.level === 0) return row.id;
     const p = projectsList.find(proj => {
       if (row.level === 1) return proj.assemblies?.some(a => a.id === row.id);
@@ -749,6 +591,9 @@ export default function GanttView({
 
   // Navigation / Configuration State
   const [zoomMode, setZoomMode] = useState<'day' | 'week' | 'month' | 'quarter'>('week');
+  const [customPixelsPerDay, setCustomPixelsPerDay] = useState<number | null>(null);
+  const skipNextZoomAutoScrollRef = useRef<boolean>(false);
+  const pendingZoomScrollRef = useRef<{ anchorTimeMs: number; viewportOffsetX: number } | null>(null);
   const [showArrows, setShowArrows] = useState<boolean>(true);
   const [showProgress, setShowProgress] = useState<boolean>(true);
   const [showCriticalPath, setShowCriticalPath] = useState<boolean>(false);
@@ -856,29 +701,137 @@ export default function GanttView({
     localStorage.setItem('gantt_showResourceLoad', String(showResourceLoad));
   }, [showResourceLoad]);
 
-  // ── SMART SCHEDULE ENGINE ──
+  // ── SMART SCHEDULE ENGINE (DRY-RUN PREVIEW + APPLY) ──
+  interface SmartSchedulePreviewItem {
+    taskId: string;
+    projectName: string;
+    wbs: string;
+    taskName: string;
+    oldStart: string;
+    oldFinish: string;
+    newStart: string;
+    newFinish: string;
+    deltaDays: number;
+  }
+
+  interface SmartScheduleProjectImpact {
+    projectId: string;
+    projectName: string;
+    oldDue: string;
+    newDue: string;
+    deltaDays: number;
+  }
+
+  const [smartSchedulePreview, setSmartSchedulePreview] = useState<{
+    updatedProjects: Project[];
+    shiftedIds: string[];
+    items: SmartSchedulePreviewItem[];
+    projectImpacts: SmartScheduleProjectImpact[];
+    totalShiftedCount: number;
+    maxDeltaDays: number;
+  } | null>(null);
+
   const handleSmartSchedule = () => {
     if (!onUpdateProject || projectsList.length === 0) return;
 
-    let totalShiftedCount = 0;
+    const updatedProjects: Project[] = [];
     const allShiftedIds = new Set<string>();
+    const items: SmartSchedulePreviewItem[] = [];
+    const projectImpacts: SmartScheduleProjectImpact[] = [];
+    let maxDeltaDays = 0;
 
-    projectsList.forEach(proj => {
+    projectsList.forEach((proj, pIdx) => {
+      const oldTaskDates = new Map<string, { start: string; finish: string }>();
+      (proj.assemblies || []).forEach(asm => {
+        (asm.tasks || []).forEach(t => {
+          const s = t.date || t.startDate || asm.start || proj.start || '';
+          const f = t.finishDate || t.endDate || s;
+          oldTaskDates.set(t.id, { start: s, finish: f });
+        });
+      });
+
       const { updatedProject, shiftedIds } = cascadeSchedule(proj);
       if (shiftedIds.size > 0) {
+        updatedProjects.push(updatedProject);
         shiftedIds.forEach(id => allShiftedIds.add(id));
-        totalShiftedCount += shiftedIds.size;
-        onUpdateProject(updatedProject);
+
+        (updatedProject.assemblies || []).forEach((asm, asmIdx) => {
+          (asm.tasks || []).forEach((t, tIdx) => {
+            if (!shiftedIds.has(t.id)) return;
+            const prev = oldTaskDates.get(t.id);
+            const oldStart = prev?.start || t.date || '';
+            const oldFinish = prev?.finish || t.finishDate || oldStart;
+            const newStart = t.date || t.startDate || oldStart;
+            const newFinish = t.finishDate || t.endDate || newStart;
+            const deltaDays = oldStart && newStart
+              ? daysBetween(parseLocalDate(oldStart), parseLocalDate(newStart))
+              : 0;
+            if (Math.abs(deltaDays) > Math.abs(maxDeltaDays)) {
+              maxDeltaDays = deltaDays;
+            }
+            items.push({
+              taskId: t.id,
+              projectName: proj.name,
+              wbs: `${pIdx + 1}.${asmIdx + 1}.${tIdx + 1}`,
+              taskName: t.name,
+              oldStart,
+              oldFinish,
+              newStart,
+              newFinish,
+              deltaDays,
+            });
+          });
+        });
+
+        const newMaxFinishStr = (updatedProject.assemblies || [])
+          .map(a => a.finish)
+          .filter((d): d is string => Boolean(d))
+          .sort()
+          .pop();
+        if (proj.due && newMaxFinishStr) {
+          const dueDelta = daysBetween(parseLocalDate(proj.due), parseLocalDate(newMaxFinishStr));
+          if (dueDelta > 0) {
+            projectImpacts.push({
+              projectId: proj.id,
+              projectName: proj.name,
+              oldDue: proj.due,
+              newDue: newMaxFinishStr,
+              deltaDays: dueDelta,
+            });
+          }
+        }
       }
     });
 
-    if (totalShiftedCount > 0) {
-      setCascadedTaskIds(allShiftedIds);
-      setToastMsg(`Smart Schedule: Automatically shifted ${totalShiftedCount} dependent task(s) to eliminate overlap conflicts.`);
-    } else {
-      setToastMsg(`Smart Schedule: All task dependencies are already properly aligned with no overlaps.`);
+    if (items.length === 0) {
+      setToastMsg('Smart Schedule: Semua ketergantungan task sudah selaras tanpa konflik tumpang tindih.');
+      setTimeout(() => {
+        setToastMsg(null);
+      }, 4000);
+      return;
     }
 
+    setSmartSchedulePreview({
+      updatedProjects,
+      shiftedIds: Array.from(allShiftedIds),
+      items,
+      projectImpacts,
+      totalShiftedCount: items.length,
+      maxDeltaDays,
+    });
+  };
+
+  const confirmApplySmartSchedule = () => {
+    if (!smartSchedulePreview || !onUpdateProject) return;
+
+    smartSchedulePreview.updatedProjects.forEach(proj => {
+      onUpdateProject(proj);
+    });
+    setCascadedTaskIds(new Set(smartSchedulePreview.shiftedIds));
+    setToastMsg(
+      `Smart Schedule: ${smartSchedulePreview.totalShiftedCount} task berhasil disesuaikan secara otomatis.`
+    );
+    setSmartSchedulePreview(null);
     setTimeout(() => {
       setToastMsg(null);
     }, 4000);
@@ -893,6 +846,15 @@ export default function GanttView({
     longestPath: number;
     shiftedCount: number;
     hasLoops: boolean;
+  } | null>(null);
+
+  const [baselineConfirm, setBaselineConfirm] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    confirmLabel: string;
+    tone: 'primary' | 'danger';
+    onConfirm: () => void;
   } | null>(null);
 
   const handleRunP6Schedule = () => {
@@ -936,17 +898,19 @@ export default function GanttView({
     setTimeout(() => setToastMsg(null), 5000);
   };
 
-  // Global F9 keyboard shortcut for P6 Run Schedule
+  // Global F9 keyboard shortcut for P6 Run Schedule & Escape modal dismissal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F9') {
         e.preventDefault();
         handleRunP6Schedule();
+      } else if (e.key === 'Escape' && smartSchedulePreview) {
+        setSmartSchedulePreview(null);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projectsList, onUpdateProject]);
+  }, [projectsList, onUpdateProject, smartSchedulePreview]);
 
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
@@ -977,14 +941,16 @@ export default function GanttView({
     setIsExporting(true);
     setIsExportDropdownOpen(false);
 
+    // Wait for React to disable row virtualization and render all visible rows cleanly
+    await new Promise(resolve => setTimeout(resolve, 90));
+
     // Apply oklab workaround for html2canvas
     const restoreCssRules = overrideCssRules();
 
     try {
-      // Find elements to hide temporarily
       const elementsToHide = ganttWorkspaceRef.current.querySelectorAll('.print\\:hidden, [data-export-hide]');
       const originalDisplays = Array.from(elementsToHide).map(el => (el as HTMLElement).style.display);
-      
+
       elementsToHide.forEach(el => {
         (el as HTMLElement).style.display = 'none';
       });
@@ -992,7 +958,6 @@ export default function GanttView({
       const originalMaxHeight = ganttWorkspaceRef.current.style.maxHeight;
       ganttWorkspaceRef.current.style.maxHeight = 'none';
 
-      // Capture canvas
       const canvas = await html2canvas(ganttWorkspaceRef.current, {
         scale: 2,
         useCORS: true,
@@ -1001,7 +966,6 @@ export default function GanttView({
 
       ganttWorkspaceRef.current.style.maxHeight = originalMaxHeight;
 
-      // Restore displays
       elementsToHide.forEach((el, idx) => {
         (el as HTMLElement).style.display = originalDisplays[idx] || '';
       });
@@ -1014,7 +978,7 @@ export default function GanttView({
       link.click();
     } catch (error) {
       console.error('Error exporting PNG:', error);
-      setToastMsg('Export PNG failed. Please try again.');
+      setToastMsg('Export PNG gagal. Silakan coba lagi.');
     } finally {
       restoreCssRules();
       setIsExporting(false);
@@ -1026,14 +990,16 @@ export default function GanttView({
     setIsExporting(true);
     setIsExportDropdownOpen(false);
 
+    // Wait for React to disable row virtualization and render all visible rows cleanly
+    await new Promise(resolve => setTimeout(resolve, 90));
+
     // Apply oklab workaround for html2canvas
     const restoreCssRules = overrideCssRules();
 
     try {
-      // Find elements to hide temporarily
       const elementsToHide = ganttWorkspaceRef.current.querySelectorAll('.print\\:hidden, [data-export-hide]');
       const originalDisplays = Array.from(elementsToHide).map(el => (el as HTMLElement).style.display);
-      
+
       elementsToHide.forEach(el => {
         (el as HTMLElement).style.display = 'none';
       });
@@ -1041,7 +1007,6 @@ export default function GanttView({
       const originalMaxHeight = ganttWorkspaceRef.current.style.maxHeight;
       ganttWorkspaceRef.current.style.maxHeight = 'none';
 
-      // Capture canvas
       const canvas = await html2canvas(ganttWorkspaceRef.current, {
         scale: 2,
         useCORS: true,
@@ -1050,7 +1015,6 @@ export default function GanttView({
 
       ganttWorkspaceRef.current.style.maxHeight = originalMaxHeight;
 
-      // Restore displays
       elementsToHide.forEach((el, idx) => {
         (el as HTMLElement).style.display = originalDisplays[idx] || '';
       });
@@ -1135,11 +1099,93 @@ export default function GanttView({
       doc.save(`gantt_${downloadName || 'project'}_${date}.pdf`);
     } catch (error) {
       console.error('Error exporting PDF:', error);
-      setToastMsg('Export PDF failed. Please try again.');
+      setToastMsg('Export PDF gagal. Silakan coba lagi.');
     } finally {
       restoreCssRules();
       setIsExporting(false);
     }
+  };
+
+  const handleExportCSV = () => {
+    setIsExportDropdownOpen(false);
+    const exportRows = rows.length > 0 ? rows : fullTreeRows;
+    if (exportRows.length === 0) {
+      setToastMsg('Tidak ada data aktivitas untuk diekspor.');
+      return;
+    }
+
+    const csvEscape = (val: unknown): string => {
+      const str = String(val ?? '').replace(/\r?\n/g, ' ');
+      if (str.includes(',') || str.includes('"') || str.includes(';')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const headers = [
+      'Act ID',
+      'WBS',
+      'Level',
+      'Activity Name',
+      'Type',
+      'Duration (d)',
+      'Start',
+      'Finish',
+      'Base Start',
+      'Base Finish',
+      'Predecessors',
+      'Progress (%)',
+      'Total Float (d)',
+      'Free Float (d)',
+      'Plan Hours',
+      'Actual Hours',
+      'Variance Hours',
+      'Assignee',
+      'Company',
+      'Status'
+    ];
+
+    const lines = [
+      headers.map(csvEscape).join(','),
+      ...exportRows.map(r => {
+        const levelLabel = r.level === 0 ? 'Project' : r.level === 1 ? 'Sub-Assembly' : (r.isMilestone ? 'Milestone' : 'Task');
+        const predLabel = getPredecessorsLabel(r);
+        const variance = (r.planHours || 0) - (r.actualHours || 0);
+        return [
+          r.activityId || '',
+          r.wbs,
+          levelLabel,
+          r.name,
+          r.type,
+          r.isMilestone ? 0 : r.duration,
+          r.start || '',
+          r.finish || '',
+          r.baselineStart || '',
+          r.baselineFinish || '',
+          predLabel === '—' ? '' : predLabel,
+          r.pct,
+          r.totalFloat ?? '',
+          r.freeFloat ?? '',
+          r.planHours ? r.planHours.toFixed(1) : '0',
+          r.actualHours ? r.actualHours.toFixed(1) : '0',
+          variance.toFixed(1),
+          r.assigned || '',
+          r.assignedCompany || '',
+          r.workflowStatus || (r.done ? 'complete' : r.pct > 0 ? 'on_track' : 'not_started')
+        ].map(csvEscape).join(',');
+      })
+    ];
+
+    const csvContent = '\uFEFF' + lines.join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const downloadName = projectsList.length === 1 && projectsList[0] ? projectsList[0].name : 'Projects';
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `schedule_${downloadName || 'project'}_${new Date().toISOString().slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setToastMsg(`Berhasil mengekspor ${exportRows.length} baris ke CSV (Excel).`);
   };
 
   useEffect(() => {
@@ -1272,6 +1318,8 @@ export default function GanttView({
   const [editingPct, setEditingPct] = useState<string | null>(null);
   const [editingHoursCell, setEditingHoursCell] = useState<string | null>(null);
   const [flashingCellId, setFlashingCellId] = useState<string | null>(null);
+  const [flashingTimelineRowId, setFlashingTimelineRowId] = useState<string | null>(null);
+  const flashBarTimerRef = useRef<number | null>(null);
 
   // Drag interaction state
   const [dragState, setDragState] = useState<DragState | null>(null);
@@ -1388,6 +1436,9 @@ export default function GanttView({
       if (scrollRafRef.current !== null) {
         cancelAnimationFrame(scrollRafRef.current);
       }
+      if (flashBarTimerRef.current !== null) {
+        window.clearTimeout(flashBarTimerRef.current);
+      }
     };
   }, []);
 
@@ -1465,48 +1516,14 @@ export default function GanttView({
   const pStartD = useMemo(() => parseLocalDate(pStart), [pStart]);
   const pDueD = useMemo(() => parseLocalDate(pDue), [pDue]);
 
-  const scheduleKey = useMemo(() => {
-    // Only recompute CPM when dates change, not pct/done
-    return projectsList.map(p =>
-      p.assemblies?.flatMap(asm =>
-        asm.tasks?.map(t => `${t.id}:${t.date}:${t.finishDate}`)
-      ).join('|')
-    ).join('||');
-  }, [projectsList]);
-
-  const { criticalPathIds, slackMap } = useMemo(() => {
-    const mergedCritical = new Set<string>();
-    const mergedSlack = new Map<string, number>();
-
-    projectsList.forEach(p => {
-      const res = calculateCriticalPath(p);
-      res.criticalIds.forEach(id => mergedCritical.add(id));
-      res.floatMap.forEach((val, id) => mergedSlack.set(id, val));
-    });
-
-    return {
-      criticalPathIds: mergedCritical,
-      slackMap: mergedSlack
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scheduleKey]);
-
-  const criticalAssemblyIds = useMemo(() => {
-    const ids = new Set<string>();
-    projectsList.forEach(p => {
-      p.assemblies?.forEach(asm => {
-        const hasCriticalTask = asm.tasks?.some(t => criticalPathIds.has(t.id));
-        if (hasCriticalTask) {
-          ids.add(asm.id);
-        }
-      });
-    });
-    return ids;
-  }, [projectsList, criticalPathIds]);
+  // Unified CPM results from cpmEngine (single source of truth for table & timeline)
+  const criticalPathIds = cpmData.criticalTaskIds;
+  const slackMap = cpmData.floatMap;
+  const criticalAssemblyIds = cpmData.criticalAssemblyIds;
 
   const criticalChainLength = useMemo(() => {
-    const criticalTasks = projectsList.flatMap(p => 
-      p.assemblies?.flatMap(asm => 
+    const criticalTasks = projectsList.flatMap(p =>
+      p.assemblies?.flatMap(asm =>
         asm.tasks?.filter(t => criticalPathIds.has(t.id)) || []
       ) || []
     );
@@ -1514,8 +1531,8 @@ export default function GanttView({
     if (criticalTasks.length === 0) return 0;
 
     const dates = criticalTasks.flatMap(t => {
-      const start = t.date || pStart;
-      const finish = t.finishDate || start;
+      const start = t.date || t.startDate || pStart;
+      const finish = t.finishDate || t.endDate || start;
       return [parseLocalDate(start), parseLocalDate(finish)];
     });
 
@@ -1526,8 +1543,9 @@ export default function GanttView({
     return Math.max(1, daysBetween(minDate, maxDate) + 1);
   }, [projectsList, criticalPathIds, pStart]);
 
-  // Pixels per day calculated based on the selected zoom level
+  // Pixels per day calculated based on custom fit/wheel zoom or selected preset level
   const pixelsPerDay = useMemo(() => {
+    if (customPixelsPerDay !== null) return customPixelsPerDay;
     switch (zoomMode) {
       case 'day': return 42;
       case 'week': return 14;
@@ -1535,7 +1553,7 @@ export default function GanttView({
       case 'quarter': return 1.5;
       default: return 14;
     }
-  }, [zoomMode]);
+  }, [zoomMode, customPixelsPerDay]);
 
   // Timeline boundaries aligned nicely based on zoom level
   const { timelineStart, timelineEnd, totalTimelineDays } = useMemo(() => {
@@ -1562,6 +1580,11 @@ export default function GanttView({
     const days = daysBetween(start, end) + 1;
     return { timelineStart: start, timelineEnd: end, totalTimelineDays: days };
   }, [pStartD, pDueD, zoomMode]);
+
+  const pixelsPerDayRef = useRef<number>(pixelsPerDay);
+  pixelsPerDayRef.current = pixelsPerDay;
+  const timelineStartRef = useRef<Date>(timelineStart);
+  timelineStartRef.current = timelineStart;
 
   // ── ROW VIRTUALIZATION CONSTANTS & CALCULATIONS ──
   const ROW_HEIGHT = 32;
@@ -2054,7 +2077,7 @@ export default function GanttView({
     savePredecessorsDirect(targetRow.id, nextDeps);
 
     const srcRow = rows.find(r => r.id === sourceRowId);
-    setToastMsg(`Removed dependency link: ${srcRow?.wbs || 'Task'} → ${targetRow.wbs}`);
+    setToastMsg(`Relasi dependensi dihapus: ${srcRow?.wbs || 'Task'} → ${targetRow.wbs}`);
     setTimeout(() => setToastMsg(null), 3000);
   };
 
@@ -2240,6 +2263,67 @@ export default function GanttView({
     }
   };
 
+  // Inline Duration (days) save handler
+  const saveDuration = (rowId: string, days: number) => {
+    if (!onUpdateProject) return;
+    const safeDays = Math.max(1, Math.min(3650, Math.round(days)));
+
+    const res = findAndCloneProject(rowId);
+    if (!res) return;
+    const updated = res.cloned;
+
+    let found = false;
+    for (const a of updated.assemblies || []) {
+      const t = a.tasks?.find(task => task.id === rowId);
+      if (t) {
+        if (t.isMilestone) return;
+        const curStart = t.date || t.startDate || a.start || updated.start || formatLocalDate(new Date());
+        const nextFinish = addDaysToLocalDate(curStart, safeDays - 1);
+        t.date = curStart;
+        t.startDate = curStart;
+        t.finishDate = nextFinish;
+        t.endDate = nextFinish;
+        found = true;
+        break;
+      }
+    }
+
+    if (!found) return;
+
+    updated.assemblies?.forEach(asm => {
+      if (!asm.tasks || asm.tasks.length === 0) return;
+      let minStart: Date | null = null;
+      let maxFinish: Date | null = null;
+      asm.tasks.forEach(t => {
+        const sStr = t.date || t.startDate;
+        const fStr = t.finishDate || t.endDate || sStr;
+        if (sStr) {
+          const sd = parseLocalDate(sStr);
+          if (!minStart || sd < minStart) minStart = sd;
+        }
+        if (fStr) {
+          const fd = parseLocalDate(fStr);
+          if (!maxFinish || fd > maxFinish) maxFinish = fd;
+        }
+      });
+      if (minStart) asm.start = formatLocalDate(minStart);
+      if (maxFinish) asm.finish = formatLocalDate(maxFinish);
+    });
+
+    if (autoSchedule) {
+      const { updatedProject, shiftedIds } = cascadeSchedule(updated, rowId);
+      if (shiftedIds.size > 0) {
+        setCascadedTaskIds(shiftedIds);
+      }
+      onUpdateProject(updatedProject);
+    } else {
+      onUpdateProject(updated);
+    }
+
+    setFlashingCellId(rowId);
+    setTimeout(() => setFlashingCellId(null), 500);
+  };
+
   // Baseline Scheduling Actions & Permissions
   const canSetBaseline = Boolean(
     currentUser && (
@@ -2265,21 +2349,8 @@ export default function GanttView({
     return { count };
   }, [allRows]);
 
-  const setBaselineForProject = (targetProj: Project, bypassConfirm = false) => {
+  const applyBaselineForProject = (targetProj: Project) => {
     if (!onUpdateProject) return;
-
-    const hasExistingBaseline = Boolean(
-      targetProj.baselineStart ||
-      targetProj.baselineFinish ||
-      targetProj.assemblies?.some(a => a.baselineStart || a.tasks?.some(t => t.baselineStart))
-    );
-
-    if (hasExistingBaseline && !bypassConfirm) {
-      const confirmed = window.confirm(
-        `Proyek "${targetProj.name}" sudah memiliki Baseline (${targetProj.baselineStart || '—'} s/d ${targetProj.baselineFinish || '—'}).\n\nRe-baseline (replace existing) dengan jadwal aktual saat ini?`
-      );
-      if (!confirmed) return;
-    }
 
     let pMinStart: string | null = null;
     let pMaxFinish: string | null = null;
@@ -2343,13 +2414,46 @@ export default function GanttView({
     setTimeout(() => setToastMsg(null), 4000);
   };
 
+  const setBaselineForProject = (targetProj: Project, bypassConfirm = false) => {
+    if (!onUpdateProject) return;
+
+    const hasExistingBaseline = Boolean(
+      targetProj.baselineStart ||
+      targetProj.baselineFinish ||
+      targetProj.assemblies?.some(a => a.baselineStart || a.tasks?.some(t => t.baselineStart))
+    );
+
+    if (hasExistingBaseline && !bypassConfirm) {
+      setBaselineConfirm({
+        isOpen: true,
+        title: 'Timpa Baseline Proyek?',
+        message: `Proyek "${targetProj.name}" sudah memiliki Baseline (${targetProj.baselineStart || '—'} s/d ${targetProj.baselineFinish || '—'}). Re-baseline dengan jadwal aktual saat ini?`,
+        confirmLabel: 'Ya, Perbarui Baseline',
+        tone: 'primary',
+        onConfirm: () => {
+          applyBaselineForProject(targetProj);
+          setBaselineConfirm(null);
+        }
+      });
+      return;
+    }
+
+    applyBaselineForProject(targetProj);
+  };
+
   const handleSetBaselineAll = () => {
     if (!onUpdateProject || projectsList.length === 0) return;
-    const confirmed = window.confirm(
-      `Kunci Baseline untuk semua (${projectsList.length}) proyek yang ditampilkan?\n\nJadwal rencana baseline akan disalin dari tanggal aktual saat ini.`
-    );
-    if (!confirmed) return;
-    projectsList.forEach(p => setBaselineForProject(p, true));
+    setBaselineConfirm({
+      isOpen: true,
+      title: `Kunci Baseline (${projectsList.length} Proyek)`,
+      message: `Jadwal rencana baseline untuk seluruh ${projectsList.length} proyek yang ditampilkan akan disalin dari tanggal aktual saat ini.`,
+      confirmLabel: 'Kunci Semua Baseline',
+      tone: 'primary',
+      onConfirm: () => {
+        projectsList.forEach(p => applyBaselineForProject(p));
+        setBaselineConfirm(null);
+      }
+    });
   };
 
   // Inline Baseline Date Saving handler (per task, per assembly, or per project)
@@ -2424,32 +2528,37 @@ export default function GanttView({
   // Clear / Reset Baseline handler
   const clearBaselineForProject = (targetProj: Project) => {
     if (!onUpdateProject) return;
-    const confirmed = window.confirm(
-      `Hapus/Reset Baseline untuk proyek "${targetProj.name}"?\n\nJadwal baseline akan dikosongkan sehingga Anda bisa mengatur ulang dari awal.`
-    );
-    if (!confirmed) return;
+    setBaselineConfirm({
+      isOpen: true,
+      title: 'Reset Baseline Proyek?',
+      message: `Hapus seluruh jadwal baseline untuk proyek "${targetProj.name}"? Anda dapat mengatur ulang dari awal setelah direset.`,
+      confirmLabel: 'Ya, Reset Baseline',
+      tone: 'danger',
+      onConfirm: () => {
+        const updatedAssemblies = (targetProj.assemblies || []).map(asm => ({
+          ...asm,
+          baselineStart: undefined,
+          baselineFinish: undefined,
+          tasks: (asm.tasks || []).map(t => ({
+            ...t,
+            baselineStart: undefined,
+            baselineFinish: undefined
+          }))
+        }));
 
-    const updatedAssemblies = (targetProj.assemblies || []).map(asm => ({
-      ...asm,
-      baselineStart: undefined,
-      baselineFinish: undefined,
-      tasks: (asm.tasks || []).map(t => ({
-        ...t,
-        baselineStart: undefined,
-        baselineFinish: undefined
-      }))
-    }));
+        const updated: Project = {
+          ...targetProj,
+          baselineStart: undefined,
+          baselineFinish: undefined,
+          assemblies: updatedAssemblies
+        };
 
-    const updated: Project = {
-      ...targetProj,
-      baselineStart: undefined,
-      baselineFinish: undefined,
-      assemblies: updatedAssemblies
-    };
-
-    onUpdateProject(updated);
-    setToastMsg(`Baseline proyek "${targetProj.name}" berhasil direset.`);
-    setTimeout(() => setToastMsg(null), 3000);
+        onUpdateProject(updated);
+        setToastMsg(`Baseline proyek "${targetProj.name}" berhasil direset.`);
+        setTimeout(() => setToastMsg(null), 3000);
+        setBaselineConfirm(null);
+      }
+    });
   };
 
   // Shift Baseline by X Days (geser serentak)
@@ -2688,12 +2797,12 @@ export default function GanttView({
     return () => window.removeEventListener('keydown', handleUndoRedoKeyDown);
   }, [historyStack, redoStack, onUpdateProjectRaw]);
 
-  // To handle auto dismissal safely
+  // Handle toast auto dismissal cleanly
   useEffect(() => {
     if (!toastMsg) return;
     const timer = setTimeout(() => {
       setToastMsg(null);
-    }, 2000);
+    }, 3800);
     return () => clearTimeout(timer);
   }, [toastMsg]);
 
@@ -2714,7 +2823,7 @@ export default function GanttView({
     }); // e.g. "Sun, 28 Jun 2026"
   }, []);
 
-  // ── S-CURVE FEATURE ──
+  // ── S-CURVE FEATURE (WEIGHTED BY PLAN MAN-HOURS WHEN AVAILABLE) ──
   const sCurveData = useMemo(() => {
     if (!showSCurve) return null;
 
@@ -2725,22 +2834,21 @@ export default function GanttView({
 
     if (taskRows.length === 0) return null;
 
-    // Each task contributes equal weight (1/N of total progress)
-    // For planned: assume linear progress based on actual start/finish
-    // For actual:  assume linear progress from start to finish at pct%
-    //              (tasks past finish with pct<100 cap at pct)
-
+    const totalPlanHrs = taskRows.reduce((sum, r) => sum + (r.planHours > 0 ? r.planHours : 0), 0);
+    const useHoursWeighting = totalPlanHrs > 0;
     const N = taskRows.length;
-    const weight = 1 / N; // each task = 1/N of total (0-100 scale)
 
-    // Build day-by-day cumulative arrays
-    // Index = day offset from timelineStart
     const totalDays = totalTimelineDays;
     const plannedArr = new Float32Array(totalDays + 1).fill(0);
     const actualArr  = new Float32Array(totalDays + 1).fill(0);
 
     taskRows.forEach(row => {
-      // --- PLANNED curve (based on actual scheduled dates) ---
+      const weight = useHoursWeighting
+        ? ((row.planHours > 0 ? row.planHours : 0) / totalPlanHrs)
+        : (1 / N);
+
+      if (weight <= 0) return;
+
       const planStart  = parseLocalDate(row.start!);
       const planFinish = parseLocalDate(row.finish!);
       const planDays   = Math.max(1, daysBetween(planStart, planFinish) + 1);
@@ -2748,7 +2856,6 @@ export default function GanttView({
       const planStartIdx  = Math.max(0, daysBetween(timelineStart, planStart));
       const planFinishIdx = Math.min(totalDays, daysBetween(timelineStart, planFinish));
 
-      // Distribute this task's weight linearly across its planned duration
       if (planStartIdx <= planFinishIdx) {
         const increment = weight / planDays;
         for (let d = planStartIdx; d <= planFinishIdx; d++) {
@@ -2756,22 +2863,10 @@ export default function GanttView({
         }
       }
 
-      // --- ACTUAL curve ---
-      const actStart  = parseLocalDate(row.start!);
-      const actFinish = parseLocalDate(row.finish!);
-      const actDays   = Math.max(1, daysBetween(actStart, actFinish) + 1);
-
-      const actStartIdx  = Math.max(0, daysBetween(timelineStart, actStart));
-      const actFinishIdx = Math.min(totalDays, daysBetween(timelineStart, actFinish));
-
-      // Progress portion this task has actually completed
       const completedFraction = (row.pct || 0) / 100;
-
-      // Distribute completed progress linearly up to finish
-      // For tasks past due with pct<100, show flat line after their finish
-      if (actStartIdx <= actFinishIdx) {
-        const increment = (weight * completedFraction) / actDays;
-        for (let d = actStartIdx; d <= actFinishIdx; d++) {
+      if (planStartIdx <= planFinishIdx && completedFraction > 0) {
+        const increment = (weight * completedFraction) / planDays;
+        for (let d = planStartIdx; d <= planFinishIdx; d++) {
           actualArr[d] = (actualArr[d] || 0) + increment;
         }
       }
@@ -2781,18 +2876,17 @@ export default function GanttView({
     let plannedCum = 0;
     let actualCum  = 0;
     const points: { day: number; planned: number; actual: number }[] = [];
+    const sampleInterval = totalDays <= 90 ? 1 : 3;
 
     for (let d = 0; d <= totalDays; d++) {
       plannedCum = Math.min(100, plannedCum + (plannedArr[d] || 0) * 100);
       actualCum = Math.min(100, actualCum + (actualArr[d] || 0) * 100);
-      // Sample every 3 days to reduce SVG path complexity (or every 1 day if short)
-      const sampleInterval = totalDays < 7 ? 1 : 3;
       if (d % sampleInterval === 0 || d === totalDays) {
         points.push({ day: d, planned: plannedCum, actual: actualCum });
       }
     }
 
-    return points; // array of { day, planned, actual }
+    return points;
   }, [showSCurve, allRows, timelineStart, totalTimelineDays]);
 
   const SCURVE_H = 60;  // chart height in px
@@ -2812,9 +2906,10 @@ export default function GanttView({
     };
 
     return {
-      planned: buildPath('planned'),
-      actual:  buildPath('actual'),
+      plannedPath: buildPath('planned'),
+      actualPath:  buildPath('actual'),
       totalWidth: totalTimelineDays * pixelsPerDay,
+      totalDays: totalTimelineDays,
     };
   }, [sCurveData, pixelsPerDay, totalTimelineDays]);
 
@@ -2952,17 +3047,78 @@ export default function GanttView({
   const scrollToToday = () => {
     if (!rightScrollRef.current) return;
     if (!isTodayInTimeline) {
-      setToastMsg("Today is outside the current timeline range.");
+      setToastMsg('Hari ini berada di luar rentang timeline yang ditampilkan.');
       return;
     }
     const scrollTo = Math.max(0, todayX - (rightScrollRef.current.clientWidth / 2));
     rightScrollRef.current.scrollTo({ left: scrollTo, behavior: 'smooth' });
   };
 
+  const handleZoomToFit = () => {
+    const container = rightScrollRef.current;
+    const viewportW = container?.clientWidth || 900;
+    const spanDays = Math.max(7, daysBetween(pStartD, pDueD) + 14);
+    const idealPx = Number(Math.max(1.0, Math.min(48, (viewportW - 40) / spanDays)).toFixed(2));
+    const targetMode: 'day' | 'week' | 'month' | 'quarter' =
+      idealPx >= 24 ? 'day' : idealPx >= 8 ? 'week' : idealPx >= 2.6 ? 'month' : 'quarter';
+
+    pendingZoomScrollRef.current = {
+      anchorTimeMs: pStartD.getTime(),
+      viewportOffsetX: 20,
+    };
+    skipNextZoomAutoScrollRef.current = true;
+    setZoomMode(targetMode);
+    setCustomPixelsPerDay(idealPx);
+  };
+
+  const scrollToRowOnTimeline = (
+    rowId: string,
+    opts?: { center?: boolean; onlyIfOffscreen?: boolean }
+  ) => {
+    const container = rightScrollRef.current;
+    if (!container) return;
+
+    const coords = rowBarCoordsCache.get(rowId);
+    if (!coords) {
+      if (!opts?.onlyIfOffscreen) {
+        setToastMsg('Task ini belum memiliki tanggal pada timeline.');
+      }
+      return;
+    }
+
+    const viewLeft = container.scrollLeft;
+    const viewWidth = container.clientWidth;
+    const viewRight = viewLeft + viewWidth;
+    const barLeft = coords.left;
+    const barWidth = Math.max(16, coords.width);
+    const barRight = barLeft + barWidth;
+
+    if (opts?.onlyIfOffscreen) {
+      const isVisible = barRight >= viewLeft + 24 && barLeft <= viewRight - 24;
+      if (isVisible) return;
+    }
+
+    const targetLeft = barWidth > viewWidth * 0.75
+      ? Math.max(0, barLeft - 48)
+      : Math.max(0, (barLeft + barWidth / 2) - (viewWidth / 2));
+
+    container.scrollTo({ left: targetLeft, behavior: 'smooth' });
+    setSelectedRowId(rowId);
+    setFlashingTimelineRowId(rowId);
+
+    if (flashBarTimerRef.current !== null) {
+      window.clearTimeout(flashBarTimerRef.current);
+    }
+    flashBarTimerRef.current = window.setTimeout(() => {
+      setFlashingTimelineRowId(null);
+      flashBarTimerRef.current = null;
+    }, 1200);
+  };
+
   const hasAutoScrolled = useRef(false);
   const prevZoomModeRef = useRef<string | null>(null);
 
-  // Auto-scroll on mount and zoom change
+  // Auto-scroll on mount and zoom change (skipped when Zoom-to-Fit or Ctrl+Wheel handles scroll anchor)
   useEffect(() => {
     const timer = setTimeout(() => {
       if (!hasAutoScrolled.current) {
@@ -2970,13 +3126,65 @@ export default function GanttView({
         hasAutoScrolled.current = true;
         prevZoomModeRef.current = zoomMode;
       } else if (prevZoomModeRef.current !== zoomMode) {
-        scrollToToday();
         prevZoomModeRef.current = zoomMode;
+        if (skipNextZoomAutoScrollRef.current) {
+          skipNextZoomAutoScrollRef.current = false;
+          return;
+        }
+        scrollToToday();
       }
     }, 300);
 
     return () => clearTimeout(timer);
   }, [todayX, zoomMode]);
+
+  // Apply cursor-anchored or fit-anchored scroll once timelineStart & pixelsPerDay commit
+  useEffect(() => {
+    const pending = pendingZoomScrollRef.current;
+    const container = rightScrollRef.current;
+    if (!pending || !container) return;
+    pendingZoomScrollRef.current = null;
+    const anchorDaysFromStart = (pending.anchorTimeMs - timelineStart.getTime()) / 86400000;
+    const nextScrollLeft = Math.max(0, anchorDaysFromStart * pixelsPerDay - pending.viewportOffsetX);
+    container.scrollLeft = nextScrollLeft;
+  }, [timelineStart, pixelsPerDay]);
+
+  // Ctrl/Cmd + Mouse Wheel smooth zoom anchored to cursor on timeline
+  useEffect(() => {
+    const el = rightScrollRef.current;
+    if (!el) return;
+
+    const handleWheelZoom = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      const rect = el.getBoundingClientRect();
+      const cursorViewportX = e.clientX - rect.left;
+      const currentPx = pixelsPerDayRef.current;
+      const currentTimelineStart = timelineStartRef.current;
+
+      const factor = e.deltaY < 0 ? 1.18 : 0.85;
+      const nextPx = Math.max(1.0, Math.min(64, Number((currentPx * factor).toFixed(2))));
+      if (Math.abs(nextPx - currentPx) < 0.01) return;
+
+      const offsetDays = (el.scrollLeft + cursorViewportX) / currentPx;
+      const anchorTimeMs = currentTimelineStart.getTime() + offsetDays * 86400000;
+      const targetMode: 'day' | 'week' | 'month' | 'quarter' =
+        nextPx >= 24 ? 'day' : nextPx >= 8 ? 'week' : nextPx >= 2.6 ? 'month' : 'quarter';
+
+      pendingZoomScrollRef.current = {
+        anchorTimeMs,
+        viewportOffsetX: cursorViewportX,
+      };
+      skipNextZoomAutoScrollRef.current = true;
+      setZoomMode(targetMode);
+      setCustomPixelsPerDay(nextPx);
+    };
+
+    el.addEventListener('wheel', handleWheelZoom, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheelZoom);
+  }, []);
 
   // Keyboard shortcut Ctrl+F / Cmd+F to focus search input
   useEffect(() => {
@@ -3066,13 +3274,13 @@ export default function GanttView({
         setDragState(prev => prev ? { ...prev, tempStart: nextStart, tempFinish: nextFinish } : null);
       } else if (dragState.type === 'resize') {
         let nextFinish = addDaysToLocalDate(dragState.initialFinish, deltaDays);
-        if (new Date(nextFinish) < new Date(dragState.initialStart)) {
+        if (daysBetween(parseLocalDate(dragState.initialStart), parseLocalDate(nextFinish)) < 0) {
           nextFinish = dragState.initialStart;
         }
         setDragState(prev => prev ? { ...prev, tempFinish: nextFinish } : null);
       } else if (dragState.type === 'resize-left') {
         let nextStart = addDaysToLocalDate(dragState.initialStart, deltaDays);
-        if (new Date(nextStart) > new Date(dragState.initialFinish)) {
+        if (daysBetween(parseLocalDate(dragState.initialFinish), parseLocalDate(nextStart)) > 0) {
           nextStart = dragState.initialFinish;
         }
         setDragState(prev => prev ? { ...prev, tempStart: nextStart } : null);
@@ -3090,13 +3298,13 @@ export default function GanttView({
         setDragState(prev => prev ? { ...prev, tempStart: nextStart, tempFinish: nextFinish } : null);
       } else if (dragState.type === 'resize') {
         let nextFinish = addDaysToLocalDate(dragState.initialFinish, deltaDays);
-        if (new Date(nextFinish) < new Date(dragState.initialStart)) {
+        if (daysBetween(parseLocalDate(dragState.initialStart), parseLocalDate(nextFinish)) < 0) {
           nextFinish = dragState.initialStart;
         }
         setDragState(prev => prev ? { ...prev, tempFinish: nextFinish } : null);
       } else if (dragState.type === 'resize-left') {
         let nextStart = addDaysToLocalDate(dragState.initialStart, deltaDays);
-        if (new Date(nextStart) > new Date(dragState.initialFinish)) {
+        if (daysBetween(parseLocalDate(dragState.initialFinish), parseLocalDate(nextStart)) > 0) {
           nextStart = dragState.initialFinish;
         }
         setDragState(prev => prev ? { ...prev, tempStart: nextStart } : null);
@@ -3467,128 +3675,18 @@ export default function GanttView({
   const colPctWidth = 64;
   const colStatusWidth = 100;
   const totalTableWidth = colWbsWidth + colNameWidth + colDurWidth + colBaseDurWidth
+    + 75 + 52 + 52 + 74 // Act ID, OD, RD, Total Float in default layout
     + (showHoursTracking ? (colPlanHrsWidth + colActHrsWidth + colVarianceWidth) : 0)
     + (showBaseline ? (colBaseStartWidth + colBaseFinishWidth) : 0)
     + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
     + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + colStatusWidth;
 
-  if (!isFullscreen) {
-    return (
-      <div className="w-full flex flex-col items-center justify-center border border-base-border rounded-2xl p-8 sm:p-12 text-center bg-base-surface shadow-xs my-2 relative overflow-hidden">
-        {/* Background ambient glow decoration */}
-        <div className="absolute -top-24 -right-24 w-72 h-72 bg-base-accent/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-24 -left-24 w-72 h-72 bg-base-accent/5 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 max-w-xl flex flex-col items-center">
-          {/* Glowing Icon Box */}
-          <div className="h-16 w-16 rounded-2xl bg-base-accent/15 border border-base-accent/30 flex items-center justify-center text-base-accent mb-5 shadow-xs">
-            <Maximize2 className="h-8 w-8 animate-pulse" />
-          </div>
-
-          {/* Title & Badge */}
-          <h2 className="font-condensed font-black text-2xl sm:text-3xl tracking-tight text-base-text uppercase">
-            Project Schedule & Gantt Timeline
-          </h2>
-
-          <div className="mt-2.5 inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-base-accent/10 border border-base-accent/20 text-base-accent text-xs font-condensed font-bold uppercase tracking-wider">
-            <Monitor className="h-3.5 w-3.5" />
-            <span>Wajib Mode Full Screen (Mandatory Fullscreen)</span>
-          </div>
-
-          {/* Target Month Selector on Gate Screen */}
-          {setSelectedMonth && availableMonths && (
-            <div className="mt-5 w-full bg-base-surface2 border border-base-border rounded-xl p-3.5 flex flex-wrap items-center justify-center gap-3">
-              <div className="flex items-center gap-2">
-                <label htmlFor="gate-month-select" className="text-xs font-condensed font-bold text-base-muted uppercase tracking-wider shrink-0">
-                  Target Month:
-                </label>
-                <div className="relative shrink-0">
-                  <select
-                    id="gate-month-select"
-                    value={selectedMonth || 'ALL'}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    className="appearance-none bg-base-surface hover:bg-base-surface2 border border-base-border rounded-lg pl-3 pr-8 py-1.5 text-xs font-bold text-base-text font-condensed uppercase tracking-wide cursor-pointer focus:outline-none focus:ring-1 focus:ring-base-accent transition-all min-w-[200px]"
-                  >
-                    <option value="ALL">ALL PROJECTS (SEMUA PROYEK)</option>
-                    {availableMonths.map((m) => {
-                      const [yr, mo] = m.split('-').map(Number);
-                      const date = new Date(yr, mo - 1, 1);
-                      const label = isNaN(date.getTime()) ? m : date.toLocaleDateString('en-GB', { month: 'long', year: 'numeric' }).toUpperCase();
-                      return (
-                        <option key={m} value={m}>
-                          {label}
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-base-muted text-[10px]">
-                    ▼
-                  </div>
-                </div>
-              </div>
-
-              <label className="flex items-center gap-2 text-xs font-condensed font-bold text-base-muted uppercase tracking-wider cursor-pointer select-none">
-                <input
-                  type="checkbox"
-                  checked={!!showCompleted}
-                  onChange={(e) => setShowCompleted(e.target.checked)}
-                  className="h-3.5 w-3.5 rounded border-base-border text-base-accent cursor-pointer"
-                />
-                Show Completed Projects
-              </label>
-            </div>
-          )}
-
-          {/* Explanation */}
-          <p className="text-xs sm:text-sm text-base-muted font-sans mt-4 leading-relaxed max-w-md">
-            Untuk analisis timeline, alur keterkaitan task (<em>dependencies</em>), serta S-Curve secara presisi tanpa hambatan ruang, Project Schedule wajib dibuka dalam mode <strong>Layar Penuh (Full Screen)</strong>.
-          </p>
-
-          {/* Feature Highlights */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 w-full mt-6 mb-8 text-left">
-            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
-              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
-                <BarChart3 className="h-4 w-4 text-base-accent" />
-                <span>Full Timeline</span>
-              </div>
-              <p className="text-[11px] text-base-muted mt-1">Bebas hambatan scroll & visualisasi luas</p>
-            </div>
-            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
-              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
-                <Layers className="h-4 w-4 text-base-accent" />
-                <span>Interactive Drag</span>
-              </div>
-              <p className="text-[11px] text-base-muted mt-1">Ubah durasi & jadwal langsung di grafik</p>
-            </div>
-            <div className="p-3 bg-base-surface2 border border-base-border rounded-xl">
-              <div className="flex items-center gap-2 text-xs font-condensed font-bold text-base-text uppercase">
-                <Sparkles className="h-4 w-4 text-base-accent" />
-                <span>Dependencies</span>
-              </div>
-              <p className="text-[11px] text-base-muted mt-1">Hubungkan alur antar sub-assembly presisi</p>
-            </div>
-          </div>
-
-          {/* Action Button */}
-          <button
-            type="button"
-            onClick={handleEnterFullscreen}
-            className="group flex items-center justify-center gap-3 px-8 py-3.5 bg-[#9b1c2e] hover:bg-[#7a1624] text-white rounded-xl font-condensed font-black uppercase tracking-wider text-sm shadow-lg hover:shadow-xl transition-all transform hover:-translate-y-0.5 active:translate-y-0 cursor-pointer"
-          >
-            <Maximize2 className="h-5 w-5 transition-transform group-hover:scale-110" />
-            <span>Buka Project Schedule (Full Screen)</span>
-          </button>
-
-          <p className="text-[11px] text-base-muted mt-3">
-            Klik tombol di atas untuk membuka jadwal proyek dalam mode Layar Penuh.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="fixed inset-0 z-[200] p-4 sm:p-6 flex flex-col overflow-hidden h-screen w-screen bg-base-bg text-base-text transition-all duration-200">
+    <div className={
+      isFullscreen
+        ? 'fixed inset-0 z-[200] p-4 sm:p-6 flex flex-col overflow-hidden h-screen w-screen bg-base-bg text-base-text transition-all duration-200'
+        : 'w-full flex flex-col overflow-hidden h-[calc(100vh-215px)] min-h-[580px] bg-base-bg text-base-text transition-all duration-200'
+    }>
       {/* TOOLBAR PANEL */}
       <div className="flex flex-col gap-3 pb-4 border-b border-base-border mb-4 sticky top-0 bg-base-bg/95 z-30 backdrop-blur-xs">
         {/* Row 1: Title, Info, and Close Button */}
@@ -3608,19 +3706,33 @@ export default function GanttView({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={handleExitFullscreen}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider text-base-accent hover:text-white bg-base-accent/10 hover:bg-base-accent border border-base-accent/30 transition-all rounded-lg cursor-pointer shrink-0"
-              title="Keluar dari mode Layar Penuh"
+              type="button"
+              onClick={isFullscreen ? handleExitFullscreen : handleEnterFullscreen}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider transition-all rounded-lg cursor-pointer shrink-0 border ${
+                isFullscreen
+                  ? 'text-base-accent hover:text-white bg-base-accent/10 hover:bg-base-accent border-base-accent/30'
+                  : 'text-base-text hover:text-white bg-base-surface hover:bg-base-accent border-base-border hover:border-base-accent'
+              }`}
+              title={isFullscreen ? 'Keluar dari mode Layar Penuh' : 'Perbesar ke mode Layar Penuh'}
             >
-              <Minimize2 className="h-3.5 w-3.5" />
-              <span>Keluar Full Screen</span>
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="h-3.5 w-3.5" />
+                  <span>Keluar Layar Penuh</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-3.5 w-3.5" />
+                  <span>Layar Penuh</span>
+                </>
+              )}
             </button>
             {onClose && (
               <button 
                 onClick={onClose} 
                 className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/30 h-[34px]"
               >
-                Close
+                Tutup
               </button>
             )}
           </div>
@@ -3694,11 +3806,11 @@ export default function GanttView({
           <button 
             onClick={scrollToToday}
             className="flex items-center gap-2 px-3 py-1 rounded-xl border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/40 h-[34px] shrink-0"
-            title="Scroll to today"
+            title="Gulir ke tanggal hari ini"
           >
             <Calendar className="h-3.5 w-3.5 text-base-red shrink-0" />
             <div className="flex flex-col items-start text-left shrink-0">
-              <span className="text-[9px] leading-tight font-extrabold">Today</span>
+              <span className="text-[9px] leading-tight font-extrabold">Hari Ini</span>
               <span className="text-[7.5px] leading-none text-base-muted font-normal lowercase tracking-wide font-mono">{todayFormattedShort}</span>
             </div>
           </button>
@@ -3713,7 +3825,7 @@ export default function GanttView({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Search tasks..."
+                  placeholder="Cari task / WBS..."
                   className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent w-[150px] h-[34px] font-medium"
                 />
               </div>
@@ -3723,11 +3835,11 @@ export default function GanttView({
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text shrink-0"
               >
-                <option value="all">All Status</option>
+                <option value="all">Semua Status</option>
                 <option value="on-track">On Track</option>
-                <option value="overdue">Overdue</option>
-                <option value="done">Done</option>
-                <option value="not-started">Not Started</option>
+                <option value="overdue">Terlambat</option>
+                <option value="done">Selesai</option>
+                <option value="not-started">Belum Mulai</option>
               </select>
 
               {isFilterActive && (
@@ -3737,9 +3849,9 @@ export default function GanttView({
                     setStatusFilter('all');
                   }}
                   className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-xl h-[34px] cursor-pointer font-bold gap-1 text-base-muted2 shrink-0"
-                  title="Clear filters"
+                  title="Reset filter"
                 >
-                  ✕ Clear
+                  ✕ Reset
                 </button>
               )}
             </div>
@@ -3747,17 +3859,22 @@ export default function GanttView({
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
 
-          {/* Zoom Level Toggle Buttons with layoutId */}
+          {/* Zoom Level Toggle Buttons with layoutId + Fit */}
           <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
             {['day', 'week', 'month', 'quarter'].map((mode) => (
               <button
                 key={mode}
-                onClick={() => setZoomMode(mode as any)}
+                onClick={() => {
+                  skipNextZoomAutoScrollRef.current = false;
+                  setCustomPixelsPerDay(null);
+                  setZoomMode(mode as any);
+                }}
+                title={`Zoom ${mode} (atau Ctrl + Scroll pada area timeline)`}
                 className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer shrink-0 ${
-                  zoomMode === mode ? 'text-white' : 'text-base-muted hover:text-base-text'
+                  zoomMode === mode && customPixelsPerDay === null ? 'text-white' : 'text-base-muted hover:text-base-text'
                 }`}
               >
-                {zoomMode === mode && (
+                {zoomMode === mode && customPixelsPerDay === null && (
                   <motion.div
                     layoutId="ganttZoomPill"
                     className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
@@ -3767,6 +3884,20 @@ export default function GanttView({
                 {mode}
               </button>
             ))}
+            <div className="w-[1px] h-3.5 bg-base-border mx-0.5 shrink-0" />
+            <button
+              type="button"
+              onClick={handleZoomToFit}
+              title="Zoom to Fit seluruh durasi proyek ke layar (atau gunakan Ctrl + Scroll di timeline)"
+              className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer shrink-0 flex items-center gap-1 ${
+                customPixelsPerDay !== null
+                  ? 'bg-base-accent text-white shadow-xs'
+                  : 'text-base-muted hover:text-base-text'
+              }`}
+            >
+              <Scan className="h-3 w-3 shrink-0" />
+              <span>Fit</span>
+            </button>
           </div>
 
           <div className="w-[1px] h-4 bg-base-border shrink-0" />
@@ -3799,7 +3930,7 @@ export default function GanttView({
             <button
               onClick={() => setIsPrefsDropdownOpen(!isPrefsDropdownOpen)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px] shrink-0"
-              title="Configure chart visibility preferences"
+              title="Atur preferensi tampilan lapisan Gantt"
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
                 <line x1="4" y1="21" x2="4" y2="14" />
@@ -3812,17 +3943,17 @@ export default function GanttView({
                 <line x1="9" y1="8" x2="15" y2="8" />
                 <line x1="17" y1="16" x2="23" y2="16" />
               </svg>
-              <span>Gantt Settings</span>
+              <span>Tampilan</span>
               <ChevronDown className="h-3 w-3 ml-0.5 shrink-0" />
             </button>
             {isPrefsDropdownOpen && (
               <div className="absolute right-0 mt-1.5 w-52 bg-base-surface border border-base-border rounded-xl shadow-xl p-3.5 z-[150] space-y-3 font-sans">
                 <div className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted mb-2 pb-1 border-b border-base-border/50">
-                  Toggle Layer Views
+                  Lapisan Tampilan Gantt
                 </div>
                 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Arrows</span>
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Panah Dependensi</span>
                   <input 
                     type="checkbox" 
                     checked={showArrows} 
@@ -3832,7 +3963,7 @@ export default function GanttView({
                 </label>
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Progress</span>
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Bar Progres (%)</span>
                   <input 
                     type="checkbox" 
                     checked={showProgress} 
@@ -3852,7 +3983,7 @@ export default function GanttView({
                 </label>
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">S-Curve Overlay</span>
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Kurva-S (S-Curve)</span>
                   <input 
                     type="checkbox" 
                     checked={showSCurve} 
@@ -3862,7 +3993,7 @@ export default function GanttView({
                 </label>
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Resource Load View</span>
+                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Beban Resource</span>
                   <input 
                     type="checkbox" 
                     checked={showResourceLoad} 
@@ -3873,8 +4004,8 @@ export default function GanttView({
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Plan vs Actual Hours</span>
-                    <span className="text-[8.5px] text-base-muted font-mono">Timesheet Integration</span>
+                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Jam Kerja Plan vs Aktual</span>
+                    <span className="text-[8.5px] text-base-muted font-mono">Integrasi Timesheet</span>
                   </div>
                   <input 
                     type="checkbox" 
@@ -3890,7 +4021,7 @@ export default function GanttView({
 
                 <label className="flex items-center justify-between cursor-pointer group py-0.5">
                   <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Show Baseline Schedule</span>
+                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Tampilkan Baseline</span>
                     <span className="text-[8.5px] text-base-muted font-mono">Target Rencana vs Aktual</span>
                   </div>
                   <input 
@@ -3918,7 +4049,7 @@ export default function GanttView({
                 setShowBaseline(nextVal);
                 handleSetShowBaseline(nextVal);
                 if (nextVal) {
-                  setToastMsg(`Baseline Active: Menampilkan perbandingan jadwal Rencana (Baseline) vs Aktual.`);
+                  setToastMsg('Baseline Aktif: Menampilkan perbandingan jadwal Rencana (Baseline) vs Aktual.');
                   setTimeout(() => setToastMsg(null), 3000);
                 }
               }}
@@ -3927,7 +4058,7 @@ export default function GanttView({
                   ? 'bg-slate-700 text-white border-slate-600 shadow-sm ring-2 ring-slate-500/30' 
                   : 'bg-base-surface border-base-border text-base-muted hover:text-slate-700 hover:border-slate-500/50'
               }`}
-              title="Toggle Baseline Schedule: Tampilkan / sembunyikan bar target jadwal rencana (Baseline)"
+              title="Tampilkan atau sembunyikan bar target jadwal Baseline"
             >
               <BookmarkCheck className={`h-3.5 w-3.5 shrink-0 ${showBaseline ? 'text-white' : 'text-slate-500'}`} />
               <span>Baseline</span>
@@ -4041,7 +4172,7 @@ export default function GanttView({
               setShowHoursTracking(nextVal);
               handleSetShowHoursTracking(nextVal);
               if (nextVal) {
-                setToastMsg(`Plan vs Actual Hours Active: ${totalHoursStats.actual.toFixed(1)}h logged / ${totalHoursStats.plan.toFixed(1)}h budgeted (${totalHoursStats.burn}% burn).`);
+                setToastMsg(`Plan vs Actual Aktif: ${totalHoursStats.actual.toFixed(1)} jam tercatat / ${totalHoursStats.plan.toFixed(1)} jam anggaran (${totalHoursStats.burn}% terpakai).`);
                 setTimeout(() => setToastMsg(null), 3500);
               }
             }}
@@ -4050,10 +4181,10 @@ export default function GanttView({
                 ? 'bg-blue-600 text-white border-blue-500 shadow-sm ring-2 ring-blue-500/30' 
                 : 'bg-base-surface border-base-border text-base-muted hover:text-blue-600 hover:border-blue-500/50'
             }`}
-            title="Toggle Plan vs Actual Hours: Compare budgeted man-hours against real workshop Timesheet logs"
+            title="Bandingkan anggaran jam kerja vs log aktual Timesheet bengkel"
           >
             <Clock className={`h-3.5 w-3.5 shrink-0 ${showHoursTracking ? 'text-white' : 'text-blue-500'}`} />
-            <span>Plan vs Actual</span>
+            <span>Plan vs Aktual</span>
             <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
               showHoursTracking ? 'bg-white/20 text-white' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
             }`}>
@@ -4067,7 +4198,7 @@ export default function GanttView({
               const nextState = !showCriticalPath;
               setShowCriticalPath(nextState);
               if (nextState) {
-                setToastMsg(`Critical Path Highlighter Active: ${criticalPathIds.size} critical tasks driving project timeline.`);
+                setToastMsg(`Critical Path Aktif: ${criticalPathIds.size} task kritis menentukan durasi selesai proyek.`);
                 setTimeout(() => setToastMsg(null), 3500);
               }
             }}
@@ -4076,7 +4207,7 @@ export default function GanttView({
                 ? 'bg-red-600 text-white border-red-500 shadow-sm ring-2 ring-red-500/30' 
                 : 'bg-base-surface border-base-border text-base-muted hover:text-red-600 hover:border-red-500/50'
             }`}
-            title="Toggle Critical Path Highlighter: Automatically identifies and highlights the zero-slack chain of tasks determining overall project completion"
+            title="Sorot jalur kritis (Critical Path) tanpa slack yang menentukan jadwal akhir proyek"
           >
             <Flame className={`h-3.5 w-3.5 shrink-0 ${showCriticalPath ? 'text-white fill-white' : 'text-red-500'}`} />
             <span>Critical Path</span>
@@ -4100,16 +4231,16 @@ export default function GanttView({
                       rightScrollRef.current.scrollTop = rowIdx * 32;
                       setSelectedRowId(firstConflictingId);
                       const rowConflicts = dependencyViolationsMap.get(firstConflictingId);
-                      setToastMsg(`Constraint Conflict on "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Click 'Smart Schedule' to resolve.`);
+                      setToastMsg(`Konflik Jadwal pada "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Klik 'Smart Schedule' untuk menyelaraskan.`);
                       setTimeout(() => setToastMsg(null), 6000);
                     }
                   }
                 }}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-600 dark:text-red-400 border border-red-500/60 shadow-xs transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] animate-pulse"
-                title={`${totalDependencyConflictsCount} task(s) violate hard dependency timing constraints! Click to jump to the first conflict.`}
+                title={`${totalDependencyConflictsCount} task memiliki bentrok dependensi jadwal. Klik untuk lompat ke konflik pertama.`}
               >
                 <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                <span>{totalDependencyConflictsCount} Violation{totalDependencyConflictsCount > 1 ? 's' : ''}</span>
+                <span>{totalDependencyConflictsCount} Bentrok</span>
               </button>
             </>
           )}
@@ -4244,7 +4375,7 @@ export default function GanttView({
                 <ChevronDown className="h-2.5 w-2.5 ml-0.5 shrink-0" />
               </button>
               {isExportDropdownOpen && (
-                <div className="absolute right-0 mt-1.5 w-32 bg-base-surface border border-base-border rounded-lg shadow-xl py-1 z-[150]">
+                <div className="absolute right-0 mt-1.5 w-40 bg-base-surface border border-base-border rounded-xl shadow-xl py-1 z-[150]">
                   <button
                     onClick={handleExportPNG}
                     className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
@@ -4256,6 +4387,14 @@ export default function GanttView({
                     className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
                   >
                     Export PDF
+                  </button>
+                  <div className="border-t border-base-border/60 my-0.5" />
+                  <button
+                    onClick={handleExportCSV}
+                    className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                    <span>Export CSV (Excel)</span>
                   </button>
                 </div>
               )}
@@ -4269,14 +4408,14 @@ export default function GanttView({
         <div className="bg-emerald-600 text-white text-xs px-4 py-2 flex items-center justify-between font-medium shadow-sm animate-fade-in shrink-0 z-20 border-b border-emerald-700">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
-            <span className="font-bold font-condensed uppercase tracking-wider text-xs">Visual Link Mode Active</span>
-            <span className="text-emerald-100 hidden sm:inline text-[11px]">— Drag from any task node circle (blue=start, green=finish) to connect dependencies, or click on any line node (✕) to remove links.</span>
+            <span className="font-bold font-condensed uppercase tracking-wider text-xs">Mode Tarik Relasi Aktif</span>
+            <span className="text-emerald-100 hidden sm:inline text-[11px]">— Seret dari titik ujung task (biru=mulai, hijau=selesai) ke task tujuan untuk menghubungkan dependensi, atau klik (✕) pada garis untuk memutus relasi.</span>
           </div>
           <button
             onClick={() => setConnectMode(false)}
             className="px-2.5 py-0.5 bg-emerald-800 hover:bg-emerald-900 rounded font-bold text-[10px] uppercase tracking-wide transition-colors cursor-pointer shrink-0"
           >
-            Exit (Esc)
+            Keluar (Esc)
           </button>
         </div>
       )}
@@ -4287,20 +4426,20 @@ export default function GanttView({
           <div className="flex flex-wrap items-center gap-4 text-base-text">
             <span className="font-condensed font-extrabold text-base-red uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-base-red animate-pulse" />
-              Critical Path Summary
+              Ringkasan Critical Path
             </span>
             <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
             <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
-              <span>Critical Tasks:</span>
+              <span>Task Kritis:</span>
               <span className="font-mono font-bold text-base-red bg-base-red-dim/30 px-1.5 py-0.5 rounded text-[10px]">
                 {criticalPathIds.size}
               </span>
             </div>
             <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
             <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
-              <span>Longest Critical Chain Length:</span>
+              <span>Panjang Rantai Kritis:</span>
               <span className="font-mono font-extrabold text-base-text text-[11px]">
-                {criticalChainLength} days
+                {criticalChainLength} hari
               </span>
             </div>
           </div>
@@ -4309,7 +4448,7 @@ export default function GanttView({
               onClick={jumpToFirstCriticalTask}
               className="flex items-center gap-1 px-2.5 py-1 bg-base-red text-white font-condensed font-bold uppercase tracking-wider text-[10px] rounded hover:bg-opacity-90 cursor-pointer transition-colors shrink-0"
             >
-              <span>Jump to first critical task</span>
+              <span>Lompat ke task kritis pertama</span>
               <span>→</span>
             </button>
           )}
@@ -4321,8 +4460,8 @@ export default function GanttView({
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1"><span className="text-[10px]">🔴</span> Critical Path</span>
           <span className="flex items-center gap-1"><span className="text-[10px]">🔵</span> On Track</span>
-          <span className="flex items-center gap-1"><span className="text-[10px]">🟡</span> Overdue</span>
-          <span className="flex items-center gap-1"><span className="text-[10px]">🟢</span> Done</span>
+          <span className="flex items-center gap-1"><span className="text-[10px]">🟡</span> Terlambat</span>
+          <span className="flex items-center gap-1"><span className="text-[10px]">🟢</span> Selesai</span>
           {showBaseline && (
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3.5 h-2 rounded-xs bg-slate-400/60 dark:bg-slate-500/60 border border-slate-500/80 shadow-2xs" />
@@ -4333,7 +4472,7 @@ export default function GanttView({
 
         {showHoursTracking && (
           <div className="flex items-center gap-3 text-[10px] font-mono">
-            <span className="text-base-muted">Shopfloor Man-Hours:</span>
+            <span className="text-base-muted">Jam Kerja Bengkel:</span>
             <span className="text-indigo-600 dark:text-indigo-400 font-bold">
               Plan: {totalHoursStats.plan.toFixed(1)}h
             </span>
@@ -4354,7 +4493,7 @@ export default function GanttView({
       </div>
 
       {/* CORE GANTT WORKSPACE BOX */}
-      <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 overflow-hidden relative" style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '550px' }}>
+      <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 min-h-0 overflow-hidden relative" style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '100%' }}>
         
         {/* LEFT FIXED PANEL (MS Project Columns) */}
         <GanttGrid
@@ -4395,7 +4534,7 @@ export default function GanttView({
           showCriticalPath={showCriticalPath}
           criticalAssemblyIds={criticalAssemblyIds}
           visibleRows={visibleRows}
-          allRows={allRows}
+          allRows={fullTreeRows}
           rows={rows}
           startIndex={startIndex}
           topSpacerHeight={topSpacerHeight}
@@ -4410,6 +4549,9 @@ export default function GanttView({
           toggleAssemblyCollapse={toggleAssemblyCollapse}
           highlightText={highlightText}
           getProjectIdOfRow={getProjectIdOfRow}
+          isFilterActive={isFilterActive || activeTab === 'lookahead'}
+          onScrollToBar={scrollToRowOnTimeline}
+          onSaveDuration={allowedToEdit ? saveDuration : undefined}
           onUpdateProject={onUpdateProject}
           editingHoursCell={editingHoursCell}
           setEditingHoursCell={setEditingHoursCell}
@@ -4519,6 +4661,7 @@ export default function GanttView({
           selectedRowId={selectedRowId}
           setSelectedRowId={setSelectedRowId}
           dragHoverTargetRowId={dragHoverTargetRowId}
+          flashingTimelineRowId={flashingTimelineRowId}
           rowBarCoordsCache={rowBarCoordsCache}
           showBaseline={showBaseline}
           rowBaselineCoordsCache={rowBaselineCoordsCache}
@@ -4614,12 +4757,12 @@ export default function GanttView({
                         const rowIdx = allRows.findIndex(r => r.id === t.taskId);
                         if (rowIdx >= 0 && rightScrollRef.current) {
                           rightScrollRef.current.scrollTop = rowIdx * 32;
-                          setToastMsg(`Jumped to task: ${t.taskName}`);
+                          setToastMsg(`Melompat ke task: ${t.taskName}`);
                           setTimeout(() => setToastMsg(null), 3000);
                         }
                       }}
                       className="p-1.5 rounded bg-base-surface2 border border-base-border/60 hover:border-indigo-500 hover:bg-indigo-500/10 cursor-pointer transition-all text-[11px] flex items-center justify-between group"
-                      title="Click to jump to this task in Gantt chart above"
+                      title="Klik untuk lompat ke task ini pada Gantt chart di atas"
                     >
                       <div className="flex items-center gap-1.5 min-w-0 pr-2">
                         <span className="font-mono text-[10px] font-bold text-indigo-500">[{t.wbs}]</span>
@@ -4778,9 +4921,17 @@ export default function GanttView({
         )}
         {/* TOAST NOTIFICATION */}
         {toastMsg && (
-          <div className="fixed bottom-6 right-6 bg-base-surface border border-base-border shadow-lg rounded-lg px-4 py-2.5 text-xs font-semibold z-[300] flex items-center gap-2 animate-bounce">
-            <span className="w-2 h-2 rounded-full bg-base-red shrink-0" />
-            <span className="text-base-text font-bold">{toastMsg}</span>
+          <div className="fixed bottom-5 right-5 bg-base-surface border border-base-border shadow-2xl rounded-xl pl-3.5 pr-2.5 py-2.5 text-xs font-semibold z-[1100] flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 max-w-md">
+            <span className="w-2 h-2 rounded-full bg-base-accent shrink-0" />
+            <span className="text-base-text font-semibold leading-snug">{toastMsg}</span>
+            <button
+              type="button"
+              onClick={() => setToastMsg(null)}
+              className="p-0.5 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text cursor-pointer shrink-0"
+              title="Tutup"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           </div>
         )}
 
@@ -4890,7 +5041,7 @@ export default function GanttView({
                           }
                           savePredecessorsDirect(tgtR.id, nextDeps);
 
-                          setToastMsg(`Linked ${srcR.wbs} → ${tgtR.wbs} (${pendingDepType}${pendingDepLag ? `+${pendingDepLag}` : ''})`);
+                          setToastMsg(`Relasi dibuat: ${srcR.wbs} → ${tgtR.wbs} (${pendingDepType}${pendingDepLag ? `+${pendingDepLag}` : ''})`);
                           setTimeout(() => setToastMsg(null), 3000);
                         }
                       }
@@ -4898,14 +5049,14 @@ export default function GanttView({
                     }}
                     className="flex-1 bg-green-600 hover:bg-green-700 text-white py-1.5 rounded font-bold transition-colors shadow-sm cursor-pointer"
                   >
-                    {isAlreadyLinked ? 'Update Link' : 'Add Link'}
+                    {isAlreadyLinked ? 'Perbarui Relasi' : 'Tambah Relasi'}
                   </button>
                   <button
                     type="button"
                     onClick={() => setPendingConnect(null)}
                     className="px-3 bg-base-surface2 hover:bg-base-surface3 text-base-text border border-base-border py-1.5 rounded font-bold transition-all cursor-pointer"
                   >
-                    Cancel
+                    Batal
                   </button>
                 </div>
               </div>
@@ -4936,7 +5087,7 @@ export default function GanttView({
                     <Link className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="font-condensed font-extrabold text-sm text-base-text tracking-tight uppercase">Dependencies</h3>
+                    <h3 className="font-condensed font-extrabold text-sm text-base-text tracking-tight uppercase">Dependensi Task</h3>
                     <p className="text-[10px] text-base-muted font-bold font-mono">WBS {targetRow.wbs} — {targetRow.name}</p>
                   </div>
                 </div>
@@ -4955,7 +5106,7 @@ export default function GanttView({
               <div className="flex-1 overflow-y-auto p-4 space-y-5">
                 {/* Active Predecessors List */}
                 <div>
-                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Active Predecessors</h4>
+                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Predecessor Aktif</h4>
                   {targetRow.predecessors && targetRow.predecessors.length > 0 ? (
                     <div className="space-y-2">
                       {targetRow.predecessors.map((dep: any) => {
@@ -4974,9 +5125,9 @@ export default function GanttView({
                                 <span className="text-[11px] font-bold truncate text-base-text">{predRow.name}</span>
                               </div>
                               <div className="mt-1 text-[9px] text-base-muted font-mono">
-                                Type: <span className="text-base-text font-bold">{dep.type}</span>
+                                Tipe: <span className="text-base-text font-bold">{dep.type}</span>
                                 {dep.lag ? ` | Lag: ` : ''}
-                                {dep.lag ? <span className="text-base-text font-bold">{dep.lag}d</span> : ''}
+                                {dep.lag ? <span className="text-base-text font-bold">{dep.lag}h</span> : ''}
                               </div>
                             </div>
                             
@@ -4986,7 +5137,7 @@ export default function GanttView({
                                 handleDeletePredecessor(dep.key);
                               }}
                               className="p-1.5 text-base-muted hover:text-base-red hover:bg-base-red-dim/20 rounded-md transition-all cursor-pointer"
-                              title="Delete dependency link"
+                              title="Hapus relasi dependensi"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -4996,7 +5147,7 @@ export default function GanttView({
                     </div>
                   ) : (
                     <div className="text-center py-4 bg-base-surface2/50 border border-dashed border-base-border rounded-lg text-[10px] text-base-muted font-bold font-condensed">
-                      No active predecessors for this task.
+                      Belum ada predecessor aktif untuk task ini.
                     </div>
                   )}
                 </div>
@@ -5006,14 +5157,14 @@ export default function GanttView({
 
                 {/* Search & Add Section */}
                 <div>
-                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Link New Predecessor</h4>
+                  <h4 className="text-[10px] uppercase font-extrabold text-base-muted tracking-wider mb-2 font-condensed">Hubungkan Predecessor Baru</h4>
                   
                   {/* Search Input */}
                   <div className="relative flex items-center mb-3">
                     <Search className="absolute left-2.5 h-3.5 w-3.5 text-base-muted pointer-events-none" />
                     <input
                       type="text"
-                      placeholder="Search tasks by name or WBS..."
+                      placeholder="Cari task berdasarkan nama atau WBS..."
                       value={depPanelSearch}
                       onChange={(e) => setDepPanelSearch(e.target.value)}
                       className="w-full bg-base-surface2 border border-base-border rounded-lg pl-8 pr-3 py-1.5 text-xs outline-none focus:border-base-accent font-medium text-base-text"
@@ -5037,7 +5188,7 @@ export default function GanttView({
                     if (available.length === 0) {
                       return (
                         <div className="text-center py-4 text-[10px] text-base-muted font-bold font-condensed">
-                          No matching available tasks.
+                          Tidak ada task yang sesuai.
                         </div>
                       );
                     }
@@ -5102,13 +5253,13 @@ export default function GanttView({
                                   savePredecessorsDirect(targetRow.id, nextDeps);
                                   setDepPanelSearch('');
                                   
-                                  setToastMsg(`Added Predecessor: ${r.wbs} → ${targetRow.wbs}`);
+                                  setToastMsg(`Predecessor ditambahkan: ${r.wbs} → ${targetRow.wbs}`);
                                   setTimeout(() => setToastMsg(null), 3000);
                                 }}
                                 className="ml-auto flex items-center gap-1 px-2 py-0.5 bg-base-accent text-white hover:bg-base-accent/90 transition-all rounded text-[9px] font-bold uppercase cursor-pointer"
                               >
                                 <Plus className="h-2.5 w-2.5" />
-                                <span>Link</span>
+                                <span>Hubungkan</span>
                               </button>
                             </div>
                           </div>
@@ -5460,6 +5611,231 @@ export default function GanttView({
                 >
                   Lihat Hasil Gantt Chart
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Styled In-App Baseline Confirmation Modal */}
+        {baselineConfirm?.isOpen && (
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+            onClick={() => setBaselineConfirm(null)}
+          >
+            <div
+              className="w-full max-w-md bg-base-surface border border-base-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-5 py-4 border-b border-base-border flex items-center justify-between bg-base-surface2/70">
+                <div className="flex items-center gap-2.5">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center border ${
+                    baselineConfirm.tone === 'danger'
+                      ? 'bg-base-danger-dim text-base-danger border-base-danger/30'
+                      : 'bg-base-accent-dim text-base-accent border-base-accent/30'
+                  }`}>
+                    {baselineConfirm.tone === 'danger' ? <Trash2 className="h-4 w-4" /> : <BookmarkCheck className="h-4 w-4" />}
+                  </div>
+                  <h3 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text">
+                    {baselineConfirm.title}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setBaselineConfirm(null)}
+                  className="p-1 rounded-lg hover:bg-base-surface3 text-base-muted hover:text-base-text cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-5">
+                <p className="text-xs text-base-muted leading-relaxed">
+                  {baselineConfirm.message}
+                </p>
+              </div>
+
+              <div className="px-5 py-3 border-t border-base-border bg-base-surface2/50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setBaselineConfirm(null)}
+                  className="px-4 py-2 rounded-xl border border-base-border bg-base-surface hover:bg-base-surface3 text-xs font-bold text-base-text transition-colors cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={baselineConfirm.onConfirm}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold text-white transition-all shadow-xs cursor-pointer ${
+                    baselineConfirm.tone === 'danger'
+                      ? 'bg-base-danger hover:bg-base-danger/90'
+                      : 'bg-base-accent hover:bg-base-accent2'
+                  }`}
+                >
+                  {baselineConfirm.confirmLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Smart Schedule Impact Preview Modal */}
+        {smartSchedulePreview && (
+          <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
+            onClick={() => setSmartSchedulePreview(null)}
+          >
+            <div
+              className="w-full max-w-2xl bg-base-surface border border-base-border rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[85vh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Header */}
+              <div className="px-5 py-4 border-b border-base-border flex items-center justify-between bg-base-surface2/70 shrink-0">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30 flex items-center justify-center">
+                    <Sparkles className="h-4 w-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-condensed font-extrabold text-sm uppercase tracking-wider text-base-text">
+                      Pratinjau Dampak Smart Schedule
+                    </h3>
+                    <p className="text-[11px] text-base-muted">
+                      Tinjau perubahan jadwal sebelum diterapkan ke proyek Anda
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSmartSchedulePreview(null)}
+                  className="p-1 rounded-lg hover:bg-base-surface3 text-base-muted hover:text-base-text cursor-pointer"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {/* Summary Cards */}
+              <div className="p-4 space-y-3 overflow-y-auto flex-1">
+                <div className="grid grid-cols-3 gap-2.5">
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Task Terdampak</span>
+                    <span className="text-base font-mono font-black text-amber-600 dark:text-amber-400 mt-0.5">
+                      {smartSchedulePreview.totalShiftedCount}
+                    </span>
+                    <span className="text-[9px] text-base-muted/80">Bergeser sesuai logika dependensi</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Proyek Terdampak</span>
+                    <span className="text-base font-mono font-black text-base-text mt-0.5">
+                      {smartSchedulePreview.updatedProjects.length}
+                    </span>
+                    <span className="text-[9px] text-base-muted/80">Proyek akan diperbarui</span>
+                  </div>
+                  <div className="p-2.5 rounded-xl bg-base-surface2 border border-base-border flex flex-col">
+                    <span className="text-[10px] text-base-muted uppercase font-condensed font-bold">Pergeseran Maks</span>
+                    <span className="text-base font-mono font-black text-base-accent mt-0.5">
+                      {smartSchedulePreview.maxDeltaDays > 0 ? `+${smartSchedulePreview.maxDeltaDays}d` : `${smartSchedulePreview.maxDeltaDays}d`}
+                    </span>
+                    <span className="text-[9px] text-base-muted/80">Perubahan hari terbesar</span>
+                  </div>
+                </div>
+
+                {/* Project Due Date Warning */}
+                {smartSchedulePreview.projectImpacts.length > 0 && (
+                  <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-xs font-bold text-red-600 dark:text-red-400">
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                      <span>Peringatan Target Selesai Proyek (Melewati Due Date):</span>
+                    </div>
+                    <div className="space-y-1">
+                      {smartSchedulePreview.projectImpacts.map(imp => (
+                        <div key={imp.projectId} className="flex items-center justify-between text-[11px] bg-base-surface/80 px-2.5 py-1.5 rounded-lg border border-red-500/20">
+                          <span className="font-semibold text-base-text truncate max-w-[220px]">{imp.projectName}</span>
+                          <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                            <span className="text-base-muted">{imp.oldDue}</span>
+                            <ArrowRight className="h-3 w-3 text-red-500" />
+                            <span className="font-bold text-red-600 dark:text-red-400">{imp.newDue}</span>
+                            <span className="px-1.5 py-0.5 rounded bg-red-500/15 text-red-600 dark:text-red-400 font-bold">
+                              +{imp.deltaDays}d
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Affected Tasks Table */}
+                <div className="border border-base-border rounded-xl overflow-hidden">
+                  <div className="bg-base-surface2 px-3 py-2 border-b border-base-border flex items-center justify-between">
+                    <span className="text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-muted2">
+                      Daftar Task yang Akan Bergeser
+                    </span>
+                    <span className="text-[10px] font-mono text-base-muted">
+                      {smartSchedulePreview.items.length} aktivitas
+                    </span>
+                  </div>
+                  <div className="max-h-[260px] overflow-y-auto divide-y divide-base-border/70">
+                    {smartSchedulePreview.items.map(item => (
+                      <div key={item.taskId} className="px-3 py-2 flex items-center justify-between gap-3 hover:bg-base-surface2/50 transition-colors">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-base-surface2 border border-base-border text-base-muted2 shrink-0">
+                              {item.wbs}
+                            </span>
+                            <span className="text-xs font-semibold text-base-text truncate">
+                              {item.taskName}
+                            </span>
+                          </div>
+                          {projectsList.length > 1 && (
+                            <div className="text-[10px] text-base-muted truncate mt-0.5">
+                              {item.projectName}
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="text-right font-mono text-[10px]">
+                            <div className="text-base-muted line-through">
+                              {item.oldStart} → {item.oldFinish}
+                            </div>
+                            <div className="font-bold text-base-text flex items-center justify-end gap-1">
+                              <span>{item.newStart} → {item.newFinish}</span>
+                            </div>
+                          </div>
+                          <span className={`px-1.5 py-0.5 rounded font-mono text-[10px] font-extrabold shrink-0 ${
+                            item.deltaDays > 0
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                              : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          }`}>
+                            {item.deltaDays > 0 ? `+${item.deltaDays}d` : `${item.deltaDays}d`}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-3 border-t border-base-border bg-base-surface2/50 flex items-center justify-between gap-2 shrink-0">
+                <span className="text-[10px] text-base-muted">
+                  Dapat dibatalkan kapan saja dengan tombol Undo.
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSmartSchedulePreview(null)}
+                    className="px-4 py-2 rounded-xl border border-base-border bg-base-surface hover:bg-base-surface3 text-xs font-bold text-base-text transition-colors cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmApplySmartSchedule}
+                    className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span>Terapkan Jadwal ({smartSchedulePreview.totalShiftedCount})</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

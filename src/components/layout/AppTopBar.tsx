@@ -25,7 +25,11 @@ import {
   Factory,
   QrCode,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  Compass,
+  Key,
+  LogOut,
+  ChevronDown
 } from 'lucide-react';
 
 interface AppTopBarProps {
@@ -53,11 +57,11 @@ interface AppTopBarProps {
   onMarkRead?: (ids: string[]) => void;
 }
 
-type SearchCategory = 'all' | 'projects' | 'personnel' | 'materials' | 'bom';
+type SearchCategory = 'all' | 'menus' | 'projects' | 'personnel' | 'materials' | 'bom';
 
 interface SearchResultItem {
   id: string;
-  type: 'project' | 'employee' | 'material' | 'bom';
+  type: 'menu' | 'project' | 'employee' | 'material' | 'bom';
   title: string;
   subtitle: string;
   badge?: string;
@@ -123,8 +127,29 @@ export function AppTopBar({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeCategory, setActiveCategory] = useState<SearchCategory>('all');
   const [selectedItem, setSelectedItem] = useState<SearchResultItem | null>(null);
-  
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+
+  // Listen to global event from mobile header Search trigger
+  useEffect(() => {
+    const handleOpenSearch = () => setIsSearchOpen(true);
+    window.addEventListener('open-global-search', handleOpenSearch);
+    return () => window.removeEventListener('open-global-search', handleOpenSearch);
+  }, []);
+
+  // Close profile menu on outside click
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(e.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [profileMenuOpen]);
 
   // Autofocus the input field when search modal is opened
   useEffect(() => {
@@ -143,6 +168,23 @@ export function AppTopBar({
     if (!query) return [];
 
     const list: SearchResultItem[] = [];
+
+    // 0. Quick Menu / View Navigation search
+    if ((activeCategory === 'all' || activeCategory === 'menus') && propAllowedTabs?.length) {
+      propAllowedTabs.forEach(t => {
+        if ((t.label || '').toLowerCase().includes(query) || (t.id || '').toLowerCase().includes(query)) {
+          list.push({
+            id: `menu_${t.id}`,
+            type: 'menu',
+            title: t.label,
+            subtitle: `Buka langsung halaman ${t.label}`,
+            badge: 'MENU',
+            badgeColor: 'bg-base-accent-dim text-base-accent border border-base-accent/20',
+            data: t
+          });
+        }
+      });
+    }
 
     // 1. Projects search
     if (activeCategory === 'all' || activeCategory === 'projects') {
@@ -240,7 +282,7 @@ export function AppTopBar({
     }
 
     return list;
-  }, [searchQuery, activeCategory, projects, employees, materials, bomTemplates]);
+  }, [searchQuery, activeCategory, propAllowedTabs, projects, employees, materials, bomTemplates]);
 
   // Auto-select first item on search change
   useEffect(() => {
@@ -289,7 +331,10 @@ export function AppTopBar({
       } else if (e.key === 'Enter') {
         e.preventDefault();
         if (selectedItem) {
-          if (selectedItem.type === 'project' && openSpotlight) {
+          if (selectedItem.type === 'menu' && setActiveTab) {
+            setActiveTab(selectedItem.data.id);
+            setIsSearchOpen(false);
+          } else if (selectedItem.type === 'project' && openSpotlight) {
             openSpotlight(selectedItem.data.id);
             setIsSearchOpen(false);
           } else if (selectedItem.type === 'employee' && setActiveTab) {
@@ -297,6 +342,9 @@ export function AppTopBar({
             setIsSearchOpen(false);
           } else if (selectedItem.type === 'material' && setActiveTab) {
             setActiveTab('materials');
+            setIsSearchOpen(false);
+          } else if (selectedItem.type === 'bom' && setActiveTab) {
+            setActiveTab('bom');
             setIsSearchOpen(false);
           }
         }
@@ -322,7 +370,7 @@ export function AppTopBar({
                   ? 'bg-[#9b1c2e]/10 text-[#9b1c2e] border-[#9b1c2e]/30 hover:bg-[#9b1c2e]/20 font-black' 
                   : 'bg-base-surface2 border-base-border text-base-muted hover:text-base-text hover:bg-base-surface3'
               }`}
-              title={sidebarCollapsed ? "Buka Sidebar Menu (Expand Sidebar)" : "Tutup Sidebar Menu (Collapse Sidebar)"}
+              title={sidebarCollapsed ? "Buka Sidebar Menu" : "Ciutkan Sidebar Menu"}
             >
               {sidebarCollapsed ? <PanelLeftOpen className="h-4 w-4 text-[#9b1c2e]" /> : <PanelLeftClose className="h-4 w-4" />}
               <span className="text-[11px] font-condensed font-bold uppercase tracking-wider hidden xl:inline">
@@ -343,12 +391,12 @@ export function AppTopBar({
           <div className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-[11px] font-condensed font-bold text-base-muted shrink-0">
             <div className="flex items-center gap-1 text-base-text">
               <span className="w-1.5 h-1.5 rounded-full bg-base-green" />
-              <span>{projects.filter(p => p.status === 'active').length} Proj</span>
+              <span>{projects.filter(p => p.status === 'active').length} Proyek</span>
             </div>
             <span className="text-base-border">|</span>
             <div className="flex items-center gap-1 text-base-text">
               <Users className="h-3 w-3 text-base-blue" />
-              <span>{employees.filter(e => !e.isExEmployee).length} Team</span>
+              <span>{employees.filter(e => !e.isExEmployee).length} Tim</span>
             </div>
           </div>
 
@@ -373,14 +421,57 @@ export function AppTopBar({
 
         <div className="flex items-center gap-3">
           {currentUser && (
-            <div className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-base-surface2 border border-base-border">
-              <div className="w-6 h-6 rounded-full bg-base-accent-dim text-base-accent font-condensed font-extrabold text-xs flex items-center justify-center border border-base-accent/30">
-                {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
-              </div>
-              <div className="text-left hidden sm:block">
-                <p className="text-[11px] font-condensed font-bold text-base-text leading-tight">{currentUser.name}</p>
-                <p className="text-[9px] font-condensed uppercase tracking-wider text-base-muted leading-none">{currentUser.role}</p>
-              </div>
+            <div ref={profileMenuRef} className="relative">
+              <button
+                type="button"
+                onClick={() => setProfileMenuOpen(o => !o)}
+                className="flex items-center gap-2 px-2.5 py-1 rounded-xl bg-base-surface2 hover:bg-base-surface3 border border-base-border transition-colors cursor-pointer"
+                title="Menu Akun & Keamanan"
+              >
+                <div className="w-6 h-6 rounded-full bg-base-accent-dim text-base-accent font-condensed font-extrabold text-xs flex items-center justify-center border border-base-accent/30">
+                  {currentUser.name ? currentUser.name.charAt(0).toUpperCase() : 'U'}
+                </div>
+                <div className="text-left hidden sm:block">
+                  <p className="text-[11px] font-condensed font-bold text-base-text leading-tight">{currentUser.name}</p>
+                  <p className="text-[9px] font-condensed uppercase tracking-wider text-base-muted leading-none">{currentUser.role}</p>
+                </div>
+                <ChevronDown className={`h-3.5 w-3.5 text-base-muted transition-transform ${profileMenuOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {profileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-52 bg-base-surface border border-base-border rounded-xl shadow-2xl py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150">
+                  <div className="px-3 py-2 border-b border-base-border/60">
+                    <p className="text-xs font-bold text-base-text truncate">{currentUser.name}</p>
+                    <p className="text-[10px] font-condensed uppercase tracking-wider text-base-accent">{currentUser.role}</p>
+                  </div>
+                  {onChangePassword && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        onChangePassword();
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold text-base-text hover:bg-base-surface2 flex items-center gap-2 cursor-pointer"
+                    >
+                      <Key className="h-3.5 w-3.5 text-base-accent" />
+                      <span>Ganti Password</span>
+                    </button>
+                  )}
+                  {onLogout && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full px-3 py-2 text-left text-xs font-semibold text-base-danger hover:bg-base-danger-dim/40 flex items-center gap-2 cursor-pointer border-t border-base-border/40"
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      <span>Keluar</span>
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
@@ -410,10 +501,10 @@ export function AppTopBar({
                   ? 'bg-base-warn text-white border-base-warn hover:bg-base-warn/90 font-black' 
                   : 'bg-base-warn-dim hover:bg-base-warn/20 text-base-warn border-base-warn/30'
               }`}
-              title={shopFloorMode ? "Exit Shop Floor Mode" : "Switch to Shop Floor Tablet Mode"}
+              title={shopFloorMode ? "Keluar dari Mode Tablet Shop Floor" : "Beralih ke Mode Tablet Shop Floor"}
             >
               <Factory className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">{shopFloorMode ? 'Exit Shop Floor' : 'Shop Floor'}</span>
+              <span className="hidden sm:inline">{shopFloorMode ? 'Keluar Shop Floor' : 'Shop Floor'}</span>
             </button>
           )}
 
@@ -421,7 +512,7 @@ export function AppTopBar({
             <button 
               onClick={onExportCSV} 
               className="px-3 py-1.5 bg-base-ok-dim hover:bg-base-ok hover:text-white border border-base-ok/20 text-base-ok transition-all font-condensed font-extrabold text-xs rounded-xl uppercase tracking-wider flex items-center gap-1.5 cursor-pointer shadow-xs"
-              title="Download consolidated spreadsheets"
+              title="Unduh rekap data proyek dalam format CSV"
             >
               <Download className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">Export CSV</span>
@@ -448,7 +539,7 @@ export function AppTopBar({
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Type to search projects, personnel, or material inventory..."
+                placeholder="Ketik untuk mencari menu, proyek, personil, material, atau BOM..."
                 className="bg-transparent border-0 ring-0 focus:ring-0 focus:outline-hidden text-base-text placeholder-base-muted text-sm flex-1 font-medium"
               />
               {searchQuery && (
@@ -460,54 +551,55 @@ export function AppTopBar({
                 </button>
               )}
               <div className="text-[10px] font-condensed font-bold bg-base-surface3 border border-base-border text-base-muted px-2 py-1 rounded select-none uppercase tracking-wider shrink-0">
-                ESC to close
+                ESC untuk tutup
               </div>
             </div>
 
             {/* Category Tabs */}
             <div className="px-6 py-2.5 border-b border-base-border bg-base-surface/50 flex items-center gap-2 overflow-x-auto shrink-0 scrollbar-none">
-              {(['all', 'projects', 'personnel', 'materials', 'bom'] as SearchCategory[]).map((cat) => (
+              {(['all', 'menus', 'projects', 'personnel', 'materials', 'bom'] as SearchCategory[]).map((cat) => (
                 <button
                   key={cat}
                   onClick={() => {
                     setActiveCategory(cat);
                     setSelectedItem(null);
                   }}
-                  className={`px-3 py-1 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer border ${
+                  className={`px-3 py-1 rounded-lg text-xs font-condensed font-bold uppercase tracking-wider transition-all cursor-pointer border shrink-0 ${
                     activeCategory === cat
                       ? 'bg-base-accent text-white border-base-accent shadow-sm'
                       : 'bg-base-surface2 border-base-border text-base-muted hover:text-base-text hover:bg-base-surface3'
                   }`}
                 >
-                  {cat === 'all' && 'All Results'}
-                  {cat === 'projects' && 'Projects'}
-                  {cat === 'personnel' && 'Personnel'}
-                  {cat === 'materials' && 'Material Inventory'}
-                  {cat === 'bom' && 'BOM / Templates'}
+                  {cat === 'all' && 'Semua'}
+                  {cat === 'menus' && 'Menu'}
+                  {cat === 'projects' && 'Proyek'}
+                  {cat === 'personnel' && 'Personil'}
+                  {cat === 'materials' && 'Stok Material'}
+                  {cat === 'bom' && 'BOM / Template'}
                 </button>
               ))}
             </div>
 
             {/* Split Screen Search View */}
-            <div className="flex-1 flex min-h-0 bg-base-surface">
+            <div className="flex-1 flex flex-col md:flex-row min-h-0 bg-base-surface">
               
               {/* Left Side: Search List Results */}
-              <div className="w-1/2 border-r border-base-border overflow-y-auto flex flex-col">
+              <div className="w-full md:w-1/2 h-1/2 md:h-full border-b md:border-b-0 md:border-r border-base-border overflow-y-auto flex flex-col">
                 {!searchQuery.trim() ? (
                   <div className="flex-1 flex flex-col items-center justify-center text-center p-8 gap-4">
                     <div className="w-12 h-12 rounded-full bg-base-accent-dim/10 border border-base-accent/20 flex items-center justify-center text-base-accent animate-bounce">
                       <Sparkles className="h-5 w-5" />
                     </div>
                     <div className="space-y-1">
-                      <p className="font-condensed font-black uppercase text-sm tracking-wider text-base-text">Search Workspace</p>
+                      <p className="font-condensed font-black uppercase text-sm tracking-wider text-base-text">Pencarian Cepat Ruang Kerja</p>
                       <p className="text-xs text-base-muted max-w-xs mx-auto">
-                        Search dynamically for projects, specific WO clients, personnel records, position titles, or material inventory stock logs.
+                        Cari menu aplikasi, proyek, nomor WO, data personil, stok material gudang, hingga template BOM secara instan.
                       </p>
                     </div>
                     
                     {/* Handy shortcuts */}
                     <div className="pt-2 text-left max-w-xs mx-auto space-y-2 border-t border-base-border/50 w-full mt-2">
-                      <p className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1 text-center">Try typing</p>
+                      <p className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mb-1 text-center">Coba ketik</p>
                       <div className="flex flex-wrap gap-1.5 justify-center">
                         {['WO', 'Tray', 'Welder', 'Shift', 'Safety', 'Plate'].map((term) => (
                           <button
@@ -527,8 +619,8 @@ export function AppTopBar({
                       <AlertCircle className="h-5 w-5" />
                     </div>
                     <div className="space-y-1">
-                      <p className="font-condensed font-bold text-xs uppercase tracking-wider text-base-text">No matches found</p>
-                      <p className="text-[11px] text-base-muted">We couldn't find anything matching "{searchQuery}" under this scope.</p>
+                      <p className="font-condensed font-bold text-xs uppercase tracking-wider text-base-text">Tidak ditemukan</p>
+                      <p className="text-[11px] text-base-muted">Tidak ada data yang cocok dengan kata kunci "{searchQuery}".</p>
                     </div>
                   </div>
                 ) : (
@@ -549,6 +641,7 @@ export function AppTopBar({
                             <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 border border-base-border ${
                               isSelected ? 'bg-base-accent/10 text-base-accent' : 'bg-base-surface3 text-base-muted'
                             }`}>
+                              {item.type === 'menu' && <Compass className="h-4 w-4 text-base-accent" />}
                               {item.type === 'project' && <Folder className="h-4 w-4" />}
                               {item.type === 'employee' && <Users className="h-4 w-4" />}
                               {item.type === 'material' && <Package className="h-4 w-4" />}
@@ -576,12 +669,12 @@ export function AppTopBar({
               </div>
 
               {/* Right Side: "Actual Contents" detailed popup view panel */}
-              <div className="w-1/2 bg-base-surface2/50 overflow-y-auto p-6">
+              <div className="w-full md:w-1/2 h-1/2 md:h-full bg-base-surface2/50 overflow-y-auto p-4 md:p-6">
                 {!selectedItem ? (
                   <div className="h-full flex flex-col items-center justify-center text-center text-base-muted">
                     <Command className="h-8 w-8 text-base-muted/40 mb-2" />
-                    <p className="font-condensed font-bold uppercase text-xs tracking-wider">Inspect Item Dossier</p>
-                    <p className="text-[10px] text-base-muted max-w-xs">Select an item from the search results list to view its complete record details directly.</p>
+                    <p className="font-condensed font-bold uppercase text-xs tracking-wider">Pratinjau Detail</p>
+                    <p className="text-[10px] text-base-muted max-w-xs">Pilih item dari daftar hasil pencarian untuk melihat rincian lengkapnya secara langsung.</p>
                   </div>
                 ) : (
                   <div className="space-y-5 animate-in fade-in duration-200">
@@ -589,6 +682,7 @@ export function AppTopBar({
                     {/* Entity Icon, Title, and Badges */}
                     <div className="flex items-start gap-4">
                       <div className="w-12 h-12 rounded-xl bg-base-surface border border-base-border flex items-center justify-center text-base-accent shadow-sm shrink-0">
+                        {selectedItem.type === 'menu' && <Compass className="h-6 w-6 text-base-accent" />}
                         {selectedItem.type === 'project' && <Folder className="h-6 w-6 text-base-accent" />}
                         {selectedItem.type === 'employee' && <Users className="h-6 w-6 text-base-info" />}
                         {selectedItem.type === 'material' && <Package className="h-6 w-6 text-base-ok" />}
@@ -611,6 +705,27 @@ export function AppTopBar({
 
                     {/* Detailed Properties list */}
                     <div className="bg-base-surface border border-base-border rounded-xl p-4 space-y-4">
+
+                      {/* 0. MENU NAVIGATION VIEW */}
+                      {selectedItem.type === 'menu' && (
+                        <div className="space-y-4">
+                          <p className="text-xs text-base-muted leading-relaxed">
+                            Navigasi cepat menuju modul <strong className="text-base-text">{selectedItem.title}</strong>. Tekan <kbd className="px-1.5 py-0.5 bg-base-surface2 border border-base-border rounded font-mono text-[10px]">Enter</kbd> atau klik tombol di bawah untuk langsung berpindah halaman.
+                          </p>
+                          {setActiveTab && (
+                            <button
+                              onClick={() => {
+                                setActiveTab(selectedItem.data.id);
+                                setIsSearchOpen(false);
+                              }}
+                              className="w-full py-2.5 bg-base-accent hover:bg-base-accent/90 text-white font-condensed font-extrabold text-xs uppercase tracking-wider rounded-lg shadow-sm transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                            >
+                              <span>Buka {selectedItem.title}</span>
+                              <ArrowRight className="h-4 w-4" />
+                            </button>
+                          )}
+                        </div>
+                      )}
                       
                       {/* 1. PROJECT SPECIFIC VIEW */}
                       {selectedItem.type === 'project' && (
@@ -909,14 +1024,14 @@ export function AppTopBar({
             {/* Modal Footer */}
             <div className="px-6 py-3 border-t border-base-border bg-base-surface2 flex items-center justify-between shrink-0 text-[10px] text-base-muted uppercase tracking-wider font-condensed font-bold">
               <div className="flex items-center gap-4">
-                <span>⚡ Use Up/Down arrows to select</span>
-                <span>⏎ to inspect</span>
+                <span>⚡ Gunakan panah Atas/Bawah untuk memilih</span>
+                <span>⏎ untuk buka</span>
               </div>
               <button 
                 onClick={() => setIsSearchOpen(false)}
                 className="px-4 py-2 bg-base-surface border border-base-border hover:bg-base-surface3 text-base-text transition-colors rounded-lg font-condensed font-bold text-xs uppercase tracking-wider cursor-pointer"
               >
-                Close
+                Tutup
               </button>
             </div>
           </div>

@@ -1243,24 +1243,61 @@ export function ProjectsPage({
             </div>
 
             {filteredProjects.length === 0 ? (
-              <div className="py-12 text-center bg-base-surface2/30 border border-dashed border-base-border rounded-xl text-base-muted text-xs space-y-3">
-                <div>No projects match the selected search or month filter.</div>
-                <div className="flex gap-2 justify-center">
-                  {projectSearchQuery && (
-                    <button
-                      onClick={() => setProjectSearchQuery('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear search filter
-                    </button>
-                  )}
-                  {currentTabMonthFilter && (
-                    <button
-                      onClick={() => setCurrentTabMonthFilter('')}
-                      className="px-3 py-1.5 bg-base-surface border border-base-border text-xs rounded-lg text-base-text hover:bg-base-surface2 cursor-pointer font-condensed font-bold uppercase transition-all"
-                    >
-                      Clear month filter
-                    </button>
+              <div className="py-14 px-6 text-center bg-base-surface border border-dashed border-base-border rounded-2xl space-y-4 shadow-xs">
+                <div className="w-14 h-14 mx-auto rounded-2xl bg-base-accent/10 border border-base-accent/20 flex items-center justify-center text-base-accent">
+                  {activePendingProjects.length === 0 ? <Layers className="w-7 h-7" /> : <Search className="w-6 h-6" />}
+                </div>
+                <div className="space-y-1.5 max-w-md mx-auto">
+                  <h3 className="font-condensed font-black uppercase tracking-wider text-base text-base-text">
+                    {activePendingProjects.length === 0
+                      ? 'Belum Ada Proyek Aktif'
+                      : 'Tidak Ada Proyek yang Cocok'}
+                  </h3>
+                  <p className="text-xs text-base-muted leading-relaxed">
+                    {activePendingProjects.length === 0
+                      ? 'Mulai pantau jadwal fabrikasi, WBS assembly, man-hours, dan progres lapangan dengan membuat proyek pertama atau mengimpor jadwal dari Excel.'
+                      : 'Tidak ditemukan proyek yang sesuai dengan kata kunci pencarian atau filter bulan yang dipilih.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2.5 justify-center pt-1">
+                  {activePendingProjects.length === 0 ? (
+                    can('addProject') && (
+                      <>
+                        <button
+                          onClick={openAddProject}
+                          className="px-4 py-2.5 bg-base-accent hover:opacity-95 text-white rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 shadow-sm"
+                        >
+                          <Plus className="h-4 w-4" />
+                          <span>Buat Proyek Pertama</span>
+                        </button>
+                        <button
+                          onClick={triggerExcelUpload}
+                          className="px-4 py-2.5 bg-emerald-500/10 hover:bg-emerald-500 hover:text-white border border-emerald-500/25 text-emerald-600 rounded-xl text-xs font-condensed font-bold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2"
+                        >
+                          <Upload className="h-4 w-4" />
+                          <span>Import Excel</span>
+                        </button>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      {projectSearchQuery && (
+                        <button
+                          onClick={() => setProjectSearchQuery('')}
+                          className="px-3.5 py-2 bg-base-surface2 border border-base-border text-xs rounded-xl text-base-text hover:bg-base-surface3 cursor-pointer font-condensed font-bold uppercase tracking-wider transition-all"
+                        >
+                          Hapus Pencarian
+                        </button>
+                      )}
+                      {currentTabMonthFilter && (
+                        <button
+                          onClick={() => setCurrentTabMonthFilter('')}
+                          className="px-3.5 py-2 bg-base-surface2 border border-base-border text-xs rounded-xl text-base-text hover:bg-base-surface3 cursor-pointer font-condensed font-bold uppercase tracking-wider transition-all"
+                        >
+                          Tampilkan Semua Bulan
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               </div>

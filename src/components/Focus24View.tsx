@@ -3,6 +3,7 @@ import { ProblemReport, Project, Employee, UserRoleType, OrgSettings } from '../
 import { useAppStore, useUIStore } from '../store';
 import { storage } from '../firebase';
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import ConfirmDialog from './common/ConfirmDialog';
 import { 
   AlertTriangle, 
   CheckCircle2, 
@@ -130,6 +131,7 @@ export default function Focus24View({
   // Direct toggle states for inline resolutions
   const [resolvingId, setResolvingId] = useState<string | null>(null);
   const [resolutionNote, setResolutionNote] = useState<string>('');
+  const [reopenTargetId, setReopenTargetId] = useState<string | null>(null);
 
   // Delete Action Confirmation Modal State
   const [deleteConfirm, setDeleteConfirm] = useState<{
@@ -816,11 +818,7 @@ export default function Focus24View({
                     ) : (
                       // Toggle back to Open status
                       <button
-                        onClick={() => {
-                          if (confirm('Re-open this reported problem? This resets the completed log.')) {
-                            onUpdateProblemStatus(r.id, 'Open');
-                          }
-                        }}
+                        onClick={() => setReopenTargetId(r.id)}
                         className="px-3 py-2 bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-600 hover:text-white rounded-lg text-xs font-condensed font-extrabold uppercase tracking-wide flex items-center gap-1.5 cursor-pointer border border-amber-500/25 transition-all"
                         title="Re-open issue"
                       >
@@ -927,6 +925,20 @@ export default function Focus24View({
         </div>
       )}
 
+      <ConfirmDialog
+        isOpen={Boolean(reopenTargetId)}
+        title="Buka Kembali Masalah (Re-open)?"
+        message="Status laporan ini akan dikembalikan ke Open dan catatan penyelesaian sebelumnya akan direset."
+        confirmLabel="Ya, Buka Kembali"
+        tone="warning"
+        onCancel={() => setReopenTargetId(null)}
+        onConfirm={() => {
+          if (reopenTargetId) {
+            onUpdateProblemStatus(reopenTargetId, 'Open');
+          }
+          setReopenTargetId(null);
+        }}
+      />
     </div>
   );
 }

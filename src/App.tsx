@@ -18,6 +18,7 @@ import FormsAndModals from './components/FormsAndModals';
 import SpotlightModal from './components/SpotlightModal';
 import QrProjectPanel from './components/QrProjectPanel';
 import { GaAutoMatchModal } from './components/GaAutoMatchModal';
+import { QuickMaterialOrderModal } from './components/QuickMaterialOrderModal';
 import { IndustryTemplatePicker } from './components/IndustryTemplatePicker';
 import { ToastContainer } from './components/Toast';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -37,27 +38,20 @@ import { LoginPage } from './pages';
 
 // Lazy imports for views/pages
 const DashboardView = lazy(() => import('./components/DashboardView'));
-const Focus24View = lazy(() => import('./components/Focus24View'));
+const ShopFloorHub = lazy(() => import('./pages/ShopFloorHub'));
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage').then(m => ({ default: m.ProjectsPage })));
-const TimesheetView = lazy(() => import('./components/TimesheetView'));
+const ManpowerTimesheetHub = lazy(() => import('./pages/ManpowerTimesheetHub'));
 const InspectionView = lazy(() => import('./components/InspectionView'));
-const ConsumableView = lazy(() => import('./components/ConsumableView'));
-const MaterialsView = lazy(() => import('./components/MaterialsView'));
+const WarehouseConsumablesHub = lazy(() => import('./pages/WarehouseConsumablesHub'));
 const UsersAccessView = lazy(() => import('./components/UsersAccessView'));
 const DailyReportView = lazy(() => import('./components/DailyReportView'));
 const EmployeesView = lazy(() => import('./components/EmployeesView'));
 const ProjectSchedulePage = lazy(() => import('./pages/ProjectSchedulePage').then(m => ({ default: m.ProjectSchedulePage })));
 const MaterialProcessingView = lazy(() => import('./components/MaterialProcessingView'));
-const ManpowerBoardView = lazy(() => import('./components/ManpowerBoardView'));
-const ProgressUpdateView = lazy(() => import('./components/ProgressUpdateView'));
 const MasterDataPage = lazy(() => import('./pages/MasterDataPage').then(m => ({ default: m.MasterDataPage })));
 const OrgSettingsPage = lazy(() => import('./pages/OrgSettingsPage').then(m => ({ default: m.OrgSettingsPage })));
-const KPIView = lazy(() => import('./components/KPIView'));
 const DrawingRegisterView = lazy(() => import('./components/DrawingRegisterView'));
 const BomView = lazy(() => import('./components/BomView'));
-const ProjectTimelineView = lazy(() => import('./components/ProjectTimelineView'));
-const SchedulingRiskDashboard = lazy(() => import('./components/SchedulingRiskDashboard'));
-const ShopFloorView = lazy(() => import('./components/ShopFloorView'));
 
 // Lucide Icons
 import {
@@ -94,19 +88,19 @@ const IconMap: Record<string, React.ComponentType<any>> = {
 const sectionGroups = [
   {
     title: 'Overview',
-    items: ['dash', 'projects', 'schedule', 'scheduling-risk', 'progress', 'focus24']
+    items: ['dash', 'projects', 'schedule']
   },
   {
     title: 'Shop Floor',
-    items: ['shopfloor', 'timesheet', 'manpower', 'matprocessing', 'materials', 'inspections']
+    items: ['shopfloor', 'timesheet', 'matprocessing', 'materials', 'inspections']
   },
   {
     title: 'Engineering',
-    items: ['drawings', 'bom', 'consumable', 'kpi']
+    items: ['drawings', 'bom']
   },
   {
-    title: 'Admin',
-    items: ['dailyreport', 'employees', 'users', 'masterdata', 'orgsettings']
+    title: 'Admin & Reports',
+    items: ['dailyreport', 'employees', 'masterdata', 'users', 'orgsettings']
   }
 ];
 
@@ -115,16 +109,16 @@ function DefaultErrorPage({ tab }: { tab: string }) {
     <div className="flex-1 flex flex-col items-center justify-center p-12 gap-4 text-center bg-base-surface border border-base-border rounded-xl my-6">
       <div className="text-5xl">⚠️</div>
       <h2 className="font-condensed font-extrabold text-red-500 text-xl uppercase tracking-wider">
-        Section Failed to Load
+        Halaman Gagal Dimuat
       </h2>
       <p className="text-sm text-neutral-500 max-w-md">
-        An unexpected error occurred while rendering the {tab} section. This could be due to invalid or malformed data.
+        Terjadi kesalahan tak terduga saat memuat modul {tab}. Hal ini dapat disebabkan oleh data tidak valid atau koneksi terganggu.
       </p>
       <button
         onClick={() => window.location.reload()}
         className="px-5 py-2.5 bg-neutral-800 text-white font-bold rounded-lg uppercase tracking-wider text-xs hover:bg-neutral-700 transition-all cursor-pointer"
       >
-        Reload Application
+        Muat Ulang Aplikasi
       </button>
     </div>
   );
@@ -296,16 +290,80 @@ function AppContent() {
     useAppStore.setState({ currentUser, users });
   }, [currentUser, users]);
 
-  // Helper to remap legacy tab names
+  // Sub-tab states for unified hubs
+  const [shopFloorSubTab, setShopFloorSubTab] = useState<'hub' | 'progress'>('hub');
+  const [manpowerSubTab, setManpowerSubTab] = useState<'timesheet' | 'manpower'>('timesheet');
+  const [warehouseSubTab, setWarehouseSubTab] = useState<'materials' | 'consumable' | 'kpi'>('materials');
+  const [scheduleSubTab, setScheduleSubTab] = useState<'gantt' | 'timeline' | 'risk'>('gantt');
+
+  // Helper to remap legacy & deep-link tab names to unified hubs
   const getMappedTab = (tab: string) => {
     switch (tab) {
-      case 'focus': return 'focus24';
-      default: return tab;
+      case 'focus':
+      case 'focus24':
+      case 'progress':
+        return 'shopfloor';
+      case 'manpower':
+        return 'timesheet';
+      case 'consumable':
+      case 'kpi':
+        return 'materials';
+      case 'scheduling-risk':
+      case 'risk':
+      case 'timeline':
+      case 'gantt':
+        return 'schedule';
+      default:
+        return tab;
     }
   };
 
+  const applySubTabForRoute = (rawTab: string) => {
+    switch (rawTab) {
+      case 'focus':
+      case 'focus24':
+      case 'shopfloor':
+        setShopFloorSubTab('hub');
+        break;
+      case 'progress':
+        setShopFloorSubTab('progress');
+        break;
+      case 'manpower':
+        setManpowerSubTab('manpower');
+        break;
+      case 'timesheet':
+        setManpowerSubTab('timesheet');
+        break;
+      case 'consumable':
+        setWarehouseSubTab('consumable');
+        break;
+      case 'kpi':
+        setWarehouseSubTab('kpi');
+        break;
+      case 'materials':
+        setWarehouseSubTab('materials');
+        break;
+      case 'scheduling-risk':
+      case 'risk':
+        setScheduleSubTab('risk');
+        break;
+      case 'timeline':
+        setScheduleSubTab('timeline');
+        break;
+      case 'schedule':
+      case 'gantt':
+        setScheduleSubTab('gantt');
+        break;
+    }
+  };
+
+  const isQuickOrderOpen = useUIStore((s) => s.isQuickOrderOpen);
+  const quickOrderOptions = useUIStore((s) => s.quickOrderOptions);
+  const closeQuickOrder = useUIStore((s) => s.closeQuickOrder);
+
   // Central Navigation Handler (single source of truth for tab switches)
   const navigateTo = (tab: string) => {
+    applySubTabForRoute(tab);
     const mapped = getMappedTab(tab);
     setActiveTab(mapped);
     useUIStore.setState({ activeTab: mapped });
@@ -331,9 +389,13 @@ function AppContent() {
 
   useEffect(() => {
     if (storeActiveTab) {
+      applySubTabForRoute(storeActiveTab);
       const mappedTab = getMappedTab(storeActiveTab);
       if (mappedTab !== activeTab) {
         setActiveTab(mappedTab);
+      }
+      if (mappedTab !== storeActiveTab) {
+        useUIStore.setState({ activeTab: mappedTab });
       }
     }
   }, [storeActiveTab]);
@@ -712,19 +774,19 @@ function AppContent() {
             if (colName === 'projects') {
               store.setProjects(list);
               try {
-                if (list.length > 0) localStorage.setItem('austin_projects_cache_v1', JSON.stringify(list));
+                if (list.length > 0) localStorage.setItem('epc_projects_cache_v1', JSON.stringify(list));
               } catch (e) {}
             }
             else if (colName === 'employees') {
               store.setEmployees(list);
               try {
-                if (list.length > 0) localStorage.setItem('austin_employees_cache_v1', JSON.stringify(list));
+                if (list.length > 0) localStorage.setItem('epc_employees_cache_v1', JSON.stringify(list));
               } catch (e) {}
             }
             else if (colName === 'timesheets') {
               store.setTimesheets(list);
               try {
-                if (list.length > 0) localStorage.setItem('austin_timesheets_cache_v1', JSON.stringify(list));
+                if (list.length > 0) localStorage.setItem('epc_timesheets_cache_v1', JSON.stringify(list));
               } catch (e) {}
             }
             else if (colName === 'activities') store.setActivities(list);
@@ -746,14 +808,18 @@ function AppContent() {
 
         listenToCollection('projects', setProjects);
         listenToCollection('employees', setEmployees);
-        listenToCollection('timesheets', setTimesheets);
+        listenToCollection('timesheets', setTimesheets, (colRef) =>
+          query(colRef, orderBy('date', 'desc'), limit(1500))
+        );
         listenToCollection('activities', setActivities, (colRef) =>
           query(colRef, orderBy('ts', 'desc'), limit(100))
         );
         listenToCollection('problemReports', setProblemReports, (colRef) =>
           query(colRef, orderBy('date', 'desc'), limit(150))
         );
-        listenToCollection('inspections', setInspections);
+        listenToCollection('inspections', setInspections, (colRef) =>
+          query(colRef, orderBy('requestedDate', 'desc'), limit(500))
+        );
         if (currentUser.role === 'admin') {
           listenToCollection('users', setUsers);
         }
@@ -761,7 +827,9 @@ function AppContent() {
           query(colRef, orderBy('date', 'desc'), limit(200))
         );
         listenToCollection('materials', setMaterials);
-        listenToCollection('materialRequests', setMaterialRequests);
+        listenToCollection('materialRequests', setMaterialRequests, (colRef) =>
+          query(colRef, orderBy('requestedDate', 'desc'), limit(500))
+        );
         listenToCollection('consumptionLogs', setConsumptionLogs, (colRef) =>
           query(colRef, orderBy('date', 'desc'), limit(300))
         );
@@ -1605,25 +1673,19 @@ function AppContent() {
 
   const activeTabsList = React.useMemo(() => [
     { id: 'dash', label: 'Dashboard', icon: 'LayoutGrid', access: 'all' },
-    { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: 'all' },
     { id: 'projects', label: 'Projects', icon: 'Folder', access: 'all' },
-    { id: 'schedule', label: 'Schedule', icon: 'Calendar', access: 'all' },
-    { id: 'scheduling-risk', label: 'Scheduling Risk', icon: 'AlertTriangle', access: 'all' },
-    { id: 'progress', label: 'Update Progress', icon: 'TrendingUp', access: 'all' },
-    { id: 'focus24', label: '24h Focus', icon: 'Flame', access: 'all' },
-    { id: 'timesheet', label: 'Timesheet', icon: 'Clock', access: 'all' },
-    { id: 'manpower', label: 'Manpower Board', icon: 'LayoutGrid', access: 'all' },
-    { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: 'all' },
-    { id: 'materials', label: 'Materials', icon: 'Package', access: 'all' },
-    { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: 'all' },
-    { id: 'drawings', label: 'Drawing Register', icon: 'FileBadge', access: 'all' },
-    { id: 'bom', label: 'BOM', icon: 'ListTree', access: 'all' },
-    { id: 'consumable', label: orgSettings?.terminology?.wireConsumableLabel || 'Consumable', icon: 'Flame', access: 'all' },
-    { id: 'kpi', label: 'KPI & Analytics', icon: 'BarChart2', access: 'all' },
-    { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: 'all' },
-    { id: 'employees', label: 'Employees', icon: 'Users', access: 'all' },
+    { id: 'schedule', label: 'Schedule & Risk', icon: 'Calendar', access: ['admin', 'manager', 'project control', 'coordinator', 'quality control', 'viewer'] },
+    { id: 'shopfloor', label: 'Shop Floor', icon: 'Factory', access: ['admin', 'manager', 'coordinator', 'project control', 'quality control', 'facility maintanance', 'safety'] },
+    { id: 'timesheet', label: 'Manpower & Timesheet', icon: 'Clock', access: ['admin', 'manager', 'coordinator', 'project control'] },
+    { id: 'matprocessing', label: orgSettings?.terminology?.materialProcessingLabel || 'Mat. Processing', icon: 'Layers', access: ['admin', 'manager', 'coordinator', 'project control', 'quality control'] },
+    { id: 'materials', label: 'Warehouse & Consumables', icon: 'Package', access: ['admin', 'manager', 'coordinator', 'project control', 'quality control', 'facility maintanance', 'safety'] },
+    { id: 'inspections', label: 'QC Inspection', icon: 'ClipboardCheck', access: ['admin', 'manager', 'coordinator', 'project control', 'quality control'] },
+    { id: 'drawings', label: 'Drawing Register', icon: 'FileBadge', access: ['admin', 'manager', 'project control', 'quality control', 'coordinator', 'viewer'] },
+    { id: 'bom', label: 'BOM', icon: 'ListTree', access: ['admin', 'manager', 'project control', 'coordinator'] },
+    { id: 'dailyreport', label: 'Daily Report', icon: 'FileText', access: ['admin', 'manager', 'project control'] },
+    { id: 'employees', label: 'Employees', icon: 'Users', access: ['admin', 'manager'] },
+    { id: 'masterdata', label: 'Master Data', icon: 'Database', access: ['admin', 'manager'] },
     { id: 'users', label: 'Users & Access', icon: 'ShieldCheck', access: ['admin'] },
-    { id: 'masterdata', label: 'Master Data', icon: 'Database', access: 'all' },
     { id: 'orgsettings', label: 'Settings', icon: 'Settings', access: ['admin'] }
   ], [orgSettings]);
 
@@ -1641,7 +1703,8 @@ function AppContent() {
         return can('manageUsers') || currentUser.role === 'admin';
       }
       if (currentUser.allowedFeatures && Array.isArray(currentUser.allowedFeatures) && currentUser.allowedFeatures.length > 0) {
-        return currentUser.allowedFeatures.includes(t.id);
+        const normalizedAllowed = new Set(currentUser.allowedFeatures.map(getMappedTab));
+        return normalizedAllowed.has(t.id);
       }
       return t.access === 'all' || (Array.isArray(t.access) && t.access.includes(currentUser.role));
     });
@@ -1660,7 +1723,7 @@ function AppContent() {
     return (
       <div className="min-h-screen bg-base-bg flex flex-col items-center justify-center p-6 space-y-4">
         <div className="h-8 w-8 rounded-full border-2 border-base-accent border-t-transparent animate-spin" />
-        <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted animate-pulse">Establishing Session Workspace...</span>
+        <span className="text-[10px] font-condensed font-bold uppercase tracking-widest text-base-muted animate-pulse">Memuat Ruang Kerja EPC...</span>
       </div>
     );
   }
@@ -1670,12 +1733,12 @@ function AppContent() {
   }
 
   const activeTabItem = activeTabsList.find(t => t.id === activeTab);
-  const activeTabLabel = activeTabItem ? activeTabItem.label : 'Project Workspace';
+  const activeTabLabel = activeTabItem ? activeTabItem.label : 'Ruang Kerja Proyek';
 
   const effectiveSidebarCollapsed = shopFloorMode || sidebarCollapsed;
 
   return (
-    <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans select-none antialiased relative">
+    <div className="min-h-screen bg-base-bg text-base-text transition-colors duration-200 flex flex-col md:flex-row font-sans antialiased relative">
       {/* 1. DESKTOP LEFT SIDEBAR */}
       <AppSidebar
         sidebarCollapsed={effectiveSidebarCollapsed}
@@ -1715,6 +1778,10 @@ function AppContent() {
         <AppTopBar
           activeTabLabel={activeTabLabel}
           currentUser={currentUser}
+          onLogout={authHook.handleLogout}
+          onChangePassword={() => authHook.setChangePasswordModalOpen(true)}
+          sidebarCollapsed={effectiveSidebarCollapsed}
+          toggleSidebar={toggleSidebar}
           isOffline={isOffline}
           canExport={can('exportData')}
           onExportCSV={() => exportProjectsCSV(projects, timesheets, wireLogs, consumptionLogs)}
@@ -1723,6 +1790,9 @@ function AppContent() {
           employees={employees}
           materials={materials}
           bomTemplates={bomTemplates}
+          allowedTabs={allowedTabs}
+          sectionGroups={sectionGroups}
+          activeTab={activeTab}
           setActiveTab={navigateTo}
           readNotificationIds={prefs.readNotificationIds || []}
           onMarkRead={(ids) => setPref('readNotificationIds', ids)}
@@ -1741,9 +1811,9 @@ function AppContent() {
               <div className="flex items-center gap-2.5 flex-wrap">
                 <span className="px-2.5 py-1 rounded bg-base-warn text-white font-condensed font-black text-xs uppercase tracking-wider flex items-center gap-1.5 shadow-xs">
                   <Factory className="h-3.5 w-3.5" />
-                  Shop Floor Mode
+                  Mode Shop Floor
                 </span>
-                <span className="text-xs text-base-muted hidden sm:inline font-condensed">Quick Navigation:</span>
+                <span className="text-xs text-base-muted hidden sm:inline font-condensed">Navigasi Cepat:</span>
                 <div className="flex items-center gap-1.5 flex-wrap">
                   <button
                     onClick={() => navigateTo('shopfloor')}
@@ -1762,10 +1832,10 @@ function AppContent() {
                   <button
                     onClick={() => navigateTo('progress')}
                     className={`px-2.5 py-1 rounded-lg border font-condensed font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer ${
-                      activeTab === 'progress' ? 'bg-base-ok text-white border-base-ok' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
+                      activeTab === 'shopfloor' && shopFloorSubTab === 'progress' ? 'bg-base-ok text-white border-base-ok' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
                     }`}
                   >
-                    2. Progress
+                    2. Progres
                   </button>
                   <button
                     onClick={() => navigateTo('materials')}
@@ -1773,7 +1843,7 @@ function AppContent() {
                       activeTab === 'materials' ? 'bg-base-warn text-white border-base-warn font-black' : 'bg-base-surface hover:bg-base-surface2 border-base-border text-base-text'
                     }`}
                   >
-                    3. Materials
+                    3. Material
                   </button>
                   <button
                     onClick={() => navigateTo('inspections')}
@@ -1796,10 +1866,10 @@ function AppContent() {
               <button
                 onClick={() => setShopFloorMode(false)}
                 className="px-3 py-1.5 bg-base-surface hover:bg-base-surface2 border border-base-border text-base-red font-condensed font-black text-xs uppercase tracking-wider rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
-                title="Exit Shop Floor Mode"
+                title="Keluar dari Mode Shop Floor"
               >
                 <X className="h-3.5 w-3.5" />
-                <span>Exit</span>
+                <span>Keluar</span>
               </button>
             </div>
           )}
@@ -1807,7 +1877,9 @@ function AppContent() {
           <ErrorBoundary key={activeTab} fallback={<DefaultErrorPage tab={activeTab} />}>
             <Suspense fallback={<PageLoadingFallback />}>
               {activeTab === 'shopfloor' && (
-                <ShopFloorView
+                <ShopFloorHub
+                  subTab={shopFloorSubTab}
+                  onSubTabChange={setShopFloorSubTab}
                   projects={projects}
                   timesheets={timesheets}
                   inspections={inspections}
@@ -1824,6 +1896,17 @@ function AppContent() {
                     projectsHook.setSpotlightOpen(true);
                   }}
                   onOpenQrPanel={(id) => setQrProjectId(id)}
+                  onUpdateProject={(updatedProj) => {
+                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                    saveItem('projects', updatedProj);
+                    verifyMarkChanged();
+                    logActivity(
+                      'project_edit',
+                      'Updated task progress via Shop Floor Quick Progress',
+                      updatedProj.id,
+                      updatedProj.name
+                    );
+                  }}
                 />
               )}
 
@@ -1831,9 +1914,12 @@ function AppContent() {
                 <DashboardView
                   projects={projects}
                   timesheets={timesheets}
+                  wireLogs={wireLogs}
+                  consumptionLogs={consumptionLogs}
                   employees={employees}
                   materials={materials}
                   materialRequests={materialRequests}
+                  bomTemplates={bomTemplates}
                   selectedMonth={selectedMonth}
                   setSelectedMonth={setSelectedMonth}
                   problemReports={problemReports}
@@ -1843,35 +1929,16 @@ function AppContent() {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);
                   }}
-                />
-              )}
-
-              {activeTab === 'focus24' && (
-                <Focus24View
-                  orgSettings={orgSettings}
-                  problemReports={problemReports}
-                  projects={projects}
-                  employees={employees}
-                  currentUser={currentUser}
-                  onAddProblemReport={handleAddProblemReport}
-                  onUpdateProblemStatus={handleUpdateProblemStatus}
-                  onDeleteProblemReport={handleDeleteProblemReport}
-                  openSpotlight={(id) => {
-                    projectsHook.setSpotlightProjectId(id);
-                    projectsHook.setSpotlightOpen(true);
-                  }}
-                />
-              )}
-
-              {activeTab === 'scheduling-risk' && (
-                <SchedulingRiskDashboard
-                  projects={projects}
-                  problemReports={problemReports}
-                  inspections={inspections}
-                  currentUser={currentUser}
-                  openSpotlight={(id) => {
-                    projectsHook.setSpotlightProjectId(id);
-                    projectsHook.setSpotlightOpen(true);
+                  onUpdateProject={(updatedProj) => {
+                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
+                    saveItem('projects', updatedProj);
+                    verifyMarkChanged();
+                    logActivity(
+                      'project_edit',
+                      'Memperbarui anggaran BAC proyek dari Kokpit EVMS',
+                      updatedProj.id,
+                      updatedProj.name
+                    );
                   }}
                 />
               )}
@@ -1964,45 +2031,18 @@ function AppContent() {
                 />
               )}
 
-              {activeTab === 'consumable' && (
-                <ConsumableView
-                  orgSettings={orgSettings}
-                  wireLogs={wireLogs}
-                  consumptionLogs={consumptionLogs}
-                  materials={materials}
-                  projects={projects}
-                  employees={employees}
-                  currentUser={currentUser}
-                  materialRequests={materialRequests}
-                  onDeleteWireLog={handleDeleteWireLog}
-                  onAddMaterialRequest={handleAddMaterialRequest}
-                  onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
-                  onNavigateToKPI={() => navigateTo('kpi')}
-                  onNavigateToMaterials={() => navigateTo('materials')}
-                  onAddMaterial={handleAddMaterial}
-                  onUpdateMaterial={handleUpdateMaterial}
-                  onDeleteMaterial={handleDeleteMaterial}
-                  setDeleteConfirm={setDeleteConfirm}
-                />
-              )}
-
-              {activeTab === 'kpi' && (
-                <KPIView
-                  wireLogs={wireLogs}
-                  consumptionLogs={consumptionLogs}
-                  projects={projects}
-                  employees={employees}
-                  currentUser={currentUser}
-                  timesheets={timesheets}
-                />
-              )}
-
               {activeTab === 'materials' && (
-                <MaterialsView
+                <WarehouseConsumablesHub
+                  subTab={warehouseSubTab}
+                  onSubTabChange={setWarehouseSubTab}
+                  orgSettings={orgSettings}
                   materials={materials}
                   materialRequests={materialRequests}
                   consumptionLogs={consumptionLogs}
+                  wireLogs={wireLogs}
                   projects={projects}
+                  employees={employees}
+                  timesheets={timesheets}
                   currentUser={currentUser}
                   onAddMaterial={handleAddMaterial}
                   onUpdateMaterialStock={handleUpdateMaterialStock}
@@ -2012,6 +2052,7 @@ function AppContent() {
                   onUpdateMaterialRequestStatus={handleUpdateMaterialRequestStatus}
                   onDeleteMaterialRequest={handleDeleteMaterialRequest}
                   onAddConsumptionLog={handleAddConsumptionLog}
+                  onDeleteWireLog={handleDeleteWireLog}
                   setDeleteConfirm={setDeleteConfirm}
                 />
               )}
@@ -2063,7 +2104,7 @@ function AppContent() {
                 />
               )}
 
-              {(activeTab === 'schedule' || activeTab === 'gantt' || activeTab === 'timeline') && (
+              {activeTab === 'schedule' && (
                 <ProjectSchedulePage
                   projects={projects}
                   timesheets={timesheets}
@@ -2091,30 +2132,12 @@ function AppContent() {
                   onCloseDepModal={() => projectsHook.setDepModalOpen(false)}
                   currentUser={currentUser}
                   orgSettings={orgSettings}
-                  defaultView={activeTab === 'timeline' ? 'timeline' : 'gantt'}
+                  defaultView={scheduleSubTab}
                   onNavigateToProgress={() => navigateTo('progress')}
                   openSpotlight={(id) => {
                     projectsHook.setSpotlightProjectId(id);
                     projectsHook.setSpotlightOpen(true);
                   }}
-                />
-              )}
-
-              {activeTab === 'progress' && (
-                <ProgressUpdateView
-                  projects={projects}
-                  onUpdateProject={(updatedProj) => {
-                    setProjects(prev => prev.map(p => p.id === updatedProj.id ? updatedProj : p));
-                    saveItem('projects', updatedProj);
-                    verifyMarkChanged();
-                    logActivity(
-                      'project_edit',
-                      'Updated task progress via Update Progress page',
-                      updatedProj.id,
-                      updatedProj.name
-                    );
-                  }}
-                  currentUser={currentUser}
                 />
               )}
 
@@ -2137,7 +2160,9 @@ function AppContent() {
               )}
 
               {activeTab === 'timesheet' && (
-                <TimesheetView
+                <ManpowerTimesheetHub
+                  subTab={manpowerSubTab}
+                  onSubTabChange={setManpowerSubTab}
                   timesheets={timesheets}
                   employees={employees}
                   projects={projects}
@@ -2152,30 +2177,7 @@ function AppContent() {
                     projectsHook.setSpotlightOpen(true);
                   }}
                   currentUser={currentUser}
-                  onNavigateToManpower={(date) => {
-                    if (date) timesheetsHook.setTimesheetDate(date);
-                    navigateTo('manpower');
-                  }}
                 />
-              )}
-
-              {activeTab === 'manpower' && (
-                <ErrorBoundary key="manpower">
-                  <Suspense fallback={<PageLoadingFallback />}>
-                    <ManpowerBoardView
-                      timesheets={timesheets}
-                      employees={employees}
-                      projects={projects}
-                      initialDate={timesheetsHook.timesheetDate}
-                      currentUser={currentUser}
-                      onNavigateToTimesheet={(date) => {
-                        if (date) timesheetsHook.setTimesheetDate(date);
-                        navigateTo('timesheet');
-                      }}
-                      openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
-                    />
-                  </Suspense>
-                </ErrorBoundary>
               )}
 
               {activeTab === 'users' && (
@@ -2252,7 +2254,7 @@ function AppContent() {
 
         {/* Universal Footer Alignment (Desktop only) */}
         <footer className={`fixed bottom-0 right-0 py-2.5 px-6 border-t border-base-border bg-base-surface text-base-muted text-[10px] font-condensed font-bold uppercase tracking-wider hidden md:flex items-center justify-between z-30 shadow-[0_-1px_3px_rgba(0,0,0,0.05)] transition-all duration-300 ${effectiveSidebarCollapsed ? 'left-16' : 'left-64'}`}>
-          <span>Austin Batam · Project tracking console</span>
+          <span>EPC Control System · Konsol Kontrol Proyek</span>
           <span className="text-base-accent font-bold">{lastSavedLabel}</span>
         </footer>
 
@@ -2323,6 +2325,20 @@ function AppContent() {
           currentUser={currentUser}
           onSaveProject={handleUpdateProject}
           onSaveTimesheet={handleSaveTimesheetEntry}
+        />
+      )}
+
+      {currentUser && (
+        <QuickMaterialOrderModal
+          isOpen={isQuickOrderOpen}
+          options={quickOrderOptions}
+          onClose={closeQuickOrder}
+          materials={materials}
+          projects={projects}
+          employees={employees}
+          materialRequests={materialRequests}
+          currentUser={currentUser}
+          onAddMaterialRequest={handleAddMaterialRequest}
         />
       )}
     </div>

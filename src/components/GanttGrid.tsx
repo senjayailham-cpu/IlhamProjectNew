@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   ChevronRight,
   ChevronDown,
@@ -12,7 +12,7 @@ import {
   GripVertical,
   RotateCcw,
   X,
-  Trash2,
+  LocateFixed,
   Calendar
 } from 'lucide-react';
 import { Project, WorkflowStatusType } from '../types';
@@ -226,6 +226,8 @@ export interface GanttGridProps {
   toggleAssemblyCollapse: (asmId: string, e: React.MouseEvent) => void;
   highlightText: (text: string, query: string) => React.ReactNode;
   getProjectIdOfRow: (row: GanttRow) => string;
+  isFilterActive?: boolean;
+  onScrollToBar?: (rowId: string, opts?: { center?: boolean; onlyIfOffscreen?: boolean }) => void;
 
   // Inline editing & actions
   onUpdateProject?: (project: Project) => void;
@@ -257,6 +259,7 @@ export interface GanttGridProps {
   statusPopoverRowId: string | null;
   setStatusPopoverRowId: (id: string | null) => void;
   saveWorkflowStatus: (rowId: string, stKey: WorkflowStatusType) => void;
+  onSaveDuration?: (rowId: string, days: number) => void;
 
   // S-Curve & Resource load
   showSCurve: boolean;
@@ -409,6 +412,8 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   toggleAssemblyCollapse,
   highlightText,
   getProjectIdOfRow,
+  isFilterActive,
+  onScrollToBar,
 
   onUpdateProject,
   editingHoursCell,
@@ -439,6 +444,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   statusPopoverRowId,
   setStatusPopoverRowId,
   saveWorkflowStatus,
+  onSaveDuration,
 
   showSCurve,
   sCurvePaths,
@@ -454,20 +460,24 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   expandedResources,
   setExpandedResources,
 }) => {
-  // Column Reordering State with LocalStorage Persistence
+  const COLUMN_ORDER_STORAGE_KEY = 'epc_gantt_column_order_v3';
+
+  // Column Reordering State with LocalStorage Persistence (defaults to clean Standard layout)
   const [columnOrder, setColumnOrder] = useState<ColumnId[]>(() => {
     try {
-      const saved = localStorage.getItem('austin_gantt_column_order_v2');
+      const saved =
+        localStorage.getItem(COLUMN_ORDER_STORAGE_KEY) ||
+        localStorage.getItem('epc_gantt_column_order_v2') ||
+        localStorage.getItem('austin_gantt_column_order_v2');
       if (saved) {
         const parsed = JSON.parse(saved) as ColumnId[];
         const valid = parsed.filter(id => DEFAULT_COLUMN_ORDER.includes(id));
-        DEFAULT_COLUMN_ORDER.forEach(id => {
-          if (!valid.includes(id)) valid.push(id);
-        });
-        return valid;
+        if (valid.length > 0) {
+          return valid;
+        }
       }
     } catch {}
-    return DEFAULT_COLUMN_ORDER;
+    return STANDARD_COLUMN_ORDER;
   });
 
   const [draggedCol, setDraggedCol] = useState<ColumnId | null>(null);
@@ -485,7 +495,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       const insertIdx = side === 'right' ? targetIdx + 1 : targetIdx;
       const next = [...filtered.slice(0, insertIdx), draggedCol, ...filtered.slice(insertIdx)];
       try {
-        localStorage.setItem('austin_gantt_column_order_v2', JSON.stringify(next));
+        localStorage.setItem(COLUMN_ORDER_STORAGE_KEY, JSON.stringify(next));
       } catch {}
       return next;
     });
@@ -496,8 +506,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   };
 
   const handleResetColumnOrder = () => {
-    setColumnOrder(DEFAULT_COLUMN_ORDER);
+    setColumnOrder(STANDARD_COLUMN_ORDER);
     try {
+      localStorage.removeItem(COLUMN_ORDER_STORAGE_KEY);
+      localStorage.removeItem('epc_gantt_column_order_v2');
       localStorage.removeItem('austin_gantt_column_order_v2');
     } catch {}
   };
@@ -510,6 +522,120 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   };
 
   const activeColumns = columnOrder.filter(isColVisible);
+
+  const [editingDurationCell, setEditingDurationCell] = useState<{ rowId: string; col: 'dur' | 'od' } | null>(null);
+  const skipBlurSaveRef = useRef<string | null>(null);
+
+  const isCellEditable = (row: GanttRow, colId: ColumnId): boolean => {
+    if (!onUpdateProject) return false;
+    switch (colId) {
+      case 'dur':
+      case 'od':
+        return !!onSaveDuration && row.level === 2 && !row.isMilestone;
+      case 'planHrs':
+        return true;
+      case 'crew':
+      case 'company':
+      case 'assignee':
+      case 'pct':
+        return row.level === 2;
+      case 'pred':
+        return true;
+      default:
+        return false;
+    }
+  };
+
+  const openCellEditor = (targetRow: GanttRow, colId: ColumnId) => {
+    setSelectedRowId(targetRow.id);
+    setEditingDurationCell(null);
+    setEditingHoursCell(null);
+    setEditingLookaheadCell(null);
+    setEditingPred(null);
+    setEditingPct(null);
+
+    switch (colId) {
+      case 'dur':
+      case 'od':
+        setEditingDurationCell({ rowId: targetRow.id, col: colId });
+        break;
+      case 'planHrs':
+        setEditingHoursCell(targetRow.id);
+        break;
+      case 'crew':
+        setEditingLookaheadCell({ rowId: targetRow.id, field: 'crew' });
+        break;
+      case 'company':
+        setEditingLookaheadCell({ rowId: targetRow.id, field: 'company' });
+        break;
+      case 'assignee':
+        setEditingLookaheadCell({ rowId: targetRow.id, field: 'assigned' });
+        break;
+      case 'pred': {
+        const existing = (targetRow.predecessors || [])
+          .map(dep => {
+            const predWbs = rows.find(r => r.id === dep.key)?.wbs || '';
+            if (!predWbs) return '';
+            const lagStr = dep.lag ? `+${dep.lag}` : '';
+            const typeStr = dep.type === 'FS' ? '' : dep.type;
+            return `${predWbs}${typeStr}${lagStr}`;
+          })
+          .filter(Boolean)
+          .join(', ');
+        setPredInputVal(existing);
+        setEditingPred(targetRow.id);
+        break;
+      }
+      case 'pct':
+        setEditingPct(targetRow.id);
+        break;
+    }
+  };
+
+  const moveEditorFocus = (
+    currentRowId: string,
+    currentCol: ColumnId,
+    direction: 'nextCol' | 'prevCol' | 'nextRow' | 'prevRow'
+  ) => {
+    const rowIdx = rows.findIndex(r => r.id === currentRowId);
+    if (rowIdx === -1) return;
+
+    if (direction === 'nextRow' || direction === 'prevRow') {
+      const step = direction === 'nextRow' ? 1 : -1;
+      for (let i = rowIdx + step; i >= 0 && i < rows.length; i += step) {
+        if (isCellEditable(rows[i], currentCol)) {
+          openCellEditor(rows[i], currentCol);
+          return;
+        }
+      }
+      return;
+    }
+
+    const colIdx = activeColumns.indexOf(currentCol);
+    if (colIdx === -1) return;
+    const colStep = direction === 'nextCol' ? 1 : -1;
+
+    // Check remaining columns in current row
+    for (let c = colIdx + colStep; c >= 0 && c < activeColumns.length; c += colStep) {
+      if (isCellEditable(rows[rowIdx], activeColumns[c])) {
+        openCellEditor(rows[rowIdx], activeColumns[c]);
+        return;
+      }
+    }
+
+    // Wrap to adjacent row
+    const nextRowStep = direction === 'nextCol' ? 1 : -1;
+    for (let r = rowIdx + nextRowStep; r >= 0 && r < rows.length; r += nextRowStep) {
+      const startC = direction === 'nextCol' ? 0 : activeColumns.length - 1;
+      const endC = direction === 'nextCol' ? activeColumns.length : -1;
+      for (let c = startC; c !== endC; c += colStep) {
+        if (isCellEditable(rows[r], activeColumns[c])) {
+          openCellEditor(rows[r], activeColumns[c]);
+          return;
+        }
+      }
+    }
+  };
 
   const getColConfig = (colId: ColumnId) => {
     switch (colId) {
@@ -567,6 +693,18 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         return { width: colStatusWidth, title: 'Workflow Status', label: 'Status', align: 'center' };
     }
   };
+
+  const activeTableWidth = activeColumns.reduce((sum, colId) => {
+    const cfg = getColConfig(colId);
+    return sum + (cfg?.width || 0);
+  }, 0) || totalTableWidth;
+
+  const isP6LayoutActive =
+    columnOrder.length === P6_COLUMN_ORDER.length &&
+    columnOrder.every((c, i) => c === P6_COLUMN_ORDER[i]);
+  const isStandardLayoutActive =
+    columnOrder.length === STANDARD_COLUMN_ORDER.length &&
+    columnOrder.every((c, i) => c === STANDARD_COLUMN_ORDER[i]);
 
   const renderColumnHeader = (colId: ColumnId) => {
     const conf = getColConfig(colId);
@@ -639,24 +777,38 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           </div>
         );
 
-      case 'name':
+      case 'name': {
+        const isProjExpanded = isFilterActive || expandedIds.has(row.id);
+        const isAsmCollapsed = !isFilterActive && !!collapsedAsms[row.id];
         return (
           <div
             key={`cell-${colId}-${row.id}`}
-            className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans"
+            onClick={() => {
+              if (onScrollToBar) {
+                onScrollToBar(row.id, { onlyIfOffscreen: true });
+              }
+            }}
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              if (onScrollToBar) {
+                onScrollToBar(row.id, { center: true });
+              }
+            }}
+            className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans group h-full"
             style={{
               width: `${colNameWidth}px`,
               paddingLeft: `${row.level === 1 ? 16 : row.level === 2 ? 28 : 4}px`
             }}
+            title={row.start ? `${row.name} — Double-klik untuk fokus ke bar di timeline` : row.name}
           >
             {row.type === 'project' && (
               <button
                 type="button"
                 onClick={(e) => toggleProjectCollapse(row.id, e)}
                 className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-accent hover:text-base-text shrink-0 cursor-pointer transition-all"
-                title={expandedIds.has(row.id) ? "Collapse Project" : "Expand Project"}
+                title={isProjExpanded ? "Collapse Project" : "Expand Project"}
               >
-                {expandedIds.has(row.id) ? (
+                {isProjExpanded ? (
                   <ChevronDown className="h-3.5 w-3.5 text-base-accent" />
                 ) : (
                   <ChevronRight className="h-3.5 w-3.5 text-base-accent" />
@@ -669,9 +821,9 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 type="button"
                 onClick={(e) => toggleAssemblyCollapse(row.id, e)}
                 className="p-0.5 mr-1 rounded hover:bg-base-surface3 text-base-muted hover:text-base-text shrink-0 cursor-pointer transition-all"
-                title={collapsedAsms[row.id] ? "Expand Assembly" : "Collapse Assembly"}
+                title={isAsmCollapsed ? "Expand Assembly" : "Collapse Assembly"}
               >
-                {collapsedAsms[row.id] ? (
+                {isAsmCollapsed ? (
                   <ChevronRight className="h-3 w-3" />
                 ) : (
                   <ChevronDown className="h-3 w-3" />
@@ -708,8 +860,22 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
               <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
             )}
+            {row.start && onScrollToBar && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onScrollToBar(row.id, { center: true });
+                }}
+                className="opacity-0 group-hover:opacity-100 focus:opacity-100 ml-auto p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-accent/15 transition-all cursor-pointer shrink-0"
+                title="Fokus ke bar di timeline"
+              >
+                <LocateFixed className="h-3 w-3" />
+              </button>
+            )}
           </div>
         );
+      }
 
       case 'activityId':
         return (
@@ -725,12 +891,63 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           </div>
         );
 
-      case 'od':
+      case 'od': {
+        const canEditOd = isCellEditable(row, 'od');
+        const isEditingOd = editingDurationCell?.rowId === row.id && editingDurationCell.col === 'od';
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colOdWidth}px` }} className="shrink-0 text-center text-xs font-mono text-base-text font-bold">
-            {row.isMilestone ? '0d' : `${row.od ?? row.duration}d`}
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colOdWidth}px` }}
+            onClick={() => {
+              if (canEditOd && !isEditingOd) {
+                openCellEditor(row, 'od');
+              }
+            }}
+            className={`shrink-0 text-center text-xs font-mono text-base-text font-bold flex items-center justify-center h-full px-1 relative group ${
+              canEditOd ? 'cursor-pointer hover:bg-base-accent-dim/40' : ''
+            }`}
+            title={canEditOd ? 'Klik untuk ubah Original Duration (hari) • Enter: baris berikut • Tab: kolom berikut' : undefined}
+          >
+            {isEditingOd && onSaveDuration ? (
+              <input
+                type="number"
+                min={1}
+                step={1}
+                autoFocus
+                defaultValue={row.od ?? Math.max(1, row.duration || 1)}
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center h-6"
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={(e) => {
+                  const blurKey = `${row.id}:od`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val > 0) onSaveDuration(row.id, val);
+                  setEditingDurationCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:od`;
+                    const val = parseInt(e.currentTarget.value, 10);
+                    if (!isNaN(val) && val > 0) onSaveDuration(row.id, val);
+                    setEditingDurationCell(null);
+                    moveEditorFocus(row.id, 'od', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:od`;
+                    setEditingDurationCell(null);
+                  }
+                }}
+              />
+            ) : (
+              <span>{row.isMilestone ? '0d' : `${row.od ?? row.duration}d`}</span>
+            )}
           </div>
         );
+      }
 
       case 'rd':
         return (
@@ -800,12 +1017,65 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           </div>
         );
 
-      case 'dur':
+      case 'dur': {
+        const canEditDur = isCellEditable(row, 'dur');
+        const isEditingDur = editingDurationCell?.rowId === row.id && editingDurationCell.col === 'dur';
         return (
-          <div key={`cell-${colId}-${row.id}`} style={{ width: `${colDurWidth}px` }} className="shrink-0 text-center text-xs font-mono text-base-text font-bold">
-            {row.isMilestone ? '0 days' : (row.start && row.finish && row.duration > 0 ? `${row.duration}d` : '—')}
+          <div
+            key={`cell-${colId}-${row.id}`}
+            style={{ width: `${colDurWidth}px` }}
+            onClick={() => {
+              if (canEditDur && !isEditingDur) {
+                openCellEditor(row, 'dur');
+              }
+            }}
+            className={`shrink-0 text-center text-xs font-mono text-base-text font-bold flex items-center justify-center h-full px-1 relative group ${
+              canEditDur ? 'cursor-pointer hover:bg-base-accent-dim/40' : ''
+            }`}
+            title={canEditDur ? 'Klik untuk ubah durasi (hari) • Enter: baris berikut • Tab: kolom berikut' : undefined}
+          >
+            {isEditingDur && onSaveDuration ? (
+              <input
+                type="number"
+                min={1}
+                step={1}
+                autoFocus
+                defaultValue={row.duration > 0 ? row.duration : 1}
+                className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center h-6"
+                onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
+                onBlur={(e) => {
+                  const blurKey = `${row.id}:dur`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val > 0) onSaveDuration(row.id, val);
+                  setEditingDurationCell(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:dur`;
+                    const val = parseInt(e.currentTarget.value, 10);
+                    if (!isNaN(val) && val > 0) onSaveDuration(row.id, val);
+                    setEditingDurationCell(null);
+                    moveEditorFocus(row.id, 'dur', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:dur`;
+                    setEditingDurationCell(null);
+                  }
+                }}
+              />
+            ) : (
+              <span>
+                {row.isMilestone ? '0 days' : (row.start && row.finish && row.duration > 0 ? `${row.duration}d` : '—')}
+              </span>
+            )}
           </div>
         );
+      }
 
       case 'baseDur':
         return (
@@ -829,7 +1099,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             className="shrink-0 text-center font-mono text-xs truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
             onClick={() => {
               if (onUpdateProject) {
-                setEditingHoursCell(row.id);
+                openCellEditor(row, 'planHrs');
               }
             }}
             title={row.level === 2 ? 'Click to edit Planned/Budgeted hours for task' : row.level === 1 ? 'Click to set Assembly budget hours' : 'Click to set Project budget hours'}
@@ -844,16 +1114,27 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 placeholder="Hrs..."
                 className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => {
+                  const blurKey = `${row.id}:planHrs`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   saveRowBudgetHours(row.id, row.level, e.target.value);
                   setEditingHoursCell(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:planHrs`;
                     saveRowBudgetHours(row.id, row.level, e.currentTarget.value);
                     setEditingHoursCell(null);
+                    moveEditorFocus(row.id, 'planHrs', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:planHrs`;
+                    setEditingHoursCell(null);
                   }
-                  if (e.key === 'Escape') setEditingHoursCell(null);
                 }}
               />
             ) : (
@@ -955,16 +1236,27 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 defaultValue={row.crewSize || ''}
                 className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none text-center"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => {
+                  const blurKey = `${row.id}:crew`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   saveTaskField(row.id, 'crew', e.target.value);
                   setEditingLookaheadCell(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:crew`;
                     saveTaskField(row.id, 'crew', e.currentTarget.value);
                     setEditingLookaheadCell(null);
+                    moveEditorFocus(row.id, 'crew', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:crew`;
+                    setEditingLookaheadCell(null);
                   }
-                  if (e.key === 'Escape') setEditingLookaheadCell(null);
                 }}
               />
             ) : (
@@ -996,7 +1288,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
             onClick={() => {
               if (row.level === 2 && onUpdateProject) {
-                setEditingLookaheadCell({ rowId: row.id, field: 'company' });
+                openCellEditor(row, 'company');
               }
             }}
           >
@@ -1008,16 +1300,27 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 placeholder="Company..."
                 className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => {
+                  const blurKey = `${row.id}:company`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   saveTaskField(row.id, 'company', e.target.value);
                   setEditingLookaheadCell(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:company`;
                     saveTaskField(row.id, 'company', e.currentTarget.value);
                     setEditingLookaheadCell(null);
+                    moveEditorFocus(row.id, 'company', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:company`;
+                    setEditingLookaheadCell(null);
                   }
-                  if (e.key === 'Escape') setEditingLookaheadCell(null);
                 }}
               />
             ) : (
@@ -1040,7 +1343,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             className="shrink-0 text-center text-[10px] truncate px-1 cursor-pointer hover:bg-base-accent-dim/40 transition-colors group relative flex items-center justify-center h-full"
             onClick={() => {
               if (row.level === 2 && onUpdateProject) {
-                setEditingLookaheadCell({ rowId: row.id, field: 'assigned' });
+                openCellEditor(row, 'assignee');
               }
             }}
           >
@@ -1052,16 +1355,27 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 placeholder="Assignees..."
                 className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => {
+                  const blurKey = `${row.id}:assignee`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   saveTaskField(row.id, 'assigned', e.target.value);
                   setEditingLookaheadCell(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:assignee`;
                     saveTaskField(row.id, 'assigned', e.currentTarget.value);
                     setEditingLookaheadCell(null);
+                    moveEditorFocus(row.id, 'assignee', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:assignee`;
+                    setEditingLookaheadCell(null);
                   }
-                  if (e.key === 'Escape') setEditingLookaheadCell(null);
                 }}
               />
             ) : (
@@ -1106,23 +1420,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 onClose={() => setEditingCell(null)}
               />
             ) : (
-              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasStart ? `Start: ${row.start} (Klik untuk ubah / klik ikon tempat sampah untuk hapus)` : 'Klik untuk tentukan tanggal mulai aktual'}>
+              <div className="flex items-center justify-center gap-1 w-full px-0.5 select-none" title={hasStart ? `Start: ${row.start} (Klik untuk ubah atau hapus tanggal)` : 'Klik untuk tentukan tanggal mulai aktual'}>
                 <span className={`truncate flex-1 font-mono text-xs ${hasStart ? 'text-base-text font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
                   {hasStart ? row.start : '—'}
                 </span>
-                {hasStart && onUpdateProject && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      saveDate(row.id, 'start', '');
-                    }}
-                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
-                    title="Hapus tanggal mulai (1-klik)"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
                 {!hasStart && onUpdateProject && (
                   <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-base-accent font-bold transition-opacity">
                     +Set
@@ -1168,23 +1469,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 onClose={() => setEditingCell(null)}
               />
             ) : (
-              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasFinish ? `Finish: ${row.finish} (Klik untuk ubah / klik ikon tempat sampah untuk hapus)` : 'Klik untuk tentukan tanggal selesai aktual'}>
+              <div className="flex items-center justify-center gap-1 w-full px-0.5 select-none" title={hasFinish ? `Finish: ${row.finish} (Klik untuk ubah atau hapus tanggal)` : 'Klik untuk tentukan tanggal selesai aktual'}>
                 <span className={`truncate flex-1 font-mono text-xs ${hasFinish ? 'text-base-text font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
                   {hasFinish ? row.finish : '—'}
                 </span>
-                {hasFinish && onUpdateProject && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      saveDate(row.id, 'finish', '');
-                    }}
-                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
-                    title="Hapus tanggal selesai (1-klik)"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
                 {!hasFinish && onUpdateProject && (
                   <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-base-accent font-bold transition-opacity">
                     +Set
@@ -1231,23 +1519,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 onClose={() => setEditingBaselineCell && setEditingBaselineCell(null)}
               />
             ) : (
-              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasBaseStart ? `Baseline Start: ${row.baselineStart} (Klik untuk ubah / hapus)` : 'Belum di-set baseline start'}>
+              <div className="flex items-center justify-center gap-1 w-full px-0.5 select-none" title={hasBaseStart ? `Baseline Start: ${row.baselineStart} (Klik untuk ubah atau hapus)` : 'Belum di-set baseline start'}>
                 <span className={`truncate flex-1 font-mono text-xs ${hasBaseStart ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
                   {hasBaseStart ? row.baselineStart : '—'}
                 </span>
-                {hasBaseStart && saveBaselineDate && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      saveBaselineDate(row.id, 'start', '');
-                    }}
-                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
-                    title="Hapus baseline start (1-klik)"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
                 {!hasBaseStart && saveBaselineDate && (
                   <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-slate-500 font-bold transition-opacity">
                     +Set
@@ -1294,23 +1569,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 onClose={() => setEditingBaselineCell && setEditingBaselineCell(null)}
               />
             ) : (
-              <div className="flex items-center justify-between gap-1 w-full px-0.5 select-none" title={hasBaseFinish ? `Baseline Finish: ${row.baselineFinish} (Klik untuk ubah / hapus)` : 'Belum di-set baseline finish'}>
+              <div className="flex items-center justify-center gap-1 w-full px-0.5 select-none" title={hasBaseFinish ? `Baseline Finish: ${row.baselineFinish} (Klik untuk ubah atau hapus)` : 'Belum di-set baseline finish'}>
                 <span className={`truncate flex-1 font-mono text-xs ${hasBaseFinish ? 'text-slate-700 dark:text-slate-300 font-bold' : 'text-slate-400 dark:text-slate-500 font-normal'}`}>
                   {hasBaseFinish ? row.baselineFinish : '—'}
                 </span>
-                {hasBaseFinish && saveBaselineDate && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      saveBaselineDate(row.id, 'finish', '');
-                    }}
-                    className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-500/20 active:scale-95 transition-all cursor-pointer shrink-0"
-                    title="Hapus baseline finish (1-klik)"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </button>
-                )}
                 {!hasBaseFinish && saveBaselineDate && (
                   <span className="opacity-0 group-hover:opacity-100 text-[10px] font-sans text-slate-500 font-bold transition-opacity">
                     +Set
@@ -1353,17 +1615,28 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 placeholder="1.1FS, 1.2SS"
                 className="w-full text-[10px] font-mono bg-base-surface border border-base-accent rounded px-1 py-0 outline-none"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onChange={e => setPredInputVal(e.target.value)}
                 onBlur={() => {
+                  const blurKey = `${row.id}:pred`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   savePredecessors(row.id, predInputVal);
                   setEditingPred(null);
                 }}
                 onKeyDown={e => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:pred`;
                     savePredecessors(row.id, predInputVal);
                     setEditingPred(null);
+                    moveEditorFocus(row.id, 'pred', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:pred`;
+                    setEditingPred(null);
                   }
-                  if (e.key === 'Escape') setEditingPred(null);
                 }}
               />
             ) : (
@@ -1439,7 +1712,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             `}
             onClick={() => {
               if (onUpdateProject && row.level === 2) {
-                setEditingPct(row.id);
+                openCellEditor(row, 'pct');
               }
             }}
           >
@@ -1453,18 +1726,29 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
                 defaultValue={row.pct}
                 className="w-full text-center text-[10px] font-mono bg-base-surface border border-base-accent rounded py-0 outline-none h-6 px-0.5"
                 onClick={(e) => e.stopPropagation()}
+                onFocus={(e) => e.currentTarget.select()}
                 onBlur={(e) => {
+                  const blurKey = `${row.id}:pct`;
+                  if (skipBlurSaveRef.current === blurKey) {
+                    skipBlurSaveRef.current = null;
+                    return;
+                  }
                   const val = parseInt(e.target.value, 10);
                   saveProgress(row.id, isNaN(val) ? 0 : val);
                   setEditingPct(null);
                 }}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
+                  if (e.key === 'Enter' || e.key === 'Tab') {
+                    e.preventDefault();
+                    skipBlurSaveRef.current = `${row.id}:pct`;
                     const val = parseInt(e.currentTarget.value, 10);
                     saveProgress(row.id, isNaN(val) ? 0 : val);
                     setEditingPct(null);
+                    moveEditorFocus(row.id, 'pct', e.key === 'Tab' ? (e.shiftKey ? 'prevCol' : 'nextCol') : (e.shiftKey ? 'prevRow' : 'nextRow'));
+                  } else if (e.key === 'Escape') {
+                    skipBlurSaveRef.current = `${row.id}:pct`;
+                    setEditingPct(null);
                   }
-                  if (e.key === 'Escape') setEditingPct(null);
                 }}
               />
             ) : (
@@ -1555,7 +1839,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       {/* Two-row Headers (56px matching the timeline side exactly) */}
       <div
         className="h-14 border-b border-base-border divide-y divide-base-border/50 font-condensed flex flex-col justify-stretch select-none shrink-0 bg-base-surface3/40"
-        style={{ width: `${totalTableWidth}px` }}
+        style={{ width: `${activeTableWidth}px` }}
       >
         {/* Header row 1 */}
         <div className="h-7 px-3 flex items-center justify-between text-xs font-bold text-base-text uppercase tracking-wider">
@@ -1570,9 +1854,13 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               type="button"
               onClick={() => {
                 setColumnOrder(P6_COLUMN_ORDER);
-                try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(P6_COLUMN_ORDER)); } catch {}
+                try { localStorage.setItem(COLUMN_ORDER_STORAGE_KEY, JSON.stringify(P6_COLUMN_ORDER)); } catch {}
               }}
-              className="text-[10.5px] font-sans font-bold text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 px-2 py-0.5 rounded-md border border-amber-500/40 bg-amber-500/10 transition-colors cursor-pointer"
+              className={`text-[10.5px] font-sans font-bold px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                isP6LayoutActive
+                  ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                  : 'text-amber-600 dark:text-amber-400 hover:text-white hover:bg-amber-600 border-amber-500/40 bg-amber-500/10'
+              }`}
               title="Aktifkan Kolom Standar Primavera P6 (Act ID, WBS, OD, RD, Total Float, Dates)"
             >
               Primavera P6
@@ -1581,9 +1869,13 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               type="button"
               onClick={() => {
                 setColumnOrder(STANDARD_COLUMN_ORDER);
-                try { localStorage.setItem('austin_gantt_column_order_v1', JSON.stringify(STANDARD_COLUMN_ORDER)); } catch {}
+                try { localStorage.setItem(COLUMN_ORDER_STORAGE_KEY, JSON.stringify(STANDARD_COLUMN_ORDER)); } catch {}
               }}
-              className="text-[10.5px] font-sans font-semibold text-base-muted hover:text-base-text px-2 py-0.5 rounded-md border border-base-border bg-base-surface transition-colors cursor-pointer"
+              className={`text-[10.5px] font-sans font-semibold px-2 py-0.5 rounded-md border transition-colors cursor-pointer ${
+                isStandardLayoutActive
+                  ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                  : 'text-base-muted hover:text-base-text border-base-border bg-base-surface'
+              }`}
               title="Tampilan Kolom Minimalis"
             >
               Standard
@@ -1613,7 +1905,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       <div
         ref={leftScrollRef}
         className="flex-1 overflow-y-hidden select-none"
-        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', width: `${totalTableWidth}px` }}
+        style={{ scrollbarWidth: 'none', msOverflowStyle: 'none', width: `${activeTableWidth}px` }}
       >
         {topSpacerHeight > 0 && (
           <div style={{ height: `${topSpacerHeight}px` }} className="pointer-events-none shrink-0" aria-hidden="true" />
@@ -1652,7 +1944,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         {showSCurve && sCurvePaths && (
           <div
             className="flex-shrink-0 border-t border-base-border bg-base-surface3"
-            style={{ height: `${SCURVE_H + 28}px`, width: `${totalTableWidth}px` }}
+            style={{ height: `${SCURVE_H + 28}px`, width: `${activeTableWidth}px` }}
           >
             <div className="flex items-center h-6 px-3 border-b border-base-border">
               <span className="font-condensed font-bold text-[9px] uppercase tracking-widest text-base-muted">
@@ -1664,7 +1956,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
 
         {/* ── RESOURCE LOAD VIEW TABLE SECTION ── */}
         {showResourceLoad && resourceLoadData && (
-          <div className="flex-shrink-0 border-t-2 border-base-border bg-base-surface3/80" style={{ width: `${totalTableWidth}px` }}>
+          <div className="flex-shrink-0 border-t-2 border-base-border bg-base-surface3/80" style={{ width: `${activeTableWidth}px` }}>
             {/* Section Header Controls */}
             <div className="px-3 py-2 border-b border-base-border bg-base-surface flex flex-col gap-2">
               <div className="flex items-center justify-between">

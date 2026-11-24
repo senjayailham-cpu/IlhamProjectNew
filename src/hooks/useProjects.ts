@@ -16,7 +16,7 @@ export function useProjects(
   const [projects, setProjectsState] = useState<Project[]>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('austin_projects_cache_v1');
+        const cached = localStorage.getItem('epc_projects_cache_v1') || localStorage.getItem('austin_projects_cache_v1');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) {
@@ -36,7 +36,7 @@ export function useProjects(
       // Instant synchronous cache to browser storage (resists immediate page reload)
       try {
         if (typeof window !== 'undefined') {
-          localStorage.setItem('austin_projects_cache_v1', JSON.stringify(next));
+          localStorage.setItem('epc_projects_cache_v1', JSON.stringify(next));
         }
       } catch (e) {
         console.warn('Failed to cache projects to localStorage:', e);

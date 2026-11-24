@@ -206,7 +206,7 @@ export default function ProjectQrModal({
         <body>
           <div class="card">
             <div class="header">
-              <div class="org">Austin Batam Operations</div>
+              <div class="org">EPC Control System</div>
               <h1 class="title">${project.name}</h1>
               <div class="badges">
                 ${project.client ? `<span class="badge badge-wo">WO: ${project.client}</span>` : ''}

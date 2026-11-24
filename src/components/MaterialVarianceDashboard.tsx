@@ -157,7 +157,7 @@ export const MaterialVarianceDashboard: React.FC<MaterialVarianceDashboardProps>
                 MES ANALYTICS
               </span>
               <span className="text-xs text-base-muted font-mono font-medium">
-                Austin Batam Fabrication Facility
+                EPC Control System · Fabrication Facility
               </span>
             </div>
             <h1 className="text-xl sm:text-2xl font-condensed font-black tracking-wide text-base-text uppercase">

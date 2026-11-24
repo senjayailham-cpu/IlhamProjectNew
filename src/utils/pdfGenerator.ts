@@ -32,7 +32,7 @@ export function downloadProjectPDF(
     doc.line(margin, pageHeight - 12, 210 - margin, pageHeight - 12);
 
     doc.text(
-      `AUSTIN BATAM — Project Summary Report [WO: ${project.client}]`,
+      `EPC CONTROL SYSTEM — Project Summary Report [WO: ${project.client}]`,
       margin,
       pageHeight - 8
     );

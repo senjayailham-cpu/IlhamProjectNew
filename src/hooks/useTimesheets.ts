@@ -11,7 +11,7 @@ export function useTimesheets(
   const [timesheets, setTimesheetsState] = useState<TimesheetEntry[]>(() => {
     try {
       if (typeof window !== 'undefined') {
-        const cached = localStorage.getItem('austin_timesheets_cache_v1');
+        const cached = localStorage.getItem('epc_timesheets_cache_v1') || localStorage.getItem('austin_timesheets_cache_v1');
         if (cached) {
           const parsed = JSON.parse(cached);
           if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -26,7 +26,7 @@ export function useTimesheets(
       const next = typeof action === 'function' ? (action as (ts: TimesheetEntry[]) => TimesheetEntry[])(prev) : action;
       try {
         if (typeof window !== 'undefined') {
-          localStorage.setItem('austin_timesheets_cache_v1', JSON.stringify(next));
+          localStorage.setItem('epc_timesheets_cache_v1', JSON.stringify(next));
         }
       } catch (e) {}
       queueMicrotask(() => {

@@ -15,7 +15,7 @@ export function IndustryTemplatePicker({ onSelectTemplate }: IndustryTemplatePic
       key: 'fabrication',
       title: 'Fabrication & Manufacturing',
       icon: Hammer,
-      badge: 'Austin Batam Default',
+      badge: 'EPC Control Default',
       desc: 'Nesting, CNC, Bending, Machining stages with Welders, Fitters, Grinders, and QC Inspections.',
       color: 'from-blue-500/20 to-cyan-500/20 text-cyan-400 border-cyan-500/30',
     },

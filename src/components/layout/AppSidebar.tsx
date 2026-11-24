@@ -1,9 +1,10 @@
 import React from 'react';
 import { User, Project, ProblemReport, InspectionRequest } from '../../types';
 import { useAppStore, useUIStore } from '../../store';
+import BrandLogo from '../common/BrandLogo';
 import { 
   ChevronLeft, ChevronRight, Folder, Key, LogOut,
-  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory, Settings
+  LayoutGrid, AlertTriangle, Clock, CheckCircle, Archive, ClipboardCheck, Flame, FileText, FileBadge, ListTree, Users, UserCheck, ShieldCheck, BarChart2, Package, Layers, Database, Trophy, Calendar, TrendingUp, Factory, Settings, Droplets
 } from 'lucide-react';
 
 const IconMap: Record<string, React.ComponentType<any>> = {
@@ -19,6 +20,7 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   FileBadge,
   ListTree,
   Users,
+  UserCheck,
   ShieldCheck,
   BarChart2,
   Package,
@@ -28,7 +30,8 @@ const IconMap: Record<string, React.ComponentType<any>> = {
   Calendar,
   TrendingUp,
   Factory,
-  Settings
+  Settings,
+  Droplets
 };
 
 interface AppSidebarProps {
@@ -79,15 +82,13 @@ export function AppSidebar({
     <aside className={`hidden md:flex flex-col bg-base-surface border-r border-base-border fixed top-0 bottom-0 left-0 z-40 select-none transition-all duration-300 ${sidebarCollapsed ? 'w-16' : 'w-64'}`}>
       
       {/* Header Branding Logo */}
-      <div className="h-14 border-b border-base-border flex items-center justify-between px-4 shrink-0">
+      <div className="h-14 border-b border-base-border flex items-center justify-between px-3.5 shrink-0">
         {!sidebarCollapsed ? (
           <>
-            <div className="font-condensed font-black text-lg tracking-widest text-[#9b1c2e]">
-              AUSTIN <span className="text-base-text">BATAM</span>
-            </div>
+            <BrandLogo variant="sidebar" />
             <button 
               onClick={toggleSidebar} 
-              className="p-1 rounded-md hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer"
+              className="p-1 rounded-md hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer shrink-0"
               title="Collapse Sidebar"
             >
               <ChevronLeft className="h-4 w-4" />
@@ -95,12 +96,10 @@ export function AppSidebar({
           </>
         ) : (
           <div className="w-full flex items-center justify-center relative">
-            <div className="font-condensed font-black text-lg tracking-widest text-[#9b1c2e]" title="Austin Batam">
-              AB
-            </div>
+            <BrandLogo variant="collapsed" />
             <button 
               onClick={toggleSidebar} 
-              className="absolute -right-1 p-1 rounded-md hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer"
+              className="absolute -right-2 p-1 rounded-md hover:bg-base-surface2 text-base-muted hover:text-base-text transition-colors cursor-pointer"
               title="Expand Sidebar"
             >
               <ChevronRight className="h-4 w-4" />
@@ -128,21 +127,14 @@ export function AppSidebar({
                 const IconComponent = IconMap[t.icon] || Folder;
                 const isTabActive = activeTab === t.id;
 
-                const hasCountsComp = t.id === 'completed';
-                const compCount = projects.filter(p => p.status === 'completed' && !p.isArchived).length;
-                const hasCountsArc = t.id === 'archive';
-                const arcCount = projects.filter(p => p.isArchived).length;
                 const hasCountsInsp = t.id === 'inspections';
-                const pendingInspCount = inspections.filter(ins => ins.status === 'Requested').length;
+                const pendingInspCount = hasCountsInsp
+                  ? inspections.filter(ins => ins.status === 'Requested').length
+                  : 0;
 
                 let badgeCount = 0;
                 let badgeBg = 'bg-base-accent-dim text-base-accent border border-base-accent/10';
-                if (hasCountsComp) {
-                  badgeCount = compCount;
-                  badgeBg = 'bg-base-ok-dim text-base-ok border border-base-ok/20';
-                } else if (hasCountsArc) {
-                  badgeCount = arcCount;
-                } else if (hasCountsInsp) {
+                if (hasCountsInsp) {
                   badgeCount = pendingInspCount;
                   badgeBg = 'bg-base-warn-dim text-base-warn border border-base-warn/20';
                 }
@@ -232,10 +224,10 @@ export function AppSidebar({
               <button 
                 onClick={onChangePassword} 
                 className="flex items-center gap-1 text-base-muted hover:text-base-accent cursor-pointer"
-                title="Change Security Configuration"
+                title="Change Password"
               >
                 <Key className="h-3 w-3" />
-                <span>Config</span>
+                <span>Password</span>
               </button>
               <button 
                 onClick={onLogout} 

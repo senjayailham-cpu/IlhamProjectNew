@@ -20,8 +20,10 @@ import {
   Save, 
   X,
   Layers,
-  ArrowRight
+  ArrowRight,
+  Calculator
 } from 'lucide-react';
+import { estimateProjectBacFromBom, findMatchingBomTemplate } from '../utils/bacEstimator';
 
 interface SpotlightCostTabProps {
   project: Project;
@@ -40,6 +42,7 @@ export function SpotlightCostTab({
 }: SpotlightCostTabProps) {
   const employees = useAppStore((s) => s.employees);
   const materials = useAppStore((s) => s.materials);
+  const bomTemplates = useAppStore((s) => s.bomTemplates);
   const currency = useAppStore((s) => s.currency);
   const exchangeRates = useAppStore((s) => s.exchangeRates);
 
@@ -50,6 +53,15 @@ export function SpotlightCostTab({
   const [budgetInput, setBudgetInput] = useState<string>(
     project.budgetCost ? String(project.budgetCost) : ''
   );
+  const [selectedBomId, setSelectedBomId] = useState<string>(() => {
+    return findMatchingBomTemplate(project, bomTemplates).bom?.id || '';
+  });
+
+  const bomEstimate = useMemo(() => {
+    return estimateProjectBacFromBom(project, bomTemplates, materials, employees, {
+      bomTemplateId: selectedBomId || project.bomTemplateId || null,
+    });
+  }, [project, bomTemplates, materials, employees, selectedBomId]);
 
   const costSummary = useMemo(() => {
     return calculateProjectCostSummary(
@@ -260,6 +272,60 @@ export function SpotlightCostTab({
           />
         </div>
       </div>
+
+      {/* ── INTEGRASI BOM + MAN-HOURS → BAC ── */}
+      {bomTemplates.length > 0 && (
+        <div className="p-3.5 rounded-xl bg-base-surface border border-base-border space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Calculator className="h-4 w-4 text-base-accent shrink-0" />
+              <div>
+                <div className="font-bold text-xs text-base-text font-condensed uppercase tracking-wider">
+                  Estimasi BAC Otomatis (BOM + Man-Hours)
+                </div>
+                <div className="text-[11px] text-base-muted">
+                  Material BOM: <strong className="font-mono text-base-text">{fmt(bomEstimate.estimatedMaterialCost)}</strong>
+                  {' · '}Tenaga Kerja ({bomEstimate.targetBudgetHours} jam): <strong className="font-mono text-base-text">{fmt(bomEstimate.estimatedLaborCost)}</strong>
+                  {' · '}Total Rekomendasi: <strong className="font-mono text-base-accent">{fmt(bomEstimate.recommendedBac)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <select
+                value={selectedBomId || bomEstimate.matchedBom?.id || ''}
+                onChange={(e) => setSelectedBomId(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg bg-base-surface2 border border-base-border text-xs text-base-text max-w-[180px]"
+              >
+                <option value="">Pilih Template BOM</option>
+                {bomTemplates.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}
+                  </option>
+                ))}
+              </select>
+
+              {onUpdateProject && bomEstimate.recommendedBac > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateProject({
+                      ...project,
+                      budgetCost: bomEstimate.recommendedBac,
+                      budgetMaterialCost: bomEstimate.estimatedMaterialCost,
+                      budgetLaborCost: bomEstimate.estimatedLaborCost,
+                      bomTemplateId: bomEstimate.matchedBom?.id || selectedBomId || undefined,
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-base-accent text-white font-condensed font-bold uppercase tracking-wider text-[11px] hover:opacity-90 cursor-pointer whitespace-nowrap"
+                >
+                  Terapkan ke BAC
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── SECTION 1: SUB-ASSEMBLIES (WBS) COST BREAKDOWN ── */}
       <div className="space-y-2.5">

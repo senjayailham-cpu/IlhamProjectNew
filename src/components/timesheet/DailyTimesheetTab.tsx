@@ -441,112 +441,198 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
 
                 {/* Timesheets log list */}
                 {!isColl && (
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse">
-                      <thead>
-                        <tr className="bg-base-surface2/30 text-left text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-b border-base-border/50">
-                          <th className="py-2.5 px-4 font-condensed uppercase tracking-wider">Employee</th>
-                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Work Order</th>
-                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-extrabold">Category</th>
-                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Hours</th>
-                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Description</th>
-                          <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Status</th>
-                          <th className="py-2.5 px-4 text-right font-condensed uppercase tracking-wider">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-base-border/30 text-xs">
-                        {list.map(e => {
-                          const emp = employees.find(x => x.id === e.empId);
-                          return (
-                            <tr key={e.id} className="hover:bg-base-surface2/20 transition-colors">
-                              <td className="py-3 px-4">
-                                <div>
-                                  <div className="font-bold text-base-text">{e.empName}</div>
-                                  <div className="text-[10px] text-base-muted mt-0.5">{emp?.position || 'Crew'}</div>
-                                </div>
-                              </td>
-                              <td className="py-3 px-3">
-                                {(() => {
-                                  const proj = projects.find(
-                                    x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
-                                  );
-                                  return (
-                                    <div>
-                                      {proj ? (
-                                        <button
-                                          onClick={() => openSpotlight?.(proj.id)}
-                                          className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide hover:underline hover:text-base-accent cursor-pointer flex items-center gap-1 group text-left"
-                                          title={`View Project Spotlight: ${proj.name}`}
-                                        >
-                                          <span>{e.workOrder || '—'}</span>
-                                          <ExternalLink className="h-3 w-3 inline text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
-                                        </button>
-                                      ) : (
-                                        <div className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide">
-                                          {e.workOrder || '—'}
-                                        </div>
-                                      )}
-                                      {(e.assemblyName || e.taskName) && (
-                                        <div className="text-[10px] text-base-muted2 font-medium mt-0.5 flex items-center gap-1 flex-wrap">
-                                          {e.assemblyName && (
-                                            <span className="font-semibold text-base-text/80">{e.assemblyName}</span>
-                                          )}
-                                          {e.assemblyName && e.taskName && (
-                                            <span className="text-base-muted">▸</span>
-                                          )}
-                                          {e.taskName && (
-                                            <span className="text-amber-500 font-bold bg-amber-500/10 px-1 py-0.2 rounded-xs">{e.taskName}</span>
-                                          )}
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })()}
-                              </td>
-                              <td className="py-3 px-3">
-                                {e.category ? (
-                                  <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-condensed font-bold uppercase tracking-wider ${getCategoryBadgeClass(e.category)}`}>
-                                    {e.category}
-                                  </span>
-                                ) : (
-                                  <span className="text-base-muted/40 text-[11px] font-mono">—</span>
-                                )}
-                              </td>
-                              <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent">
-                                {fmtHrs(e.totalHours || 0)}h
-                              </td>
-                              <td className="py-3 px-3 max-w-[200px] truncate text-base-muted2" title={e.desc}>
-                                {e.desc || '—'}
-                              </td>
-                              <td className="py-3 px-3">
-                                <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider ${STATUS_PILLS[e.status as keyof typeof STATUS_PILLS] || ''}`}>
+                  <>
+                    {/* Mobile Card View */}
+                    <div className="md:hidden divide-y divide-base-border/40">
+                      {list.map(e => {
+                        const emp = employees.find(x => x.id === e.empId);
+                        const proj = projects.find(
+                          x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
+                        );
+                        return (
+                          <div key={`mob_${e.id}`} className="p-3.5 space-y-2.5 hover:bg-base-surface2/20 transition-colors">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <div className="font-bold text-sm text-base-text truncate">{e.empName}</div>
+                                <div className="text-[11px] text-base-muted">{emp?.position || 'Crew'}</div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="px-2 py-0.5 rounded-lg bg-base-accent/10 text-base-accent font-condensed font-extrabold text-xs">
+                                  {fmtHrs(e.totalHours || 0)}h
+                                </span>
+                                <span className={`px-2 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider ${STATUS_PILLS[e.status as keyof typeof STATUS_PILLS] || ''}`}>
                                   {e.status}
                                 </span>
-                              </td>
-                              <td className="py-3 px-4 text-right whitespace-nowrap">
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              {proj ? (
+                                <button
+                                  onClick={() => openSpotlight?.(proj.id)}
+                                  className="font-condensed font-extrabold text-xs text-base-blue uppercase tracking-wide hover:underline flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>{e.workOrder || '—'}</span>
+                                  <ExternalLink className="h-3 w-3" />
+                                </button>
+                              ) : (
+                                <span className="font-condensed font-extrabold text-xs text-base-blue uppercase">
+                                  {e.workOrder || '—'}
+                                </span>
+                              )}
+                              {e.category && (
+                                <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-condensed font-bold uppercase tracking-wider ${getCategoryBadgeClass(e.category)}`}>
+                                  {e.category}
+                                </span>
+                              )}
+                              {e.taskName && (
+                                <span className="text-[10px] text-amber-500 font-bold bg-amber-500/10 px-1.5 py-0.5 rounded">
+                                  {e.taskName}
+                                </span>
+                              )}
+                            </div>
+
+                            {e.desc && (
+                              <p className="text-xs text-base-muted2 leading-relaxed line-clamp-2">
+                                {e.desc}
+                              </p>
+                            )}
+
+                            {(canManageTimesheet || canDeleteTimesheet) && (
+                              <div className="flex justify-end gap-2 pt-1">
                                 {canManageTimesheet && (
                                   <button
                                     onClick={() => openEditTimesheet(e.id)}
-                                    className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer inline-flex items-center justify-center mr-1"
+                                    className="px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-xs font-semibold text-base-text hover:text-base-accent flex items-center gap-1 cursor-pointer"
                                   >
-                                    <Edit className="h-3.5 w-3.5" />
+                                    <Edit className="h-3 w-3" />
+                                    <span>Edit</span>
                                   </button>
                                 )}
                                 {canDeleteTimesheet && (
                                   <button
                                     onClick={() => deleteTsEntry(e.id)}
-                                    className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer inline-flex items-center justify-center"
+                                    className="px-2.5 py-1 rounded-lg bg-base-surface2 border border-base-border text-xs font-semibold text-base-red hover:bg-base-red/10 flex items-center gap-1 cursor-pointer"
                                   >
-                                    <Trash2 className="h-3.5 w-3.5" />
+                                    <Trash2 className="h-3 w-3" />
+                                    <span>Hapus</span>
                                   </button>
                                 )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Desktop Table View */}
+                    <div className="hidden md:block overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-base-surface2/30 text-left text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted border-b border-base-border/50">
+                            <th className="py-2.5 px-4 font-condensed uppercase tracking-wider">Employee</th>
+                            <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Work Order</th>
+                            <th className="py-2.5 px-3 font-condensed uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-extrabold">Category</th>
+                            <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Hours</th>
+                            <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Description</th>
+                            <th className="py-2.5 px-3 font-condensed uppercase tracking-wider">Status</th>
+                            <th className="py-2.5 px-4 text-right font-condensed uppercase tracking-wider">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-base-border/30 text-xs">
+                          {list.map(e => {
+                            const emp = employees.find(x => x.id === e.empId);
+                            return (
+                              <tr key={e.id} className="hover:bg-base-surface2/20 transition-colors">
+                                <td className="py-3 px-4">
+                                  <div>
+                                    <div className="font-bold text-base-text">{e.empName}</div>
+                                    <div className="text-[10px] text-base-muted mt-0.5">{emp?.position || 'Crew'}</div>
+                                  </div>
+                                </td>
+                                <td className="py-3 px-3">
+                                  {(() => {
+                                    const proj = projects.find(
+                                      x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
+                                    );
+                                    return (
+                                      <div>
+                                        {proj ? (
+                                          <button
+                                            onClick={() => openSpotlight?.(proj.id)}
+                                            className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide hover:underline hover:text-base-accent cursor-pointer flex items-center gap-1 group text-left"
+                                            title={`View Project Spotlight: ${proj.name}`}
+                                          >
+                                            <span>{e.workOrder || '—'}</span>
+                                            <ExternalLink className="h-3 w-3 inline text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
+                                          </button>
+                                        ) : (
+                                          <div className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide">
+                                            {e.workOrder || '—'}
+                                          </div>
+                                        )}
+                                        {(e.assemblyName || e.taskName) && (
+                                          <div className="text-[10px] text-base-muted2 font-medium mt-0.5 flex items-center gap-1 flex-wrap">
+                                            {e.assemblyName && (
+                                              <span className="font-semibold text-base-text/80">{e.assemblyName}</span>
+                                            )}
+                                            {e.assemblyName && e.taskName && (
+                                              <span className="text-base-muted">▸</span>
+                                            )}
+                                            {e.taskName && (
+                                              <span className="text-amber-500 font-bold bg-amber-500/10 px-1 py-0.2 rounded-xs">{e.taskName}</span>
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })()}
+                                </td>
+                                <td className="py-3 px-3">
+                                  {e.category ? (
+                                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-condensed font-bold uppercase tracking-wider ${getCategoryBadgeClass(e.category)}`}>
+                                      {e.category}
+                                    </span>
+                                  ) : (
+                                    <span className="text-base-muted/40 text-[11px] font-mono">—</span>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent">
+                                  {fmtHrs(e.totalHours || 0)}h
+                                </td>
+                                <td className="py-3 px-3 max-w-[200px] truncate text-base-muted2" title={e.desc}>
+                                  {e.desc || '—'}
+                                </td>
+                                <td className="py-3 px-3">
+                                  <span className={`px-2.5 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider ${STATUS_PILLS[e.status as keyof typeof STATUS_PILLS] || ''}`}>
+                                    {e.status}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right whitespace-nowrap">
+                                  {canManageTimesheet && (
+                                    <button
+                                      onClick={() => openEditTimesheet(e.id)}
+                                      className="p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-surface3 transition-all cursor-pointer inline-flex items-center justify-center mr-1"
+                                    >
+                                      <Edit className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                  {canDeleteTimesheet && (
+                                    <button
+                                      onClick={() => deleteTsEntry(e.id)}
+                                      className="p-1 rounded text-base-muted hover:text-base-red hover:bg-base-red/10 transition-all cursor-pointer inline-flex items-center justify-center"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
                 )}
               </div>
             );

@@ -10,6 +10,7 @@ import {
 
 export interface GanttRow {
   id: string;
+  projectId: string;
   type: 'project' | 'assembly' | 'task';
   name: string;
   level: 0 | 1 | 2;
@@ -47,12 +48,15 @@ export interface GanttRow {
 }
 
 // Utility to parse ISO date strictly without timezone shifts
-// Utility to parse ISO date strictly without timezone shifts
 export const parseLocalDate = (dateStr?: string | null): Date => {
   if (!dateStr || typeof dateStr !== 'string') return new Date();
   const clean = dateStr.trim().slice(0, 10);
   const parts = clean.split('-');
-  return new Date(parseInt(parts[0], 10) || 2026, (parseInt(parts[1], 10) || 1) - 1, parseInt(parts[2], 10) || 1);
+  return new Date(
+    parseInt(parts[0], 10) || new Date().getFullYear(),
+    (parseInt(parts[1], 10) || 1) - 1,
+    parseInt(parts[2], 10) || 1
+  );
 };
 
 // Calculate days between two pure local dates
@@ -181,9 +185,10 @@ export function useGanttRows({
       }
       p.assemblies?.forEach(asm => {
         asm.tasks?.forEach(t => {
-          if (t.date) {
+          const tDateStr = t.date || t.startDate;
+          if (tDateStr) {
             try {
-              const d = parseLocalDate(t.date);
+              const d = parseLocalDate(tDateStr);
               if (!minDate || d < minDate) minDate = d;
             } catch (e) {
               // ignore
@@ -255,8 +260,9 @@ export function useGanttRows({
     return calculateMultiProjectCPM(projectsList);
   }, [projectsList]);
 
-  // Generate full unfiltered list of Gantt rows (including WBS numbering and P6 CPM attributes)
-  const allRows = useMemo(() => {
+  // Shared flattener: when forceExpandAll is true, all projects & assemblies are included
+  // so search, status filter, and Lookahead always inspect the full WBS tree.
+  const buildFlattenedRows = (forceExpandAll: boolean): GanttRow[] => {
     const result: GanttRow[] = [];
     const usedIds = new Set<string>();
 
@@ -352,13 +358,15 @@ export function useGanttRows({
       let maxTime = -Infinity;
       p.assemblies?.forEach(asm => {
         asm.tasks?.forEach(t => {
-          if (t.date) {
-            const ms = parseLocalDate(t.date).getTime();
+          const tStartCandidate = t.date || t.startDate;
+          const tFinishCandidate = t.finishDate || t.endDate;
+          if (tStartCandidate) {
+            const ms = parseLocalDate(tStartCandidate).getTime();
             if (ms < minTime) minTime = ms;
             if (ms > maxTime) maxTime = ms;
           }
-          if (t.finishDate) {
-            const ms = parseLocalDate(t.finishDate).getTime();
+          if (tFinishCandidate) {
+            const ms = parseLocalDate(tFinishCandidate).getTime();
             if (ms < minTime) minTime = ms;
             if (ms > maxTime) maxTime = ms;
           }
@@ -370,7 +378,7 @@ export function useGanttRows({
         pStartStr = formatLocalDate(minDate);
         pDueStr = formatLocalDate(maxDate);
       } else {
-        if (!pStartStr) pStartStr = p.created?.slice(0, 10) || new Date().toISOString().slice(0, 10);
+        if (!pStartStr) pStartStr = p.created?.slice(0, 10) || formatLocalDate(new Date());
         if (!pDueStr) {
           const d = parseLocalDate(pStartStr);
           d.setDate(d.getDate() + 30);
@@ -391,6 +399,7 @@ export function useGanttRows({
 
       result.push({
         id: getUniqueRowId(p.id),
+        projectId: p.id,
         type: 'project',
         name: p.name,
         level: 0,
@@ -421,16 +430,18 @@ export function useGanttRows({
         timesheetCount: pTimesheetCountTotal
       });
 
-      // 2. Assembly & Task level rows (HANYA di-flatten jika project di-expand user)
-      if (expandedIds.has(p.id)) {
+      // 2. Assembly & Task level rows (di-flatten jika project di-expand user, atau saat filter/search aktif)
+      if (forceExpandAll || expandedIds.has(p.id)) {
         p.assemblies?.forEach((asm, asmIdx) => {
           let aStart = asm.start;
           let aFinish = asm.finish;
 
           const taskDates: Date[] = [];
           asm.tasks?.forEach(t => {
-            if (t.date) taskDates.push(parseLocalDate(t.date));
-            if (t.finishDate) taskDates.push(parseLocalDate(t.finishDate));
+            const tStartCandidate = t.date || t.startDate;
+            const tFinishCandidate = t.finishDate || t.endDate;
+            if (tStartCandidate) taskDates.push(parseLocalDate(tStartCandidate));
+            if (tFinishCandidate) taskDates.push(parseLocalDate(tFinishCandidate));
           });
 
           // Recalculate sub-assembly start and finish dates dynamically as rollup of tasks ONLY IF tasks have dates
@@ -465,6 +476,7 @@ export function useGanttRows({
 
           result.push({
             id: getUniqueRowId(asm.id),
+            projectId: p.id,
             type: 'assembly',
             name: asm.name,
             level: 1,
@@ -495,15 +507,15 @@ export function useGanttRows({
             timesheetCount: asmStats.count
           });
 
-          // Add child tasks if assembly is expanded
-          const isAsmCollapsed = collapsedAsms[asm.id] === true;
+          // Add child tasks if assembly is expanded (or forced during active filter)
+          const isAsmCollapsed = !forceExpandAll && collapsedAsms[asm.id] === true;
           if (!isAsmCollapsed) {
             asm.tasks?.forEach((t, taskIdx) => {
               // Actual task start & finish: only populated if task explicitly has actual dates!
               const tStart = t.date || t.startDate || '';
               let tFinish = t.finishDate || t.endDate || '';
 
-              if (tStart && tFinish && new Date(tFinish) < new Date(tStart)) {
+              if (tStart && tFinish && daysBetween(parseLocalDate(tStart), parseLocalDate(tFinish)) < 0) {
                 tFinish = tStart;
               }
 
@@ -528,6 +540,7 @@ export function useGanttRows({
 
               result.push({
                 id: getUniqueRowId(t.id),
+                projectId: p.id,
                 type: 'task',
                 name: t.name,
                 level: 2,
@@ -570,7 +583,19 @@ export function useGanttRows({
     });
 
     return result;
-  }, [projectsList, expandedIds, collapsedAsms, timesheetSummary, cpmData]);
+  };
+
+  // Full WBS tree (independent of collapse state, used for search/filter/auto-expand & rollups)
+  const fullTreeRows = useMemo(
+    () => buildFlattenedRows(true),
+    [projectsList, timesheetSummary, cpmData]
+  );
+
+  // Visible tree respecting user's current expand/collapse state
+  const allRows = useMemo(
+    () => buildFlattenedRows(false),
+    [projectsList, expandedIds, collapsedAsms, timesheetSummary, cpmData]
+  );
 
   // Overall Project Plan vs Actual hours statistics
   const totalHoursStats = useMemo(() => {
@@ -578,7 +603,7 @@ export function useGanttRows({
     let actual = 0;
     let entries = 0;
 
-    allRows.filter(r => r.level === 0).forEach(r => {
+    fullTreeRows.filter(r => r.level === 0).forEach(r => {
       plan += r.planHours;
       actual += r.actualHours;
       entries += r.timesheetCount;
@@ -587,25 +612,25 @@ export function useGanttRows({
     const burn = plan > 0 ? Math.round((actual / plan) * 100) : 0;
     const variance = actual - plan;
     return { plan, actual, entries, burn, variance };
-  }, [allRows]);
+  }, [fullTreeRows]);
 
-  // Generate list of filtered Gantt rows
+  // Generate list of filtered Gantt rows (auto-expands matching branches across collapsed projects!)
   const rows = useMemo(() => {
     const todayStr = formatLocalDate(new Date());
     const lookaheadEndStr = addDaysToLocalDate(todayStr, lookaheadWeeks * 7);
     const searchLower = searchQuery.toLowerCase().trim();
+    const isFiltering = searchLower !== '' || statusFilter !== 'all' || activeTab === 'lookahead';
 
-    // Helper to check if a row matches the filters
-    const matchesFilter = (row: GanttRow) => {
-      // Search filter
-      if (searchLower !== '' && !row.name.toLowerCase().includes(searchLower)) {
-        return false;
-      }
-      // Status filter
+    // If no filters are active, show user's expand/collapse tree directly
+    if (!isFiltering) {
+      return allRows;
+    }
+
+    const matchesStatusAndLookahead = (row: GanttRow) => {
       if (statusFilter !== 'all') {
         const isDone = row.pct === 100 || row.done;
-        const isOverdue = row.pct < 100 && row.finish && row.finish < todayStr;
-        const isOnTrack = row.pct < 100 && row.finish && row.finish >= todayStr;
+        const isOverdue = row.pct < 100 && !!row.finish && row.finish < todayStr;
+        const isOnTrack = row.pct < 100 && !!row.finish && row.finish >= todayStr;
         const isNotStarted = row.pct === 0 && !row.done;
 
         if (statusFilter === 'done' && !isDone) return false;
@@ -613,7 +638,6 @@ export function useGanttRows({
         if (statusFilter === 'on-track' && !isOnTrack) return false;
         if (statusFilter === 'not-started' && !isNotStarted) return false;
       }
-      // Lookahead date window filter
       if (activeTab === 'lookahead') {
         const rStart = row.start || row.finish || todayStr;
         const rFinish = row.finish || row.start || todayStr;
@@ -623,56 +647,71 @@ export function useGanttRows({
       return true;
     };
 
-    // If no filters are active, show all rows directly
-    if (searchLower === '' && statusFilter === 'all' && activeTab === 'gantt') {
-      return allRows;
+    const matchesSearch = (row: GanttRow) => {
+      if (searchLower === '') return true;
+      return (
+        row.name.toLowerCase().includes(searchLower) ||
+        row.wbs.toLowerCase().includes(searchLower) ||
+        (row.activityId ? row.activityId.toLowerCase().includes(searchLower) : false) ||
+        (row.assigned ? row.assigned.toLowerCase().includes(searchLower) : false)
+      );
+    };
+
+    const matchingTaskIds = new Set<string>();
+    const matchingAsmIds = new Set<string>();
+    const matchingProjectIds = new Set<string>();
+
+    // When only searching by text (no status/lookahead restriction), matching a project or assembly
+    // also surfaces its subtree cleanly.
+    const matchedDirectProjectIds = new Set<string>();
+    const matchedDirectAsmIds = new Set<string>();
+
+    if (searchLower !== '' && statusFilter === 'all' && activeTab === 'gantt') {
+      fullTreeRows.forEach(row => {
+        if (row.level === 0 && matchesSearch(row)) {
+          matchedDirectProjectIds.add(row.id);
+          matchingProjectIds.add(row.id);
+        } else if (row.level === 1 && matchesSearch(row)) {
+          matchedDirectAsmIds.add(row.id);
+          matchingAsmIds.add(row.id);
+          matchingProjectIds.add(row.projectId);
+        }
+      });
     }
 
-    // First, identify all task rows (level 2) that match the filter
-    const matchingTaskIds = new Set<string>();
-    allRows.forEach(row => {
-      if (row.level === 2 && matchesFilter(row)) {
+    // Collect all level-2 tasks that satisfy all active filters (directly or via matched parent name)
+    fullTreeRows.forEach(row => {
+      if (row.level !== 2) return;
+      const inheritedFromParent =
+        matchedDirectProjectIds.has(row.projectId) ||
+        (row.parentAsmId ? matchedDirectAsmIds.has(row.parentAsmId) : false);
+
+      if ((matchesSearch(row) || inheritedFromParent) && matchesStatusAndLookahead(row)) {
         matchingTaskIds.add(row.id);
+        if (row.parentAsmId) matchingAsmIds.add(row.parentAsmId);
+        matchingProjectIds.add(row.projectId);
       }
     });
 
-    // Helper to get project id for a row
-    const getProjectIdOfRow = (r: GanttRow): string => {
-      if (r.level === 0) return r.id;
-      return r.id.split('-')[0];
-    };
-
-    // Filter rows based on matching level 2 tasks, direct name matches, and hierarchy rules
-    const filteredRows = allRows.filter(row => {
-      // If row itself directly matches name filter
-      if (searchLower !== '' && row.name.toLowerCase().includes(searchLower)) {
-        return true;
-      }
-
+    // O(N) hierarchical filter using explicit projectId & parentAsmId
+    return fullTreeRows.filter(row => {
       if (row.level === 2) {
         return matchingTaskIds.has(row.id);
       }
       if (row.level === 1) {
-        // Assembly is kept if at least one child task matches or assembly itself has no tasks
-        const childTasks = allRows.filter(r => r.level === 2 && r.parentAsmId === row.id);
-        if (childTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
-        return childTasks.some(r => matchingTaskIds.has(r.id));
+        return matchingAsmIds.has(row.id);
       }
       if (row.level === 0) {
-        // Project is kept if at least one task across its assemblies matches or project has no tasks
-        const projTasks = allRows.filter(r => r.level === 2 && getProjectIdOfRow(r) === row.id);
-        if (projTasks.length === 0 && searchLower === '' && statusFilter === 'all') return true;
-        return projTasks.some(r => matchingTaskIds.has(r.id));
+        return matchingProjectIds.has(row.id);
       }
-      return true;
+      return false;
     });
-
-    return filteredRows;
-  }, [allRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
+  }, [allRows, fullTreeRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
 
   return {
     timesheetSummary,
     projectsList,
+    fullTreeRows,
     allRows,
     rows,
     expandedIds,

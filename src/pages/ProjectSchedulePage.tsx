@@ -48,6 +48,9 @@ export function ProjectSchedulePage({
   const [activeSubTab, setActiveSubTab] = useState<'gantt' | 'timeline' | 'risk'>(
     defaultView === 'risk' ? 'risk' : defaultView === 'timeline' ? 'timeline' : 'gantt'
   );
+  React.useEffect(() => {
+    setActiveSubTab(defaultView === 'risk' ? 'risk' : defaultView === 'timeline' ? 'timeline' : 'gantt');
+  }, [defaultView]);
   const setQrScannerOpen = useUIStore((s) => s.setQrScannerOpen);
 
   const delaySummary = useMemo(() => {
@@ -69,7 +72,7 @@ export function ProjectSchedulePage({
               <Calendar className="h-5 w-5" />
             </span>
             <h1 className="font-condensed font-black text-xl sm:text-2xl tracking-tight text-base-text uppercase shrink-0">
-              Project Schedule & Timeline
+              Jadwal & Timeline Proyek
             </h1>
 
             {/* Tab Toggle Switch placed right next to title */}
@@ -105,7 +108,7 @@ export function ProjectSchedulePage({
                 }`}
               >
                 <ShieldAlert className="h-3.5 w-3.5 text-rose-400" />
-                <span>Delay Risk Analytics</span>
+                <span>Analisis Delay Risk</span>
                 {delaySummary.flaggedCount > 0 && (
                   <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-extrabold ${
                     activeSubTab === 'risk' ? 'bg-white text-rose-700' : 'bg-rose-500 text-white animate-pulse'
@@ -122,7 +125,7 @@ export function ProjectSchedulePage({
                   title="Buka Halaman Cepat Update Progress Proyek"
                 >
                   <TrendingUp className="h-3.5 w-3.5" />
-                  <span>Update Progress ↗</span>
+                  <span>Update Progres ↗</span>
                 </button>
               )}
 
@@ -137,7 +140,7 @@ export function ProjectSchedulePage({
             </div>
           </div>
           <p className="text-xs text-base-muted font-sans">
-            Unified project scheduling hub — toggle between Interactive Gantt Chart, Visual Milestone Timeline, and Predictive Delay Risk Analytics. Tip: Klik kolom <strong className="text-base-text font-mono">% Comp</strong> di tabel untuk edit progres langsung.
+            Pusat penjadwalan terpadu — beralih antara Gantt Chart interaktif, Timeline milestone, dan analisis prediksi keterlambatan. Tips: Klik kolom <strong className="text-base-text font-mono">% Comp</strong> di tabel untuk edit progres langsung.
           </p>
         </div>
       </div>
@@ -167,6 +170,7 @@ export function ProjectSchedulePage({
             onCloseDepModal={onCloseDepModal}
             currentUser={currentUser}
             orgSettings={orgSettings}
+            embedded={true}
           />
         )}
 

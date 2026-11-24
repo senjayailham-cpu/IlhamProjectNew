@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Search, AlertTriangle, Clock, Link } from 'lucide-react';
 import { Project } from '../types';
 import { GanttRow, daysBetween, formatLocalDate, addDaysToLocalDate, parseLocalDate } from './useGanttRows';
@@ -28,6 +28,7 @@ export interface GanttTimelineProps {
   selectedRowId: string | null;
   setSelectedRowId: (id: string | null) => void;
   dragHoverTargetRowId: string | null;
+  flashingTimelineRowId?: string | null;
 
   // Bar coordinates & features
   rowBarCoordsCache: Map<string, { left: number; width: number }>;
@@ -120,6 +121,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   selectedRowId,
   setSelectedRowId,
   dragHoverTargetRowId,
+  flashingTimelineRowId,
 
   rowBarCoordsCache,
   showBaseline,
@@ -163,11 +165,130 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   expandedResources,
   setHoveredResourceCell,
 }) => {
+  const [isPanning, setIsPanning] = useState(false);
+  const [hoveredSCurveDay, setHoveredSCurveDay] = useState<number | null>(null);
+  const panStartRef = useRef<{
+    x: number;
+    y: number;
+    scrollLeft: number;
+    scrollTop: number;
+    didMove: boolean;
+  } | null>(null);
+  const suppressClickRef = useRef(false);
+
+  useEffect(() => {
+    const handlePanMove = (e: MouseEvent) => {
+      if (!panStartRef.current || !rightScrollRef.current) return;
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      if (!panStartRef.current.didMove && (Math.abs(dx) > 3 || Math.abs(dy) > 3)) {
+        panStartRef.current.didMove = true;
+        setIsPanning(true);
+      }
+      if (panStartRef.current.didMove) {
+        rightScrollRef.current.scrollLeft = panStartRef.current.scrollLeft - dx;
+        rightScrollRef.current.scrollTop = panStartRef.current.scrollTop - dy;
+      }
+    };
+
+    const handlePanUp = () => {
+      if (panStartRef.current?.didMove) {
+        suppressClickRef.current = true;
+        setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 60);
+      }
+      panStartRef.current = null;
+      setIsPanning(false);
+    };
+
+    window.addEventListener('mousemove', handlePanMove);
+    window.addEventListener('mouseup', handlePanUp);
+    return () => {
+      window.removeEventListener('mousemove', handlePanMove);
+      window.removeEventListener('mouseup', handlePanUp);
+    };
+  }, [rightScrollRef]);
+
+  const handleTimelineMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (e.button !== 0 && e.button !== 1) return;
+    if (connectDraw || dragState) return;
+    const target = e.target as HTMLElement | null;
+    if (!target) return;
+    if (target.closest('[data-gantt-bar="true"], button, input, select, a, [role="button"]')) {
+      return;
+    }
+    const container = rightScrollRef.current;
+    if (!container) return;
+    panStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      scrollLeft: container.scrollLeft,
+      scrollTop: container.scrollTop,
+      didMove: false,
+    };
+    if (e.button === 1) {
+      e.preventDefault();
+    }
+  };
+
+  const renderLiveDragTooltip = (row: GanttRow) => {
+    if (!dragState || dragState.rowId !== row.id) return null;
+    const curStart = dragState.tempStart || row.start || '';
+    const curFinish = dragState.tempFinish || row.finish || curStart;
+    if (!curStart) return null;
+
+    const durDays = row.isMilestone
+      ? 0
+      : Math.max(1, daysBetween(parseLocalDate(curStart), parseLocalDate(curFinish)) + 1);
+
+    const deltaDays =
+      dragState.type === 'resize'
+        ? daysBetween(parseLocalDate(dragState.initialFinish), parseLocalDate(curFinish))
+        : daysBetween(parseLocalDate(dragState.initialStart), parseLocalDate(curStart));
+
+    const deltaLabel = deltaDays === 0 ? '0d' : `${deltaDays > 0 ? `+${deltaDays}` : deltaDays}d`;
+    const modeLabel =
+      dragState.type === 'resize'
+        ? 'Ubah Selesai'
+        : dragState.type === 'resize-left'
+          ? 'Ubah Mulai'
+          : 'Geser';
+
+    return (
+      <div className="absolute -top-7 left-1/2 -translate-x-1/2 bg-slate-950 text-white dark:bg-slate-100 dark:text-slate-950 text-[10px] font-mono px-2.5 py-0.5 rounded-md shadow-xl pointer-events-none whitespace-nowrap z-40 font-bold border border-slate-700 dark:border-slate-300 flex items-center gap-1.5">
+        <span className="text-[9px] uppercase tracking-wider text-sky-400 dark:text-sky-700 font-sans font-extrabold">
+          {modeLabel}
+        </span>
+        <span>
+          {row.isMilestone ? curStart : `${curStart} → ${curFinish}`}
+        </span>
+        {!row.isMilestone && (
+          <span className="text-slate-300 dark:text-slate-600">({durDays}d)</span>
+        )}
+        <span
+          className={`px-1 py-0.2 rounded text-[9px] font-black ${
+            deltaDays > 0
+              ? 'bg-amber-500/30 text-amber-300 dark:bg-amber-500/20 dark:text-amber-700'
+              : deltaDays < 0
+                ? 'bg-emerald-500/30 text-emerald-300 dark:bg-emerald-500/20 dark:text-emerald-700'
+                : 'bg-slate-700 text-slate-300 dark:bg-slate-200 dark:text-slate-700'
+          }`}
+        >
+          {deltaLabel}
+        </span>
+      </div>
+    );
+  };
+
   return (
     <div
       ref={rightScrollRef}
       onScroll={handleScroll}
-      className="flex-1 overflow-auto relative select-none"
+      onMouseDown={handleTimelineMouseDown}
+      className={`flex-1 overflow-auto relative select-none ${
+        isPanning ? 'cursor-grabbing' : (!connectMode ? 'cursor-grab' : 'cursor-crosshair')
+      }`}
     >
       {/* Scrollable Container Content Stage */}
       <div
@@ -287,8 +408,11 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                 return (
                   <div
                     key={`timeline-row-${row.id}-${idx}`}
-                    onClick={() => setSelectedRowId(row.id)}
-                    className={`h-8 relative select-none border-b border-base-border/20 cursor-pointer transition-colors ${hoverClass} ${
+                    onClick={() => {
+                      if (suppressClickRef.current) return;
+                      setSelectedRowId(row.id);
+                    }}
+                    className={`h-8 relative select-none border-b border-base-border/20 transition-colors ${hoverClass} ${
                       isTargetHovered ? 'bg-green-500/25 border-y-2 border-green-500 z-20 font-bold' : isSelected ? 'bg-base-accent-dim/40' : ''
                     }`}
                     style={{ height: '32px' }}
@@ -320,9 +444,14 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
                     {barCoords && (
                       <div
+                        data-gantt-bar="true"
                         onMouseEnter={(e) => handleMouseEnter(row, e)}
                         onMouseLeave={handleMouseLeave}
-                        className="absolute select-none group"
+                        className={`absolute select-none group transition-shadow duration-300 ${
+                          flashingTimelineRowId === row.id
+                            ? 'ring-2 ring-amber-400 rounded-md bg-amber-400/20 shadow-lg z-30'
+                            : ''
+                        }`}
                         style={{
                           left: `${barCoords.left}px`,
                           width: `${row.isMilestone ? '20' : Math.max(12, barCoords.width)}px`,
@@ -451,6 +580,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             style={{ cursor: onUpdateProject ? (dragState?.rowId === row.id ? 'grabbing' : 'grab') : 'default' }}
                             onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
                           >
+                            {renderLiveDragTooltip(row)}
                             <div className="w-full h-2 bg-base-accent-dim relative rounded-xs overflow-hidden flex items-center border border-base-accent/40 pointer-events-none">
                               <div
                                 className="h-full bg-base-accent"
@@ -473,6 +603,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             style={{ cursor: onUpdateProject ? (dragState?.rowId === row.id ? 'grabbing' : 'grab') : 'default' }}
                             onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
                           >
+                            {renderLiveDragTooltip(row)}
                             <div className="w-full h-1.5 bg-slate-300 dark:bg-slate-700 relative rounded-full overflow-hidden flex items-center border border-slate-400/20 pointer-events-none">
                               <div
                                 className="h-full bg-slate-800 dark:bg-slate-200"
@@ -561,11 +692,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                               )}
 
                               {/* Live Date Tooltip Badge while dragging */}
-                              {dragState && dragState.rowId === row.id && (
-                                <div className="absolute -top-6 left-1/2 -translate-x-1/2 bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900 text-[10px] font-mono px-2 py-0.5 rounded shadow-lg pointer-events-none whitespace-nowrap z-30 font-bold border border-slate-700 dark:border-slate-300">
-                                  {dragState.tempStart || row.start} → {dragState.tempFinish || row.finish}
-                                </div>
-                              )}
+                              {renderLiveDragTooltip(row)}
 
                               {/* Left edge drag resize handle */}
                               {onUpdateProject && (
@@ -609,15 +736,18 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                           const rowConflicts = dependencyViolationsMap.get(row.id);
                           const hasConflict = rowConflicts && rowConflicts.length > 0;
                           return (
-                            <div
-                              className={`w-3.5 h-3.5 rotate-45 transform border shadow-xs flex items-center justify-center shrink-0 -ml-1.5 z-20 cursor-move ${
-                                hasConflict
-                                  ? 'bg-red-600 border-red-300 ring-2 ring-red-500/60 animate-pulse'
-                                  : 'bg-yellow-500 dark:bg-yellow-400 border-white/40'
-                              }`}
-                              onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
-                              title={hasConflict ? `Milestone Dependency Conflict:\n${rowConflicts.map(c => c.reason).join('\n')}` : "Drag milestone to shift target date"}
-                            />
+                            <div className="relative flex items-center">
+                              {renderLiveDragTooltip(row)}
+                              <div
+                                className={`w-3.5 h-3.5 rotate-45 transform border shadow-xs flex items-center justify-center shrink-0 -ml-1.5 z-20 cursor-move ${
+                                  hasConflict
+                                    ? 'bg-red-600 border-red-300 ring-2 ring-red-500/60 animate-pulse'
+                                    : 'bg-yellow-500 dark:bg-yellow-400 border-white/40'
+                                }`}
+                                onMouseDown={(e) => handleBarMouseDown(row, 'move', e)}
+                                title={hasConflict ? `Milestone Dependency Conflict:\n${rowConflicts.map(c => c.reason).join('\n')}` : "Drag milestone to shift target date"}
+                              />
+                            </div>
                           );
                         })()}
 
@@ -861,15 +991,23 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
               })()}
             </div>
 
-            {/* SVG chart area */}
+            {/* Interactive SVG chart area */}
             <svg
               width={sCurvePaths.totalWidth}
               height={SCURVE_H}
               viewBox={`0 0 ${sCurvePaths.totalWidth} ${SCURVE_H}`}
-              className="absolute bottom-0 left-0"
+              className="absolute bottom-0 left-0 cursor-crosshair"
               style={{ overflow: 'visible' }}
               aria-label="S-Curve planned vs actual progress"
               role="img"
+              onMouseMove={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                const mouseX = Math.max(0, Math.min(sCurvePaths.totalWidth, e.clientX - rect.left));
+                const maxDays = sCurvePaths.totalDays ?? totalTimelineDays;
+                const day = Math.max(0, Math.min(maxDays, Math.round(mouseX / pixelsPerDay)));
+                setHoveredSCurveDay(day);
+              }}
+              onMouseLeave={() => setHoveredSCurveDay(null)}
             >
               {/* Horizontal grid lines at 25%, 50%, 75%, 100% */}
               {[25, 50, 75, 100].map(pct => {
@@ -894,8 +1032,9 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
               {/* Today vertical line */}
               {(() => {
+                const maxDays = sCurvePaths.totalDays ?? totalTimelineDays;
                 const todayD = daysBetween(timelineStart, new Date());
-                if (todayD < 0 || todayD > sCurvePaths.totalDays) return null;
+                if (todayD < 0 || todayD > maxDays) return null;
                 const tx = todayD * pixelsPerDay;
                 return (
                   <line
@@ -929,8 +1068,9 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
 
               {/* Variance indicator at Today */}
               {(() => {
+                const maxDays = sCurvePaths.totalDays ?? totalTimelineDays;
                 const todayD = Math.max(0, Math.min(
-                  sCurvePaths.totalDays,
+                  maxDays,
                   daysBetween(timelineStart, new Date())
                 ));
                 const todayPt = sCurveData?.find(p => p.day >= todayD);
@@ -941,7 +1081,6 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                 const isAhead = todayPt.actual >= todayPt.planned;
                 return (
                   <g>
-                    {/* Vertical variance line */}
                     <line
                       x1={tx} y1={Math.min(py, ay)}
                       x2={tx} y2={Math.max(py, ay)}
@@ -949,10 +1088,64 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                       strokeWidth="2"
                       strokeDasharray="2 2"
                     />
-                    {/* Dot on planned */}
                     <circle cx={tx} cy={py} r="3" fill="var(--accent)" stroke="var(--surface)" strokeWidth="1.5" />
-                    {/* Dot on actual */}
                     <circle cx={tx} cy={ay} r="3" fill="var(--green)" stroke="var(--surface)" strokeWidth="1.5" />
+                  </g>
+                );
+              })()}
+
+              {/* Interactive Hover Crosshair & Tooltip */}
+              {hoveredSCurveDay !== null && sCurveData && sCurveData.length > 0 && (() => {
+                let nearestPt = sCurveData[0];
+                let bestDist = Math.abs(nearestPt.day - hoveredSCurveDay);
+                for (let i = 1; i < sCurveData.length; i++) {
+                  const dist = Math.abs(sCurveData[i].day - hoveredSCurveDay);
+                  if (dist < bestDist) {
+                    bestDist = dist;
+                    nearestPt = sCurveData[i];
+                  }
+                }
+                const hx = nearestPt.day * pixelsPerDay;
+                const hpy = SCURVE_H - (nearestPt.planned / 100) * (SCURVE_H - 4) - 2;
+                const hay = SCURVE_H - (nearestPt.actual / 100) * (SCURVE_H - 4) - 2;
+                const dateLabel = addDaysToLocalDate(formatLocalDate(timelineStart), nearestPt.day);
+                const variance = nearestPt.actual - nearestPt.planned;
+                const placeLeft = hx > sCurvePaths.totalWidth - 190;
+
+                return (
+                  <g className="pointer-events-none">
+                    <line
+                      x1={hx}
+                      y1={0}
+                      x2={hx}
+                      y2={SCURVE_H}
+                      stroke="currentColor"
+                      strokeOpacity={0.45}
+                      strokeWidth="1"
+                      strokeDasharray="3 2"
+                    />
+                    <circle cx={hx} cy={hpy} r="3.5" fill="var(--accent)" stroke="white" strokeWidth="1.5" />
+                    <circle cx={hx} cy={hay} r="3.5" fill="var(--green)" stroke="white" strokeWidth="1.5" />
+                    <foreignObject
+                      x={placeLeft ? Math.max(4, hx - 178) : Math.min(sCurvePaths.totalWidth - 178, hx + 8)}
+                      y={4}
+                      width={172}
+                      height={52}
+                      className="overflow-visible pointer-events-none"
+                    >
+                      <div className="bg-slate-950/95 text-white dark:bg-slate-100/95 dark:text-slate-950 rounded-md px-2 py-1 shadow-lg border border-slate-700 dark:border-slate-300 text-[9px] font-mono leading-tight">
+                        <div className="font-bold text-sky-300 dark:text-sky-700 border-b border-white/15 dark:border-black/15 pb-0.5 mb-0.5 flex justify-between">
+                          <span>{dateLabel}</span>
+                          <span className={variance >= 0 ? 'text-emerald-400 dark:text-emerald-700' : 'text-rose-400 dark:text-rose-700'}>
+                            {variance >= 0 ? `+${variance.toFixed(1)}%` : `${variance.toFixed(1)}%`}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Plan: {nearestPt.planned.toFixed(1)}%</span>
+                          <span>Act: {nearestPt.actual.toFixed(1)}%</span>
+                        </div>
+                      </div>
+                    </foreignObject>
                   </g>
                 );
               })()}
@@ -960,7 +1153,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
           </div>
         )}
 
-        {/* ── RESOURCE LOAD VIEW TIMELINE GRID ── */}
+        {/* ── RESOURCE LOAD VIEW TIMELINE GRID (SPARSE DOM OPTIMIZED) ── */}
         {showResourceLoad && resourceLoadData && (
           <div className="relative border-t-2 border-base-border bg-base-surface flex-shrink-0" style={{ width: `${totalTimelineDays * pixelsPerDay}px` }}>
             {/* Section Header Spacer */}
@@ -968,10 +1161,10 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
               <span className="font-condensed font-extrabold text-[10px] uppercase tracking-widest text-base-muted flex items-center gap-2">
                 <span>Daily Allocated Man-Hours Grid</span>
                 <span className="inline-flex items-center gap-1 text-[9px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-1.5 py-0.5 rounded border border-emerald-500/20">
-                  ■ 8h (Optimal)
+                  ■ {dailyCapacityLimit}h (Optimal)
                 </span>
                 <span className="inline-flex items-center gap-1 text-[9px] text-red-600 dark:text-red-400 font-bold bg-red-500/10 px-1.5 py-0.5 rounded border border-red-500/20">
-                  ■ &gt;8h (Conflict Overload)
+                  ■ &gt;{dailyCapacityLimit}h (Conflict Overload)
                 </span>
               </span>
             </div>
@@ -980,23 +1173,40 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
             {resourceLoadData.resourceList.map(emp => {
               const isExpanded = expandedResources.has(emp.name);
               const hasConflicts = emp.conflictDaysCount > 0;
+              const activeDayIndices: number[] = [];
+              for (let dIdx = 0; dIdx <= totalTimelineDays; dIdx++) {
+                if (emp.dailyHours[dIdx] > 0) {
+                  activeDayIndices.push(dIdx);
+                }
+              }
+
+              const dayGridBg = pixelsPerDay >= 6
+                ? {
+                    backgroundImage: 'linear-gradient(to right, rgba(148, 163, 184, 0.16) 1px, transparent 1px)',
+                    backgroundSize: `${pixelsPerDay}px 100%`,
+                  }
+                : undefined;
 
               return (
                 <React.Fragment key={`res-row-right-${emp.name}`}>
-                  {/* Main Employee Daily Cell Row */}
-                  <div className={`h-9 border-b border-base-border flex ${hasConflicts ? 'bg-red-500/5' : 'bg-base-surface'}`}>
-                    {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
+                  {/* Main Employee Daily Cell Row (Sparse positioned active cells) */}
+                  <div
+                    className={`h-9 border-b border-base-border relative ${hasConflicts ? 'bg-red-500/5' : 'bg-base-surface'}`}
+                    style={dayGridBg}
+                  >
+                    {activeDayIndices.map(dIdx => {
                       const hours = emp.dailyHours[dIdx];
                       const isOver = hours > dailyCapacityLimit;
                       const isOptimal = hours === dailyCapacityLimit;
-                      const isUnder = hours > 0 && hours < dailyCapacityLimit;
-
                       const currentDateStr = addDaysToLocalDate(formatLocalDate(timelineStart), dIdx);
 
                       return (
                         <div
                           key={`res-cell-${emp.name}-${dIdx}`}
-                          style={{ width: `${pixelsPerDay}px` }}
+                          style={{
+                            left: `${dIdx * pixelsPerDay}px`,
+                            width: `${Math.max(4, pixelsPerDay)}px`,
+                          }}
                           onMouseEnter={(e) => {
                             const rect = e.currentTarget.getBoundingClientRect();
                             setHoveredResourceCell({
@@ -1010,55 +1220,52 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                             });
                           }}
                           onMouseLeave={() => setHoveredResourceCell(null)}
-                          className={`h-full border-r border-base-border/40 flex items-center justify-center font-mono text-[10px] transition-all cursor-pointer select-none ${
+                          className={`absolute top-0 bottom-0 border-r border-base-border/40 flex items-center justify-center font-mono text-[10px] transition-all cursor-pointer select-none ${
                             isOver
                               ? 'bg-red-500/30 text-red-700 dark:text-red-300 font-black border-y-2 border-red-500/60 shadow-xs hover:bg-red-500/50 hover:scale-105 z-10'
                               : isOptimal
                                 ? 'bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 font-bold border-y border-emerald-500/30 hover:bg-emerald-500/30'
-                                : isUnder
-                                  ? 'bg-blue-500/15 text-blue-600 dark:text-blue-300 font-semibold hover:bg-blue-500/25'
-                                  : 'text-base-muted/20 hover:bg-base-surface3/40'
+                                : 'bg-blue-500/15 text-blue-600 dark:text-blue-300 font-semibold hover:bg-blue-500/25'
                           }`}
                         >
-                          {hours > 0 ? (
-                            <span className={`px-1 py-0.2 rounded ${isOver ? 'bg-red-600 text-white font-black' : ''}`}>
+                          {pixelsPerDay >= 10 && (
+                            <span className={`px-1 py-0.2 rounded truncate ${isOver ? 'bg-red-600 text-white font-black' : ''}`}>
                               {hours}h
                             </span>
-                          ) : (
-                            <span>·</span>
                           )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Sub-rows for tasks when expanded */}
+                  {/* Sub-rows for tasks when expanded (Single range span bar) */}
                   {isExpanded && emp.assignedTasks.map(t => {
                     const taskStartD = parseLocalDate(t.start);
                     const taskFinishD = parseLocalDate(t.finish);
-                    const taskStartIdx = daysBetween(timelineStart, taskStartD);
-                    const taskFinishIdx = daysBetween(timelineStart, taskFinishD);
+                    const rawStartIdx = daysBetween(timelineStart, taskStartD);
+                    const rawFinishIdx = daysBetween(timelineStart, taskFinishD);
+                    const clampedStartIdx = Math.max(0, rawStartIdx);
+                    const clampedFinishIdx = Math.min(totalTimelineDays, rawFinishIdx);
+                    const hasVisibleSpan = clampedFinishIdx >= clampedStartIdx && rawFinishIdx >= 0 && rawStartIdx <= totalTimelineDays;
 
                     return (
-                      <div key={`res-task-right-${emp.name}-${t.id}`} className="h-7 border-b border-base-border/60 bg-base-surface2/30 flex">
-                        {Array.from({ length: totalTimelineDays + 1 }).map((_, dIdx) => {
-                          const isActive = dIdx >= taskStartIdx && dIdx <= taskFinishIdx;
-
-                          return (
-                            <div
-                              key={`res-task-cell-${t.id}-${dIdx}`}
-                              style={{ width: `${pixelsPerDay}px` }}
-                              className={`h-full border-r border-base-border/30 flex items-center justify-center font-mono text-[9px] ${
-                                isActive
-                                  ? 'bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold border-y border-indigo-500/40'
-                                  : 'text-transparent'
-                              }`}
-                              title={isActive ? `${t.name} (8h)` : ''}
-                            >
-                              {isActive ? '8h' : ''}
-                            </div>
-                          );
-                        })}
+                      <div
+                        key={`res-task-right-${emp.name}-${t.id}`}
+                        className="h-7 border-b border-base-border/60 bg-base-surface2/30 relative"
+                        style={dayGridBg}
+                      >
+                        {hasVisibleSpan && (
+                          <div
+                            style={{
+                              left: `${clampedStartIdx * pixelsPerDay}px`,
+                              width: `${Math.max(pixelsPerDay, (clampedFinishIdx - clampedStartIdx + 1) * pixelsPerDay)}px`,
+                            }}
+                            className="absolute top-0.5 bottom-0.5 bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 font-bold border border-indigo-500/40 rounded-sm flex items-center justify-center font-mono text-[9px] truncate px-1.5"
+                            title={`${t.name} (${t.start} → ${t.finish}, 8h/hari)`}
+                          >
+                            {pixelsPerDay >= 8 ? `${t.name} · 8h/hari` : ''}
+                          </div>
+                        )}
                       </div>
                     );
                   })}

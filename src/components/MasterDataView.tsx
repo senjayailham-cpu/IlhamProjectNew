@@ -3,6 +3,8 @@ import { useMasterData } from '../hooks/useMasterData';
 import { MasterDataEntry, User } from '../types';
 import { can } from '../utils/permissions';
 import { Database, Search, Trash2, GitMerge, AlertTriangle, Check, X } from 'lucide-react';
+import ConfirmDialog from './common/ConfirmDialog';
+import { showToast } from './Toast';
 
 interface MasterDataViewProps {
   currentUser: User;
@@ -27,6 +29,7 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
   // Merge dialog states
   const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
   const [primaryEntryId, setPrimaryEntryId] = useState<string>('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; value: string } | null>(null);
 
   // Access check
   const hasAccess = useMemo(() => {
@@ -87,7 +90,7 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
   // Open merge confirmation modal
   const handleOpenMergeModal = () => {
     if (selectedIds.length < 2) {
-      alert('Pilih minimal 2 item untuk digabungkan.');
+      showToast('Pilih minimal 2 item untuk digabungkan.', 'warning');
       return;
     }
     // Set first item as default primary/main entry
@@ -108,11 +111,8 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
   };
 
   // Delete handler
-  const handleDelete = async (id: string, value: string) => {
-    if (window.confirm(`Apakah Anda yakin ingin menghapus "${value}" dari Master Data?`)) {
-      await deleteEntry(id);
-      setSelectedIds((prev) => prev.filter((item) => item !== id));
-    }
+  const handleDelete = (id: string, value: string) => {
+    setDeleteTarget({ id, value });
   };
 
   // Find detailed objects for selected items for the merge selection dropdown/radio list
@@ -408,6 +408,22 @@ export function MasterDataView({ currentUser }: MasterDataViewProps) {
           </div>
         </div>
       )}
+      <ConfirmDialog
+        isOpen={Boolean(deleteTarget)}
+        title="Hapus Item Master Data"
+        message={`Apakah Anda yakin ingin menghapus "${deleteTarget?.value || ''}" dari Master Data? Tindakan ini tidak dapat dibatalkan.`}
+        confirmLabel="Ya, Hapus"
+        tone="danger"
+        onCancel={() => setDeleteTarget(null)}
+        onConfirm={async () => {
+          if (deleteTarget) {
+            await deleteEntry(deleteTarget.id);
+            setSelectedIds((prev) => prev.filter((item) => item !== deleteTarget.id));
+            showToast(`"${deleteTarget.value}" berhasil dihapus.`, 'success');
+          }
+          setDeleteTarget(null);
+        }}
+      />
     </div>
   );
 }

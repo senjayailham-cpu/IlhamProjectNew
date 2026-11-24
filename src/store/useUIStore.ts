@@ -7,6 +7,12 @@ export interface DeleteConfirmState {
   onConfirm: () => void;
 }
 
+export interface QuickOrderOptions {
+  items?: Array<{ materialId: string; qty?: number }>;
+  category?: 'all' | 'consumable' | 'material' | 'low_stock';
+  projectId?: string;
+}
+
 interface UIStore {
   // Navigation & Tabs
   activeTab: string;
@@ -45,6 +51,12 @@ interface UIStore {
   closeQrPanel: () => void;
   isQrScannerOpen: boolean;
   setQrScannerOpen: (open: boolean) => void;
+
+  // Quick Order Modal State (Material & Consumable)
+  isQuickOrderOpen: boolean;
+  quickOrderOptions: QuickOrderOptions | null;
+  openQuickOrder: (options?: QuickOrderOptions) => void;
+  closeQuickOrder: () => void;
 
   // Shop Floor Mode (Tablet-Friendly)
   shopFloorMode: boolean;
@@ -147,12 +159,12 @@ export const useUIStore = create<UIStore>((set, get) => ({
   toggleMobileMenu: () => set((state) => ({ mobileMenuOpen: !state.mobileMenuOpen })),
 
   // Shop Floor Mode
-  shopFloorMode: typeof window !== 'undefined' ? localStorage.getItem('austin_shopfloor_mode') === 'true' : false,
+  shopFloorMode: typeof window !== 'undefined' ? (localStorage.getItem('epc_shopfloor_mode') ?? localStorage.getItem('austin_shopfloor_mode')) === 'true' : false,
   setShopFloorMode: (mode) =>
     set((state) => {
       const nextMode = typeof mode === 'function' ? mode(state.shopFloorMode) : mode;
       try {
-        localStorage.setItem('austin_shopfloor_mode', nextMode ? 'true' : 'false');
+        localStorage.setItem('epc_shopfloor_mode', nextMode ? 'true' : 'false');
       } catch {}
       return { shopFloorMode: nextMode };
     }),
@@ -160,7 +172,7 @@ export const useUIStore = create<UIStore>((set, get) => ({
     set((state) => {
       const nextMode = !state.shopFloorMode;
       try {
-        localStorage.setItem('austin_shopfloor_mode', nextMode ? 'true' : 'false');
+        localStorage.setItem('epc_shopfloor_mode', nextMode ? 'true' : 'false');
       } catch {}
       return { shopFloorMode: nextMode };
     }),
@@ -209,6 +221,20 @@ export const useUIStore = create<UIStore>((set, get) => ({
   closeQrPanel: () => set({ isQrPanelOpen: false, qrProjectId: null }),
   isQrScannerOpen: false,
   setQrScannerOpen: (isQrScannerOpen) => set({ isQrScannerOpen }),
+
+  // Quick Order Modal State
+  isQuickOrderOpen: false,
+  quickOrderOptions: null,
+  openQuickOrder: (options) =>
+    set({
+      isQuickOrderOpen: true,
+      quickOrderOptions: options || null,
+    }),
+  closeQuickOrder: () =>
+    set({
+      isQuickOrderOpen: false,
+      quickOrderOptions: null,
+    }),
 
   // Dark / Light Theme
   theme: initialTheme,

@@ -1,7 +1,7 @@
 {
-  "name": "Austin Batam — Project Console",
-  "short_name": "AB Console",
-  "description": "Manufacturing project tracking console for Austin Batam",
+  "name": "EPC Control System",
+  "short_name": "EPC Control",
+  "description": "Engineering, Procurement & Construction Project Tracking Console",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { can } from '../utils/permissions';
-import { useAppStore } from '../store';
+import { useAppStore, useUIStore } from '../store';
 import {
   MaterialItem,
   MaterialRequest,
@@ -33,7 +33,8 @@ import {
   Send,
   Activity,
   Download,
-  Upload
+  Upload,
+  ShoppingCart
 } from 'lucide-react';
 
 interface MaterialsViewProps {
@@ -1062,6 +1063,17 @@ export default function MaterialsView({
                 <span>Download Template</span>
               </button>
 
+              {canRequestMaterial && (
+                <button
+                  type="button"
+                  onClick={() => useUIStore.getState().openQuickOrder({ category: 'material' })}
+                  className="w-full sm:w-auto px-4 py-2 bg-amber-500 text-slate-950 hover:bg-amber-600 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                >
+                  <ShoppingCart className="h-3.5 w-3.5" />
+                  <span>Order Cepat</span>
+                </button>
+              )}
+
               {canManageMaterials && (
                 <>
                   <button
@@ -1093,8 +1105,194 @@ export default function MaterialsView({
             </div>
           )}
 
-          {/* STOCK INVENTORY DATA TABLE (SPREADSHEET VIEW) */}
-          <div className="overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
+          {/* MOBILE RESPONSIVE CARD VIEW (< md screens) */}
+          <div className="md:hidden space-y-3">
+            {filteredMaterials.length === 0 ? (
+              <div className="py-12 px-5 text-center bg-base-surface border border-dashed border-base-border rounded-2xl space-y-3">
+                <div className="w-12 h-12 mx-auto rounded-2xl bg-base-accent/10 border border-base-accent/20 flex items-center justify-center text-base-accent">
+                  <Package className="h-6 w-6" />
+                </div>
+                <div className="space-y-1">
+                  <p className="font-condensed font-black uppercase text-sm text-base-text tracking-wider">
+                    {stockSearch ? 'Material Tidak Ditemukan' : 'Belum Ada Stok Material'}
+                  </p>
+                  <p className="text-xs text-base-muted">
+                    {stockSearch
+                      ? `Tidak ada item yang cocok dengan "${stockSearch}".`
+                      : 'Tambahkan item material baru atau impor daftar stok dari template Excel.'}
+                  </p>
+                </div>
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  {stockSearch ? (
+                    <button
+                      type="button"
+                      onClick={() => setStockSearch('')}
+                      className="px-4 py-2 bg-base-surface2 border border-base-border rounded-xl text-xs font-condensed font-bold uppercase text-base-text cursor-pointer"
+                    >
+                      Reset Pencarian
+                    </button>
+                  ) : (
+                    canManageMaterials && (
+                      <button
+                        type="button"
+                        onClick={() => setIsAddingMaterial(true)}
+                        className="px-4 py-2 bg-base-accent text-white rounded-xl text-xs font-condensed font-bold uppercase flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Plus className="h-4 w-4" />
+                        <span>Tambah Material</span>
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+            ) : (
+              filteredMaterials.map((m) => {
+                const isLow = m.currentStock > 0 && m.currentStock < m.minStock;
+                const isOut = m.currentStock === 0;
+                const handleMobileFieldChange = (field: keyof MaterialItem, val: any) => {
+                  if (!onUpdateMaterial) return;
+                  let parsedVal = val;
+                  if (field === 'currentStock' || field === 'minStock') {
+                    parsedVal = parseFloat(val);
+                    if (isNaN(parsedVal) || parsedVal < 0) return;
+                  }
+                  onUpdateMaterial(m.id, { [field]: parsedVal });
+                };
+
+                return (
+                  <div key={`mob_${m.id}`} className="bg-base-surface border border-base-border rounded-2xl p-4 space-y-3 shadow-xs">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1 space-y-1">
+                        <input
+                          type="text"
+                          value={m.name}
+                          onChange={(e) => handleMobileFieldChange('name', e.target.value)}
+                          placeholder="Material Name"
+                          className="w-full bg-transparent font-bold text-sm text-base-text outline-none border-b border-transparent focus:border-base-accent pb-0.5"
+                        />
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-mono font-bold text-base-accent">
+                            {m.partNumber || 'No Part No.'}
+                          </span>
+                          {m.projectName && (
+                            <span className="text-[10px] font-mono text-base-muted truncate">
+                              📦 {m.projectName}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[9px] font-condensed font-extrabold uppercase tracking-wider border ${
+                            isOut
+                              ? 'bg-red-500/15 text-red-500 border-red-500/30'
+                              : isLow
+                                ? 'bg-amber-500/15 text-amber-500 border-amber-500/30'
+                                : 'bg-emerald-500/15 text-emerald-500 border-emerald-500/30'
+                          }`}
+                        >
+                          {isOut ? 'Habis' : isLow ? 'Tipis' : 'Aman'}
+                        </span>
+                        {canRequestMaterial && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              useUIStore.getState().openQuickOrder({
+                                items: [{ materialId: m.id, qty: Math.max(1, (m.minStock > 0 ? m.minStock : 1) - m.currentStock) }],
+                              })
+                            }
+                            className="px-2 py-1 rounded-lg bg-base-accent/10 text-base-accent hover:bg-base-accent hover:text-white text-[10px] font-condensed font-bold uppercase cursor-pointer"
+                            title={`Order cepat ${m.name}`}
+                          >
+                            Order
+                          </button>
+                        )}
+                        {canDeleteMaterials && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleDeleteClick(
+                                'Delete Material Stock Item',
+                                `Are you sure you want to permanently delete "${m.name}" (${m.partNumber ? `PN: ${m.partNumber}` : 'No Part No.'}) from inventory?`,
+                                () => onDeleteMaterial(m.id)
+                              )
+                            }
+                            className="p-1.5 text-base-muted hover:text-red-500 rounded-lg hover:bg-red-500/10 cursor-pointer"
+                            title="Delete Item"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Stock Stepper + Unit + Min Stock */}
+                    <div className="grid grid-cols-2 gap-2.5 bg-base-surface2/70 p-2.5 rounded-xl border border-base-border/60">
+                      <div>
+                        <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted block mb-1">
+                          Stok Saat Ini ({m.unit})
+                        </span>
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleMobileFieldChange('currentStock', Math.max(0, m.currentStock - 1))}
+                            className="w-8 h-8 rounded-lg bg-base-surface border border-base-border text-base-text font-bold hover:bg-base-surface3 cursor-pointer shrink-0"
+                            aria-label="Kurangi stok"
+                          >
+                            −
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.currentStock}
+                            onChange={(e) => handleMobileFieldChange('currentStock', e.target.value)}
+                            className={`w-full h-8 text-center bg-base-surface border border-base-border rounded-lg font-mono font-black text-xs outline-none focus:border-base-accent ${
+                              isOut ? 'text-red-500' : isLow ? 'text-amber-500' : 'text-emerald-500'
+                            }`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleMobileFieldChange('currentStock', m.currentStock + 1)}
+                            className="w-8 h-8 rounded-lg bg-base-surface border border-base-border text-base-text font-bold hover:bg-base-surface3 cursor-pointer shrink-0"
+                            aria-label="Tambah stok"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
+                      <div>
+                        <span className="text-[9px] font-condensed font-bold uppercase tracking-wider text-base-muted block mb-1">
+                          Min. Alert & Lokasi
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="number"
+                            min="0"
+                            value={m.minStock}
+                            onChange={(e) => handleMobileFieldChange('minStock', e.target.value)}
+                            className="w-16 h-8 px-2 text-center bg-base-surface border border-base-border rounded-lg font-mono text-xs text-base-muted outline-none focus:border-base-accent"
+                            title="Min Stock"
+                          />
+                          <input
+                            type="text"
+                            value={m.location || ''}
+                            onChange={(e) => handleMobileFieldChange('location', e.target.value)}
+                            placeholder="Lokasi..."
+                            className="flex-1 min-w-0 h-8 px-2 bg-base-surface border border-base-border rounded-lg text-xs text-base-text outline-none focus:border-base-accent"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* STOCK INVENTORY DATA TABLE (DESKTOP SPREADSHEET VIEW) */}
+          <div className="hidden md:block overflow-x-auto rounded-xl border border-base-border bg-base-surface shadow-xs">
             <table className="w-full text-left border-collapse text-xs min-w-[900px]">
               <thead>
                 <tr className="bg-base-surface2 text-base-muted font-condensed font-bold uppercase tracking-wider border-b border-base-border">
@@ -1111,8 +1309,40 @@ export default function MaterialsView({
               <tbody className="divide-y divide-base-border text-base-text text-[11px] font-semibold">
                 {filteredMaterials.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-12 text-center text-base-muted italic">
-                      No stock materials found matching current filters. Click "Add Material" above to initialize stock items.
+                    <td colSpan={8} className="px-6 py-12 text-center">
+                      <div className="flex flex-col items-center justify-center space-y-2.5">
+                        <div className="w-11 h-11 rounded-xl bg-base-accent/10 border border-base-accent/20 flex items-center justify-center text-base-accent">
+                          <Package className="h-5 w-5" />
+                        </div>
+                        <p className="font-condensed font-bold uppercase tracking-wider text-sm text-base-text">
+                          {stockSearch ? 'Material Tidak Ditemukan' : 'Belum Ada Stok Material'}
+                        </p>
+                        <p className="text-xs text-base-muted max-w-md">
+                          {stockSearch
+                            ? `Tidak ada item stok yang cocok dengan filter "${stockSearch}".`
+                            : 'Mulai catat inventaris material Anda dengan menambahkan item baru atau mengimpor dari Excel.'}
+                        </p>
+                        {stockSearch ? (
+                          <button
+                            type="button"
+                            onClick={() => setStockSearch('')}
+                            className="px-3.5 py-1.5 bg-base-surface2 border border-base-border rounded-lg text-xs font-condensed font-bold uppercase text-base-text hover:bg-base-surface3 cursor-pointer"
+                          >
+                            Reset Filter
+                          </button>
+                        ) : (
+                          canManageMaterials && (
+                            <button
+                              type="button"
+                              onClick={() => setIsAddingMaterial(true)}
+                              className="px-4 py-1.5 bg-base-accent text-white rounded-lg text-xs font-condensed font-bold uppercase flex items-center gap-1.5 hover:bg-base-accent/90 cursor-pointer"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              <span>Tambah Material Pertama</span>
+                            </button>
+                          )
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -1225,22 +1455,43 @@ export default function MaterialsView({
 
                         {/* 7. Actions */}
                         <td className="p-0 text-center">
-                          {canDeleteMaterials && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleDeleteClick(
-                                  'Delete Material Stock Item',
-                                  `Are you sure you want to permanently delete "${m.name}" (${m.partNumber ? `PN: ${m.partNumber}` : 'No Part No.'}) from inventory?`,
-                                  () => onDeleteMaterial(m.id)
-                                );
-                              }}
-                              className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition-colors cursor-pointer"
-                              title="Delete Item"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          )}
+                          <div className="inline-flex items-center justify-center gap-1 px-1">
+                            {canRequestMaterial && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  useUIStore.getState().openQuickOrder({
+                                    items: [
+                                      {
+                                        materialId: m.id,
+                                        qty: Math.max(1, (m.minStock > 0 ? m.minStock : 1) - m.currentStock),
+                                      },
+                                    ],
+                                  })
+                                }
+                                className="p-1 hover:bg-base-accent/15 text-base-accent rounded transition-colors cursor-pointer"
+                                title={`Order cepat ${m.name}`}
+                              >
+                                <ShoppingCart className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            {canDeleteMaterials && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleDeleteClick(
+                                    'Delete Material Stock Item',
+                                    `Are you sure you want to permanently delete "${m.name}" (${m.partNumber ? `PN: ${m.partNumber}` : 'No Part No.'}) from inventory?`,
+                                    () => onDeleteMaterial(m.id)
+                                  );
+                                }}
+                                className="p-1 hover:bg-red-500/10 text-base-muted hover:text-red-500 rounded transition-colors cursor-pointer"
+                                title="Delete Item"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1544,13 +1795,23 @@ export default function MaterialsView({
             </div>
 
             {canRequestMaterial && (
-              <button
-                onClick={() => setIsCreatingRequest(true)}
-                className="w-full md:w-auto px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
-              >
-                <Plus className="h-4 w-4" />
-                <span>New Request</span>
-              </button>
+              <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => useUIStore.getState().openQuickOrder({ category: 'all' })}
+                  className="px-4 py-2 bg-amber-500 text-slate-950 hover:bg-amber-600 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                >
+                  <ShoppingCart className="h-4 w-4" />
+                  <span>Order Cepat</span>
+                </button>
+                <button
+                  onClick={() => setIsCreatingRequest(true)}
+                  className="px-4 py-2 bg-base-accent text-white hover:bg-base-accent/95 rounded-lg text-xs font-condensed font-bold uppercase tracking-wide flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                >
+                  <Plus className="h-4 w-4" />
+                  <span>New Request</span>
+                </button>
+              </div>
             )}
           </div>
 
