@@ -24,6 +24,7 @@ import {
   getEffectiveWorkflowStatus
 } from './GanttGrid';
 import { GanttTimeline } from './GanttTimeline';
+import { GanttViewFilterDrawer } from './GanttViewFilterDrawer';
 
 export { 
   getCompanyColorClass, 
@@ -63,7 +64,9 @@ import {
   BookmarkPlus,
   ArrowRight,
   Scan,
-  FileSpreadsheet
+  FileSpreadsheet,
+  SlidersHorizontal,
+  Play
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -248,6 +251,7 @@ interface GanttViewProps {
   availableMonths?: string[];
   includeCompleted?: boolean;
   setIncludeCompleted?: (inc: boolean) => void;
+  embedded?: boolean;
 }
 
 interface DragState {
@@ -500,7 +504,8 @@ export default function GanttView({
   setSelectedMonth,
   availableMonths,
   includeCompleted,
-  setIncludeCompleted
+  setIncludeCompleted,
+  embedded = false
 }: GanttViewProps) {
   const allowedToEdit = can(currentUser ?? null, 'editGanttSchedule');
 
@@ -916,10 +921,33 @@ export default function GanttView({
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState<boolean>(false);
   const [isPrefsDropdownOpen, setIsPrefsDropdownOpen] = useState<boolean>(false);
+  const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
+  const [exportAlignRight, setExportAlignRight] = useState<boolean>(false);
+  const [prefsAlignRight, setPrefsAlignRight] = useState<boolean>(false);
+  const [baselineAlignRight, setBaselineAlignRight] = useState<boolean>(false);
+  const [showAnalysisToolbar, setShowAnalysisToolbar] = useState<boolean>(() => {
+    const saved = localStorage.getItem('gantt_showAnalysisToolbar');
+    return saved !== null ? saved === 'true' : true;
+  });
   const [isTouchDragging, setIsTouchDragging] = useState<boolean>(false);
   const ganttWorkspaceRef = useRef<HTMLDivElement>(null);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const prefsDropdownRef = useRef<HTMLDivElement>(null);
+  const baselineDropdownRef = useRef<HTMLDivElement>(null);
+
+  const shouldAlignMenuRight = (el: HTMLElement | null, menuWidthPx: number): boolean => {
+    if (!el || typeof window === 'undefined') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.left + menuWidthPx > window.innerWidth - 16;
+  };
+
+  const toggleAnalysisToolbar = () => {
+    setShowAnalysisToolbar(prev => {
+      const next = !prev;
+      localStorage.setItem('gantt_showAnalysisToolbar', String(next));
+      return next;
+    });
+  };
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -928,6 +956,9 @@ export default function GanttView({
       }
       if (prefsDropdownRef.current && !prefsDropdownRef.current.contains(event.target as Node)) {
         setIsPrefsDropdownOpen(false);
+      }
+      if (baselineDropdownRef.current && !baselineDropdownRef.current.contains(event.target as Node)) {
+        setShowBaselineMenu(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -3681,143 +3712,124 @@ export default function GanttView({
     + (activeTab === 'lookahead' ? (colCrewWidth + colCompanyWidth + colAssigneeWidth) : 0)
     + colStartWidth + colFinishWidth + colPredWidth + colPctWidth + colStatusWidth;
 
+  const activeLayerCount =
+    (showBaseline ? 1 : 0) +
+    (showHoursTracking ? 1 : 0) +
+    (showCriticalPath ? 1 : 0) +
+    (showResourceLoad ? 1 : 0) +
+    (showSCurve ? 1 : 0) +
+    (connectMode ? 1 : 0);
+
   return (
     <div className={
       isFullscreen
-        ? 'fixed inset-0 z-[200] p-4 sm:p-6 flex flex-col overflow-hidden h-screen w-screen bg-base-bg text-base-text transition-all duration-200'
-        : 'w-full flex flex-col overflow-hidden h-[calc(100vh-215px)] min-h-[580px] bg-base-bg text-base-text transition-all duration-200'
+        ? 'fixed inset-0 z-[200] p-3 sm:p-4 flex flex-col h-screen w-screen bg-base-bg text-base-text transition-all duration-200'
+        : `w-full flex flex-col ${embedded ? 'h-[calc(100vh-205px)] min-h-[540px]' : 'h-[calc(100vh-145px)] min-h-[580px]'} bg-base-bg text-base-text transition-all duration-200`
     }>
-      {/* TOOLBAR PANEL */}
-      <div className="flex flex-col gap-3 pb-4 border-b border-base-border mb-4 sticky top-0 bg-base-bg/95 z-30 backdrop-blur-xs">
-        {/* Row 1: Title, Info, and Close Button */}
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
-            <h2 className="font-condensed font-extrabold text-lg sm:text-xl tracking-tight flex items-center gap-2 min-w-0">
-              <span className="shrink-0">📊</span>
-              <span className="truncate" title={projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}>
-                Gantt Chart — <span className="text-base-accent font-black">{projectsList.length > 1 ? "All Scheduled Projects" : projectsList[0]?.name || "Project"}</span>
-              </span>
-            </h2>
-            {projectsList.length === 1 && projectsList[0] && (
-              <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border shrink-0 ${getStatusColorClass(projectsList[0].status)}`}>
-                {projectsList[0].status}
-              </span>
+      {/* TOOLBAR PANEL (overflow-visible so dropdown menus are never clipped) */}
+      <div className="flex flex-col gap-2 pb-2.5 border-b border-base-border mb-2 bg-base-bg z-30 shrink-0">
+        {/* Bar 1: Primary Navigation, Filter, Zoom & Global Actions (grouped left-to-right for all viewport widths) */}
+        <div className="flex flex-wrap items-center justify-start gap-2">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            {/* Full title when standalone or fullscreen; compact project badge when embedded */}
+            {(!embedded || isFullscreen) ? (
+              <div className="flex items-center gap-2 min-w-0 mr-1">
+                <h2 className="font-condensed font-extrabold text-base sm:text-lg tracking-tight flex items-center gap-1.5 min-w-0">
+                  <BarChart3 className="h-4 w-4 text-base-accent shrink-0" />
+                  <span className="truncate max-w-[240px] sm:max-w-[340px]" title={projectsList.length > 1 ? 'All Scheduled Projects' : projectsList[0]?.name || 'Project'}>
+                    Gantt — <span className="text-base-accent font-black">{projectsList.length > 1 ? 'All Scheduled Projects' : projectsList[0]?.name || 'Project'}</span>
+                  </span>
+                </h2>
+                {projectsList.length === 1 && projectsList[0] && (
+                  <span className={`px-2 py-0.5 rounded font-condensed font-bold text-[10px] uppercase tracking-wider border shrink-0 ${getStatusColorClass(projectsList[0].status)}`}>
+                    {projectsList[0].status}
+                  </span>
+                )}
+              </div>
+            ) : (
+              projectsList.length === 1 && projectsList[0] && (
+                <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-base-surface border border-base-border h-[32px] shrink-0 max-w-[200px]">
+                  <span className="text-[11px] font-condensed font-extrabold text-base-text truncate" title={projectsList[0].name}>
+                    {projectsList[0].name}
+                  </span>
+                  <span className={`px-1.5 py-0.2 rounded font-condensed font-bold text-[9px] uppercase border shrink-0 ${getStatusColorClass(projectsList[0].status)}`}>
+                    {projectsList[0].status}
+                  </span>
+                </div>
+              )
             )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={isFullscreen ? handleExitFullscreen : handleEnterFullscreen}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wider transition-all rounded-lg cursor-pointer shrink-0 border ${
-                isFullscreen
-                  ? 'text-base-accent hover:text-white bg-base-accent/10 hover:bg-base-accent border-base-accent/30'
-                  : 'text-base-text hover:text-white bg-base-surface hover:bg-base-accent border-base-border hover:border-base-accent'
-              }`}
-              title={isFullscreen ? 'Keluar dari mode Layar Penuh' : 'Perbesar ke mode Layar Penuh'}
-            >
-              {isFullscreen ? (
-                <>
-                  <Minimize2 className="h-3.5 w-3.5" />
-                  <span>Keluar Layar Penuh</span>
-                </>
-              ) : (
-                <>
-                  <Maximize2 className="h-3.5 w-3.5" />
-                  <span>Layar Penuh</span>
-                </>
-              )}
-            </button>
-            {onClose && (
-              <button 
-                onClick={onClose} 
-                className="px-2.5 py-1 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/30 h-[34px]"
+
+            {/* Main View Tab Switcher: Gantt vs Lookahead */}
+            <div className="relative flex items-center bg-base-surface border border-base-border rounded-lg p-0.5 h-[32px] shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveTab('gantt')}
+                className={`relative z-10 px-2.5 py-1 rounded-md font-condensed font-extrabold uppercase text-[10px] tracking-wider whitespace-nowrap transition-colors duration-200 cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'gantt' ? 'text-white' : 'text-base-muted hover:text-base-text'
+                }`}
               >
-                Tutup
+                {activeTab === 'gantt' && (
+                  <motion.div
+                    layoutId="ganttMainTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-md -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span>Gantt</span>
               </button>
-            )}
-          </div>
-        </div>
 
-        {/* Row 2: Action Controls (stable, overflow-visible container, wraps on small screens) */}
-        <div className="flex items-center gap-3 text-xs overflow-visible py-1 w-full flex-wrap shrink-0">
-          {/* Main View Tab Switcher: Gantt vs Lookahead */}
-          <div className="relative flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
-            <button
-              type="button"
-              onClick={() => setActiveTab('gantt')}
-              className={`relative z-10 px-3 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'gantt' ? 'text-white' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              {activeTab === 'gantt' && (
-                <motion.div
-                  layoutId="ganttMainTabPill"
-                  className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                />
-              )}
-              <Layers className="w-3.5 h-3.5" />
-              <span>Gantt</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('lookahead')}
-              className={`relative z-10 px-3 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer flex items-center gap-1.5 shrink-0 ${
-                activeTab === 'lookahead' ? 'text-white' : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              {activeTab === 'lookahead' && (
-                <motion.div
-                  layoutId="ganttMainTabPill"
-                  className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
-                  transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                />
-              )}
-              <Calendar className="w-3.5 h-3.5 text-amber-400" />
-              <span>Lookahead</span>
-            </button>
-          </div>
-
-          {/* Lookahead Range Selector (only shown when Lookahead tab is active) */}
-          {activeTab === 'lookahead' && (
-            <div className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/30 rounded-xl px-2.5 py-1 h-[34px] shrink-0">
-              <span className="text-[10px] font-condensed font-bold uppercase text-amber-600 dark:text-amber-400 shrink-0">
-                Range:
-              </span>
-              <select
-                value={lookaheadWeeks}
-                onChange={(e) => setLookaheadWeeks(Number(e.target.value))}
-                className="bg-transparent text-xs font-mono font-bold text-amber-700 dark:text-amber-300 outline-none cursor-pointer"
+              <button
+                type="button"
+                onClick={() => setActiveTab('lookahead')}
+                className={`relative z-10 px-2.5 py-1 rounded-md font-condensed font-extrabold uppercase text-[10px] tracking-wider whitespace-nowrap transition-colors duration-200 cursor-pointer flex items-center gap-1 shrink-0 ${
+                  activeTab === 'lookahead' ? 'text-white' : 'text-base-muted hover:text-base-text'
+                }`}
               >
-                <option value={1} className="bg-base-surface text-base-text">1 minggu ke depan</option>
-                <option value={2} className="bg-base-surface text-base-text">2 minggu ke depan</option>
-                <option value={3} className="bg-base-surface text-base-text">3 minggu ke depan</option>
-                <option value={4} className="bg-base-surface text-base-text">4 minggu ke depan</option>
-                <option value={5} className="bg-base-surface text-base-text">5 minggu ke depan</option>
-                <option value={6} className="bg-base-surface text-base-text">6 minggu ke depan</option>
-              </select>
+                {activeTab === 'lookahead' && (
+                  <motion.div
+                    layoutId="ganttMainTabPill"
+                    className="absolute inset-0 bg-base-accent rounded-md -z-10 shadow-xs"
+                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                  />
+                )}
+                <Calendar className={`w-3.5 h-3.5 shrink-0 ${activeTab === 'lookahead' ? 'text-white' : 'text-amber-500'}`} />
+                <span>Lookahead</span>
+              </button>
             </div>
-          )}
 
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+            {/* Lookahead Range Selector */}
+            {activeTab === 'lookahead' && (
+              <div className="flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 rounded-lg px-2 h-[32px] shrink-0">
+                <span className="text-[10px] font-condensed font-bold uppercase text-amber-600 dark:text-amber-400 shrink-0">
+                  Range:
+                </span>
+                <select
+                  value={lookaheadWeeks}
+                  onChange={(e) => setLookaheadWeeks(Number(e.target.value))}
+                  className="bg-transparent text-xs font-mono font-bold text-amber-700 dark:text-amber-300 outline-none cursor-pointer"
+                >
+                  {[1, 2, 3, 4, 5, 6].map(w => (
+                    <option key={w} value={w} className="bg-base-surface text-base-text">{w} minggu</option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-          {/* Today Button */}
-          <button 
-            onClick={scrollToToday}
-            className="flex items-center gap-2 px-3 py-1 rounded-xl border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/40 h-[34px] shrink-0"
-            title="Gulir ke tanggal hari ini"
-          >
-            <Calendar className="h-3.5 w-3.5 text-base-red shrink-0" />
-            <div className="flex flex-col items-start text-left shrink-0">
-              <span className="text-[9px] leading-tight font-extrabold">Hari Ini</span>
-              <span className="text-[7.5px] leading-none text-base-muted font-normal lowercase tracking-wide font-mono">{todayFormattedShort}</span>
-            </div>
-          </button>
+            {/* Today Button */}
+            <button
+              type="button"
+              onClick={scrollToToday}
+              className="flex items-center gap-1.5 px-2.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/60 h-[32px] whitespace-nowrap shrink-0"
+              title={`Gulir ke tanggal hari ini (${todayFormattedShort})`}
+            >
+              <Calendar className="h-3.5 w-3.5 text-base-red shrink-0" />
+              <span>Hari Ini</span>
+              <span className="hidden xl:inline text-[9px] text-base-muted font-mono font-normal lowercase">({todayFormattedShort})</span>
+            </button>
 
-          {/* Search bar & Status Filter */}
-          <div className="flex flex-col gap-1 shrink-0">
-            <div className="flex items-center gap-2">
+            {/* Search & Status Filter */}
+            <div className="flex items-center gap-1.5 shrink-0">
               <div className="relative flex items-center shrink-0">
                 <Search className="absolute left-2.5 h-3.5 w-3.5 text-base-muted pointer-events-none" />
                 <input
@@ -3826,14 +3838,14 @@ export default function GanttView({
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Cari task / WBS..."
-                  className="pl-8 pr-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent w-[150px] h-[34px] font-medium"
+                  className="pl-8 pr-2.5 py-1 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent w-[140px] sm:w-[165px] h-[32px] font-medium"
                 />
               </div>
-              
+
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
-                className="px-2.5 py-1.5 text-xs bg-base-surface border border-base-border rounded-xl outline-none focus:border-base-accent h-[34px] cursor-pointer font-medium text-base-muted2 focus:text-base-text shrink-0"
+                className="px-2 py-1 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent h-[32px] cursor-pointer font-medium text-base-muted2 focus:text-base-text shrink-0"
               >
                 <option value="all">Semua Status</option>
                 <option value="on-track">On Track</option>
@@ -3844,545 +3856,159 @@ export default function GanttView({
 
               {isFilterActive && (
                 <button
+                  type="button"
                   onClick={() => {
                     setSearchQuery('');
                     setStatusFilter('all');
                   }}
-                  className="px-2.5 py-1.5 text-xs hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-xl h-[34px] cursor-pointer font-bold gap-1 text-base-muted2 shrink-0"
-                  title="Reset filter"
+                  className="px-2 text-[11px] hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-lg h-[32px] cursor-pointer font-bold gap-1 text-base-muted2 whitespace-nowrap shrink-0"
+                  title="Reset filter pencarian & status"
                 >
-                  ✕ Reset
+                  <X className="h-3 w-3 shrink-0" />
+                  <span>Reset</span>
                 </button>
               )}
             </div>
-          </div>
 
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Zoom Level Toggle Buttons with layoutId + Fit */}
-          <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
-            {['day', 'week', 'month', 'quarter'].map((mode) => (
-              <button
-                key={mode}
-                onClick={() => {
-                  skipNextZoomAutoScrollRef.current = false;
-                  setCustomPixelsPerDay(null);
-                  setZoomMode(mode as any);
-                }}
-                title={`Zoom ${mode} (atau Ctrl + Scroll pada area timeline)`}
-                className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer shrink-0 ${
-                  zoomMode === mode && customPixelsPerDay === null ? 'text-white' : 'text-base-muted hover:text-base-text'
-                }`}
-              >
-                {zoomMode === mode && customPixelsPerDay === null && (
-                  <motion.div
-                    layoutId="ganttZoomPill"
-                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
-                )}
-                {mode}
-              </button>
-            ))}
-            <div className="w-[1px] h-3.5 bg-base-border mx-0.5 shrink-0" />
-            <button
-              type="button"
-              onClick={handleZoomToFit}
-              title="Zoom to Fit seluruh durasi proyek ke layar (atau gunakan Ctrl + Scroll di timeline)"
-              className={`relative z-10 px-2.5 py-1 rounded-lg font-condensed font-extrabold uppercase text-[10px] tracking-wider transition-colors duration-200 cursor-pointer shrink-0 flex items-center gap-1 ${
-                customPixelsPerDay !== null
-                  ? 'bg-base-accent text-white shadow-xs'
-                  : 'text-base-muted hover:text-base-text'
-              }`}
-            >
-              <Scan className="h-3 w-3 shrink-0" />
-              <span>Fit</span>
-            </button>
-          </div>
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Expand/Collapse All Buttons */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
-            <button 
-              onClick={expandAllAssemblies} 
-              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
-              title="Expand All Projects & Tasks"
-            >
-              <Maximize2 className="h-3 w-3 text-current shrink-0" />
-              <span>Expand</span>
-            </button>
-            <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
-            <button 
-              onClick={collapseAllAssemblies} 
-              className="px-2.5 py-1 rounded-lg font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 shrink-0"
-              title="Collapse All Projects"
-            >
-              <Minimize2 className="h-3 w-3 text-current shrink-0" />
-              <span>Collapse</span>
-            </button>
-          </div>
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Display Settings Dropdown */}
-          <div className="relative shrink-0" ref={prefsDropdownRef}>
-            <button
-              onClick={() => setIsPrefsDropdownOpen(!isPrefsDropdownOpen)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-base-border hover:bg-base-surface transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text bg-base-surface/30 h-[34px] shrink-0"
-              title="Atur preferensi tampilan lapisan Gantt"
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
-                <line x1="4" y1="21" x2="4" y2="14" />
-                <line x1="4" y1="10" x2="4" y2="3" />
-                <line x1="12" y1="21" x2="12" y2="12" />
-                <line x1="12" y1="8" x2="12" y2="3" />
-                <line x1="20" y1="21" x2="20" y2="16" />
-                <line x1="20" y1="12" x2="20" y2="3" />
-                <line x1="1" y1="14" x2="7" y2="14" />
-                <line x1="9" y1="8" x2="15" y2="8" />
-                <line x1="17" y1="16" x2="23" y2="16" />
-              </svg>
-              <span>Tampilan</span>
-              <ChevronDown className="h-3 w-3 ml-0.5 shrink-0" />
-            </button>
-            {isPrefsDropdownOpen && (
-              <div className="absolute right-0 mt-1.5 w-52 bg-base-surface border border-base-border rounded-xl shadow-xl p-3.5 z-[150] space-y-3 font-sans">
-                <div className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted mb-2 pb-1 border-b border-base-border/50">
-                  Lapisan Tampilan Gantt
-                </div>
-                
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Panah Dependensi</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showArrows} 
-                    onChange={e => setShowArrows(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Bar Progres (%)</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showProgress} 
-                    onChange={e => setShowProgress(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Critical Path</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showCriticalPath} 
-                    onChange={e => setShowCriticalPath(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Kurva-S (S-Curve)</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showSCurve} 
-                    onChange={e => setShowSCurve(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Beban Resource</span>
-                  <input 
-                    type="checkbox" 
-                    checked={showResourceLoad} 
-                    onChange={e => setShowResourceLoad(e.target.checked)}
-                    className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Jam Kerja Plan vs Aktual</span>
-                    <span className="text-[8.5px] text-base-muted font-mono">Integrasi Timesheet</span>
-                  </div>
-                  <input 
-                    type="checkbox" 
-                    checked={showHoursTracking} 
-                    onChange={e => {
-                      const nextVal = e.target.checked;
-                      setShowHoursTracking(nextVal);
-                      handleSetShowHoursTracking(nextVal);
-                    }}
-                    className="h-3.5 w-3.5 accent-blue-600 border-base-border rounded cursor-pointer"
-                  />
-                </label>
-
-                <label className="flex items-center justify-between cursor-pointer group py-0.5">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Tampilkan Baseline</span>
-                    <span className="text-[8.5px] text-base-muted font-mono">Target Rencana vs Aktual</span>
-                  </div>
-                  <input 
-                    type="checkbox" 
-                    checked={showBaseline} 
-                    onChange={e => {
-                      const nextVal = e.target.checked;
-                      setShowBaseline(nextVal);
-                      handleSetShowBaseline(nextVal);
-                    }}
-                    className="h-3.5 w-3.5 accent-slate-600 border-base-border rounded cursor-pointer"
-                  />
-                </label>
-              </div>
-            )}
-          </div>
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Baseline Schedule Toggle & Set Baseline Button */}
-          <div className="flex items-center gap-1 shrink-0 relative">
-            <button
-              onClick={() => {
-                const nextVal = !showBaseline;
-                setShowBaseline(nextVal);
-                handleSetShowBaseline(nextVal);
-                if (nextVal) {
-                  setToastMsg('Baseline Aktif: Menampilkan perbandingan jadwal Rencana (Baseline) vs Aktual.');
-                  setTimeout(() => setToastMsg(null), 3000);
-                }
-              }}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
-                showBaseline 
-                  ? 'bg-slate-700 text-white border-slate-600 shadow-sm ring-2 ring-slate-500/30' 
-                  : 'bg-base-surface border-base-border text-base-muted hover:text-slate-700 hover:border-slate-500/50'
-              }`}
-              title="Tampilkan atau sembunyikan bar target jadwal Baseline"
-            >
-              <BookmarkCheck className={`h-3.5 w-3.5 shrink-0 ${showBaseline ? 'text-white' : 'text-slate-500'}`} />
-              <span>Baseline</span>
-              <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-                showBaseline ? 'bg-white/20 text-white' : 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30'
-              }`}>
-                {baselineStats.count}
-              </span>
-            </button>
-
-            {canSetBaseline && onUpdateProject && (
-              <div className="relative">
+            {/* Zoom Level Toggle Buttons + Fit */}
+            <div className="relative flex items-center bg-base-surface2 border border-base-border rounded-lg p-0.5 h-[32px] shrink-0">
+              {['day', 'week', 'month', 'quarter'].map((mode) => (
                 <button
-                  onClick={() => setShowBaselineMenu(prev => !prev)}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl border border-base-border bg-base-surface text-base-text hover:bg-base-accent/10 hover:border-base-accent/50 hover:text-base-accent transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px]"
-                  title="Kelola Jadwal Target Baseline (Kunci, Ubah, Geser, atau Reset)"
+                  key={mode}
+                  type="button"
+                  onClick={() => {
+                    skipNextZoomAutoScrollRef.current = false;
+                    setCustomPixelsPerDay(null);
+                    setZoomMode(mode as any);
+                  }}
+                  title={`Zoom ${mode} (atau Ctrl + Scroll pada area timeline)`}
+                  className={`relative z-10 px-2 py-1 rounded-md font-condensed font-extrabold uppercase text-[10px] tracking-wider whitespace-nowrap transition-colors duration-200 cursor-pointer shrink-0 ${
+                    zoomMode === mode && customPixelsPerDay === null ? 'text-white' : 'text-base-muted hover:text-base-text'
+                  }`}
                 >
-                  <BookmarkPlus className="h-3.5 w-3.5 text-base-accent shrink-0" />
-                  <span>Atur Baseline</span>
-                  <span className="text-[8px] opacity-70">▼</span>
+                  {zoomMode === mode && customPixelsPerDay === null && (
+                    <motion.div
+                      layoutId="ganttZoomPill"
+                      className="absolute inset-0 bg-base-accent rounded-md -z-10 shadow-xs"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                  {mode}
                 </button>
-
-                {/* Dropdown menu for Baseline Management */}
-                {showBaselineMenu && (
-                  <div className="absolute right-0 top-full mt-1.5 w-72 bg-base-surface border border-base-border rounded-xl shadow-xl p-2 z-[160] text-left space-y-1 animate-fade-in font-sans">
-                    <div className="px-2 py-1 text-[10px] font-bold text-base-muted uppercase tracking-wider border-b border-base-border/50 flex items-center justify-between">
-                      <span>Menu Baseline</span>
-                      <span className="text-[9px] font-mono font-bold text-slate-500">{projectsList.length} Proyek</span>
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setShowBaselineMenu(false);
-                        const target = selectedProject || (projectsList.length > 0 ? projectsList[0] : null);
-                        if (target) setBaselineTargetProjectId(target.id);
-                        setBaselineManagerModalOpen(true);
-                        if (!showBaseline) handleSetShowBaseline(true);
-                      }}
-                      className="w-full text-left px-2 py-2 rounded-lg text-xs hover:bg-base-accent/10 hover:text-base-accent font-bold transition-colors flex items-center gap-2 text-base-text"
-                    >
-                      <span className="p-1 rounded bg-base-accent/15 text-base-accent text-xs">⚙️</span>
-                      <div>
-                        <div className="leading-tight font-extrabold">Buka Pengelola Baseline...</div>
-                        <div className="text-[10px] text-base-muted font-normal font-sans">Ubah, geser hari, atau reset baseline</div>
-                      </div>
-                    </button>
-
-                    <div className="border-t border-base-border/50 my-1" />
-
-                    <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
-                      Aksi Cepat:
-                    </div>
-
-                    <button
-                      onClick={() => {
-                        setShowBaselineMenu(false);
-                        const target = selectedProject || (projectsList.length === 1 ? projectsList[0] : null);
-                        if (target) {
-                          setBaselineForProject(target);
-                          if (!showBaseline) handleSetShowBaseline(true);
-                        } else {
-                          handleSetBaselineAll();
-                          if (!showBaseline) handleSetShowBaseline(true);
-                        }
-                      }}
-                      className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-base-surface2 transition-colors flex items-center gap-2"
-                    >
-                      <BookmarkPlus className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                      <span className="truncate">
-                        {selectedProject ? `Kunci Aktual → Baseline (${selectedProject.name})` : 'Kunci Aktual → Baseline Semua'}
-                      </span>
-                    </button>
-
-                    {projectsList.length > 1 && (
-                      <div className="pt-1">
-                        <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
-                          Pilih Proyek:
-                        </div>
-                        <div className="max-h-36 overflow-y-auto space-y-0.5 pr-1">
-                          {projectsList.map(p => (
-                            <button
-                              key={p.id}
-                              onClick={() => {
-                                setShowBaselineMenu(false);
-                                setBaselineForProject(p);
-                                if (!showBaseline) handleSetShowBaseline(true);
-                              }}
-                              className="w-full text-left px-2 py-1 rounded text-[11px] hover:bg-base-surface2 transition-colors flex items-center justify-between gap-1.5"
-                            >
-                              <span className="truncate">{p.name}</span>
-                              {p.baselineStart && (
-                                <span className="text-[9px] font-mono text-slate-500 shrink-0">
-                                  {p.baselineStart.slice(5)}
-                                </span>
-                              )}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Dedicated Plan vs Actual Timesheet Hours Button */}
-          <button
-            onClick={() => {
-              const nextVal = !showHoursTracking;
-              setShowHoursTracking(nextVal);
-              handleSetShowHoursTracking(nextVal);
-              if (nextVal) {
-                setToastMsg(`Plan vs Actual Aktif: ${totalHoursStats.actual.toFixed(1)} jam tercatat / ${totalHoursStats.plan.toFixed(1)} jam anggaran (${totalHoursStats.burn}% terpakai).`);
-                setTimeout(() => setToastMsg(null), 3500);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
-              showHoursTracking 
-                ? 'bg-blue-600 text-white border-blue-500 shadow-sm ring-2 ring-blue-500/30' 
-                : 'bg-base-surface border-base-border text-base-muted hover:text-blue-600 hover:border-blue-500/50'
-            }`}
-            title="Bandingkan anggaran jam kerja vs log aktual Timesheet bengkel"
-          >
-            <Clock className={`h-3.5 w-3.5 shrink-0 ${showHoursTracking ? 'text-white' : 'text-blue-500'}`} />
-            <span>Plan vs Aktual</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-              showHoursTracking ? 'bg-white/20 text-white' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
-            }`}>
-              {Math.round(totalHoursStats.actual)}h / {Math.round(totalHoursStats.plan)}h
-            </span>
-          </button>
-
-          {/* Dedicated Critical Path Highlighter Button */}
-          <button
-            onClick={() => {
-              const nextState = !showCriticalPath;
-              setShowCriticalPath(nextState);
-              if (nextState) {
-                setToastMsg(`Critical Path Aktif: ${criticalPathIds.size} task kritis menentukan durasi selesai proyek.`);
-                setTimeout(() => setToastMsg(null), 3500);
-              }
-            }}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
-              showCriticalPath 
-                ? 'bg-red-600 text-white border-red-500 shadow-sm ring-2 ring-red-500/30' 
-                : 'bg-base-surface border-base-border text-base-muted hover:text-red-600 hover:border-red-500/50'
-            }`}
-            title="Sorot jalur kritis (Critical Path) tanpa slack yang menentukan jadwal akhir proyek"
-          >
-            <Flame className={`h-3.5 w-3.5 shrink-0 ${showCriticalPath ? 'text-white fill-white' : 'text-red-500'}`} />
-            <span>Critical Path</span>
-            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-              showCriticalPath ? 'bg-white/20 text-white' : 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30'
-            }`}>
-              {criticalPathIds.size}
-            </span>
-          </button>
-
-          {/* Dependency Constraint Violation Badge/Button */}
-          {totalDependencyConflictsCount > 0 && (
-            <>
-              <div className="w-[1px] h-4 bg-base-border shrink-0" />
+              ))}
+              <div className="w-[1px] h-3.5 bg-base-border mx-0.5 shrink-0" />
               <button
-                onClick={() => {
-                  const firstConflictingId = Array.from(dependencyViolationsMap.keys())[0];
-                  if (firstConflictingId && rightScrollRef.current) {
-                    const rowIdx = rows.findIndex(r => r.id === firstConflictingId);
-                    if (rowIdx >= 0) {
-                      rightScrollRef.current.scrollTop = rowIdx * 32;
-                      setSelectedRowId(firstConflictingId);
-                      const rowConflicts = dependencyViolationsMap.get(firstConflictingId);
-                      setToastMsg(`Konflik Jadwal pada "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Klik 'Smart Schedule' untuk menyelaraskan.`);
-                      setTimeout(() => setToastMsg(null), 6000);
-                    }
-                  }
-                }}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-600 dark:text-red-400 border border-red-500/60 shadow-xs transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] animate-pulse"
-                title={`${totalDependencyConflictsCount} task memiliki bentrok dependensi jadwal. Klik untuk lompat ke konflik pertama.`}
-              >
-                <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
-                <span>{totalDependencyConflictsCount} Bentrok</span>
-              </button>
-            </>
-          )}
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Dedicated Resource Load Button */}
-          <button
-            onClick={() => setShowResourceLoad(prev => !prev)}
-            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 h-[34px] ${
-              showResourceLoad 
-                ? 'bg-indigo-600 text-white border-indigo-500 shadow-sm' 
-                : 'bg-base-surface border-base-border text-base-muted hover:text-indigo-500 hover:border-indigo-500/50'
-            }`}
-            title="Toggle Resource Daily Allocation & Scheduling Conflict Load View"
-          >
-            <Users className="h-3.5 w-3.5 shrink-0" />
-            <span>Resource Load</span>
-            {resourceLoadData && resourceLoadData.totalOverloadedEmployees > 0 && (
-              <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black animate-pulse">
-                {resourceLoadData.totalOverloadedEmployees} ⚠️
-              </span>
-            )}
-          </button>
-
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
-
-          {/* Scheduling & Interactivity Actions Group */}
-          {onUpdateProject !== undefined && (
-            <div className="flex items-center bg-base-surface2 border border-base-border/70 rounded-xl p-0.5 h-[34px] shrink-0 gap-0.5">
-              {/* Undo Button */}
-              <button
-                onClick={handleUndo}
-                disabled={historyStack.length === 0}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
-                  historyStack.length > 0
-                    ? 'bg-base-surface hover:bg-base-surface3 text-base-text border border-base-border shadow-2xs active:scale-95'
-                    : 'text-base-muted/40 cursor-not-allowed opacity-50'
-                }`}
-                title={historyStack.length > 0 ? "Undo last Gantt action (Ctrl + Z)" : "Nothing to undo"}
-              >
-                <Undo2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden sm:inline">Undo</span>
-              </button>
-
-              {/* Redo Button */}
-              <button
-                onClick={handleRedo}
-                disabled={redoStack.length === 0}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
-                  redoStack.length > 0
-                    ? 'bg-base-surface hover:bg-base-surface3 text-base-text border border-base-border shadow-2xs active:scale-95'
-                    : 'text-base-muted/40 cursor-not-allowed opacity-50'
-                }`}
-                title={redoStack.length > 0 ? "Redo Gantt action (Ctrl + Y or Ctrl + Shift + Z)" : "Nothing to redo"}
-              >
-                <Redo2 className="h-3.5 w-3.5 shrink-0" />
-                <span className="hidden sm:inline">Redo</span>
-              </button>
-
-              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
-
-              {/* Smart Schedule Button */}
-              <button
-                onClick={handleSmartSchedule}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/40 hover:border-amber-500/70 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 shadow-xs active:scale-95"
-                title="Smart Schedule: Automatically shift start dates of dependent tasks using existing dependency structure to eliminate overlaps"
-              >
-                <Sparkles className="h-3.5 w-3.5 text-amber-500 shrink-0 animate-pulse" />
-                <span>Smart Schedule</span>
-              </button>
-
-              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
-
-              {/* Auto Schedule switch */}
-              <button
-                onClick={() => setAutoSchedule(prev => !prev)}
-                title={autoSchedule 
-                  ? "Auto-Schedule ON — successors cascade automatically. Click to turn OFF." 
-                  : "Auto-Schedule OFF — only dragged task moves. Click to turn ON."}
-                className={`relative z-10 flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] cursor-pointer transition-colors duration-200 shrink-0 ${
-                  autoSchedule
-                    ? 'text-white font-extrabold'
+                type="button"
+                onClick={handleZoomToFit}
+                title="Zoom to Fit seluruh durasi proyek ke layar"
+                className={`relative z-10 px-2 py-1 rounded-md font-condensed font-extrabold uppercase text-[10px] tracking-wider whitespace-nowrap transition-colors duration-200 cursor-pointer shrink-0 flex items-center gap-1 ${
+                  customPixelsPerDay !== null
+                    ? 'bg-base-accent text-white shadow-xs'
                     : 'text-base-muted hover:text-base-text'
                 }`}
               >
-                {autoSchedule && (
-                  <motion.div
-                    layoutId="ganttAutoSchedulePill"
-                    className="absolute inset-0 bg-base-accent rounded-lg -z-10 shadow-xs"
-                    transition={{ type: 'spring', stiffness: 380, damping: 30 }}
-                  />
-                )}
-                <span>Auto-Shift</span>
-              </button>
-
-              <div className="w-[1px] h-3 bg-base-border mx-1 shrink-0" />
-
-              {/* Draw Link */}
-              <button
-                onClick={() => {
-                  setConnectMode(!connectMode);
-                  if (depPanelOpen) setDepPanelOpen(false);
-                }}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-lg transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed shrink-0 ${
-                  connectMode 
-                    ? 'bg-emerald-600 text-white shadow-xs font-black' 
-                    : 'text-base-muted hover:text-emerald-500'
-                }`}
-                title="Toggle Draw-to-Connect Mode"
-              >
-                <Link className="h-3 w-3 shrink-0" />
-                <span>{connectMode ? 'Drawing...' : 'Draw Link'}</span>
+                <Scan className="h-3 w-3 shrink-0" />
+                <span>Fit</span>
               </button>
             </div>
-          )}
 
-          <div className="w-[1px] h-4 bg-base-border shrink-0" />
+            {/* Expand/Collapse All Buttons */}
+            <div className="flex items-center bg-base-surface border border-base-border rounded-lg p-0.5 h-[32px] shrink-0">
+              <button
+                type="button"
+                onClick={expandAllAssemblies}
+                className="px-2 py-1 rounded-md font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 whitespace-nowrap shrink-0"
+                title="Buka Semua Proyek & Task"
+              >
+                <Maximize2 className="h-3 w-3 shrink-0" />
+                <span>Expand</span>
+              </button>
+              <div className="w-[1px] h-3 bg-base-border mx-0.5 shrink-0" />
+              <button
+                type="button"
+                onClick={collapseAllAssemblies}
+                className="px-2 py-1 rounded-md font-condensed font-bold uppercase transition-all cursor-pointer text-[10px] tracking-wider text-base-muted hover:text-base-text flex items-center gap-1 whitespace-nowrap shrink-0"
+                title="Tutup Semua Task (Ringkas Proyek)"
+              >
+                <Minimize2 className="h-3 w-3 shrink-0" />
+                <span>Collapse</span>
+              </button>
+            </div>
+          </div>
 
-          {/* File Export Actions */}
-          <div className="flex items-center bg-base-surface border border-base-border rounded-xl p-0.5 h-[34px] shrink-0">
+          <div className="hidden xl:block w-[1px] h-5 bg-base-border shrink-0" />
 
-            {/* Export */}
+          {/* Global Actions kept inline right next to primary controls (never stranded far-right on ultrawide screens) */}
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsFilterDrawerOpen(true)}
+              className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-condensed font-extrabold uppercase tracking-wider text-[10px] h-[32px] whitespace-nowrap shrink-0 ${
+                isFilterActive
+                  ? 'bg-[#9b1c2e] text-white border-[#9b1c2e] shadow-xs'
+                  : 'bg-base-surface border-base-border text-base-text hover:bg-base-surface2 hover:border-base-accent/50'
+              }`}
+              title="Buka panel View & Filter lengkap"
+            >
+              <Filter className="h-3.5 w-3.5 shrink-0" />
+              <span>View & Filter</span>
+              {(isFilterActive || activeLayerCount > 0) && (
+                <span className={`px-1.5 py-0.2 rounded-full text-[9px] font-mono tabular-nums ${
+                  isFilterActive ? 'bg-white/20 text-white' : 'bg-base-accent/15 text-base-accent'
+                }`}>
+                  {activeLayerCount + (isFilterActive ? 1 : 0)}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleAnalysisToolbar}
+              className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-condensed font-extrabold uppercase tracking-wider text-[10px] h-[32px] whitespace-nowrap shrink-0 ${
+                showAnalysisToolbar
+                  ? 'bg-base-surface2 border-base-accent/50 text-base-text'
+                  : 'bg-base-surface border-base-border text-base-muted2 hover:text-base-text hover:border-base-accent/40'
+              }`}
+              title={showAnalysisToolbar ? 'Sembunyikan baris alat jadwal & analisis agar area chart lebih luas' : 'Tampilkan baris alat jadwal & analisis'}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5 text-base-accent shrink-0" />
+              <span>Alat Analisis</span>
+              {!showAnalysisToolbar && activeLayerCount > 0 && (
+                <span className="px-1.5 py-0.2 rounded-full bg-base-accent text-white text-[9px] font-mono tabular-nums">
+                  {activeLayerCount}
+                </span>
+              )}
+              <ChevronDown className={`h-3 w-3 shrink-0 transition-transform duration-150 ${showAnalysisToolbar ? 'rotate-180' : ''}`} />
+            </button>
+
+            {/* Export Dropdown */}
             <div className="relative shrink-0" ref={exportDropdownRef}>
               <button
-                onClick={() => setIsExportDropdownOpen(!isExportDropdownOpen)}
+                type="button"
+                onClick={() => {
+                  setExportAlignRight(shouldAlignMenuRight(exportDropdownRef.current, 180));
+                  setIsExportDropdownOpen(prev => !prev);
+                  setIsPrefsDropdownOpen(false);
+                  setShowBaselineMenu(false);
+                }}
                 disabled={isExporting}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-lg font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text transition-colors cursor-pointer bg-transparent h-auto shrink-0"
+                className="flex items-center gap-1 px-2.5 rounded-lg border border-base-border bg-base-surface font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text hover:bg-base-surface2 transition-colors cursor-pointer h-[32px] whitespace-nowrap shrink-0"
               >
-                <Download className="h-3 w-3 shrink-0" />
-                <span>{isExporting ? 'Exporting...' : 'Export'}</span>
-                <ChevronDown className="h-2.5 w-2.5 ml-0.5 shrink-0" />
+                <Download className="h-3.5 w-3.5 shrink-0" />
+                <span>{isExporting ? 'Export...' : 'Export'}</span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
               </button>
               {isExportDropdownOpen && (
-                <div className="absolute right-0 mt-1.5 w-40 bg-base-surface border border-base-border rounded-xl shadow-xl py-1 z-[150]">
+                <div className={`absolute ${exportAlignRight ? 'right-0' : 'left-0'} top-full mt-1.5 w-44 bg-base-surface border border-base-border rounded-xl shadow-xl py-1 z-[160]`}>
                   <button
+                    type="button"
                     onClick={handleExportPNG}
                     className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
                   >
                     Export PNG
                   </button>
                   <button
+                    type="button"
                     onClick={handleExportPDF}
                     className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-base-text hover:bg-base-accent hover:text-white transition-colors cursor-pointer"
                   >
@@ -4390,6 +4016,7 @@ export default function GanttView({
                   </button>
                   <div className="border-t border-base-border/60 my-0.5" />
                   <button
+                    type="button"
                     onClick={handleExportCSV}
                     className="w-full text-left px-3 py-1.5 text-xs font-condensed font-bold uppercase tracking-wide text-emerald-600 dark:text-emerald-400 hover:bg-emerald-600 hover:text-white transition-colors cursor-pointer flex items-center gap-1.5"
                   >
@@ -4399,19 +4026,492 @@ export default function GanttView({
                 </div>
               )}
             </div>
+
+            <button
+              type="button"
+              onClick={isFullscreen ? handleExitFullscreen : handleEnterFullscreen}
+              className={`flex items-center gap-1.5 px-2.5 text-[10px] font-condensed font-bold uppercase tracking-wider transition-all rounded-lg cursor-pointer whitespace-nowrap shrink-0 border h-[32px] ${
+                isFullscreen
+                  ? 'text-white bg-base-accent hover:bg-base-accent/90 border-base-accent'
+                  : 'text-base-text hover:text-white bg-base-surface hover:bg-base-accent border-base-border hover:border-base-accent'
+              }`}
+              title={isFullscreen ? 'Keluar dari mode Layar Penuh' : 'Perbesar ke mode Layar Penuh'}
+            >
+              {isFullscreen ? (
+                <>
+                  <Minimize2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>Keluar</span>
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>Layar Penuh</span>
+                </>
+              )}
+            </button>
+
+            {onClose && (
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-2.5 text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted hover:text-base-red transition-colors rounded-lg cursor-pointer whitespace-nowrap shrink-0 border border-base-border hover:bg-base-surface bg-base-surface/40 h-[32px]"
+              >
+                Tutup
+              </button>
+            )}
           </div>
         </div>
+
+        {/* Bar 2: Scheduling Controls & Analysis Layers (collapsible, left-aligned grouped cluster) */}
+        {showAnalysisToolbar && (
+          <div className="flex flex-wrap items-center justify-start gap-2 bg-base-surface2/55 border border-base-border/80 rounded-xl px-2.5 py-1.5 text-xs">
+            {/* Group A: Schedule Editing & CPM Tools */}
+            {onUpdateProject !== undefined && (
+              <div className="flex flex-wrap items-center gap-1 bg-base-surface border border-base-border/70 rounded-lg p-0.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleUndo}
+                  disabled={historyStack.length === 0}
+                  className={`flex items-center gap-1 px-2 h-[28px] rounded-md transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 ${
+                    historyStack.length > 0
+                      ? 'hover:bg-base-surface2 text-base-text active:scale-95'
+                      : 'text-base-muted/40 cursor-not-allowed opacity-50'
+                  }`}
+                  title={historyStack.length > 0 ? 'Undo aksi Gantt terakhir (Ctrl + Z)' : 'Tidak ada aksi untuk Undo'}
+                >
+                  <Undo2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>Undo</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRedo}
+                  disabled={redoStack.length === 0}
+                  className={`flex items-center gap-1 px-2 h-[28px] rounded-md transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 ${
+                    redoStack.length > 0
+                      ? 'hover:bg-base-surface2 text-base-text active:scale-95'
+                      : 'text-base-muted/40 cursor-not-allowed opacity-50'
+                  }`}
+                  title={redoStack.length > 0 ? 'Redo aksi Gantt (Ctrl + Y)' : 'Tidak ada aksi untuk Redo'}
+                >
+                  <Redo2 className="h-3.5 w-3.5 shrink-0" />
+                  <span>Redo</span>
+                </button>
+
+                <div className="w-[1px] h-4 bg-base-border mx-0.5 shrink-0" />
+
+                <button
+                  type="button"
+                  onClick={handleSmartSchedule}
+                  className="flex items-center gap-1 px-2 h-[28px] rounded-md bg-amber-500/15 hover:bg-amber-500/25 text-amber-600 dark:text-amber-400 border border-amber-500/35 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 active:scale-95"
+                  title="Smart Schedule: Geser otomatis task dependen yang tumpang tindih dengan pratinjau"
+                >
+                  <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />
+                  <span>Smart Schedule</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRunP6Schedule}
+                  className="flex items-center gap-1 px-2 h-[28px] rounded-md bg-sky-500/10 hover:bg-sky-500/20 text-sky-700 dark:text-sky-300 border border-sky-500/35 transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 active:scale-95"
+                  title="Hitung ulang jaringan CPM & Critical Path (Shortcut: F9)"
+                >
+                  <Play className="h-3 w-3 fill-current shrink-0" />
+                  <span>Hitung CPM (F9)</span>
+                </button>
+
+                <div className="w-[1px] h-4 bg-base-border mx-0.5 shrink-0" />
+
+                <button
+                  type="button"
+                  onClick={() => handleSetAutoSchedule(!autoSchedule)}
+                  title={autoSchedule
+                    ? 'Auto-Shift AKTIF — menggeser task otomatis menggeser task penerusnya'
+                    : 'Auto-Shift NONAKTIF — hanya task yang digeser yang berpindah'}
+                  className={`relative z-10 flex items-center gap-1 px-2 h-[28px] rounded-md font-condensed font-bold uppercase tracking-wider text-[10px] cursor-pointer transition-colors duration-200 whitespace-nowrap shrink-0 ${
+                    autoSchedule ? 'text-white font-extrabold' : 'text-base-muted hover:text-base-text'
+                  }`}
+                >
+                  {autoSchedule && (
+                    <motion.div
+                      layoutId="ganttAutoSchedulePill"
+                      className="absolute inset-0 bg-base-accent rounded-md -z-10 shadow-xs"
+                      transition={{ type: 'spring', stiffness: 380, damping: 30 }}
+                    />
+                  )}
+                  <span>Auto-Shift</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConnectMode(!connectMode);
+                    if (depPanelOpen) setDepPanelOpen(false);
+                  }}
+                  className={`flex items-center gap-1 px-2 h-[28px] rounded-md transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 ${
+                    connectMode
+                      ? 'bg-emerald-600 text-white shadow-xs font-black'
+                      : 'text-base-muted hover:text-emerald-600'
+                  }`}
+                  title="Tarik garis dependensi antar task langsung di timeline"
+                >
+                  <Link className="h-3 w-3 shrink-0" />
+                  <span>{connectMode ? 'Drawing...' : 'Draw Link'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Group B: Analysis Overlays, Baseline & Layer Menu */}
+            <div className="flex flex-wrap items-center gap-1.5">
+              {/* Baseline Toggle + Atur Baseline */}
+              <div className="flex items-center gap-1 shrink-0 relative" ref={baselineDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !showBaseline;
+                    setShowBaseline(nextVal);
+                    handleSetShowBaseline(nextVal);
+                    if (nextVal) {
+                      setToastMsg('Baseline Aktif: Menampilkan perbandingan jadwal Rencana (Baseline) vs Aktual.');
+                      setTimeout(() => setToastMsg(null), 3000);
+                    }
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px] ${
+                    showBaseline
+                      ? 'bg-slate-700 text-white border-slate-600 shadow-xs'
+                      : 'bg-base-surface border-base-border text-base-muted hover:text-base-text hover:border-slate-500/50'
+                  }`}
+                  title="Tampilkan atau sembunyikan bar target jadwal Baseline"
+                >
+                  <BookmarkCheck className={`h-3.5 w-3.5 shrink-0 ${showBaseline ? 'text-white' : 'text-slate-500'}`} />
+                  <span>Baseline</span>
+                  <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black tabular-nums ${
+                    showBaseline ? 'bg-white/20 text-white' : 'bg-slate-500/15 text-slate-700 dark:text-slate-300 border border-slate-500/30'
+                  }`}>
+                    {baselineStats.count}
+                  </span>
+                </button>
+
+                {canSetBaseline && onUpdateProject && (
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBaselineAlignRight(shouldAlignMenuRight(baselineDropdownRef.current, 290));
+                        setShowBaselineMenu(prev => !prev);
+                        setIsPrefsDropdownOpen(false);
+                        setIsExportDropdownOpen(false);
+                      }}
+                      className="flex items-center gap-1 px-2.5 rounded-lg border border-base-border bg-base-surface text-base-text hover:bg-base-accent/10 hover:border-base-accent/50 hover:text-base-accent transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px]"
+                      title="Kelola Jadwal Target Baseline (Kunci, Ubah, Geser, atau Reset)"
+                    >
+                      <BookmarkPlus className="h-3.5 w-3.5 text-base-accent shrink-0" />
+                      <span>Atur Baseline</span>
+                      <ChevronDown className="h-3 w-3 opacity-70 shrink-0" />
+                    </button>
+
+                    {showBaselineMenu && (
+                      <div className={`absolute ${baselineAlignRight ? 'right-0' : 'left-0'} top-full mt-1.5 w-72 bg-base-surface border border-base-border rounded-xl shadow-xl p-2 z-[160] text-left space-y-1 animate-fade-in font-sans`}>
+                        <div className="px-2 py-1 text-[10px] font-bold text-base-muted uppercase tracking-wider border-b border-base-border/50 flex items-center justify-between">
+                          <span>Menu Baseline</span>
+                          <span className="text-[9px] font-mono font-bold text-slate-500 tabular-nums">{projectsList.length} Proyek</span>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowBaselineMenu(false);
+                            const target = selectedProject || (projectsList.length > 0 ? projectsList[0] : null);
+                            if (target) setBaselineTargetProjectId(target.id);
+                            setBaselineManagerModalOpen(true);
+                            if (!showBaseline) handleSetShowBaseline(true);
+                          }}
+                          className="w-full text-left px-2 py-2 rounded-lg text-xs hover:bg-base-accent/10 hover:text-base-accent font-bold transition-colors flex items-center gap-2 text-base-text cursor-pointer"
+                        >
+                          <span className="p-1 rounded bg-base-accent/15 text-base-accent text-xs">⚙️</span>
+                          <div>
+                            <div className="leading-tight font-extrabold">Buka Pengelola Baseline...</div>
+                            <div className="text-[10px] text-base-muted font-normal font-sans">Ubah, geser hari, atau reset baseline</div>
+                          </div>
+                        </button>
+
+                        <div className="border-t border-base-border/50 my-1" />
+
+                        <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
+                          Aksi Cepat:
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowBaselineMenu(false);
+                            const target = selectedProject || (projectsList.length === 1 ? projectsList[0] : null);
+                            if (target) {
+                              setBaselineForProject(target);
+                              if (!showBaseline) handleSetShowBaseline(true);
+                            } else {
+                              handleSetBaselineAll();
+                              if (!showBaseline) handleSetShowBaseline(true);
+                            }
+                          }}
+                          className="w-full text-left px-2 py-1.5 rounded-lg text-xs hover:bg-base-surface2 transition-colors flex items-center gap-2 cursor-pointer"
+                        >
+                          <BookmarkPlus className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                          <span className="truncate">
+                            {selectedProject ? `Kunci Aktual → Baseline (${selectedProject.name})` : 'Kunci Aktual → Baseline Semua'}
+                          </span>
+                        </button>
+
+                        {projectsList.length > 1 && (
+                          <div className="pt-1">
+                            <div className="px-2 py-0.5 text-[9px] font-bold text-base-muted uppercase tracking-wider font-condensed">
+                              Pilih Proyek:
+                            </div>
+                            <div className="max-h-36 overflow-y-auto space-y-0.5 pr-1">
+                              {projectsList.map(p => (
+                                <button
+                                  type="button"
+                                  key={p.id}
+                                  onClick={() => {
+                                    setShowBaselineMenu(false);
+                                    setBaselineForProject(p);
+                                    if (!showBaseline) handleSetShowBaseline(true);
+                                  }}
+                                  className="w-full text-left px-2 py-1 rounded text-[11px] hover:bg-base-surface2 transition-colors flex items-center justify-between gap-1.5 cursor-pointer"
+                                >
+                                  <span className="truncate">{p.name}</span>
+                                  {p.baselineStart && (
+                                    <span className="text-[9px] font-mono text-slate-500 shrink-0">
+                                      {p.baselineStart.slice(5)}
+                                    </span>
+                                  )}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Plan vs Actual Hours Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextVal = !showHoursTracking;
+                  setShowHoursTracking(nextVal);
+                  handleSetShowHoursTracking(nextVal);
+                  if (nextVal) {
+                    setToastMsg(`Plan vs Actual Aktif: ${totalHoursStats.actual.toFixed(1)} jam tercatat / ${totalHoursStats.plan.toFixed(1)} jam anggaran (${totalHoursStats.burn}% terpakai).`);
+                    setTimeout(() => setToastMsg(null), 3500);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px] ${
+                  showHoursTracking
+                    ? 'bg-blue-600 text-white border-blue-500 shadow-xs'
+                    : 'bg-base-surface border-base-border text-base-muted hover:text-blue-600 hover:border-blue-500/50'
+                }`}
+                title="Bandingkan anggaran jam kerja vs log aktual Timesheet bengkel"
+              >
+                <Clock className={`h-3.5 w-3.5 shrink-0 ${showHoursTracking ? 'text-white' : 'text-blue-500'}`} />
+                <span>Plan vs Aktual</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black tabular-nums ${
+                  showHoursTracking ? 'bg-white/20 text-white' : 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                }`}>
+                  {Math.round(totalHoursStats.actual)}h/{Math.round(totalHoursStats.plan)}h
+                </span>
+              </button>
+
+              {/* Critical Path Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  const nextState = !showCriticalPath;
+                  setShowCriticalPath(nextState);
+                  if (nextState) {
+                    setToastMsg(`Critical Path Aktif: ${criticalPathIds.size} task kritis menentukan durasi selesai proyek.`);
+                    setTimeout(() => setToastMsg(null), 3500);
+                  }
+                }}
+                className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px] ${
+                  showCriticalPath
+                    ? 'bg-red-600 text-white border-red-500 shadow-xs'
+                    : 'bg-base-surface border-base-border text-base-muted hover:text-red-600 hover:border-red-500/50'
+                }`}
+                title="Sorot jalur kritis (Critical Path) tanpa slack yang menentukan jadwal akhir proyek"
+              >
+                <Flame className={`h-3.5 w-3.5 shrink-0 ${showCriticalPath ? 'text-white fill-white' : 'text-red-500'}`} />
+                <span>Critical Path</span>
+                <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black tabular-nums ${
+                  showCriticalPath ? 'bg-white/20 text-white' : 'bg-red-500/15 text-red-600 dark:text-red-400 border border-red-500/30'
+                }`}>
+                  {criticalPathIds.size}
+                </span>
+              </button>
+
+              {/* Resource Load Button */}
+              <button
+                type="button"
+                onClick={() => handleSetShowResourceLoad(!showResourceLoad)}
+                className={`flex items-center gap-1.5 px-2.5 rounded-lg border transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px] ${
+                  showResourceLoad
+                    ? 'bg-indigo-600 text-white border-indigo-500 shadow-xs'
+                    : 'bg-base-surface border-base-border text-base-muted hover:text-indigo-500 hover:border-indigo-500/50'
+                }`}
+                title="Tampilkan alokasi resource harian & deteksi overload bengkel"
+              >
+                <Users className="h-3.5 w-3.5 shrink-0" />
+                <span>Resource Load</span>
+                {resourceLoadData && resourceLoadData.totalOverloadedEmployees > 0 && (
+                  <span className="bg-red-500 text-white text-[9px] px-1.5 py-0.2 rounded-full font-mono font-black tabular-nums animate-pulse">
+                    {resourceLoadData.totalOverloadedEmployees}
+                  </span>
+                )}
+              </button>
+
+              {/* Conflict Alert Button (when conflicts exist) */}
+              {totalDependencyConflictsCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const firstConflictingId = Array.from(dependencyViolationsMap.keys())[0];
+                    if (firstConflictingId && rightScrollRef.current) {
+                      const rowIdx = rows.findIndex(r => r.id === firstConflictingId);
+                      if (rowIdx >= 0) {
+                        rightScrollRef.current.scrollTop = rowIdx * 32;
+                        setSelectedRowId(firstConflictingId);
+                        const rowConflicts = dependencyViolationsMap.get(firstConflictingId);
+                        setToastMsg(`Konflik Jadwal pada "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Klik 'Smart Schedule' untuk menyelaraskan.`);
+                        setTimeout(() => setToastMsg(null), 6000);
+                      }
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 rounded-lg bg-red-500/15 hover:bg-red-500/25 text-red-600 dark:text-red-400 border border-red-500/50 shadow-xs transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px] animate-pulse"
+                  title={`${totalDependencyConflictsCount} task memiliki bentrok dependensi jadwal. Klik untuk lompat ke konflik pertama.`}
+                >
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  <span>{totalDependencyConflictsCount} Bentrok</span>
+                </button>
+              )}
+
+              {/* Display Layers Dropdown */}
+              <div className="relative shrink-0" ref={prefsDropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrefsAlignRight(shouldAlignMenuRight(prefsDropdownRef.current, 230));
+                    setIsPrefsDropdownOpen(prev => !prev);
+                    setShowBaselineMenu(false);
+                    setIsExportDropdownOpen(false);
+                  }}
+                  className="flex items-center gap-1.5 px-2.5 rounded-lg border border-base-border bg-base-surface hover:bg-base-surface2 transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text h-[30px] whitespace-nowrap shrink-0"
+                  title="Atur preferensi lapisan tampilan Gantt (Panah, Progres, Kurva-S, dll)"
+                >
+                  <Layers className="h-3.5 w-3.5 shrink-0" />
+                  <span>Lapisan</span>
+                  <ChevronDown className="h-3 w-3 shrink-0" />
+                </button>
+                {isPrefsDropdownOpen && (
+                  <div className={`absolute ${prefsAlignRight ? 'right-0' : 'left-0'} top-full mt-1.5 w-56 bg-base-surface border border-base-border rounded-xl shadow-xl p-3.5 z-[160] space-y-2.5 font-sans`}>
+                    <div className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted pb-1 border-b border-base-border/50">
+                      Lapisan Tampilan Gantt
+                    </div>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Panah Dependensi</span>
+                      <input
+                        type="checkbox"
+                        checked={showArrows}
+                        onChange={e => setShowArrows(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Bar Progres (%)</span>
+                      <input
+                        type="checkbox"
+                        checked={showProgress}
+                        onChange={e => setShowProgress(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Critical Path</span>
+                      <input
+                        type="checkbox"
+                        checked={showCriticalPath}
+                        onChange={e => setShowCriticalPath(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Kurva-S (S-Curve)</span>
+                      <input
+                        type="checkbox"
+                        checked={showSCurve}
+                        onChange={e => handleSetShowSCurve(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Beban Resource</span>
+                      <input
+                        type="checkbox"
+                        checked={showResourceLoad}
+                        onChange={e => handleSetShowResourceLoad(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-base-accent border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Jam Kerja Plan vs Aktual</span>
+                        <span className="text-[8.5px] text-base-muted font-mono">Integrasi Timesheet</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={showHoursTracking}
+                        onChange={e => handleSetShowHoursTracking(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-blue-600 border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+
+                    <label className="flex items-center justify-between cursor-pointer group py-0.5">
+                      <div className="flex flex-col">
+                        <span className="text-xs font-semibold text-base-muted2 group-hover:text-base-text transition-colors">Tampilkan Baseline</span>
+                        <span className="text-[8.5px] text-base-muted font-mono">Target Rencana vs Aktual</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={showBaseline}
+                        onChange={e => handleSetShowBaseline(e.target.checked)}
+                        className="h-3.5 w-3.5 accent-slate-600 border-base-border rounded cursor-pointer"
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Connect Mode Guidance Banner */}
       {connectMode && (
-        <div className="bg-emerald-600 text-white text-xs px-4 py-2 flex items-center justify-between font-medium shadow-sm animate-fade-in shrink-0 z-20 border-b border-emerald-700">
+        <div className="bg-emerald-600 text-white text-xs px-4 py-1.5 flex items-center justify-between font-medium shadow-sm animate-fade-in shrink-0 z-20 border-b border-emerald-700 rounded-lg mb-1.5">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-white animate-ping shrink-0" />
             <span className="font-bold font-condensed uppercase tracking-wider text-xs">Mode Tarik Relasi Aktif</span>
-            <span className="text-emerald-100 hidden sm:inline text-[11px]">— Seret dari titik ujung task (biru=mulai, hijau=selesai) ke task tujuan untuk menghubungkan dependensi, atau klik (✕) pada garis untuk memutus relasi.</span>
+            <span className="text-emerald-100 hidden sm:inline text-[11px]">— Seret dari titik ujung task (biru=mulai, hijau=selesai) ke task tujuan, atau klik (✕) pada garis untuk memutus relasi.</span>
           </div>
           <button
+            type="button"
             onClick={() => setConnectMode(false)}
             className="px-2.5 py-0.5 bg-emerald-800 hover:bg-emerald-900 rounded font-bold text-[10px] uppercase tracking-wide transition-colors cursor-pointer shrink-0"
           >
@@ -4422,8 +4522,8 @@ export default function GanttView({
 
       {/* Critical Path Summary Mini-Panel */}
       {showCriticalPath && (
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-4 py-2.5 bg-base-red-dim/20 border-b border-base-border text-xs select-none">
-          <div className="flex flex-wrap items-center gap-4 text-base-text">
+        <div className="flex flex-wrap items-center justify-start gap-3 px-3 py-1.5 bg-base-red-dim/20 border border-base-border rounded-lg mb-1.5 text-xs select-none shrink-0">
+          <div className="flex flex-wrap items-center gap-3 text-base-text">
             <span className="font-condensed font-extrabold text-base-red uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-base-red animate-pulse" />
               Ringkasan Critical Path
@@ -4431,20 +4531,21 @@ export default function GanttView({
             <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
             <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
               <span>Task Kritis:</span>
-              <span className="font-mono font-bold text-base-red bg-base-red-dim/30 px-1.5 py-0.5 rounded text-[10px]">
+              <span className="font-mono font-bold text-base-red bg-base-red-dim/30 px-1.5 py-0.5 rounded text-[10px] tabular-nums">
                 {criticalPathIds.size}
               </span>
             </div>
             <div className="hidden sm:block w-[1px] h-3 bg-base-border" />
             <div className="flex items-center gap-1 font-semibold text-base-muted2 text-[11px]">
               <span>Panjang Rantai Kritis:</span>
-              <span className="font-mono font-extrabold text-base-text text-[11px]">
+              <span className="font-mono font-extrabold text-base-text text-[11px] tabular-nums">
                 {criticalChainLength} hari
               </span>
             </div>
           </div>
           {firstCriticalRowIdx !== -1 && (
             <button
+              type="button"
               onClick={jumpToFirstCriticalTask}
               className="flex items-center gap-1 px-2.5 py-1 bg-base-red text-white font-condensed font-bold uppercase tracking-wider text-[10px] rounded hover:bg-opacity-90 cursor-pointer transition-colors shrink-0"
             >
@@ -4455,9 +4556,9 @@ export default function GanttView({
         </div>
       )}
 
-      {/* Gantt Legend & Hours Summary */}
-      <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2 bg-base-surface/50 border-b border-base-border text-[11px] font-medium text-base-muted2 select-none">
-        <div className="flex items-center gap-4">
+      {/* Gantt Legend & Hours Summary (left-grouped so hours summary stays in sight on ultrawide monitors) */}
+      <div className="flex flex-wrap items-center justify-start gap-x-4 gap-y-1.5 px-3 py-1.5 bg-base-surface/60 border border-base-border/70 rounded-lg mb-1.5 text-[11px] font-medium text-base-muted2 select-none shrink-0">
+        <div className="flex flex-wrap items-center gap-3">
           <span className="flex items-center gap-1"><span className="text-[10px]">🔴</span> Critical Path</span>
           <span className="flex items-center gap-1"><span className="text-[10px]">🔵</span> On Track</span>
           <span className="flex items-center gap-1"><span className="text-[10px]">🟡</span> Terlambat</span>
@@ -4465,20 +4566,23 @@ export default function GanttView({
           {showBaseline && (
             <span className="flex items-center gap-1.5">
               <span className="inline-block w-3.5 h-2 rounded-xs bg-slate-400/60 dark:bg-slate-500/60 border border-slate-500/80 shadow-2xs" />
-              <span className="text-slate-600 dark:text-slate-400 font-semibold">Baseline (Target)</span>
+              <span className="text-slate-600 dark:text-slate-400 font-semibold">Baseline</span>
             </span>
           )}
+          <span className="hidden xl:inline text-[10px] text-base-muted border-l border-base-border pl-2.5">
+            Tips: Klik kolom <strong className="font-mono text-base-text">% Comp</strong> untuk edit progres langsung
+          </span>
         </div>
 
         {showHoursTracking && (
-          <div className="flex items-center gap-3 text-[10px] font-mono">
-            <span className="text-base-muted">Jam Kerja Bengkel:</span>
+          <div className="flex flex-wrap items-center gap-2.5 text-[10px] font-mono tabular-nums xl:border-l xl:border-base-border xl:pl-3">
+            <span className="text-base-muted hidden sm:inline">Jam Kerja:</span>
             <span className="text-indigo-600 dark:text-indigo-400 font-bold">
-              Plan: {totalHoursStats.plan.toFixed(1)}h
+              Plan {totalHoursStats.plan.toFixed(1)}h
             </span>
             <span className="text-base-border">|</span>
             <span className="text-blue-600 dark:text-blue-400 font-bold">
-              Actual: {totalHoursStats.actual.toFixed(1)}h ({totalHoursStats.entries} entries)
+              Actual {totalHoursStats.actual.toFixed(1)}h ({totalHoursStats.entries})
             </span>
             <span className="text-base-border">|</span>
             <span className={`font-black px-1.5 py-0.5 rounded ${
@@ -4486,14 +4590,14 @@ export default function GanttView({
                 ? 'bg-red-500/15 text-red-600 dark:text-red-400'
                 : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
             }`}>
-              Burn: {totalHoursStats.burn}% ({totalHoursStats.variance > 0 ? `+${totalHoursStats.variance.toFixed(1)}h over` : `${Math.abs(totalHoursStats.variance).toFixed(1)}h under`})
+              Burn {totalHoursStats.burn}% ({totalHoursStats.variance > 0 ? `+${totalHoursStats.variance.toFixed(1)}h over` : `${Math.abs(totalHoursStats.variance).toFixed(1)}h under`})
             </span>
           </div>
         )}
       </div>
 
       {/* CORE GANTT WORKSPACE BOX */}
-      <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 min-h-0 overflow-hidden relative" style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '100%' }}>
+      <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 min-h-0 overflow-hidden relative">
         
         {/* LEFT FIXED PANEL (MS Project Columns) */}
         <GanttGrid
@@ -4921,7 +5025,7 @@ export default function GanttView({
         )}
         {/* TOAST NOTIFICATION */}
         {toastMsg && (
-          <div className="fixed bottom-5 right-5 bg-base-surface border border-base-border shadow-2xl rounded-xl pl-3.5 pr-2.5 py-2.5 text-xs font-semibold z-[1100] flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 max-w-md">
+          <div className="fixed bottom-24 right-5 bg-base-surface border border-base-border shadow-2xl rounded-xl pl-3.5 pr-2.5 py-2.5 text-xs font-semibold z-[1100] flex items-center gap-2.5 animate-in fade-in slide-in-from-bottom-2 duration-150 max-w-md">
             <span className="w-2 h-2 rounded-full bg-base-accent shrink-0" />
             <span className="text-base-text font-semibold leading-snug">{toastMsg}</span>
             <button
@@ -4934,6 +5038,131 @@ export default function GanttView({
             </button>
           </div>
         )}
+
+        {/* FLOATING ACTION BUTTON (FAB) — Opens Consolidated 'View & Filter' Drawer */}
+        <button
+          type="button"
+          data-export-hide="true"
+          onClick={() => setIsFilterDrawerOpen(true)}
+          className="fixed bottom-5 md:bottom-12 right-5 z-[220] flex items-center gap-2 px-3.5 py-2.5 rounded-full bg-[#9b1c2e] hover:bg-[#821524] text-white shadow-xl border border-white/15 font-condensed font-extrabold uppercase tracking-wider text-xs cursor-pointer transition-all active:scale-95 print:hidden whitespace-nowrap"
+          title="Buka panel View & Filter Gantt (Akses cepat semua kontrol di layar mana pun)"
+        >
+          <SlidersHorizontal className="h-4 w-4 shrink-0" />
+          <span>View & Filter</span>
+          {(isFilterActive || activeLayerCount > 0) && (
+            <span className="px-1.5 py-0.2 rounded-full bg-white text-[#9b1c2e] text-[10px] font-mono font-black tabular-nums">
+              {activeLayerCount + (isFilterActive ? 1 : 0)}
+            </span>
+          )}
+        </button>
+
+        {/* CONSOLIDATED 'VIEW & FILTER' DRAWER */}
+        <GanttViewFilterDrawer
+          isOpen={isFilterDrawerOpen}
+          onClose={() => setIsFilterDrawerOpen(false)}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          lookaheadWeeks={lookaheadWeeks}
+          setLookaheadWeeks={setLookaheadWeeks}
+          scrollToToday={scrollToToday}
+          todayFormattedShort={todayFormattedShort}
+          expandAllAssemblies={expandAllAssemblies}
+          collapseAllAssemblies={collapseAllAssemblies}
+          isFullscreen={isFullscreen}
+          onToggleFullscreen={isFullscreen ? handleExitFullscreen : handleEnterFullscreen}
+          onCloseGantt={onClose}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          availableMonths={availableMonths}
+          showCompleted={showCompleted}
+          setShowCompleted={setShowCompleted}
+          isFilterActive={isFilterActive}
+          zoomMode={zoomMode}
+          customPixelsPerDay={customPixelsPerDay}
+          onSelectZoom={(mode) => {
+            skipNextZoomAutoScrollRef.current = false;
+            setCustomPixelsPerDay(null);
+            setZoomMode(mode);
+          }}
+          onZoomToFit={handleZoomToFit}
+          showArrows={showArrows}
+          setShowArrows={setShowArrows}
+          showProgress={showProgress}
+          setShowProgress={setShowProgress}
+          showCriticalPath={showCriticalPath}
+          setShowCriticalPath={setShowCriticalPath}
+          criticalCount={criticalPathIds.size}
+          showSCurve={showSCurve}
+          onToggleSCurve={handleSetShowSCurve}
+          showResourceLoad={showResourceLoad}
+          onToggleResourceLoad={handleSetShowResourceLoad}
+          overloadedEmployeesCount={resourceLoadData?.totalOverloadedEmployees || 0}
+          showHoursTracking={showHoursTracking}
+          onToggleHoursTracking={(val) => {
+            setShowHoursTracking(val);
+            handleSetShowHoursTracking(val);
+          }}
+          totalHoursStats={totalHoursStats}
+          showBaseline={showBaseline}
+          onToggleBaseline={(val) => {
+            setShowBaseline(val);
+            handleSetShowBaseline(val);
+          }}
+          baselineCount={baselineStats.count}
+          totalDependencyConflictsCount={totalDependencyConflictsCount}
+          onJumpToFirstConflict={() => {
+            const firstConflictingId = Array.from(dependencyViolationsMap.keys())[0];
+            if (firstConflictingId && rightScrollRef.current) {
+              const rowIdx = rows.findIndex(r => r.id === firstConflictingId);
+              if (rowIdx >= 0) {
+                rightScrollRef.current.scrollTop = rowIdx * 32;
+                setSelectedRowId(firstConflictingId);
+                const rowConflicts = dependencyViolationsMap.get(firstConflictingId);
+                setToastMsg(`Konflik Jadwal pada "${rows[rowIdx].name}": ${rowConflicts?.[0]?.reason || ''}. Klik 'Smart Schedule' untuk menyelaraskan.`);
+              }
+            }
+          }}
+          canEditSchedule={onUpdateProject !== undefined}
+          canUndo={historyStack.length > 0}
+          canRedo={redoStack.length > 0}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
+          onSmartSchedule={handleSmartSchedule}
+          onRunP6Schedule={handleRunP6Schedule}
+          autoSchedule={autoSchedule}
+          onToggleAutoSchedule={handleSetAutoSchedule}
+          connectMode={connectMode}
+          onToggleConnectMode={() => {
+            setConnectMode(!connectMode);
+            if (depPanelOpen) setDepPanelOpen(false);
+          }}
+          canSetBaseline={canSetBaseline && Boolean(onUpdateProject)}
+          projectsList={projectsList}
+          onOpenBaselineManager={() => {
+            const target = selectedProject || (projectsList.length > 0 ? projectsList[0] : null);
+            if (target) setBaselineTargetProjectId(target.id);
+            setBaselineManagerModalOpen(true);
+            if (!showBaseline) handleSetShowBaseline(true);
+          }}
+          onQuickLockBaseline={() => {
+            const target = selectedProject || (projectsList.length === 1 ? projectsList[0] : null);
+            if (target) {
+              setBaselineForProject(target);
+              if (!showBaseline) handleSetShowBaseline(true);
+            } else {
+              handleSetBaselineAll();
+              if (!showBaseline) handleSetShowBaseline(true);
+            }
+          }}
+          isExporting={isExporting}
+          onExportPNG={handleExportPNG}
+          onExportPDF={handleExportPDF}
+          onExportCSV={handleExportCSV}
+        />
 
         {/* DRAW-TO-CONNECT POPUP DIALOG */}
         {pendingConnect && (() => {

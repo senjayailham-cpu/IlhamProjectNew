@@ -138,9 +138,9 @@ export function GanttPage({
   );
 
   return (
-    <div className={`flex-1 flex flex-col animate-in fade-in duration-200 ${embedded ? 'space-y-3' : 'p-5 space-y-5'}`}>
+    <div className={`flex-1 flex flex-col animate-in fade-in duration-200 ${embedded ? 'space-y-2' : 'p-4 sm:p-5 space-y-4'}`}>
       {!embedded && (
-        <div className="flex flex-col gap-2 bg-base-surface border border-base-border p-5 rounded-xl shadow-xs">
+        <div className="flex flex-col gap-2 bg-base-surface border border-base-border p-4 rounded-xl shadow-xs">
           <div className="flex items-center flex-wrap gap-3 sm:gap-4">
             <h1 className="font-condensed font-extrabold text-2xl tracking-tight text-base-text flex items-center gap-2 shrink-0">
               <BarChart2 className="h-6 w-6 text-base-accent shrink-0" />
@@ -155,11 +155,11 @@ export function GanttPage({
       )}
 
       {/* Main Gantt View Section */}
-      <div className="bg-base-surface border border-base-border rounded-xl p-3 sm:p-4 shadow-xs space-y-3">
+      <div className={`bg-base-surface border border-base-border rounded-xl shadow-xs ${embedded ? 'p-2.5 sm:p-3 space-y-2' : 'p-3 sm:p-4 space-y-3'}`}>
         {embedded && (
-          <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-base-border/60">
+          <div className="flex items-center justify-start flex-wrap gap-x-4 gap-y-2 pb-1.5 border-b border-base-border/60">
             {filterControls}
-            <span className="text-[11px] font-mono text-base-muted">
+            <span className="text-[11px] font-mono text-base-muted tabular-nums shrink-0 sm:border-l sm:border-base-border sm:pl-3">
               {projectsInMonth.length} proyek ditampilkan
             </span>
           </div>
@@ -181,6 +181,7 @@ export function GanttPage({
           availableMonths={availableMonths}
           includeCompleted={includeCompleted}
           setIncludeCompleted={setIncludeCompleted}
+          embedded={embedded}
         />
       </div>
     </div>
