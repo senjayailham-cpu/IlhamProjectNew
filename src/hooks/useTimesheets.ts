@@ -40,15 +40,24 @@ export function useTimesheets(
   });
   const [timesheetModalOpen, setTimesheetModalOpen] = useState<boolean>(false);
   const [editingTsId, setEditingTsId] = useState<string | null>(null);
+  const [preselectedEmpId, setPreselectedEmpId] = useState<string | null>(null);
 
   const { saveItem, removeItem, saveBatch } = useFirestore();
 
   const openTimesheetBulkAdd = () => {
     setEditingTsId(null);
+    setPreselectedEmpId(null);
+    setTimesheetModalOpen(true);
+  };
+
+  const openTimesheetForEmployee = (empId: string) => {
+    setEditingTsId(null);
+    setPreselectedEmpId(empId);
     setTimesheetModalOpen(true);
   };
 
   const openTimesheetEditForm = (id: string) => {
+    setPreselectedEmpId(null);
     setEditingTsId(id);
     setTimesheetModalOpen(true);
   };
@@ -58,14 +67,22 @@ export function useTimesheets(
     setTimesheets(prev => {
       const copy = [...prev];
       rawLogs.forEach(rl => {
+        const hrs = Math.max(0, Number(rl.totalHours) || 0);
+        const normalizedLog = {
+          ...rl,
+          totalHours: hrs,
+          regularHours: Math.min(8, hrs),
+          overtimeHours: Math.max(0, hrs - 8),
+        };
+
         if (editingTsId) {
           const idx = copy.findIndex(x => x.id === editingTsId);
           if (idx > -1) {
-            const updated = { ...copy[idx], ...rl };
+            const updated = { ...copy[idx], ...normalizedLog };
             copy[idx] = updated;
             writtenItems.push(updated);
           } else {
-            const newItem = { id: uid(), date: timesheetDate, ...rl };
+            const newItem = { id: uid(), date: timesheetDate, ...normalizedLog };
             copy.push(newItem);
             writtenItems.push(newItem);
           }
@@ -74,19 +91,24 @@ export function useTimesheets(
           if (rl.id) {
             idx = copy.findIndex(x => x.id === rl.id);
           } else {
-            idx = copy.findIndex(x => 
-              x.date === timesheetDate && 
-              x.empId === rl.empId && 
-              (x.workOrder || '').trim().toLowerCase() === (rl.workOrder || '').trim().toLowerCase()
+            const keyWo = (rl.workOrder || '').trim().toLowerCase();
+            const keyAsm = (rl.assemblyId || '').trim();
+            const keyTask = (rl.taskId || '').trim();
+            idx = copy.findIndex(x =>
+              x.date === timesheetDate &&
+              x.empId === rl.empId &&
+              (x.workOrder || '').trim().toLowerCase() === keyWo &&
+              (x.assemblyId || '').trim() === keyAsm &&
+              (x.taskId || '').trim() === keyTask
             );
           }
-          
+
           if (idx > -1) {
-            const updated = { ...copy[idx], ...rl };
+            const updated = { ...copy[idx], ...normalizedLog };
             copy[idx] = updated;
             writtenItems.push(updated);
           } else {
-            const newItem = { id: rl.id || uid(), date: timesheetDate, ...rl };
+            const newItem = { id: rl.id || uid(), date: timesheetDate, ...normalizedLog };
             copy.push(newItem);
             writtenItems.push(newItem);
           }
@@ -99,6 +121,8 @@ export function useTimesheets(
       saveBatch('timesheets', writtenItems);
     }
 
+    setEditingTsId(null);
+    setPreselectedEmpId(null);
     setTimesheetModalOpen(false);
     verifyMarkChanged();
   };
@@ -133,7 +157,10 @@ export function useTimesheets(
     setTimesheetModalOpen,
     editingTsId,
     setEditingTsId,
+    preselectedEmpId,
+    setPreselectedEmpId,
     openTimesheetBulkAdd,
+    openTimesheetForEmployee,
     openTimesheetEditForm,
     saveTimesheetsBulkImport,
     removeTimesheetEntry,

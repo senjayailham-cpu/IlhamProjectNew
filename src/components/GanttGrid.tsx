@@ -13,7 +13,9 @@ import {
   RotateCcw,
   X,
   LocateFixed,
-  Calendar
+  Calendar,
+  Plus,
+  CheckSquare
 } from 'lucide-react';
 import { Project, WorkflowStatusType } from '../types';
 import { GanttRow } from './useGanttRows';
@@ -228,6 +230,10 @@ export interface GanttGridProps {
   getProjectIdOfRow: (row: GanttRow) => string;
   isFilterActive?: boolean;
   onScrollToBar?: (rowId: string, opts?: { center?: boolean; onlyIfOffscreen?: boolean }) => void;
+  onQuickAddTask?: (row: GanttRow) => void;
+  selectedTaskIds?: Set<string>;
+  onToggleTaskSelect?: (taskId: string, shiftKey?: boolean) => void;
+  onToggleSelectAllVisibleTasks?: () => void;
 
   // Inline editing & actions
   onUpdateProject?: (project: Project) => void;
@@ -414,6 +420,10 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
   getProjectIdOfRow,
   isFilterActive,
   onScrollToBar,
+  onQuickAddTask,
+  selectedTaskIds,
+  onToggleTaskSelect,
+  onToggleSelectAllVisibleTasks,
 
   onUpdateProject,
   editingHoursCell,
@@ -780,14 +790,11 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
       case 'name': {
         const isProjExpanded = isFilterActive || expandedIds.has(row.id);
         const isAsmCollapsed = !isFilterActive && !!collapsedAsms[row.id];
+        const isTaskChecked = row.level === 2 && Boolean(selectedTaskIds?.has(row.id));
+        const hasAnySelected = Boolean(selectedTaskIds && selectedTaskIds.size > 0);
         return (
           <div
             key={`cell-${colId}-${row.id}`}
-            onClick={() => {
-              if (onScrollToBar) {
-                onScrollToBar(row.id, { onlyIfOffscreen: true });
-              }
-            }}
             onDoubleClick={(e) => {
               e.stopPropagation();
               if (onScrollToBar) {
@@ -797,7 +804,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             className="shrink-0 flex items-center min-w-0 pr-1 select-none font-sans group h-full"
             style={{
               width: `${colNameWidth}px`,
-              paddingLeft: `${row.level === 1 ? 16 : row.level === 2 ? 28 : 4}px`
+              paddingLeft: `${row.level === 1 ? 16 : row.level === 2 ? 22 : 4}px`
             }}
             title={row.start ? `${row.name} — Double-klik untuk fokus ke bar di timeline` : row.name}
           >
@@ -831,6 +838,24 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               </button>
             )}
 
+            {row.level === 2 && onUpdateProject && onToggleTaskSelect && (
+              <input
+                type="checkbox"
+                checked={isTaskChecked}
+                onChange={() => {}}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleTaskSelect(row.id, e.shiftKey);
+                }}
+                title="Pilih task untuk edit massal (Shift+Klik untuk pilih rentang)"
+                className={`h-3.5 w-3.5 mr-1.5 rounded accent-[#9b1c2e] border-base-border cursor-pointer shrink-0 transition-opacity ${
+                  isTaskChecked || hasAnySelected
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100 focus:opacity-100'
+                }`}
+              />
+            )}
+
             {row.isMilestone && (
               <span className="text-yellow-500 mr-1.5 leading-none">◆</span>
             )}
@@ -860,19 +885,35 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
             {showCriticalPath && row.level === 1 && criticalAssemblyIds.has(row.id) && (
               <span className="w-1.5 h-1.5 rounded-full bg-red-600 shrink-0 ml-1.5" title="Contains critical tasks" />
             )}
-            {row.start && onScrollToBar && (
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onScrollToBar(row.id, { center: true });
-                }}
-                className="opacity-0 group-hover:opacity-100 focus:opacity-100 ml-auto p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-accent/15 transition-all cursor-pointer shrink-0"
-                title="Fokus ke bar di timeline"
-              >
-                <LocateFixed className="h-3 w-3" />
-              </button>
-            )}
+
+            <div className="ml-auto flex items-center gap-0.5 shrink-0">
+              {row.level === 1 && onUpdateProject && onQuickAddTask && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onQuickAddTask(row);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/15 transition-all cursor-pointer shrink-0"
+                  title="Tambah Task / Milestone baru di Assembly ini"
+                >
+                  <Plus className="h-3 w-3" />
+                </button>
+              )}
+              {row.start && onScrollToBar && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onScrollToBar(row.id, { center: true });
+                  }}
+                  className="opacity-0 group-hover:opacity-100 focus:opacity-100 p-1 rounded text-base-muted hover:text-base-accent hover:bg-base-accent/15 transition-all cursor-pointer shrink-0"
+                  title="Fokus ke bar di timeline"
+                >
+                  <LocateFixed className="h-3 w-3" />
+                </button>
+              )}
+            </div>
           </div>
         );
       }
@@ -1889,6 +1930,25 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
               <RotateCcw className="h-3 w-3" />
               <span>Reset</span>
             </button>
+            {onUpdateProject && onToggleSelectAllVisibleTasks && (
+              <button
+                type="button"
+                onClick={onToggleSelectAllVisibleTasks}
+                className={`text-[10.5px] font-sans font-semibold px-2 py-0.5 rounded-md border transition-colors cursor-pointer flex items-center gap-1 ${
+                  selectedTaskIds && selectedTaskIds.size > 0
+                    ? 'bg-[#9b1c2e]/15 text-[#9b1c2e] dark:text-[#f87171] border-[#9b1c2e]/40 font-bold'
+                    : 'text-base-muted hover:text-base-text border-base-border/60 bg-base-surface'
+                }`}
+                title="Pilih semua task yang tampil untuk edit massal (Bulk Action)"
+              >
+                <CheckSquare className="h-3 w-3" />
+                <span>
+                  {selectedTaskIds && selectedTaskIds.size > 0
+                    ? `${selectedTaskIds.size} dipilih`
+                    : 'Pilih Task'}
+                </span>
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-1.5 text-[10px] text-base-muted font-normal lowercase">
             <span className="hidden sm:inline">drag header untuk geser kolom</span>
@@ -1913,6 +1973,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
         {visibleRows.map((row, i) => {
           const idx = startIndex + i;
           const isSelected = selectedRowId === row.id;
+          const isBulkSelected = row.level === 2 && Boolean(selectedTaskIds?.has(row.id));
           const isTargetHovered = dragHoverTargetRowId === row.id;
           const rowConflicts = dependencyViolationsMap.get(row.id);
           const hasConflict = rowConflicts && rowConflicts.length > 0;
@@ -1920,6 +1981,7 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           let bgClass = 'bg-base-surface hover:bg-base-surface2/50';
           if (isTargetHovered) bgClass = 'bg-green-500/20 text-green-800 dark:text-green-300 font-bold border-y-2 border-green-500 z-20';
           else if (hasConflict) bgClass = 'bg-red-500/15 dark:bg-red-950/30 text-red-700 dark:text-red-300 border-l-4 border-l-red-500';
+          else if (isBulkSelected) bgClass = 'bg-[#9b1c2e]/10 border-l-2 border-l-[#9b1c2e]';
           else if (row.level === 0) bgClass = 'bg-base-accent-dim hover:bg-base-accent-dim/80';
           else if (row.level === 1) bgClass = 'bg-base-surface2 hover:bg-base-surface3/50';
           else if (idx % 2 === 1) bgClass = 'bg-base-surface2/30 hover:bg-base-surface2/75';
@@ -1929,7 +1991,12 @@ export const GanttGrid: React.FC<GanttGridProps> = ({
           return (
             <div
               key={`row-left-${row.id}-${idx}`}
-              onClick={() => setSelectedRowId(row.id)}
+              onClick={() => {
+                setSelectedRowId(row.id);
+                if (onScrollToBar) {
+                  onScrollToBar(row.id, { onlyIfOffscreen: true });
+                }
+              }}
               className={`h-8 flex text-xs font-semibold select-none items-center cursor-pointer transition-colors border-b border-base-border/20 divide-x divide-base-border/10 ${bgClass}`}
             >
               {activeColumns.map(colId => renderColumnCell(colId, row, idx, rowConflicts, !!hasConflict))}

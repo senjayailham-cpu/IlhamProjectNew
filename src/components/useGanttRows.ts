@@ -104,6 +104,7 @@ export interface UseGanttRowsOptions {
   showCompleted: boolean;
   searchQuery: string;
   statusFilter: string;
+  picFilter?: string;
   activeTab: string;
   lookaheadWeeks: number;
 }
@@ -115,6 +116,7 @@ export function useGanttRows({
   showCompleted,
   searchQuery,
   statusFilter,
+  picFilter = 'ALL',
   activeTab,
   lookaheadWeeks
 }: UseGanttRowsOptions) {
@@ -591,6 +593,20 @@ export function useGanttRows({
     [projectsList, timesheetSummary, cpmData]
   );
 
+  // Unique PIC / Assignee list across all tasks
+  const availablePics = useMemo(() => {
+    const picSet = new Set<string>();
+    fullTreeRows.forEach(r => {
+      if (r.level !== 2 || !r.assigned) return;
+      r.assigned
+        .split(/[,/]/)
+        .map(s => s.trim())
+        .filter(Boolean)
+        .forEach(name => picSet.add(name));
+    });
+    return Array.from(picSet).sort((a, b) => a.localeCompare(b));
+  }, [fullTreeRows]);
+
   // Visible tree respecting user's current expand/collapse state
   const allRows = useMemo(
     () => buildFlattenedRows(false),
@@ -619,7 +635,11 @@ export function useGanttRows({
     const todayStr = formatLocalDate(new Date());
     const lookaheadEndStr = addDaysToLocalDate(todayStr, lookaheadWeeks * 7);
     const searchLower = searchQuery.toLowerCase().trim();
-    const isFiltering = searchLower !== '' || statusFilter !== 'all' || activeTab === 'lookahead';
+    const isFiltering =
+      searchLower !== '' ||
+      statusFilter !== 'all' ||
+      picFilter !== 'ALL' ||
+      activeTab === 'lookahead';
 
     // If no filters are active, show user's expand/collapse tree directly
     if (!isFiltering) {
@@ -637,6 +657,18 @@ export function useGanttRows({
         if (statusFilter === 'overdue' && !isOverdue) return false;
         if (statusFilter === 'on-track' && !isOnTrack) return false;
         if (statusFilter === 'not-started' && !isNotStarted) return false;
+      }
+      if (picFilter !== 'ALL') {
+        const assignedStr = (row.assigned || '').trim();
+        if (picFilter === '__UNASSIGNED__') {
+          if (assignedStr !== '') return false;
+        } else {
+          const tokens = assignedStr
+            .split(/[,/]/)
+            .map(s => s.trim().toLowerCase())
+            .filter(Boolean);
+          if (!tokens.includes(picFilter.toLowerCase())) return false;
+        }
       }
       if (activeTab === 'lookahead') {
         const rStart = row.start || row.finish || todayStr;
@@ -661,12 +693,12 @@ export function useGanttRows({
     const matchingAsmIds = new Set<string>();
     const matchingProjectIds = new Set<string>();
 
-    // When only searching by text (no status/lookahead restriction), matching a project or assembly
+    // When only searching by text (no status/PIC/lookahead restriction), matching a project or assembly
     // also surfaces its subtree cleanly.
     const matchedDirectProjectIds = new Set<string>();
     const matchedDirectAsmIds = new Set<string>();
 
-    if (searchLower !== '' && statusFilter === 'all' && activeTab === 'gantt') {
+    if (searchLower !== '' && statusFilter === 'all' && picFilter === 'ALL' && activeTab === 'gantt') {
       fullTreeRows.forEach(row => {
         if (row.level === 0 && matchesSearch(row)) {
           matchedDirectProjectIds.add(row.id);
@@ -706,7 +738,7 @@ export function useGanttRows({
       }
       return false;
     });
-  }, [allRows, fullTreeRows, searchQuery, statusFilter, activeTab, lookaheadWeeks]);
+  }, [allRows, fullTreeRows, searchQuery, statusFilter, picFilter, activeTab, lookaheadWeeks]);
 
   return {
     timesheetSummary,
@@ -714,6 +746,7 @@ export function useGanttRows({
     fullTreeRows,
     allRows,
     rows,
+    availablePics,
     expandedIds,
     setExpandedIds,
     collapsedAsms,

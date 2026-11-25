@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -13,22 +13,29 @@ import {
   Target,
   Activity,
   Search,
-  Info
+  Info,
+  Plus,
+  ChevronsUpDown,
+  X
 } from 'lucide-react';
 import { normalizePosition, CRAFT_COLORS } from '../utils/manpowerUtils';
 import { TimesheetEntry, Employee, Project, User } from '../types/index';
 import { useAppStore } from '../store';
 import { can } from '../utils/permissions';
 import { calcPct, fmtHrs } from '../utils/projectUtils';
+import { findProjectForTimesheet, matchesProjectEntry } from '../utils/timesheetHelpers';
 
 interface ManpowerBoardViewProps {
   timesheets?: TimesheetEntry[];
   employees?: Employee[];
   projects?: Project[];
   initialDate?: string;
+  selectedDate?: string;
+  onDateChange?: (date: string) => void;
   currentUser?: User | null;
   onNavigateToTimesheet?: (date?: string) => void;
   openAddTimesheet?: () => void;
+  openAddTimesheetForEmployee?: (empId: string) => void;
 }
 
 export default function ManpowerBoardView({
@@ -36,9 +43,12 @@ export default function ManpowerBoardView({
   employees: propEmployees,
   projects: propProjects,
   initialDate,
+  selectedDate: controlledDate,
+  onDateChange,
   currentUser: propUser,
   onNavigateToTimesheet,
-  openAddTimesheet
+  openAddTimesheet,
+  openAddTimesheetForEmployee
 }: ManpowerBoardViewProps) {
   const storeTimesheets = useAppStore((s) => s.timesheets);
   const storeEmployees = useAppStore((s) => s.employees);
@@ -49,13 +59,24 @@ export default function ManpowerBoardView({
   const employees = propEmployees?.length ? propEmployees : storeEmployees;
   const projects = propProjects?.length ? propProjects : storeProjects;
   const currentUser = propUser || storeCurrentUser;
-  const canManageManpowerBoard = can(currentUser, 'manageManpowerBoard');
+  const canManageTimesheet = can(currentUser, 'manageTimesheet');
 
-  const [selectedDate, setSelectedDate] = useState(
+  const [internalDate, setInternalDate] = useState(
     initialDate || new Date().toISOString().slice(0, 10)
   );
+  const selectedDate = controlledDate ?? internalDate;
+  const setSelectedDate = (nextDate: string) => {
+    if (onDateChange) onDateChange(nextDate);
+    else setInternalDate(nextDate);
+  };
+
   const [activeSubTab, setActiveSubTab] = useState<'allocations' | 'available' | 'output'>('allocations');
   const [selectedCraft, setSelectedCraft] = useState<string>('All');
+  const [boardSearchQuery, setBoardSearchQuery] = useState<string>('');
+  const [expandAllSignal, setExpandAllSignal] = useState<{ expanded: boolean; version: number }>({
+    expanded: false,
+    version: 0
+  });
 
   // Time range & filters for Daily Output analytics module
   const [outputTimeRange, setOutputTimeRange] = useState<'selected_date' | '7_days' | '30_days' | 'this_month' | 'all_time'>('7_days');
@@ -81,7 +102,6 @@ export default function ManpowerBoardView({
 
   // Compute Board Data (Assigned to Projects)
   const boardData = useMemo(() => {
-    // Build employee lookup
     const empMap = new Map(employees.map(e => [e.id, e]));
 
     // Filter: only this date, only present/late (on-site)
@@ -90,7 +110,7 @@ export default function ManpowerBoardView({
       if (!isDateAndOnsite) return false;
       if (selectedCraft === 'All') return true;
       const emp = empMap.get(t.empId);
-      const craft = normalizePosition(emp?.position);
+      const craft = normalizePosition(emp?.position || t.position);
       return craft === selectedCraft;
     });
 
@@ -100,6 +120,7 @@ export default function ManpowerBoardView({
       crafts: Map<string, {
         workers: { empId: string; empName: string; hours: number; status: string }[];
       }>;
+      workerIds: Set<string>;
       totalWorkers: number;
       totalHours: number;
     }>();
@@ -107,42 +128,49 @@ export default function ManpowerBoardView({
     dayEntries.forEach(t => {
       const wo = (t.workOrder && t.workOrder.trim() ? t.workOrder.trim() : 'Unassigned');
       const emp = empMap.get(t.empId);
-      const craft = normalizePosition(emp?.position);
-      
-      const project = projects.find(
-        p => (p.client || '').trim().toLowerCase() === wo.toLowerCase()
-      ) || null;
+      const craft = normalizePosition(emp?.position || t.position);
+      const project = findProjectForTimesheet(t, projects);
 
       if (!projectMap.has(wo)) {
         projectMap.set(wo, {
           project,
           crafts: new Map(),
+          workerIds: new Set(),
           totalWorkers: 0,
           totalHours: 0,
         });
       }
 
       const pg = projectMap.get(wo)!;
+      if (!pg.project && project) pg.project = project;
 
       if (!pg.crafts.has(craft)) {
         pg.crafts.set(craft, { workers: [] });
       }
 
       const cg = pg.crafts.get(craft)!;
-      // Avoid duplicate worker in same craft (safety check)
-      if (!cg.workers.find(w => w.empId === t.empId)) {
+      const entryHrs = t.totalHours || 0;
+      const existingWorker = cg.workers.find(w => w.empId === t.empId);
+      if (existingWorker) {
+        // Accumulate split log hours for the same employee on this project/craft
+        existingWorker.hours = Math.round((existingWorker.hours + entryHrs) * 10) / 10;
+        if (t.status === 'late') existingWorker.status = 'late';
+      } else {
         cg.workers.push({
-          empId:   t.empId,
+          empId: t.empId,
           empName: t.empName,
-          hours:   t.totalHours,
-          status:  t.status,
+          hours: entryHrs,
+          status: t.status,
         });
-        pg.totalWorkers++;
-        pg.totalHours += t.totalHours;
       }
+
+      if (!pg.workerIds.has(t.empId)) {
+        pg.workerIds.add(t.empId);
+        pg.totalWorkers++;
+      }
+      pg.totalHours = Math.round((pg.totalHours + entryHrs) * 10) / 10;
     });
 
-    // Convert to array sorted by totalWorkers desc
     return Array.from(projectMap.entries())
       .map(([wo, data]) => ({
         workOrder: wo,
@@ -152,10 +180,10 @@ export default function ManpowerBoardView({
             craft,
             workers: workers.sort((a, b) => b.hours - a.hours),
             count: workers.length,
-            totalHours: workers.reduce((s, w) => s + w.hours, 0),
+            totalHours: Math.round(workers.reduce((s, w) => s + w.hours, 0) * 10) / 10,
             color: CRAFT_COLORS[craft] || CRAFT_COLORS.Other,
           }))
-          .sort((a, b) => b.count - a.count), // most workers first
+          .sort((a, b) => b.count - a.count),
         totalWorkers: data.totalWorkers,
         totalHours: data.totalHours,
       }))
@@ -165,34 +193,50 @@ export default function ManpowerBoardView({
   // Compute Available / Unassigned Labor Data
   const availableLaborData = useMemo(() => {
     const empMap = new Map(employees.map(e => [e.id, e]));
+    const activeEmployees = employees.filter(e => !e.isExEmployee);
 
-    // Find all timesheet entries for today
     const dayEntries = timesheets.filter(t => t.date === selectedDate);
     const loggedEmpIds = new Set(dayEntries.map(t => t.empId));
 
-    // 1. On-site but Unassigned
-    // Logged as present/late, but with blank or 'Unassigned' workOrder
-    const onSiteUnassigned = dayEntries
-      .filter(t => 
-        (t.status === 'present' || t.status === 'late') && 
+    // 1. On-site but Unassigned (deduplicated per employee with summed hours)
+    const unassignedByEmp = new Map<string, {
+      empId: string;
+      empName: string;
+      status: string;
+      hours: number;
+      position: string;
+      craft: string;
+    }>();
+
+    dayEntries
+      .filter(t =>
+        (t.status === 'present' || t.status === 'late') &&
         (!t.workOrder || t.workOrder.trim() === '' || t.workOrder.trim().toLowerCase() === 'unassigned')
       )
-      .map(t => {
+      .forEach(t => {
         const emp = empMap.get(t.empId);
-        return {
-          empId: t.empId,
-          empName: t.empName,
-          status: t.status,
-          hours: t.totalHours,
-          position: emp?.position || 'Other',
-          craft: normalizePosition(emp?.position)
-        };
-      })
-      .filter(w => selectedCraft === 'All' || w.craft === selectedCraft);
+        const position = emp?.position || t.position || 'Other';
+        const craft = normalizePosition(position);
+        if (selectedCraft !== 'All' && craft !== selectedCraft) return;
+        const prev = unassignedByEmp.get(t.empId);
+        if (prev) {
+          prev.hours = Math.round((prev.hours + (t.totalHours || 0)) * 10) / 10;
+        } else {
+          unassignedByEmp.set(t.empId, {
+            empId: t.empId,
+            empName: t.empName,
+            status: t.status,
+            hours: t.totalHours || 0,
+            position,
+            craft
+          });
+        }
+      });
 
-    // 2. Off-site / Not Logged Today
-    // Employees who don't have any timesheet entry for today
-    const unlogged = employees
+    const onSiteUnassigned = Array.from(unassignedByEmp.values());
+
+    // 2. Off-site / Not Logged Today (only active non-ex employees)
+    const unlogged = activeEmployees
       .filter(e => !loggedEmpIds.has(e.id))
       .map(e => ({
         empId: e.id,
@@ -204,7 +248,6 @@ export default function ManpowerBoardView({
       }))
       .filter(w => selectedCraft === 'All' || w.craft === selectedCraft);
 
-    // Group both categories by craft
     const groupMap = new Map<string, {
       craft: string;
       color: string;
@@ -241,25 +284,86 @@ export default function ManpowerBoardView({
       .sort((a, b) => b.totalAvailable - a.totalAvailable);
   }, [timesheets, employees, selectedDate, selectedCraft]);
 
-  // Summary totals
+  // Filtered views via top board search query
+  const filteredBoardData = useMemo(() => {
+    const q = boardSearchQuery.trim().toLowerCase();
+    if (!q) return boardData;
+    return boardData.filter(pd => {
+      const matchProj =
+        pd.workOrder.toLowerCase().includes(q) ||
+        (pd.project?.name || '').toLowerCase().includes(q) ||
+        (pd.project?.gaNumber || '').toLowerCase().includes(q);
+      if (matchProj) return true;
+      return pd.crafts.some(
+        c =>
+          c.craft.toLowerCase().includes(q) ||
+          c.workers.some(w => w.empName.toLowerCase().includes(q))
+      );
+    });
+  }, [boardData, boardSearchQuery]);
+
+  const filteredAvailableLaborData = useMemo(() => {
+    const q = boardSearchQuery.trim().toLowerCase();
+    if (!q) return availableLaborData;
+    return availableLaborData
+      .map(cg => {
+        if (cg.craft.toLowerCase().includes(q)) return cg;
+        const onSite = cg.onSiteUnassigned.filter(
+          w => w.empName.toLowerCase().includes(q) || w.position.toLowerCase().includes(q)
+        );
+        const unlogged = cg.unlogged.filter(
+          w => w.empName.toLowerCase().includes(q) || w.position.toLowerCase().includes(q)
+        );
+        return {
+          ...cg,
+          onSiteUnassigned: onSite,
+          unlogged,
+          totalAvailable: onSite.length + unlogged.length
+        };
+      })
+      .filter(cg => cg.totalAvailable > 0);
+  }, [availableLaborData, boardSearchQuery]);
+
+  // Summary totals (deduplicated unique worker headcount across split WOs)
   const summary = useMemo(() => {
-    const totalOnSite = boardData.reduce((s, p) => s + p.totalWorkers, 0);
-    const totalHours  = boardData.reduce((s, p) => s + p.totalHours, 0);
-    const craftTotals = new Map<string, number>();
+    const uniqueOnSiteWorkers = new Set<string>();
+    const craftWorkerSets = new Map<string, Set<string>>();
+    let totalHours = 0;
+
     boardData.forEach(p => {
+      totalHours += p.totalHours;
       p.crafts.forEach(c => {
-        craftTotals.set(c.craft, (craftTotals.get(c.craft) || 0) + c.count);
+        if (!craftWorkerSets.has(c.craft)) craftWorkerSets.set(c.craft, new Set());
+        const set = craftWorkerSets.get(c.craft)!;
+        c.workers.forEach(w => {
+          uniqueOnSiteWorkers.add(w.empId);
+          set.add(w.empId);
+        });
       });
     });
 
-    let relevantEmployees = employees;
-    if (selectedCraft !== 'All') {
-      relevantEmployees = employees.filter(e => normalizePosition(e.position) === selectedCraft);
-    }
-    const totalCapacity = relevantEmployees.length * 8;
-    const utilizationPct = totalCapacity > 0 ? (totalHours / totalCapacity) * 100 : 0;
+    const craftTotals = new Map<string, number>();
+    craftWorkerSets.forEach((set, craft) => {
+      craftTotals.set(craft, set.size);
+    });
 
-    return { totalOnSite, totalHours, craftTotals, totalCapacity, utilizationPct };
+    const activeEmployees = employees.filter(e => !e.isExEmployee);
+    const relevantEmployees =
+      selectedCraft !== 'All'
+        ? activeEmployees.filter(e => normalizePosition(e.position) === selectedCraft)
+        : activeEmployees;
+
+    const totalCapacity = relevantEmployees.length * 8;
+    const roundedHours = Math.round(totalHours * 10) / 10;
+    const utilizationPct = totalCapacity > 0 ? (roundedHours / totalCapacity) * 100 : 0;
+
+    return {
+      totalOnSite: uniqueOnSiteWorkers.size,
+      totalHours: roundedHours,
+      craftTotals,
+      totalCapacity,
+      utilizationPct
+    };
   }, [boardData, employees, selectedCraft]);
 
   // Available labor totals
@@ -308,24 +412,21 @@ export default function ManpowerBoardView({
       return craft === selectedCraft;
     });
 
-    // Build map of project progress and total manhours in range / all-time
-    const projectProgressMap = new Map<string, { project: Project | null; pct: number; totalHoursInRange: number }>();
+    // Build map of project progress and total manhours in range
+    const projectProgressMap = new Map<string, { project: Project; pct: number; totalHoursInRange: number }>();
     projects.forEach(p => {
-      const clientKey = (p.client || '').trim().toLowerCase();
-      if (clientKey) {
-        projectProgressMap.set(clientKey, {
-          project: p,
-          pct: calcPct(p),
-          totalHoursInRange: 0,
-        });
-      }
+      projectProgressMap.set(p.id, {
+        project: p,
+        pct: calcPct(p),
+        totalHoursInRange: 0,
+      });
     });
 
     // Compute total hours per project in range
     rangeTimesheets.forEach(t => {
-      const wo = (t.workOrder || '').trim().toLowerCase();
-      if (wo && projectProgressMap.has(wo)) {
-        projectProgressMap.get(wo)!.totalHoursInRange += t.totalHours || 0;
+      const matched = findProjectForTimesheet(t, projects);
+      if (matched && projectProgressMap.has(matched.id)) {
+        projectProgressMap.get(matched.id)!.totalHoursInRange += t.totalHours || 0;
       }
     });
 
@@ -343,7 +444,7 @@ export default function ManpowerBoardView({
     rangeTimesheets.forEach(t => {
       const emp = empMap.get(t.empId);
       const empName = t.empName || emp?.name || 'Unknown Worker';
-      const position = emp?.position || 'Other';
+      const position = emp?.position || t.position || 'Other';
       const craft = normalizePosition(position);
 
       if (!empStatsMap.has(t.empId)) {
@@ -382,12 +483,17 @@ export default function ManpowerBoardView({
       const assignedProjects: { workOrder: string; hours: number; projPct: number }[] = [];
 
       e.projectHoursMap.forEach((hrs, wo) => {
-        const pData = projectProgressMap.get(wo.toLowerCase());
+        const matchedProj = projects.find(
+          p =>
+            (p.client || '').trim().toLowerCase() === wo.toLowerCase() ||
+            (p.gaNumber || '').trim().toLowerCase() === wo.toLowerCase() ||
+            (p.name || '').trim().toLowerCase() === wo.toLowerCase()
+        );
+        const pData = matchedProj ? projectProgressMap.get(matchedProj.id) : undefined;
         const projPct = pData ? pData.pct : 0;
         assignedProjects.push({ workOrder: wo, hours: hrs, projPct });
 
         if (pData && pData.totalHoursInRange > 0) {
-          // Employee share of progress = (hours on proj / total proj hours) * projPct
           progressContrib += (hrs / pData.totalHoursInRange) * projPct;
         } else if (pData) {
           progressContrib += (hrs / Math.max(1, e.totalHours)) * projPct;
@@ -463,21 +569,20 @@ export default function ManpowerBoardView({
     }).sort((a, b) => b.avgDailyOutput - a.avgDailyOutput);
 
     // Calculate Project-level breakdown
-    const projectBreakdown = Array.from(projectProgressMap.entries())
-      .filter(([, data]) => data.totalHoursInRange > 0)
-      .map(([woKey, data]) => {
-        // Workers on project
-        const projectTs = rangeTimesheets.filter(t => (t.workOrder || '').trim().toLowerCase() === woKey);
+    const projectBreakdown = Array.from(projectProgressMap.values())
+      .filter((data) => data.totalHoursInRange > 0)
+      .map((data) => {
+        const projectTs = rangeTimesheets.filter(t => matchesProjectEntry(t, data.project));
         const uniqueWorkers = new Set(projectTs.map(t => t.empId)).size;
         const uniqueEmpDays = new Set(projectTs.map(t => `${t.empId}_${t.date}`)).size;
         const dailyProgressRate = uniqueEmpDays > 0 ? data.pct / uniqueEmpDays : 0;
 
         return {
-          workOrder: data.project?.client || woKey.toUpperCase(),
-          projectName: data.project?.name || data.project?.client || woKey.toUpperCase(),
+          workOrder: data.project.client || data.project.gaNumber || data.project.name,
+          projectName: data.project.name || data.project.client || data.project.gaNumber || 'Project',
           projectPct: data.pct,
-          status: data.project?.status || 'active',
-          totalHours: data.totalHoursInRange,
+          status: data.project.status || 'active',
+          totalHours: Math.round(data.totalHoursInRange * 10) / 10,
           workerCount: uniqueWorkers,
           empDaysWorked: uniqueEmpDays,
           dailyProgressRate,
@@ -589,50 +694,101 @@ export default function ManpowerBoardView({
             {onNavigateToTimesheet && (
               <button
                 onClick={() => onNavigateToTimesheet(selectedDate)}
-                className="px-3 h-8 rounded-lg bg-base-surface2 hover:bg-base-surface3 border border-base-border hover:border-base-accent/50 text-base-text text-xs font-condensed font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ml-1"
+                className="px-3 h-8 rounded-lg bg-base-surface2 hover:bg-base-surface3 border border-base-border hover:border-base-accent/50 text-base-text text-xs font-condensed font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-xs ml-1 whitespace-nowrap shrink-0"
                 title="Open Daily Timesheet Log Sheet for this date"
               >
                 <Clock className="h-3.5 w-3.5 text-base-accent" />
                 <span className="hidden sm:inline">Timesheet Log</span>
               </button>
             )}
+
+            {canManageTimesheet && openAddTimesheet && (
+              <button
+                type="button"
+                onClick={() => openAddTimesheet()}
+                className="px-3 h-8 rounded-lg bg-base-accent hover:bg-base-accent2 text-white text-xs font-condensed font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer shadow-xs whitespace-nowrap shrink-0"
+                title="Input timesheet harian langsung dari Manpower Board"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                <span>Input Timesheet</span>
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      {/* View Sub-Tabs */}
-      <div className="flex border-b border-base-border bg-base-surface px-6">
-        <button
-          onClick={() => setActiveSubTab('allocations')}
-          className={`px-4 py-2 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer ${
-            activeSubTab === 'allocations'
-              ? 'border-base-accent text-base-accent'
-              : 'border-transparent text-base-muted hover:text-base-text'
-          }`}
-        >
-          Project Allocations ({boardData.length})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('available')}
-          className={`px-4 py-2 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-            activeSubTab === 'available'
-              ? 'border-base-accent text-base-accent'
-              : 'border-transparent text-base-muted hover:text-base-text'
-          }`}
-        >
-          Available Labor ({availableSummary.total})
-        </button>
-        <button
-          onClick={() => setActiveSubTab('output')}
-          className={`px-4 py-2 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 ${
-            activeSubTab === 'output'
-              ? 'border-base-accent text-base-accent'
-              : 'border-transparent text-base-muted hover:text-base-text'
-          }`}
-        >
-          <Zap className="h-3.5 w-3.5 text-base-accent" />
-          Daily Output & Productivity
-        </button>
+      {/* View Sub-Tabs & Board Quick Controls */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-base-border bg-base-surface px-6 gap-2">
+        <div className="flex overflow-x-auto">
+          <button
+            onClick={() => setActiveSubTab('allocations')}
+            className={`px-4 py-2.5 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer whitespace-nowrap ${
+              activeSubTab === 'allocations'
+                ? 'border-base-accent text-base-accent'
+                : 'border-transparent text-base-muted hover:text-base-text'
+            }`}
+          >
+            Project Allocations ({filteredBoardData.length})
+          </button>
+          <button
+            onClick={() => setActiveSubTab('available')}
+            className={`px-4 py-2.5 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              activeSubTab === 'available'
+                ? 'border-base-accent text-base-accent'
+                : 'border-transparent text-base-muted hover:text-base-text'
+            }`}
+          >
+            Available Labor ({availableSummary.total})
+          </button>
+          <button
+            onClick={() => setActiveSubTab('output')}
+            className={`px-4 py-2.5 text-xs font-condensed font-bold uppercase tracking-wider border-b-2 transition-colors cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
+              activeSubTab === 'output'
+                ? 'border-base-accent text-base-accent'
+                : 'border-transparent text-base-muted hover:text-base-text'
+            }`}
+          >
+            <Zap className="h-3.5 w-3.5 text-base-accent" />
+            Daily Output & Productivity
+          </button>
+        </div>
+
+        {(activeSubTab === 'allocations' || activeSubTab === 'available') && (
+          <div className="flex items-center gap-2 py-1.5">
+            <div className="relative flex-1 md:w-60">
+              <Search className="h-3.5 w-3.5 text-base-muted absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={boardSearchQuery}
+                onChange={(e) => setBoardSearchQuery(e.target.value)}
+                placeholder="Cari proyek, WO, atau pekerja..."
+                className="w-full pl-8 pr-7 py-1.5 bg-base-surface2 border border-base-border rounded-lg text-xs text-base-text placeholder:text-base-muted focus:outline-none focus:border-base-accent"
+              />
+              {boardSearchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setBoardSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-base-muted hover:text-base-text cursor-pointer"
+                  title="Hapus pencarian"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setExpandAllSignal(prev => ({ expanded: !prev.expanded, version: prev.version + 1 }))
+              }
+              className="px-2.5 py-1.5 rounded-lg bg-base-surface2 hover:bg-base-surface3 border border-base-border text-[11px] font-condensed font-bold uppercase tracking-wider text-base-text flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+              title="Buka atau tutup semua nama pekerja di kartu"
+            >
+              <ChevronsUpDown className="h-3.5 w-3.5 text-base-muted" />
+              <span>{expandAllSignal.expanded ? 'Collapse All' : 'Expand All'}</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {activeSubTab === 'allocations' && (
@@ -641,7 +797,7 @@ export default function ManpowerBoardView({
           <div className="flex items-center gap-6 px-6 py-3 bg-base-surface2 border-b border-base-border flex-wrap">
             <div className="flex items-center gap-2">
               <Users className="h-4 w-4 text-base-muted" />
-              <span className="text-sm font-condensed font-bold text-base-text">
+              <span className="text-sm font-condensed font-bold text-base-text tabular-nums">
                 {summary.totalOnSite}
               </span>
               <span className="text-xs text-base-muted">{selectedCraft !== 'All' ? `${selectedCraft}s` : 'workers'} on site</span>
@@ -649,7 +805,7 @@ export default function ManpowerBoardView({
             <div className="w-px h-4 bg-base-border hidden sm:block" />
             <div className="flex items-center gap-2">
               <Clock className="h-4 w-4 text-base-muted" />
-              <span className="text-sm font-condensed font-bold text-base-text">
+              <span className="text-sm font-condensed font-bold text-base-text tabular-nums">
                 {summary.totalHours}h
               </span>
               <span className="text-xs text-base-muted">logged</span>
@@ -657,25 +813,25 @@ export default function ManpowerBoardView({
             <div className="w-px h-4 bg-base-border hidden sm:block" />
             <div className="flex items-center gap-2">
               <Zap className="h-4 w-4 text-base-accent" />
-              <span className="text-sm font-condensed font-bold text-base-text">
+              <span className="text-sm font-condensed font-bold text-base-text tabular-nums">
                 {outputAnalyticsData.avgDailyOutputOverall.toFixed(1)}%
               </span>
               <span className="text-xs text-base-muted">avg daily output / emp</span>
             </div>
             <div className="w-px h-4 bg-base-border hidden sm:block" />
-            
+
             {/* Workshop Utilization Progress */}
             <div className="flex items-center gap-3">
               <div className="flex flex-col items-end">
                 <span className="text-[9px] font-condensed font-bold uppercase text-base-muted leading-none">Workshop Utilization</span>
-                <span className="text-sm font-condensed font-bold text-base-text leading-tight mt-0.5">
+                <span className="text-sm font-condensed font-bold text-base-text leading-tight mt-0.5 tabular-nums">
                   {summary.utilizationPct.toFixed(1)}%
                 </span>
               </div>
               <div className="w-24 h-2.5 bg-base-surface border border-base-border rounded-full overflow-hidden flex relative" title={`${summary.totalHours}h / ${summary.totalCapacity}h max`}>
-                <div 
-                  className={`h-full transition-all duration-500 ${summary.utilizationPct >= 80 ? 'bg-base-green' : summary.utilizationPct >= 50 ? 'bg-base-accent' : 'bg-amber-500'}`} 
-                  style={{ width: `${Math.min(100, summary.utilizationPct)}%` }} 
+                <div
+                  className={`h-full transition-all duration-500 ${summary.utilizationPct >= 80 ? 'bg-base-green' : summary.utilizationPct >= 50 ? 'bg-base-accent' : 'bg-amber-500'}`}
+                  style={{ width: `${Math.min(100, summary.utilizationPct)}%` }}
                 />
               </div>
             </div>
@@ -694,17 +850,17 @@ export default function ManpowerBoardView({
                       className="w-2 h-2 rounded-full"
                       style={{ background: CRAFT_COLORS[craft] || CRAFT_COLORS.Other }}
                     />
-                    <span className="font-condensed font-bold text-base-text">{count}</span>
+                    <span className="font-condensed font-bold text-base-text tabular-nums">{count}</span>
                     <span className="text-base-muted">{craft}</span>
                   </span>
                 ))}
             </div>
             <div className="ml-auto flex items-center gap-3">
-              <span className="text-[10px] text-base-muted">{boardData.length} projects active</span>
+              <span className="text-[10px] text-base-muted">{filteredBoardData.length} projects active</span>
               {onNavigateToTimesheet && (
                 <button
                   onClick={() => onNavigateToTimesheet(selectedDate)}
-                  className="text-xs font-condensed font-bold uppercase text-base-accent hover:underline cursor-pointer flex items-center gap-1"
+                  className="text-xs font-condensed font-bold uppercase text-base-accent hover:underline cursor-pointer flex items-center gap-1 whitespace-nowrap"
                 >
                   <span>Edit Timesheets</span>
                   <span>→</span>
@@ -714,24 +870,34 @@ export default function ManpowerBoardView({
           </div>
 
           {/* Content Area */}
-          {boardData.length === 0 ? (
+          {filteredBoardData.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-20 animate-fade-in">
               <Users className="h-14 w-14 text-base-muted opacity-20" />
               <p className="font-condensed font-bold text-base-muted uppercase tracking-widest text-sm">
                 No matching allocations found
               </p>
               <p className="text-xs text-base-muted">
-                {selectedCraft !== 'All' 
-                  ? `No ${selectedCraft}s are allocated on ${selectedDate}.`
-                  : `No attendance logged for ${selectedDate}.`
-                }
+                {boardSearchQuery
+                  ? `Tidak ada pekerja/proyek cocok dengan "${boardSearchQuery}".`
+                  : selectedCraft !== 'All'
+                    ? `No ${selectedCraft}s are allocated on ${selectedDate}.`
+                    : `No attendance logged for ${selectedDate}.`}
               </p>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {boardData.map(pd => (
-                  <ProjectAllocationCard key={pd.workOrder} data={pd as any} />
+                {filteredBoardData.map(pd => (
+                  <ProjectAllocationCard
+                    key={pd.workOrder}
+                    data={pd as any}
+                    expandAllSignal={expandAllSignal}
+                    onWorkerClick={
+                      canManageTimesheet && openAddTimesheetForEmployee
+                        ? (empId) => openAddTimesheetForEmployee(empId)
+                        : undefined
+                    }
+                  />
                 ))}
               </div>
             </div>
@@ -745,7 +911,7 @@ export default function ManpowerBoardView({
           <div className="flex items-center gap-6 px-6 py-3 bg-base-surface2 border-b border-base-border flex-wrap">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-base-green animate-pulse" />
-              <span className="text-sm font-condensed font-bold text-base-text">
+              <span className="text-sm font-condensed font-bold text-base-text tabular-nums">
                 {availableSummary.onSiteUnassignedCount}
               </span>
               <span className="text-xs text-base-muted">On-Site & Unassigned</span>
@@ -753,35 +919,48 @@ export default function ManpowerBoardView({
             <div className="w-px h-4 bg-base-border" />
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full bg-base-muted" />
-              <span className="text-sm font-condensed font-bold text-base-text">
+              <span className="text-sm font-condensed font-bold text-base-text tabular-nums">
                 {availableSummary.unloggedCount}
               </span>
               <span className="text-xs text-base-muted">Not Logged / Off-Site</span>
             </div>
             <div className="ml-auto text-[10px] text-base-muted">
-              {availableLaborData.length} crafts represented
+              {filteredAvailableLaborData.length} crafts represented
             </div>
           </div>
 
           {/* Available content area */}
-          {availableLaborData.length === 0 ? (
+          {filteredAvailableLaborData.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center py-20 animate-fade-in">
               <Users className="h-14 w-14 text-base-muted opacity-20" />
               <p className="font-condensed font-bold text-base-muted uppercase tracking-widest text-sm">
                 No available labor identified
               </p>
               <p className="text-xs text-base-muted">
-                {selectedCraft !== 'All'
-                  ? `All ${selectedCraft}s are allocated to projects on ${selectedDate}.`
-                  : `All personnel are allocated to projects on ${selectedDate}.`
-                }
+                {boardSearchQuery
+                  ? `Tidak ada pekerja cocok dengan "${boardSearchQuery}".`
+                  : selectedCraft !== 'All'
+                    ? `All ${selectedCraft}s are allocated to projects on ${selectedDate}.`
+                    : `All personnel are allocated to projects on ${selectedDate}.`}
               </p>
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto p-6 animate-fade-in">
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                {availableLaborData.map(cg => (
-                  <CraftAvailableCard key={cg.craft} craftGroup={cg as any} />
+                {filteredAvailableLaborData.map(cg => (
+                  <CraftAvailableCard
+                    key={cg.craft}
+                    craftGroup={cg as any}
+                    expandAllSignal={expandAllSignal}
+                    onLogWorker={
+                      canManageTimesheet && (openAddTimesheetForEmployee || openAddTimesheet)
+                        ? (empId) => {
+                            if (openAddTimesheetForEmployee) openAddTimesheetForEmployee(empId);
+                            else openAddTimesheet?.();
+                          }
+                        : undefined
+                    }
+                  />
                 ))}
               </div>
             </div>
@@ -1232,10 +1411,18 @@ interface ProjectAllocationCardProps {
     totalWorkers: number;
     totalHours: number;
   };
+  expandAllSignal?: { expanded: boolean; version: number };
+  onWorkerClick?: (empId: string) => void;
 }
 
-function ProjectAllocationCard({ data }: ProjectAllocationCardProps) {
+function ProjectAllocationCard({ data, expandAllSignal, onWorkerClick }: ProjectAllocationCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (expandAllSignal && expandAllSignal.version > 0) {
+      setExpanded(expandAllSignal.expanded);
+    }
+  }, [expandAllSignal?.version, expandAllSignal?.expanded]);
 
   return (
     <div className="bg-base-surface border border-base-border rounded-xl
@@ -1262,7 +1449,7 @@ function ProjectAllocationCard({ data }: ProjectAllocationCardProps) {
           </div>
           {/* Total count badge */}
           <div className="flex-shrink-0 text-right">
-            <div className="text-2xl font-condensed font-black text-base-text leading-none">
+            <div className="text-2xl font-condensed font-black text-base-text leading-none tabular-nums">
               {data.totalWorkers}
             </div>
             <div className="text-[9px] text-base-muted font-condensed uppercase">
@@ -1286,10 +1473,10 @@ function ProjectAllocationCard({ data }: ProjectAllocationCardProps) {
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="text-xs font-condensed font-black text-base-text bg-base-surface3 border border-base-border px-2 py-0.5 rounded">
+              <span className="text-xs font-condensed font-black text-base-text bg-base-surface3 border border-base-border px-2 py-0.5 rounded tabular-nums">
                 {c.count} {c.count === 1 ? 'Worker' : 'Workers'}
               </span>
-              <span className="text-[10px] text-base-muted font-condensed font-bold">
+              <span className="text-[10px] text-base-muted font-condensed font-bold tabular-nums">
                 {c.totalHours}h
               </span>
             </div>
@@ -1335,18 +1522,24 @@ function ProjectAllocationCard({ data }: ProjectAllocationCardProps) {
               </div>
               <div className="ml-3.5 grid grid-cols-1 min-[420px]:grid-cols-2 gap-1.5">
                 {c.workers.map(w => (
-                  <div
+                  <button
                     key={w.empId}
-                    className="flex items-center justify-between text-[11px] text-base-text bg-base-surface border border-base-border/40 rounded-lg px-2 py-1 min-w-0 shadow-sm"
+                    type="button"
+                    onClick={() => onWorkerClick?.(w.empId)}
+                    disabled={!onWorkerClick}
+                    title={onWorkerClick ? `Klik untuk edit/split timesheet ${w.empName}` : w.empName}
+                    className={`flex items-center justify-between text-[11px] text-base-text bg-base-surface border border-base-border/40 rounded-lg px-2 py-1 min-w-0 shadow-sm text-left ${
+                      onWorkerClick ? 'hover:border-base-accent/60 cursor-pointer transition-colors' : ''
+                    }`}
                   >
                     <span className="truncate font-semibold flex items-center gap-1 min-w-0">
                       {w.status === 'late' && (
                         <span className="text-[8px] bg-amber-500/15 text-amber-500 px-1 py-0.2 rounded font-black shrink-0">LATE</span>
                       )}
-                      <span className="truncate" title={w.empName}>{w.empName}</span>
+                      <span className="truncate">{w.empName}</span>
                     </span>
-                    <span className="text-base-muted text-[10px] font-mono shrink-0 ml-1 bg-base-surface3 border border-base-border/20 px-1 py-0.2 rounded font-bold">{w.hours}h</span>
-                  </div>
+                    <span className="text-base-muted text-[10px] font-mono shrink-0 ml-1 bg-base-surface3 border border-base-border/20 px-1 py-0.2 rounded font-bold tabular-nums">{w.hours}h</span>
+                  </button>
                 ))}
               </div>
             </div>
@@ -1379,10 +1572,18 @@ interface CraftAvailableCardProps {
     }[];
     totalAvailable: number;
   };
+  expandAllSignal?: { expanded: boolean; version: number };
+  onLogWorker?: (empId: string) => void;
 }
 
-function CraftAvailableCard({ craftGroup }: CraftAvailableCardProps) {
+function CraftAvailableCard({ craftGroup, expandAllSignal, onLogWorker }: CraftAvailableCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (expandAllSignal && expandAllSignal.version > 0) {
+      setExpanded(expandAllSignal.expanded);
+    }
+  }, [expandAllSignal?.version, expandAllSignal?.expanded]);
 
   return (
     <div className="bg-base-surface border border-base-border rounded-xl overflow-hidden hover:border-base-border2 transition-colors">
@@ -1395,7 +1596,7 @@ function CraftAvailableCard({ craftGroup }: CraftAvailableCardProps) {
           </span>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-condensed font-bold bg-base-surface3 px-2 py-0.5 rounded border border-base-border text-base-text">
+          <span className="text-xs font-condensed font-bold bg-base-surface3 px-2 py-0.5 rounded border border-base-border text-base-text tabular-nums">
             {craftGroup.totalAvailable} Available
           </span>
         </div>
@@ -1415,11 +1616,22 @@ function CraftAvailableCard({ craftGroup }: CraftAvailableCardProps) {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-3">
                 {craftGroup.onSiteUnassigned.map((w) => (
-                  <div key={w.empId} className="bg-base-surface2 border border-base-border rounded px-2.5 py-1.5 flex flex-col justify-between">
-                    <span className="text-xs font-bold text-base-text truncate">{w.empName}</span>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-[9px] text-base-muted truncate max-w-[80px]">{w.position}</span>
-                      <span className="text-[9px] px-1 rounded bg-base-green-dim text-base-green font-bold">{w.hours}h</span>
+                  <div key={w.empId} className="bg-base-surface2 border border-base-border rounded-lg px-2.5 py-1.5 flex flex-col justify-between gap-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-xs font-bold text-base-text truncate">{w.empName}</span>
+                      <span className="text-[9px] px-1 rounded bg-base-green-dim text-base-green font-bold tabular-nums shrink-0">{w.hours}h</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] text-base-muted truncate">{w.position}</span>
+                      {onLogWorker && (
+                        <button
+                          type="button"
+                          onClick={() => onLogWorker(w.empId)}
+                          className="text-[9px] font-condensed font-extrabold uppercase text-base-accent hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Plot WO →
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}
@@ -1438,9 +1650,20 @@ function CraftAvailableCard({ craftGroup }: CraftAvailableCardProps) {
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-3">
                 {craftGroup.unlogged.map((w) => (
-                  <div key={w.empId} className="bg-base-surface2/50 border border-base-border/50 rounded px-2.5 py-1.5 flex flex-col justify-between opacity-80 hover:opacity-100 transition-opacity">
-                    <span className="text-xs font-medium text-base-text truncate">{w.empName}</span>
-                    <span className="text-[9px] text-base-muted mt-1 truncate">{w.position}</span>
+                  <div key={w.empId} className="bg-base-surface2/50 border border-base-border/50 rounded-lg px-2.5 py-1.5 flex flex-col justify-between gap-1 hover:border-base-accent/40 transition-colors">
+                    <span className="text-xs font-semibold text-base-text truncate">{w.empName}</span>
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="text-[9px] text-base-muted truncate">{w.position}</span>
+                      {onLogWorker && (
+                        <button
+                          type="button"
+                          onClick={() => onLogWorker(w.empId)}
+                          className="text-[9px] font-condensed font-extrabold uppercase text-base-accent hover:underline cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Log →
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>

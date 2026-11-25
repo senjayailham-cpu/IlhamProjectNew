@@ -1,21 +1,22 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { TimesheetEntry, Employee, Project, User } from '../../types';
 import { can } from '../../utils/permissions';
 import { fmtHrs } from '../../utils/projectUtils';
 import { useAppStore } from '../../store';
 import { getCategoryBadgeClass } from '../../utils/timesheetCategories';
+import { findProjectForTimesheet } from '../../utils/timesheetHelpers';
 import * as XLSX from 'xlsx';
-import { 
-  Clock, 
-
-  Calendar, 
-  ClipboardList, 
-  Trash2, 
-  Edit, 
+import {
+  Clock,
+  Calendar,
+  ClipboardList,
+  Trash2,
+  Edit,
   ExternalLink,
   Search,
   X,
-  Filter
+  Filter,
+  AlertCircle
 } from 'lucide-react';
 
 const STATUS_PILLS = {
@@ -61,6 +62,10 @@ export interface DailyTimesheetTabProps {
   setProjectFilter: (filter: string) => void;
   employeeFilter: string;
   setEmployeeFilter: (filter: string) => void;
+  auditFilter?: 'all' | 'overtime' | 'issues';
+  setAuditFilter?: (filter: 'all' | 'overtime' | 'issues') => void;
+  auditCounts?: { all: number; overtime: number; issues: number };
+  empDailyTotalMap?: Map<string, number>;
   currentUser: User | null;
   onNavigateToManpower?: (date?: string) => void;
   onNavigateToProjectHours?: () => void;
@@ -101,6 +106,10 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   setProjectFilter,
   employeeFilter,
   setEmployeeFilter,
+  auditFilter = 'all',
+  setAuditFilter,
+  auditCounts,
+  empDailyTotalMap,
   currentUser: propUser,
   onNavigateToManpower,
   onNavigateToProjectHours
@@ -116,25 +125,35 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
   const canManageTimesheet = can(currentUser as any, 'manageTimesheet');
   const canDeleteTimesheet = can(currentUser as any, 'deleteTimesheet');
 
+  const [exportNotice, setExportNotice] = useState<string | null>(null);
+
   const handleExportExcel = () => {
     if (dayEntries.length === 0) {
-      alert('No data to export for this day.');
+      setExportNotice('Tidak ada data timesheet untuk diexport pada tanggal / filter ini.');
       return;
     }
-    const exportData = dayEntries.map((e: any) => ({
-      'Date': e.date,
-      'Employee No': e.empNo || '',
-      'Employee Name': e.empName,
-      'Coordinator': e.coordinator || '',
-      'Status': e.status,
-      'Work Order': e.workOrder || '',
-      'Project': e.projectName || '',
-      'Sub-Assembly': e.assemblyName || '',
-      'Task Assembly': e.taskName || '',
-      'Job Category': e.category || '',
-      'Description / Note': e.desc || '',
-      'Hours': e.totalHours || 0
-    }));
+    setExportNotice(null);
+    const empById = new Map(employees.map(emp => [emp.id, emp]));
+    const exportData = dayEntries.map((e) => {
+      const emp = empById.get(e.empId);
+      const proj = findProjectForTimesheet(e, projects);
+      return {
+        'Date': e.date,
+        'Employee No': emp?.empNo || '',
+        'Employee Name': e.empName || emp?.name || '',
+        'Position': e.position || emp?.position || '',
+        'Coordinator': emp?.coordinator || '',
+        'Status': e.status,
+        'Work Order': e.workOrder || '',
+        'Project': proj?.name || '',
+        'GA Number': proj?.gaNumber || '',
+        'Sub-Assembly': e.assemblyName || '',
+        'Task Assembly': e.taskName || '',
+        'Job Category': e.category || '',
+        'Description / Note': e.desc || '',
+        'Hours': e.totalHours || 0
+      };
+    });
 
     const ws = XLSX.utils.json_to_sheet(exportData);
     const wb = XLSX.utils.book_new();
@@ -283,6 +302,22 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
         </div>
       )}
 
+      {exportNotice && (
+        <div className="bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 rounded-xl px-4 py-2.5 text-xs font-semibold flex items-center justify-between gap-2 animate-fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            <span>{exportNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setExportNotice(null)}
+            className="text-[11px] font-bold uppercase hover:underline cursor-pointer shrink-0"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
       {/* Search and Filter Controls */}
       <div className="bg-base-surface border border-base-border rounded-xl p-4 shadow-card space-y-3 animate-fade-in">
         <div className="flex flex-col md:flex-row gap-3">
@@ -315,11 +350,14 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
               className="w-full pl-3 pr-8 py-2 bg-base-surface2 border border-base-border rounded-lg text-xs text-base-text appearance-none focus:outline-none focus:border-base-accent transition-all cursor-pointer font-sans"
             >
               <option value="">All Projects / Work Orders</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.client || ''}>
-                  {p.client ? `[${p.client}] ` : ''}{p.name}
-                </option>
-              ))}
+              {projects.map(p => {
+                const code = p.client || p.gaNumber;
+                return (
+                  <option key={p.id} value={p.id}>
+                    {code ? `[${code}] ` : ''}{p.name}
+                  </option>
+                );
+              })}
             </select>
             <div className="absolute right-3 top-2.5 pointer-events-none text-base-muted">
               <Filter className="h-4 w-4" />
@@ -346,8 +384,50 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
           </div>
         </div>
 
+        {/* Quick Audit Filter Bar */}
+        {setAuditFilter && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted mr-1">
+              Quick Audit:
+            </span>
+            <button
+              type="button"
+              onClick={() => setAuditFilter('all')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-condensed font-bold uppercase tracking-wider border transition-colors cursor-pointer whitespace-nowrap ${
+                auditFilter === 'all'
+                  ? 'bg-base-text text-base-bg border-base-text'
+                  : 'bg-base-surface2 text-base-muted border-base-border hover:text-base-text'
+              }`}
+            >
+              Semua ({auditCounts?.all ?? unfilteredDayEntriesCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuditFilter('overtime')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-condensed font-bold uppercase tracking-wider border transition-colors cursor-pointer whitespace-nowrap ${
+                auditFilter === 'overtime'
+                  ? 'bg-amber-500 text-white border-amber-500'
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/25 hover:bg-amber-500/20'
+              }`}
+            >
+              Overtime (&gt;8j) ({auditCounts?.overtime ?? 0})
+            </button>
+            <button
+              type="button"
+              onClick={() => setAuditFilter('issues')}
+              className={`px-2.5 py-1 rounded-md text-[11px] font-condensed font-bold uppercase tracking-wider border transition-colors cursor-pointer whitespace-nowrap ${
+                auditFilter === 'issues'
+                  ? 'bg-base-red text-white border-base-red'
+                  : 'bg-base-red-dim text-base-red border-base-red/25 hover:bg-base-red/20'
+              }`}
+            >
+              Telat / Alpa / Izin ({auditCounts?.issues ?? 0})
+            </button>
+          </div>
+        )}
+
         {/* Active Filters / Reset Indicator */}
-        {(searchQuery || projectFilter || employeeFilter) && (
+        {(searchQuery || projectFilter || employeeFilter || auditFilter !== 'all') && (
           <div className="flex items-center justify-between border-t border-base-border/50 pt-2 text-xs">
             <div className="text-base-muted flex items-center gap-1.5">
               <span>Showing <strong>{dayEntries.length}</strong> of <strong>{unfilteredDayEntriesCount}</strong> entries</span>
@@ -359,6 +439,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                 setSearchQuery('');
                 setProjectFilter('');
                 setEmployeeFilter('');
+                setAuditFilter?.('all');
               }}
               className="text-[11px] font-bold text-base-red hover:underline flex items-center gap-1 cursor-pointer transition-colors"
             >
@@ -446,9 +527,8 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                     <div className="md:hidden divide-y divide-base-border/40">
                       {list.map(e => {
                         const emp = employees.find(x => x.id === e.empId);
-                        const proj = projects.find(
-                          x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
-                        );
+                        const proj = findProjectForTimesheet(e, projects);
+                        const empDayTotal = empDailyTotalMap?.get(e.empId) || e.totalHours || 0;
                         return (
                           <div key={`mob_${e.id}`} className="p-3.5 space-y-2.5 hover:bg-base-surface2/20 transition-colors">
                             <div className="flex items-start justify-between gap-2">
@@ -456,10 +536,15 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                 <div className="font-bold text-sm text-base-text truncate">{e.empName}</div>
                                 <div className="text-[11px] text-base-muted">{emp?.position || 'Crew'}</div>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
-                                <span className="px-2 py-0.5 rounded-lg bg-base-accent/10 text-base-accent font-condensed font-extrabold text-xs">
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <span className="px-2 py-0.5 rounded-lg bg-base-accent/10 text-base-accent font-condensed font-extrabold text-xs tabular-nums">
                                   {fmtHrs(e.totalHours || 0)}h
                                 </span>
+                                {empDayTotal > 8 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 font-condensed font-bold text-[10px] tabular-nums">
+                                    OT ({fmtHrs(empDayTotal)}h)
+                                  </span>
+                                )}
                                 <span className={`px-2 py-0.5 rounded font-condensed font-extrabold text-[10px] uppercase tracking-wider ${STATUS_PILLS[e.status as keyof typeof STATUS_PILLS] || ''}`}>
                                   {e.status}
                                 </span>
@@ -472,7 +557,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                   onClick={() => openSpotlight?.(proj.id)}
                                   className="font-condensed font-extrabold text-xs text-base-blue uppercase tracking-wide hover:underline flex items-center gap-1 cursor-pointer"
                                 >
-                                  <span>{e.workOrder || '—'}</span>
+                                  <span>{e.workOrder || proj.client || proj.name}</span>
                                   <ExternalLink className="h-3 w-3" />
                                 </button>
                               ) : (
@@ -542,51 +627,60 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                         <tbody className="divide-y divide-base-border/30 text-xs">
                           {list.map(e => {
                             const emp = employees.find(x => x.id === e.empId);
+                            const empDayTotal = empDailyTotalMap?.get(e.empId) || e.totalHours || 0;
+                            const proj = findProjectForTimesheet(e, projects);
                             return (
                               <tr key={e.id} className="hover:bg-base-surface2/20 transition-colors">
                                 <td className="py-3 px-4">
                                   <div>
-                                    <div className="font-bold text-base-text">{e.empName}</div>
+                                    <div className="font-bold text-base-text flex items-center gap-1.5">
+                                      <span>{e.empName}</span>
+                                      {empDayTotal > 8 && (
+                                        <span
+                                          className={`px-1.5 py-0.5 rounded text-[9px] font-condensed font-bold uppercase tabular-nums ${
+                                            empDayTotal > 12
+                                              ? 'bg-base-red-dim text-base-red'
+                                              : 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
+                                          }`}
+                                          title={`Akumulasi jam hari ini: ${fmtHrs(empDayTotal)}h`}
+                                        >
+                                          Σ {fmtHrs(empDayTotal)}h · OT
+                                        </span>
+                                      )}
+                                    </div>
                                     <div className="text-[10px] text-base-muted mt-0.5">{emp?.position || 'Crew'}</div>
                                   </div>
                                 </td>
                                 <td className="py-3 px-3">
-                                  {(() => {
-                                    const proj = projects.find(
-                                      x => (x.client || '').trim().toLowerCase() === (e.workOrder || '').trim().toLowerCase()
-                                    );
-                                    return (
-                                      <div>
-                                        {proj ? (
-                                          <button
-                                            onClick={() => openSpotlight?.(proj.id)}
-                                            className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide hover:underline hover:text-base-accent cursor-pointer flex items-center gap-1 group text-left"
-                                            title={`View Project Spotlight: ${proj.name}`}
-                                          >
-                                            <span>{e.workOrder || '—'}</span>
-                                            <ExternalLink className="h-3 w-3 inline text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
-                                          </button>
-                                        ) : (
-                                          <div className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide">
-                                            {e.workOrder || '—'}
-                                          </div>
+                                  <div>
+                                    {proj ? (
+                                      <button
+                                        onClick={() => openSpotlight?.(proj.id)}
+                                        className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide hover:underline hover:text-base-accent cursor-pointer flex items-center gap-1 group text-left"
+                                        title={`View Project Spotlight: ${proj.name}`}
+                                      >
+                                        <span>{e.workOrder || proj.client || proj.name}</span>
+                                        <ExternalLink className="h-3 w-3 inline text-base-blue opacity-50 group-hover:opacity-100 transition-opacity" />
+                                      </button>
+                                    ) : (
+                                      <div className="font-condensed font-extrabold text-sm text-base-blue uppercase tracking-wide">
+                                        {e.workOrder || '—'}
+                                      </div>
+                                    )}
+                                    {(e.assemblyName || e.taskName) && (
+                                      <div className="text-[10px] text-base-muted2 font-medium mt-0.5 flex items-center gap-1 flex-wrap">
+                                        {e.assemblyName && (
+                                          <span className="font-semibold text-base-text/80">{e.assemblyName}</span>
                                         )}
-                                        {(e.assemblyName || e.taskName) && (
-                                          <div className="text-[10px] text-base-muted2 font-medium mt-0.5 flex items-center gap-1 flex-wrap">
-                                            {e.assemblyName && (
-                                              <span className="font-semibold text-base-text/80">{e.assemblyName}</span>
-                                            )}
-                                            {e.assemblyName && e.taskName && (
-                                              <span className="text-base-muted">▸</span>
-                                            )}
-                                            {e.taskName && (
-                                              <span className="text-amber-500 font-bold bg-amber-500/10 px-1 py-0.2 rounded-xs">{e.taskName}</span>
-                                            )}
-                                          </div>
+                                        {e.assemblyName && e.taskName && (
+                                          <span className="text-base-muted">▸</span>
+                                        )}
+                                        {e.taskName && (
+                                          <span className="text-amber-500 font-bold bg-amber-500/10 px-1 py-0.2 rounded-xs">{e.taskName}</span>
                                         )}
                                       </div>
-                                    );
-                                  })()}
+                                    )}
+                                  </div>
                                 </td>
                                 <td className="py-3 px-3">
                                   {e.category ? (
@@ -597,7 +691,7 @@ export const DailyTimesheetTab: React.FC<DailyTimesheetTabProps> = ({
                                     <span className="text-base-muted/40 text-[11px] font-mono">—</span>
                                   )}
                                 </td>
-                                <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent">
+                                <td className="py-3 px-3 font-condensed font-extrabold text-sm text-base-accent tabular-nums">
                                   {fmtHrs(e.totalHours || 0)}h
                                 </td>
                                 <td className="py-3 px-3 max-w-[200px] truncate text-base-muted2" title={e.desc}>

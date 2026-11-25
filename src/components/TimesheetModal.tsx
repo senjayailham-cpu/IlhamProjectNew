@@ -1,8 +1,13 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { TimesheetEntry, Employee, Project, Assembly, Task } from '../types';
-import { esc } from '../utils/projectUtils';
-import { ClipboardCheck, Loader2, ListChecks, CheckCircle2, ChevronRight, Layers, Plus, Trash2, Split } from 'lucide-react';
-import { getCategoriesForPosition, detectPositionGroup, getDefaultCategoryForPosition } from '../utils/timesheetCategories';
+import React, { useState, useEffect, useMemo } from 'react';
+import { TimesheetEntry, Employee, Project } from '../types';
+import { ClipboardCheck, ListChecks, Plus, Trash2, Split, Copy, AlertCircle, Users } from 'lucide-react';
+import { getDefaultCategoryForPosition, getCategoriesForPosition } from '../utils/timesheetCategories';
+import {
+  findProjectByWoQuery,
+  isTimesheetDraftRowValid,
+  findPreviousCrewTimesheets,
+  calculateSplitRemainingHours,
+} from '../utils/timesheetHelpers';
 
 interface TimesheetModalProps {
   isOpen: boolean;
@@ -13,6 +18,7 @@ interface TimesheetModalProps {
   employees: Employee[];
   projects: Project[];
   editingId?: string | null;
+  preselectedEmpId?: string | null;
   onSave: (inputs: any[]) => void;
 }
 
@@ -41,9 +47,11 @@ export default function TimesheetModal({
   employees,
   projects,
   editingId,
+  preselectedEmpId,
   onSave
 }: TimesheetModalProps) {
   const [selectedCoord, setSelectedCoord] = useState<string>('');
+  const [focusEmpId, setFocusEmpId] = useState<string | null>(null);
   const [globalWo, setGlobalWo] = useState<string>('');
   const [globalAsm, setGlobalAsm] = useState<string>('');
   const [globalTask, setGlobalTask] = useState<string>('');
@@ -51,28 +59,36 @@ export default function TimesheetModal({
   const [globalHrs, setGlobalHrs] = useState<string>('');
   const [globalStatus, setGlobalStatus] = useState<string>('');
 
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
   const [rowInputs, setRowInputs] = useState<RowInput[]>([]);
 
   // Autocomplete dropdown controllers
   const [showGlobalDropdown, setShowGlobalDropdown] = useState<boolean>(false);
   const [globalDropdownMatches, setGlobalDropdownMatches] = useState<Project[]>([]);
-  const [focusedGlobalIdx, setGlobalFocusedIdx] = useState<number>(-1);
 
   const [rowDropdownOpen, setRowDropdownOpen] = useState<Record<string, boolean>>({});
   const [rowDropdownMatches, setRowDropdownMatches] = useState<Record<string, Project[]>>({});
-  const [focusedRowIdx, setRowFocusedIdx] = useState<Record<string, number>>({});
+
+  const activeEmployees = useMemo(
+    () => employees.filter(e => !e.isExEmployee),
+    [employees]
+  );
 
   // Reset inputs when modal state opens
   useEffect(() => {
     if (!isOpen) return;
+    setValidationError(null);
+    setCopyFeedback(null);
 
     if (editingId) {
-      // Single log edit
+      setFocusEmpId(null);
       const targetTs = timesheets.find(x => x.id === editingId);
       if (targetTs) {
         const emp = employees.find(x => x.id === targetTs.empId);
         const coord = (emp?.coordinator || '').trim();
-        const autoPosition = emp?.position?.trim() || 'Crew';
+        const autoPosition = emp?.position?.trim() || targetTs.position || 'Crew';
         setSelectedCoord(coord);
         setGlobalWo(targetTs.workOrder || '');
         setGlobalAsm(targetTs.assemblyId || '');
@@ -89,7 +105,7 @@ export default function TimesheetModal({
             assemblyId: targetTs.assemblyId || '',
             taskId: targetTs.taskId || '',
             category: targetTs.category || getDefaultCategoryForPosition(autoPosition),
-            totalHours: String(targetTs.totalHours),
+            totalHours: String(targetTs.totalHours ?? 0),
             status: targetTs.status,
             desc: targetTs.desc || '',
             included: true
@@ -97,7 +113,62 @@ export default function TimesheetModal({
         ];
         setRowInputs(rows);
       }
+    } else if (preselectedEmpId) {
+      const targetEmp = employees.find(e => e.id === preselectedEmpId);
+      setFocusEmpId(preselectedEmpId);
+      const coord = (targetEmp?.coordinator || '').trim();
+      setSelectedCoord(coord || '__UNASSIGNED__');
+      setGlobalWo('');
+      setGlobalAsm('');
+      setGlobalTask('');
+      setGlobalCategory('');
+      setGlobalHrs('');
+      setGlobalStatus('');
+
+      if (targetEmp) {
+        const autoPosition = targetEmp.position?.trim() || 'Crew';
+        const empLogs = timesheets.filter(ts => ts.date === timesheetDate && ts.empId === targetEmp.id);
+        if (empLogs.length > 0) {
+          setRowInputs(
+            empLogs.map((log, lIdx) => ({
+              rowKey: log.id || `${targetEmp.id}_${lIdx}_${Date.now()}`,
+              existingId: log.id,
+              empId: targetEmp.id,
+              empName: targetEmp.name,
+              position: autoPosition,
+              workOrder: log.workOrder || '',
+              assemblyId: log.assemblyId || '',
+              taskId: log.taskId || '',
+              category: log.category || getDefaultCategoryForPosition(autoPosition),
+              totalHours: String(log.totalHours ?? 0),
+              status: log.status || 'present',
+              desc: log.desc || '',
+              included: true
+            }))
+          );
+        } else {
+          setRowInputs([
+            {
+              rowKey: `${targetEmp.id}_0_${Date.now()}`,
+              empId: targetEmp.id,
+              empName: targetEmp.name,
+              position: autoPosition,
+              workOrder: '',
+              assemblyId: '',
+              taskId: '',
+              category: getDefaultCategoryForPosition(autoPosition),
+              totalHours: '8',
+              status: 'present',
+              desc: '',
+              included: true
+            }
+          ]);
+        }
+      } else {
+        setRowInputs([]);
+      }
     } else {
+      setFocusEmpId(null);
       setSelectedCoord('');
       setGlobalWo('');
       setGlobalAsm('');
@@ -107,28 +178,31 @@ export default function TimesheetModal({
       setGlobalStatus('');
       setRowInputs([]);
     }
-  }, [isOpen, editingId]);
+  }, [isOpen, editingId, preselectedEmpId]);
 
-  // Load manpower automatically when selectedCoordinator updates
+  // Load manpower automatically when selectedCoord updates (unless focused on 1 worker)
   useEffect(() => {
-    if (!isOpen || editingId || !selectedCoord) return;
+    if (!isOpen || editingId || focusEmpId || !selectedCoord) return;
 
-    const matchedEmps = employees.filter(e => (e.coordinator || '').trim() === selectedCoord);
+    const matchedEmps =
+      selectedCoord === '__ALL__'
+        ? activeEmployees
+        : selectedCoord === '__UNASSIGNED__'
+          ? activeEmployees.filter(e => !(e.coordinator || '').trim())
+          : activeEmployees.filter(e => (e.coordinator || '').trim() === selectedCoord);
+
     const existingTimesheets = timesheets.filter(ts => ts.date === timesheetDate);
-
     const initialRows: RowInput[] = [];
 
     matchedEmps.forEach(e => {
       const autoPosition = e.position?.trim() || 'Crew';
-      // Find all entries for this employee today
       const empLogs = existingTimesheets.filter(ts => ts.empId === e.id);
 
       if (empLogs.length > 0) {
-        // If employee has 1 or multiple logged work orders today, create a row for each
         empLogs.forEach((log, lIdx) => {
           initialRows.push({
             rowKey: log.id || `${e.id}_${lIdx}_${Date.now()}`,
-            existingId: log.id, // preserve existing document ID
+            existingId: log.id,
             empId: e.id,
             empName: e.name,
             position: autoPosition,
@@ -136,14 +210,13 @@ export default function TimesheetModal({
             assemblyId: log.assemblyId || '',
             taskId: log.taskId || '',
             category: log.category || getDefaultCategoryForPosition(autoPosition),
-            totalHours: String(log.totalHours || ''),
+            totalHours: String(log.totalHours ?? 0),
             status: log.status || 'present',
             desc: log.desc || '',
             included: true
           });
         });
       } else {
-        // Default single row
         initialRows.push({
           rowKey: `${e.id}_0_${Date.now()}`,
           empId: e.id,
@@ -162,62 +235,117 @@ export default function TimesheetModal({
     });
 
     setRowInputs(initialRows);
-  }, [selectedCoord, isOpen, timesheetDate]);
+  }, [selectedCoord, isOpen, timesheetDate, focusEmpId]);
+
+  const prevCopyData = useMemo(() => {
+    const empIds = Array.from(new Set(rowInputs.map(r => r.empId)));
+    return findPreviousCrewTimesheets(timesheetDate, empIds, timesheets);
+  }, [timesheetDate, rowInputs, timesheets]);
 
   if (!isOpen) return null;
 
-  const validCoordinators = [...new Set(employees.map(e => (e.coordinator || '').trim()).filter(Boolean))].sort();
+  const validCoordinators = [...new Set(activeEmployees.map(e => (e.coordinator || '').trim()).filter(Boolean))].sort();
+  const hasUnassignedActive = activeEmployees.some(e => !(e.coordinator || '').trim());
 
-  // Autocomplete Work Orders (clients) globally
+  const handleCopyPreviousDay = () => {
+    if (!prevCopyData.sourceDate || prevCopyData.logs.length === 0) return;
+
+    const logsByEmp = new Map<string, TimesheetEntry[]>();
+    prevCopyData.logs.forEach(log => {
+      if (!logsByEmp.has(log.empId)) logsByEmp.set(log.empId, []);
+      logsByEmp.get(log.empId)!.push(log);
+    });
+
+    const nextRows: RowInput[] = [];
+    const processedEmpIds = new Set<string>();
+    let copiedRowsCount = 0;
+
+    rowInputs.forEach(row => {
+      if (processedEmpIds.has(row.empId)) return;
+      processedEmpIds.add(row.empId);
+
+      const empCurrentRows = rowInputs.filter(r => r.empId === row.empId);
+      const empPrevLogs = logsByEmp.get(row.empId);
+
+      if (empPrevLogs && empPrevLogs.length > 0) {
+        empPrevLogs.forEach((prevLog, idx) => {
+          const existingMatch = empCurrentRows[idx];
+          copiedRowsCount++;
+          nextRows.push({
+            rowKey: existingMatch?.rowKey || `${row.empId}_copy_${idx}_${Date.now()}`,
+            existingId: existingMatch?.existingId,
+            empId: row.empId,
+            empName: row.empName,
+            position: row.position,
+            workOrder: prevLog.workOrder || '',
+            assemblyId: prevLog.assemblyId || '',
+            taskId: prevLog.taskId || '',
+            category: prevLog.category || getDefaultCategoryForPosition(row.position),
+            totalHours: String(prevLog.totalHours ?? (prevLog.status === 'absent' || prevLog.status === 'leave' ? 0 : 8)),
+            status: prevLog.status || 'present',
+            desc: prevLog.desc || '',
+            included: true
+          });
+        });
+      } else {
+        nextRows.push(...empCurrentRows);
+      }
+    });
+
+    setRowInputs(nextRows);
+    setValidationError(null);
+    setCopyFeedback(`Disalin ${copiedRowsCount} baris log dari tanggal ${prevCopyData.sourceDate}. Silakan periksa sebelum Submit.`);
+  };
+
+  // Autocomplete Work Orders (clients / GA / name) globally
+  const filterProjectsForDropdown = (val: string) => {
+    const q = val.trim().toLowerCase();
+    const activeProjects = projects.filter(p => (p.client || p.gaNumber || p.name) && p.status !== 'completed');
+    return q
+      ? activeProjects.filter(p => `${p.client || ''} ${p.gaNumber || ''} ${p.name || ''}`.toLowerCase().includes(q))
+      : activeProjects;
+  };
+
   const handleGlobalWoInput = (val: string) => {
     setGlobalWo(val);
-    const q = val.toLowerCase();
-    const activeProjects = projects.filter(p => p.client && p.status !== 'completed');
-    const matches = q ? activeProjects.filter(p => (p.client + ' ' + p.name).toLowerCase().includes(q)) : activeProjects;
+    const matches = filterProjectsForDropdown(val);
     setGlobalDropdownMatches(matches);
-    setGlobalFocusedIdx(-1);
     setShowGlobalDropdown(matches.length > 0);
   };
 
-  const selectGlobalWoValue = (client: string) => {
-    setGlobalWo(client);
+  const selectGlobalWoValue = (woCode: string) => {
+    setGlobalWo(woCode);
     setShowGlobalDropdown(false);
-    setGlobalAsm(''); // Clear intermediate assembly selection
-    setGlobalTask(''); // Clear task selection
+    setGlobalAsm('');
+    setGlobalTask('');
   };
 
   // Autocomplete Work order inside specific row
   const handleRowWoInput = (idx: number, val: string) => {
     const updated = [...rowInputs];
-    updated[idx].workOrder = val;
-    updated[idx].assemblyId = '';
-    updated[idx].taskId = '';
+    updated[idx] = { ...updated[idx], workOrder: val, assemblyId: '', taskId: '' };
     setRowInputs(updated);
+    setValidationError(null);
 
-    const q = val.toLowerCase();
-    const activeProjects = projects.filter(p => p.client && p.status !== 'completed');
-    const matches = q ? activeProjects.filter(p => (p.client + ' ' + p.name).toLowerCase().includes(q)) : activeProjects;
-
-    const empId = updated[idx].empId;
-    setRowDropdownMatches(prev => ({ ...prev, [empId]: matches }));
-    setRowDropdownOpen(prev => ({ ...prev, [empId]: matches.length > 0 }));
-    setRowFocusedIdx(prev => ({ ...prev, [empId]: -1 }));
+    const matches = filterProjectsForDropdown(val);
+    const rowKey = updated[idx].rowKey;
+    setRowDropdownMatches(prev => ({ ...prev, [rowKey]: matches }));
+    setRowDropdownOpen(prev => ({ ...prev, [rowKey]: matches.length > 0 }));
   };
 
-  const selectRowWoValue = (idx: number, client: string) => {
+  const selectRowWoValue = (idx: number, woCode: string) => {
     const updated = [...rowInputs];
-    updated[idx].workOrder = client;
-    updated[idx].assemblyId = ''; // Reset sub-assembly
-    updated[idx].taskId = ''; // Reset task
+    const rowKey = updated[idx].rowKey;
+    updated[idx] = { ...updated[idx], workOrder: woCode, assemblyId: '', taskId: '' };
     setRowInputs(updated);
-
-    const empId = updated[idx].empId;
-    setRowDropdownOpen(prev => ({ ...prev, [empId]: false }));
+    setValidationError(null);
+    setRowDropdownOpen(prev => ({ ...prev, [rowKey]: false }));
   };
 
   // Bulk set action helpers
   const applyWoToAll = () => {
     if (!globalWo.trim()) return;
+    setValidationError(null);
     setRowInputs(prev => prev.map(row => ({ ...row, workOrder: globalWo.trim(), assemblyId: '', taskId: '' })));
   };
 
@@ -236,49 +364,69 @@ export default function TimesheetModal({
     setRowInputs(prev => prev.map(row => ({ ...row, category: globalCategory })));
   };
 
-  const applyHrsToAll = () => {
-    if (!globalHrs) return;
-    setRowInputs(prev => prev.map(row => ({ ...row, totalHours: globalHrs })));
+  const applyHrsToAll = (overrideVal?: string) => {
+    const val = overrideVal ?? globalHrs;
+    if (!val) return;
+    setValidationError(null);
+    setRowInputs(prev => prev.map(row => ({ ...row, totalHours: val })));
   };
 
   const applyStatusToAll = () => {
     if (!globalStatus) return;
-    setRowInputs(prev => prev.map(row => ({ ...row, status: globalStatus as any })));
+    setValidationError(null);
+    const st = globalStatus as RowInput['status'];
+    setRowInputs(prev =>
+      prev.map(row => {
+        if (st === 'absent' || st === 'leave') {
+          return { ...row, status: st, totalHours: '0' };
+        }
+        return {
+          ...row,
+          status: st,
+          totalHours: row.totalHours === '0' ? '8' : row.totalHours
+        };
+      })
+    );
   };
 
   const handleRowCheckToggle = (idx: number, checked: boolean) => {
     const updated = [...rowInputs];
-    updated[idx].included = checked;
+    updated[idx] = { ...updated[idx], included: checked };
     setRowInputs(updated);
+    setValidationError(null);
   };
 
   const handleCheckAllToggle = (checked: boolean) => {
     setRowInputs(prev => prev.map(row => ({ ...row, included: checked })));
+    setValidationError(null);
   };
 
-  // Add a split row for an employee to work on an additional Work Order
+  // Add a split row with automatic remaining-hours calculation (target 8h shift)
   const handleAddSplitRow = (empId: string, sourceIdx: number) => {
     const sourceRow = rowInputs[sourceIdx];
+    const usedHours = rowInputs
+      .filter(r => r.empId === empId && r.included)
+      .reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
+
     const newSplitRow: RowInput = {
       rowKey: `${empId}_split_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       empId: sourceRow.empId,
       empName: sourceRow.empName,
-      // Automatically pre-fill position directly from employee record (read-only)
       position: sourceRow.position,
       workOrder: '',
       assemblyId: '',
       taskId: '',
       category: sourceRow.category,
-      totalHours: '',
-      status: sourceRow.status,
+      totalHours: calculateSplitRemainingHours(usedHours, 8),
+      status: sourceRow.status === 'absent' || sourceRow.status === 'leave' ? 'present' : sourceRow.status,
       desc: '',
       included: true
     };
-    
-    // Insert immediately after the source row
+
     const updated = [...rowInputs];
     updated.splice(sourceIdx + 1, 0, newSplitRow);
     setRowInputs(updated);
+    setValidationError(null);
   };
 
   // Remove a split row
@@ -286,64 +434,78 @@ export default function TimesheetModal({
     const updated = [...rowInputs];
     updated.splice(idx, 1);
     setRowInputs(updated);
+    setValidationError(null);
   };
 
   const handleRowFieldChange = (idx: number, field: keyof RowInput, val: string) => {
     const updated = [...rowInputs];
-    (updated[idx] as any)[field] = val;
-    
+    const nextRow: RowInput = { ...updated[idx], [field]: val } as RowInput;
+
     if (field === 'empId') {
       const newEmp = employees.find(e => e.id === val);
       if (newEmp) {
-        updated[idx].empName = newEmp.name;
-        updated[idx].position = newEmp.position?.trim() || 'Crew';
-        updated[idx].category = getDefaultCategoryForPosition(updated[idx].position);
+        nextRow.empName = newEmp.name;
+        nextRow.position = newEmp.position?.trim() || 'Crew';
+        nextRow.category = getDefaultCategoryForPosition(nextRow.position);
       }
     }
-    
+
     if (field === 'assemblyId') {
-      updated[idx].taskId = ''; // reset task when assembly changes
+      nextRow.taskId = '';
     }
+
+    if (field === 'status') {
+      if (val === 'absent' || val === 'leave') {
+        if (!nextRow.totalHours || nextRow.totalHours === '8') {
+          nextRow.totalHours = '0';
+        }
+      } else if (nextRow.totalHours === '0') {
+        nextRow.totalHours = '8';
+      }
+    }
+
+    updated[idx] = nextRow;
     setRowInputs(updated);
+    setValidationError(null);
   };
 
   // Compile and return matching assemblies & tasks for global selection
-  const globalProj = projects.find(p => p.client.toLowerCase() === globalWo.trim().toLowerCase());
+  const globalProj = findProjectByWoQuery(globalWo, projects);
   const globalAsmList = (globalProj && globalProj.assemblies) || [];
   const globalSelectedAsm = globalAsmList.find(a => a.id === globalAsm);
   const globalTaskList = (globalSelectedAsm && globalSelectedAsm.tasks) || [];
 
+  const validRows = rowInputs.filter(isTimesheetDraftRowValid);
+
   const handleSaveAll = () => {
-    const checked = rowInputs.filter(r => r.included && r.workOrder.trim() && parseFloat(r.totalHours) > 0);
-    if (editingId) {
-      if (!checked.length) {
-        alert('Hours or Work Order mapping is missing on the modified row.');
-        return;
-      }
-    } else {
-      if (!checked.length) {
-        alert('No rows included with valid work order and hour values.');
-        return;
-      }
+    if (!validRows.length) {
+      setValidationError(
+        editingId
+          ? 'Data baris belum valid. Pastikan Work Order & Jam (>0) terisi untuk status Present/Late, atau gunakan status Absent/Leave.'
+          : 'Belum ada baris valid untuk disimpan. Isi Work Order & Jam (>0) untuk pekerja masuk, atau pilih status Absent/Leave.'
+      );
+      return;
     }
 
-    const payload = checked.map(r => {
-      // Find matching assembly descriptor name and task name
-      const proj = projects.find(p => p.client.toLowerCase() === r.workOrder.trim().toLowerCase());
+    setValidationError(null);
+    const payload = validRows.map(r => {
+      const proj = findProjectByWoQuery(r.workOrder, projects);
       const asm = proj && (proj.assemblies || []).find(a => a.id === r.assemblyId);
       const task = asm && (asm.tasks || []).find(t => t.id === r.taskId);
+      const parsedHrs = Math.max(0, parseFloat(r.totalHours) || 0);
       return {
         id: r.existingId,
         empId: r.empId,
         empName: r.empName,
         position: r.position,
         workOrder: r.workOrder.trim(),
+        projectId: proj ? proj.id : '',
         assemblyId: r.assemblyId || '',
         assemblyName: asm ? asm.name : '',
         taskId: r.taskId || '',
         taskName: task ? task.name : '',
         category: r.category || '',
-        totalHours: parseFloat(r.totalHours),
+        totalHours: parsedHrs,
         status: r.status,
         desc: r.desc.trim()
       };
@@ -372,17 +534,24 @@ export default function TimesheetModal({
 
         {/* Global Toolbar Panel */}
         <div className="p-4 bg-base-surface2 border-b border-base-border flex-shrink-0 space-y-3">
-          <div className="flex items-end gap-4 flex-wrap">
+          <div className="flex items-end gap-3 flex-wrap">
             {/* Coordinator Dropdown */}
-            <div className="flex flex-col gap-1 flex-1 min-w-[200px]">
-              <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Coordinator</label>
+            <div className="flex flex-col gap-1 flex-1 min-w-[220px]">
+              <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2">Coordinator / Mode</label>
               <select
                 value={selectedCoord}
-                onChange={(e) => setSelectedCoord(e.target.value)}
+                onChange={(e) => {
+                  setFocusEmpId(null);
+                  setCopyFeedback(null);
+                  setValidationError(null);
+                  setSelectedCoord(e.target.value);
+                }}
                 disabled={!!editingId}
                 className="px-3 py-2 bg-base-bg text-base-text text-xs rounded-lg border border-base-border focus:border-base-accent outline-none font-semibold cursor-pointer shadow-xs"
               >
-                <option value="">— Select Coordinator —</option>
+                <option value="">— Pilih Koordinator / Mode —</option>
+                <option value="__ALL__">Semua Pekerja Aktif ({activeEmployees.length})</option>
+                {hasUnassignedActive && <option value="__UNASSIGNED__">— Tanpa Koordinator —</option>}
                 {validCoordinators.map(c => (
                   <option key={c} value={c}>{c}</option>
                 ))}
@@ -390,17 +559,92 @@ export default function TimesheetModal({
             </div>
 
             {/* Timesheet Date selection picker */}
-            <div className="flex flex-col gap-1 w-52">
+            <div className="flex flex-col gap-1 w-48">
               <label className="text-[10px] font-condensed font-bold uppercase tracking-wider text-[#9b1c2e] font-extrabold">Timesheet Date</label>
               <input
                 type="date"
                 value={timesheetDate}
-                onChange={(e) => setTimesheetDate(e.target.value)}
+                onChange={(e) => {
+                  setCopyFeedback(null);
+                  setValidationError(null);
+                  setTimesheetDate(e.target.value);
+                }}
                 disabled={!!editingId}
                 className="px-3 py-2 bg-base-bg text-base-text text-xs rounded-lg border border-base-border focus:border-base-accent outline-none font-semibold cursor-pointer shadow-xs"
               />
             </div>
+
+            {/* Copy Previous Day & Expand Team Actions */}
+            {!editingId && rowInputs.length > 0 && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {focusEmpId && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFocusEmpId(null);
+                      setCopyFeedback(null);
+                    }}
+                    className="px-3 py-2 rounded-lg bg-base-surface border border-base-border hover:border-base-accent text-xs font-condensed font-bold uppercase tracking-wider text-base-text flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 transition-colors"
+                  >
+                    <Users className="h-3.5 w-3.5 text-base-accent" />
+                    <span>Muat Semua Tim</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleCopyPreviousDay}
+                  disabled={!prevCopyData.sourceDate}
+                  title={
+                    prevCopyData.sourceDate
+                      ? `Salin WO, Asm, Task & Jam tim ini dari ${prevCopyData.sourceDate}`
+                      : 'Belum ada riwayat log sebelumnya untuk tim ini'
+                  }
+                  className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 text-xs font-condensed font-bold uppercase tracking-wider flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                  <span>
+                    {prevCopyData.sourceDate
+                      ? `Salin dari ${prevCopyData.sourceDate}`
+                      : 'Salin Kemarin (Kosong)'}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
+
+          {/* Feedback banners (validation / copy success) */}
+          {validationError && (
+            <div className="px-3 py-2 rounded-lg bg-base-red-dim border border-base-red/30 text-base-red text-xs font-semibold flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />
+                <span>{validationError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setValidationError(null)}
+                className="text-[10px] font-bold uppercase hover:underline cursor-pointer shrink-0"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
+
+          {copyFeedback && (
+            <div className="px-3 py-2 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 text-xs font-semibold flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Copy className="h-3.5 w-3.5 shrink-0" />
+                <span>{copyFeedback}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setCopyFeedback(null)}
+                className="text-[10px] font-bold uppercase hover:underline cursor-pointer shrink-0"
+              >
+                Tutup
+              </button>
+            </div>
+          )}
 
           {/* Quick Bulk Setter Bar (Visible when rows are loaded and not in single-edit mode) */}
           {!editingId && rowInputs.length > 0 && (
@@ -417,21 +661,25 @@ export default function TimesheetModal({
                   value={globalWo}
                   onChange={(e) => handleGlobalWoInput(e.target.value)}
                   onFocus={() => handleGlobalWoInput(globalWo)}
+                  onBlur={() => setTimeout(() => setShowGlobalDropdown(false), 150)}
                   placeholder="Work Order..."
                   className="w-full px-2 py-1 bg-base-bg text-base-blue text-xs rounded border border-base-border focus:border-base-blue outline-none font-condensed font-bold uppercase"
                 />
                 {showGlobalDropdown && (
                   <div className="absolute top-8 left-0 w-64 max-h-40 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-elevated z-50">
-                    {globalDropdownMatches.map((p) => (
-                      <div
-                        key={p.id}
-                        onMouseDown={() => selectGlobalWoValue(p.client)}
-                        className="px-2.5 py-1.5 text-xs flex gap-2 border-b border-base-border/30 hover:bg-base-surface2 cursor-pointer"
-                      >
-                        <span className="font-condensed font-extrabold text-base-blue">{p.client}</span>
-                        <span className="text-base-muted truncate">{p.name}</span>
-                      </div>
-                    ))}
+                    {globalDropdownMatches.map((p) => {
+                      const woCode = p.client || p.gaNumber || p.name;
+                      return (
+                        <div
+                          key={p.id}
+                          onMouseDown={() => selectGlobalWoValue(woCode)}
+                          className="px-2.5 py-1.5 text-xs flex gap-2 border-b border-base-border/30 hover:bg-base-surface2 cursor-pointer"
+                        >
+                          <span className="font-condensed font-extrabold text-base-blue shrink-0">{woCode}</span>
+                          <span className="text-base-muted truncate">{p.name}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -439,7 +687,7 @@ export default function TimesheetModal({
                 type="button"
                 onClick={applyWoToAll}
                 disabled={!globalWo}
-                className="px-2 py-1 bg-base-surface3 hover:bg-base-blue hover:text-white text-base-blue rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-base-blue hover:text-white text-base-blue rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set WO All
               </button>
@@ -463,7 +711,7 @@ export default function TimesheetModal({
                 type="button"
                 onClick={applyAsmToAll}
                 disabled={!globalAsm}
-                className="px-2 py-1 bg-base-surface3 hover:bg-base-blue hover:text-white text-base-blue rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-base-blue hover:text-white text-base-blue rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set Asm All
               </button>
@@ -484,7 +732,7 @@ export default function TimesheetModal({
                 type="button"
                 onClick={applyTaskToAll}
                 disabled={!globalTask}
-                className="px-2 py-1 bg-base-surface3 hover:bg-amber-500 hover:text-white text-amber-500 rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-amber-500 hover:text-white text-amber-500 rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set Task All
               </button>
@@ -517,12 +765,12 @@ export default function TimesheetModal({
                 type="button"
                 onClick={applyCategoryToAll}
                 disabled={!globalCategory}
-                className="px-2 py-1 bg-base-surface3 hover:bg-emerald-500 hover:text-white text-emerald-600 dark:text-emerald-400 rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-emerald-500 hover:text-white text-emerald-600 dark:text-emerald-400 rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set Cat All
               </button>
 
-              {/* Bulk Hours */}
+              {/* Bulk Hours + Quick 8h */}
               <input
                 type="number"
                 value={globalHrs}
@@ -531,15 +779,26 @@ export default function TimesheetModal({
                 min="0"
                 max="24"
                 step="0.5"
-                className="w-14 px-1.5 py-1 bg-base-bg text-base-accent text-center text-xs rounded border border-base-border font-condensed font-bold outline-none"
+                className="w-14 px-1.5 py-1 bg-base-bg text-base-accent text-center text-xs rounded border border-base-border font-condensed font-bold outline-none tabular-nums"
               />
               <button
                 type="button"
-                onClick={applyHrsToAll}
+                onClick={() => applyHrsToAll()}
                 disabled={!globalHrs}
-                className="px-2 py-1 bg-base-surface3 hover:bg-base-accent hover:text-white text-base-accent rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-base-accent hover:text-white text-base-accent rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set Hrs
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setGlobalHrs('8');
+                  applyHrsToAll('8');
+                }}
+                title="Isi 8 jam untuk semua baris"
+                className="px-2 py-1 bg-base-accent/10 hover:bg-base-accent hover:text-white text-base-accent border border-base-accent/25 rounded text-[10px] font-condensed font-extrabold uppercase tracking-wider transition-colors cursor-pointer whitespace-nowrap"
+              >
+                8h All
               </button>
 
               {/* Bulk Status */}
@@ -558,7 +817,7 @@ export default function TimesheetModal({
                 type="button"
                 onClick={applyStatusToAll}
                 disabled={!globalStatus}
-                className="px-2 py-1 bg-base-surface3 hover:bg-base-text hover:text-base-bg text-base-text rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer"
+                className="px-2 py-1 bg-base-surface3 hover:bg-base-text hover:text-base-bg text-base-text rounded text-[10px] font-condensed font-bold uppercase tracking-wider transition-colors disabled:opacity-40 cursor-pointer whitespace-nowrap"
               >
                 Set Status
               </button>
@@ -571,13 +830,13 @@ export default function TimesheetModal({
           {rowInputs.length === 0 ? (
             <div className="text-center p-12 text-base-muted flex flex-col items-center justify-center">
               <ClipboardCheck className="h-10 w-10 text-base-border mb-3 animate-pulse" />
-              <p className="text-sm font-semibold">Ready to draft timesheets. Select a coordinator to populate manpower list.</p>
+              <p className="text-sm font-semibold">Pilih Koordinator atau mode &ldquo;Semua Pekerja Aktif&rdquo; untuk memulai input timesheet.</p>
             </div>
           ) : (
             <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="bg-base-surface2 border-b border-base-border text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted sticky top-0 z-30">
-                  <th className="py-2.5 px-4 scroll-m-1 min-w-[160px]">Name / Position</th>
+                  <th className="py-2.5 px-4 scroll-m-1 min-w-[175px]">Name / Position</th>
                   <th className="py-2.5 px-3 min-w-[170px] text-base-blue">Work Order</th>
                   <th className="py-2.5 px-3 min-w-[160px] text-base-blue">Sub-Assembly</th>
                   <th className="py-2.5 px-3 min-w-[170px] text-amber-500 font-extrabold">Task Assembly</th>
@@ -603,19 +862,22 @@ export default function TimesheetModal({
               </thead>
               <tbody className="divide-y divide-base-border/40 text-xs">
                 {rowInputs.map((row, i) => {
-                  const targetProj = projects.find(p => p.client.toLowerCase() === row.workOrder.trim().toLowerCase());
+                  const targetProj = findProjectByWoQuery(row.workOrder, projects);
                   const assemblyList = (targetProj && targetProj.assemblies) || [];
                   const selectedAsmObj = assemblyList.find(a => a.id === row.assemblyId);
                   const taskList = (selectedAsmObj && selectedAsmObj.tasks) || [];
 
-                  // Compute total hours and split groupings
-                  const empTotalHrs = rowInputs.filter(r => r.empId === row.empId && r.included && r.totalHours).reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0);
+                  const empTotalHrs = Math.round(
+                    rowInputs
+                      .filter(r => r.empId === row.empId && r.included && r.totalHours)
+                      .reduce((sum, r) => sum + (parseFloat(r.totalHours) || 0), 0) * 10
+                  ) / 10;
                   const isFirstRowForEmp = rowInputs.findIndex(r => r.empId === row.empId) === i;
                   const isSplitRow = !isFirstRowForEmp;
 
-                  // Row matches autocomplete
-                  const matches = rowDropdownMatches[row.empId] || [];
-                  const showDropdown = !!rowDropdownOpen[row.empId];
+                  const matches = rowDropdownMatches[row.rowKey] || [];
+                  const showDropdown = !!rowDropdownOpen[row.rowKey];
+                  const isAbsentOrLeave = row.status === 'absent' || row.status === 'leave';
 
                   return (
                     <tr
@@ -632,11 +894,24 @@ export default function TimesheetModal({
                         <div>
                           {!isSplitRow ? (
                             <>
-                              <div className="font-bold flex items-center justify-between">
-                                {row.empName}
+                              <div className="font-bold flex items-center justify-between gap-2">
+                                <span className="truncate">{row.empName}</span>
                                 {empTotalHrs > 0 && (
-                                  <span className={`text-[10px] font-condensed font-bold ${empTotalHrs > 8 ? 'text-amber-500' : 'text-emerald-500'}`}>
-                                    Total: {empTotalHrs}h
+                                  <span
+                                    className={`text-[10px] font-condensed font-bold px-1.5 py-0.5 rounded tabular-nums shrink-0 ${
+                                      empTotalHrs > 12
+                                        ? 'bg-base-red-dim text-base-red border border-base-red/30'
+                                        : empTotalHrs > 8
+                                          ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                                          : 'text-emerald-600 dark:text-emerald-400'
+                                    }`}
+                                    title={empTotalHrs > 8 ? `Overtime +${Math.round((empTotalHrs - 8) * 10) / 10}h dari shift 8j` : 'Total jam hari ini'}
+                                  >
+                                    {empTotalHrs > 12
+                                      ? `OVERLOAD ${empTotalHrs}h`
+                                      : empTotalHrs > 8
+                                        ? `${empTotalHrs}h (OT +${Math.round((empTotalHrs - 8) * 10) / 10}h)`
+                                        : `Total: ${empTotalHrs}h`}
                                   </span>
                                 )}
                               </div>
@@ -667,22 +942,26 @@ export default function TimesheetModal({
                           disabled={!row.included}
                           onChange={(e) => handleRowWoInput(i, e.target.value)}
                           onFocus={() => handleRowWoInput(i, row.workOrder)}
-                          placeholder="Type or select WO..."
+                          onBlur={() => setTimeout(() => setRowDropdownOpen(prev => ({ ...prev, [row.rowKey]: false })), 150)}
+                          placeholder={isAbsentOrLeave ? '(Opsional - Absent/Leave)' : 'Type or select WO...'}
                           className="w-full px-2.5 py-1 bg-base-bg text-base-blue border border-base-blue/20 hover:border-base-blue rounded text-xs font-condensed font-extrabold tracking-wide outline-none disabled:opacity-50"
                         />
 
                         {showDropdown && (
                           <div className="absolute top-10 left-3 right-3 max-h-36 overflow-y-auto bg-base-surface border border-base-border rounded-lg shadow-elevated z-50">
-                            {matches.map((p) => (
-                              <div
-                                key={p.id}
-                                onMouseDown={() => selectRowWoValue(i, p.client)}
-                                className="px-2.5 py-1.5 text-xs flex gap-2 border-b border-base-border/30 hover:bg-base-surface2/60 cursor-pointer"
-                              >
-                                <span className="font-condensed font-extrabold text-base-blue">{p.client}</span>
-                                <span className="text-base-muted truncate">{p.name}</span>
-                              </div>
-                            ))}
+                            {matches.map((p) => {
+                              const woCode = p.client || p.gaNumber || p.name;
+                              return (
+                                <div
+                                  key={p.id}
+                                  onMouseDown={() => selectRowWoValue(i, woCode)}
+                                  className="px-2.5 py-1.5 text-xs flex gap-2 border-b border-base-border/30 hover:bg-base-surface2/60 cursor-pointer"
+                                >
+                                  <span className="font-condensed font-extrabold text-base-blue shrink-0">{woCode}</span>
+                                  <span className="text-base-muted truncate">{p.name}</span>
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </td>
@@ -846,21 +1125,21 @@ export default function TimesheetModal({
 
         {/* Footer */}
         <div className="px-5 py-3 border-t border-base-border flex items-center justify-between flex-shrink-0 bg-base-surface2 text-xs">
-          <div className="text-base-muted font-condensed font-bold uppercase tracking-wider text-xs">
+          <div className="text-base-muted font-condensed font-bold uppercase tracking-wider text-xs tabular-nums">
             {rowInputs.length > 0
-              ? `${rowInputs.filter(r => r.included && r.workOrder.trim() && parseFloat(r.totalHours) > 0).length} valid log entries ready to submit`
+              ? `${validRows.length} valid log entries ready to submit`
               : '—'}
           </div>
           <div className="flex gap-2">
-            <button onClick={onClose} className="px-3.5 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer transition-colors">
+            <button onClick={onClose} className="px-3.5 py-1.5 border border-base-border text-base-muted2 hover:text-base-text rounded-lg font-condensed font-bold uppercase tracking-wider cursor-pointer transition-colors whitespace-nowrap">
               Cancel
             </button>
             <button
               onClick={handleSaveAll}
               disabled={rowInputs.length === 0}
-              className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+              className="px-4 py-1.5 bg-base-accent text-white hover:bg-base-accent2 rounded-lg font-condensed font-bold uppercase tracking-wider disabled:opacity-50 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm whitespace-nowrap"
             >
-              <span>{editingId ? 'Save Entry' : 'Submit All Logs'}</span>
+              <span>{editingId ? 'Save Entry' : `Submit Logs (${validRows.length})`}</span>
             </button>
           </div>
         </div>

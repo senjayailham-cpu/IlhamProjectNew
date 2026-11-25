@@ -2169,6 +2169,7 @@ function AppContent() {
                   timesheetDate={timesheetsHook.timesheetDate}
                   setTimesheetDate={timesheetsHook.setTimesheetDate}
                   openAddTimesheet={timesheetsHook.openTimesheetBulkAdd}
+                  openAddTimesheetForEmployee={timesheetsHook.openTimesheetForEmployee}
                   openEditTimesheet={timesheetsHook.openTimesheetEditForm}
                   deleteTsEntry={timesheetsHook.removeTimesheetEntry}
                   exportTimesheetDaily={timesheetsHook.exportTimesheetExcel}

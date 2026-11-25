@@ -24,7 +24,7 @@ import {
   getEffectiveWorkflowStatus
 } from './GanttGrid';
 import { GanttTimeline } from './GanttTimeline';
-import { GanttViewFilterDrawer } from './GanttViewFilterDrawer';
+import { GanttViewFilterDrawer, GanttViewPresetId } from './GanttViewFilterDrawer';
 
 export { 
   getCompanyColorClass, 
@@ -66,7 +66,9 @@ import {
   Scan,
   FileSpreadsheet,
   SlidersHorizontal,
-  Play
+  Play,
+  Bookmark,
+  CheckSquare
 } from 'lucide-react';
 import { highlightText } from '../utils/helpers';
 
@@ -544,6 +546,7 @@ export default function GanttView({
   const [lookaheadWeeks, setLookaheadWeeks] = useState<number>(3);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all'|'on-track'|'overdue'|'done'|'not-started'>('all');
+  const [picFilter, setPicFilter] = useState<string>('ALL');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const {
@@ -563,6 +566,7 @@ export default function GanttView({
     totalHoursStats,
     cpmData,
     fullTreeRows,
+    availablePics,
   } = useGanttRows({
     project,
     projects,
@@ -570,6 +574,7 @@ export default function GanttView({
     showCompleted,
     searchQuery,
     statusFilter,
+    picFilter,
     activeTab,
     lookaheadWeeks,
   });
@@ -903,28 +908,52 @@ export default function GanttView({
     setTimeout(() => setToastMsg(null), 5000);
   };
 
+  const [quickAddTarget, setQuickAddTarget] = useState<{
+    projectId: string;
+    assemblyId: string;
+    projectName: string;
+    assemblyName: string;
+  } | null>(null);
+  const [quickAddName, setQuickAddName] = useState<string>('');
+  const [quickAddIsMilestone, setQuickAddIsMilestone] = useState<boolean>(false);
+  const [quickAddStart, setQuickAddStart] = useState<string>('');
+  const [quickAddFinish, setQuickAddFinish] = useState<string>('');
+  const [quickAddAssigned, setQuickAddAssigned] = useState<string>('');
+  const [quickAddBudgetHours, setQuickAddBudgetHours] = useState<string>('');
+
   // Global F9 keyboard shortcut for P6 Run Schedule & Escape modal dismissal
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'F9') {
         e.preventDefault();
         handleRunP6Schedule();
-      } else if (e.key === 'Escape' && smartSchedulePreview) {
-        setSmartSchedulePreview(null);
+      } else if (e.key === 'Escape') {
+        if (quickAddTarget) {
+          setQuickAddTarget(null);
+        } else if (smartSchedulePreview) {
+          setSmartSchedulePreview(null);
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [projectsList, onUpdateProject, smartSchedulePreview]);
+  }, [projectsList, onUpdateProject, smartSchedulePreview, quickAddTarget]);
 
   // Export State and Refs
   const [isExporting, setIsExporting] = useState<boolean>(false);
   const [isExportDropdownOpen, setIsExportDropdownOpen] = useState<boolean>(false);
   const [isPrefsDropdownOpen, setIsPrefsDropdownOpen] = useState<boolean>(false);
+  const [isPresetDropdownOpen, setIsPresetDropdownOpen] = useState<boolean>(false);
   const [isFilterDrawerOpen, setIsFilterDrawerOpen] = useState<boolean>(false);
   const [exportAlignRight, setExportAlignRight] = useState<boolean>(false);
   const [prefsAlignRight, setPrefsAlignRight] = useState<boolean>(false);
   const [baselineAlignRight, setBaselineAlignRight] = useState<boolean>(false);
+  const [presetAlignRight, setPresetAlignRight] = useState<boolean>(false);
+  const [activePresetId, setActivePresetId] = useState<GanttViewPresetId | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const lastSelectedTaskIdRef = useRef<string | null>(null);
+  const [bulkShiftDaysInput, setBulkShiftDaysInput] = useState<string>('1');
+  const [bulkPicInput, setBulkPicInput] = useState<string>('');
   const [showAnalysisToolbar, setShowAnalysisToolbar] = useState<boolean>(() => {
     const saved = localStorage.getItem('gantt_showAnalysisToolbar');
     return saved !== null ? saved === 'true' : true;
@@ -934,6 +963,7 @@ export default function GanttView({
   const exportDropdownRef = useRef<HTMLDivElement>(null);
   const prefsDropdownRef = useRef<HTMLDivElement>(null);
   const baselineDropdownRef = useRef<HTMLDivElement>(null);
+  const presetDropdownRef = useRef<HTMLDivElement>(null);
 
   const shouldAlignMenuRight = (el: HTMLElement | null, menuWidthPx: number): boolean => {
     if (!el || typeof window === 'undefined') return false;
@@ -959,6 +989,9 @@ export default function GanttView({
       }
       if (baselineDropdownRef.current && !baselineDropdownRef.current.contains(event.target as Node)) {
         setShowBaselineMenu(false);
+      }
+      if (presetDropdownRef.current && !presetDropdownRef.current.contains(event.target as Node)) {
+        setIsPresetDropdownOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
@@ -2768,7 +2801,7 @@ export default function GanttView({
     return count;
   }, [projectsList]);
 
-  const isFilterActive = searchQuery !== '' || statusFilter !== 'all';
+  const isFilterActive = searchQuery !== '' || statusFilter !== 'all' || picFilter !== 'ALL';
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -3720,6 +3753,321 @@ export default function GanttView({
     (showSCurve ? 1 : 0) +
     (connectMode ? 1 : 0);
 
+  // ── SAVED VIEW PRESETS ──
+  const applyViewPreset = (presetId: GanttViewPresetId) => {
+    setActivePresetId(presetId);
+    setIsPresetDropdownOpen(false);
+    if (presetId === 'standard') {
+      setActiveTab('gantt');
+      setStatusFilter('all');
+      setPicFilter('ALL');
+      setShowCriticalPath(false);
+      setShowBaseline(true);
+      handleSetShowBaseline(true);
+      setShowHoursTracking(true);
+      handleSetShowHoursTracking(true);
+      handleSetShowResourceLoad(true);
+      handleSetShowSCurve(false);
+      setShowAnalysisToolbar(true);
+      localStorage.setItem('gantt_showAnalysisToolbar', 'true');
+      setToastMsg('Preset Standar diterapkan.');
+    } else if (presetId === 'delay-review') {
+      setActiveTab('gantt');
+      setStatusFilter('overdue');
+      setShowCriticalPath(true);
+      setShowBaseline(true);
+      handleSetShowBaseline(true);
+      setShowAnalysisToolbar(true);
+      localStorage.setItem('gantt_showAnalysisToolbar', 'true');
+      setToastMsg('Preset Review Delay: Fokus task terlambat + Critical Path + Baseline.');
+    } else if (presetId === 'weekly-meeting') {
+      setActiveTab('lookahead');
+      setLookaheadWeeks(2);
+      setStatusFilter('all');
+      handleSetShowResourceLoad(true);
+      setShowAnalysisToolbar(true);
+      localStorage.setItem('gantt_showAnalysisToolbar', 'true');
+      setToastMsg('Preset Rapat Mingguan: Lookahead 2 minggu + Beban Resource aktif.');
+    } else if (presetId === 'compact') {
+      setActiveTab('gantt');
+      setStatusFilter('all');
+      setPicFilter('ALL');
+      setShowCriticalPath(false);
+      setShowBaseline(false);
+      handleSetShowBaseline(false);
+      setShowHoursTracking(false);
+      handleSetShowHoursTracking(false);
+      handleSetShowSCurve(false);
+      handleSetShowResourceLoad(false);
+      setShowAnalysisToolbar(false);
+      localStorage.setItem('gantt_showAnalysisToolbar', 'false');
+      setToastMsg('Preset Ringkas: Area bar & tabel dimaksimalkan.');
+    }
+    setTimeout(() => setToastMsg(null), 3500);
+  };
+
+  // ── BULK MULTI-SELECT & BATCH ACTIONS ──
+  const visibleTaskIds = useMemo(
+    () => rows.filter(r => r.level === 2).map(r => r.id),
+    [rows]
+  );
+
+  const handleToggleTaskSelect = (taskId: string, shiftKey?: boolean) => {
+    setSelectedTaskIds(prev => {
+      const next = new Set(prev);
+      if (shiftKey && lastSelectedTaskIdRef.current && lastSelectedTaskIdRef.current !== taskId) {
+        const startIdx = visibleTaskIds.indexOf(lastSelectedTaskIdRef.current);
+        const endIdx = visibleTaskIds.indexOf(taskId);
+        if (startIdx !== -1 && endIdx !== -1) {
+          const [lo, hi] = startIdx < endIdx ? [startIdx, endIdx] : [endIdx, startIdx];
+          for (let i = lo; i <= hi; i++) {
+            next.add(visibleTaskIds[i]);
+          }
+          lastSelectedTaskIdRef.current = taskId;
+          return next;
+        }
+      }
+      if (next.has(taskId)) {
+        next.delete(taskId);
+      } else {
+        next.add(taskId);
+      }
+      lastSelectedTaskIdRef.current = taskId;
+      return next;
+    });
+  };
+
+  const handleToggleSelectAllVisibleTasks = () => {
+    if (visibleTaskIds.length === 0) return;
+    setSelectedTaskIds(prev => {
+      const allSelected = visibleTaskIds.every(id => prev.has(id));
+      const next = new Set(prev);
+      if (allSelected) {
+        visibleTaskIds.forEach(id => next.delete(id));
+      } else {
+        visibleTaskIds.forEach(id => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const recalculateProjectAssembliesDates = (proj: Project) => {
+    proj.assemblies?.forEach(asm => {
+      if (!asm.tasks || asm.tasks.length === 0) return;
+      let minStart: Date | null = null;
+      let maxFinish: Date | null = null;
+      asm.tasks.forEach(t => {
+        const sStr = t.date || t.startDate;
+        const fStr = t.finishDate || t.endDate || sStr;
+        if (sStr) {
+          const sd = parseLocalDate(sStr);
+          if (!minStart || sd < minStart) minStart = sd;
+        }
+        if (fStr) {
+          const fd = parseLocalDate(fStr);
+          if (!maxFinish || fd > maxFinish) maxFinish = fd;
+        }
+      });
+      if (minStart) asm.start = formatLocalDate(minStart);
+      if (maxFinish) asm.finish = formatLocalDate(maxFinish);
+    });
+  };
+
+  const handleBulkShiftDates = (deltaDays: number) => {
+    if (!onUpdateProject || selectedTaskIds.size === 0 || !Number.isFinite(deltaDays) || deltaDays === 0) return;
+
+    let totalChanged = 0;
+    const allShiftedIds = new Set<string>();
+    const todayStr = formatLocalDate(new Date());
+
+    projectsList.forEach(proj => {
+      const hasAny = proj.assemblies?.some(a => a.tasks?.some(t => selectedTaskIds.has(t.id)));
+      if (!hasAny) return;
+
+      const cloned = structuredClone(proj) as Project;
+      cloned.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (!selectedTaskIds.has(t.id)) return;
+          const baseStart = t.date || t.startDate || asm.start || cloned.start || todayStr;
+          const baseFinish = t.finishDate || t.endDate || baseStart;
+          const nextStart = addDaysToLocalDate(baseStart, deltaDays);
+          const nextFinish = t.isMilestone ? nextStart : addDaysToLocalDate(baseFinish, deltaDays);
+          t.date = nextStart;
+          t.startDate = nextStart;
+          t.finishDate = nextFinish;
+          t.endDate = nextFinish;
+          totalChanged++;
+        });
+      });
+
+      recalculateProjectAssembliesDates(cloned);
+
+      if (autoSchedule) {
+        const { updatedProject, shiftedIds } = cascadeSchedule(cloned);
+        shiftedIds.forEach(id => allShiftedIds.add(id));
+        onUpdateProject(updatedProject);
+      } else {
+        onUpdateProject(cloned);
+      }
+    });
+
+    if (allShiftedIds.size > 0) {
+      setCascadedTaskIds(allShiftedIds);
+    }
+
+    if (totalChanged > 0) {
+      setToastMsg(`Bulk Edit: ${totalChanged} task digeser ${deltaDays > 0 ? `+${deltaDays}` : deltaDays} hari.`);
+      setTimeout(() => setToastMsg(null), 3500);
+    }
+  };
+
+  const handleBulkChangeStatus = (statusKey: WorkflowStatusType) => {
+    if (!onUpdateProject || selectedTaskIds.size === 0) return;
+
+    let totalChanged = 0;
+    projectsList.forEach(proj => {
+      const hasAny = proj.assemblies?.some(a => a.tasks?.some(t => selectedTaskIds.has(t.id)));
+      if (!hasAny) return;
+
+      const cloned = structuredClone(proj) as Project;
+      cloned.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (!selectedTaskIds.has(t.id)) return;
+          t.workflowStatus = statusKey;
+          if (statusKey === 'complete') {
+            t.pct = 100;
+            t.done = true;
+          } else if (statusKey === 'not_started') {
+            if (t.pct === 100) t.pct = 0;
+            t.done = false;
+          } else {
+            if (t.done) t.done = false;
+            if (t.pct === 100) t.pct = 90;
+          }
+          totalChanged++;
+        });
+      });
+      onUpdateProject(cloned);
+    });
+
+    if (totalChanged > 0) {
+      const label = WORKFLOW_STATUS_CONFIG[statusKey]?.label || statusKey;
+      setToastMsg(`Bulk Edit: Status ${totalChanged} task diubah menjadi "${label}".`);
+      setTimeout(() => setToastMsg(null), 3500);
+    }
+  };
+
+  const handleBulkAssignPic = (picName: string) => {
+    if (!onUpdateProject || selectedTaskIds.size === 0) return;
+    const trimmed = picName.trim();
+    if (!trimmed) return;
+
+    let totalChanged = 0;
+    projectsList.forEach(proj => {
+      const hasAny = proj.assemblies?.some(a => a.tasks?.some(t => selectedTaskIds.has(t.id)));
+      if (!hasAny) return;
+
+      const cloned = structuredClone(proj) as Project;
+      cloned.assemblies?.forEach(asm => {
+        asm.tasks?.forEach(t => {
+          if (!selectedTaskIds.has(t.id)) return;
+          t.assigned = trimmed;
+          totalChanged++;
+        });
+      });
+      onUpdateProject(cloned);
+    });
+
+    if (totalChanged > 0) {
+      setBulkPicInput('');
+      setToastMsg(`Bulk Edit: ${totalChanged} task ditugaskan ke ${trimmed}.`);
+      setTimeout(() => setToastMsg(null), 3500);
+    }
+  };
+
+  // ── QUICK ADD TASK / MILESTONE FROM GANTT ASSEMBLY ROW ──
+  const handleOpenQuickAddTask = (asmRow: GanttRow) => {
+    if (!onUpdateProject) return;
+    const parentProj = findProject(asmRow.id);
+    const projectId = getProjectIdOfRow(asmRow);
+    const asm = parentProj?.assemblies?.find(a => a.id === asmRow.id);
+    const defaultStart = asmRow.start || asm?.start || parentProj?.start || formatLocalDate(new Date());
+    const rawFinish = asmRow.finish || asm?.finish || addDaysToLocalDate(defaultStart, 2);
+    const defaultFinish = rawFinish >= defaultStart ? rawFinish : defaultStart;
+
+    setQuickAddName('');
+    setQuickAddIsMilestone(false);
+    setQuickAddStart(defaultStart);
+    setQuickAddFinish(defaultFinish);
+    setQuickAddAssigned('');
+    setQuickAddBudgetHours('');
+    setQuickAddTarget({
+      projectId,
+      assemblyId: asmRow.id,
+      projectName: parentProj?.name || 'Proyek',
+      assemblyName: asmRow.name,
+    });
+  };
+
+  const handleConfirmQuickAddTask = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickAddTarget || !onUpdateProject || !quickAddName.trim()) return;
+
+    const targetProj = projectsList.find(p => p.id === quickAddTarget.projectId) || findProject(quickAddTarget.assemblyId);
+    if (!targetProj) return;
+    const cloned = structuredClone(targetProj) as Project;
+    const targetAsm = cloned.assemblies?.find(a => a.id === quickAddTarget.assemblyId);
+    if (!targetAsm) return;
+
+    const newId = `t-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const sDate = quickAddStart || formatLocalDate(new Date());
+    const fDate = quickAddIsMilestone
+      ? sDate
+      : (quickAddFinish && quickAddFinish >= sDate ? quickAddFinish : sDate);
+    const parsedBudget = parseFloat(quickAddBudgetHours);
+
+    const newTask: Task = {
+      id: newId,
+      name: quickAddName.trim(),
+      pct: 0,
+      done: false,
+      date: sDate,
+      startDate: sDate,
+      finishDate: fDate,
+      endDate: fDate,
+      isMilestone: quickAddIsMilestone || undefined,
+      assigned: quickAddAssigned.trim() || undefined,
+      budgetHours: !isNaN(parsedBudget) && parsedBudget > 0 ? parsedBudget : undefined,
+      workflowStatus: 'not_started',
+    };
+
+    if (!targetAsm.tasks) targetAsm.tasks = [];
+    targetAsm.tasks.push(newTask);
+    recalculateProjectAssembliesDates(cloned);
+
+    onUpdateProject(cloned);
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      next.add(quickAddTarget.projectId);
+      return next;
+    });
+    setCollapsedAsms(prev => {
+      const next = { ...prev };
+      delete next[quickAddTarget.assemblyId];
+      return next;
+    });
+
+    const addedName = newTask.name;
+    const asmName = quickAddTarget.assemblyName;
+    setQuickAddTarget(null);
+    setSelectedRowId(newId);
+    setToastMsg(`Task "${addedName}" ditambahkan ke ${asmName}.`);
+    setTimeout(() => setToastMsg(null), 3500);
+    setTimeout(() => {
+      scrollToRowOnTimeline(newId, { center: true });
+    }, 120);
+  };
+
   return (
     <div className={
       isFullscreen
@@ -3846,6 +4194,7 @@ export default function GanttView({
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as any)}
                 className="px-2 py-1 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent h-[32px] cursor-pointer font-medium text-base-muted2 focus:text-base-text shrink-0"
+                title="Filter status task"
               >
                 <option value="all">Semua Status</option>
                 <option value="on-track">On Track</option>
@@ -3854,15 +4203,31 @@ export default function GanttView({
                 <option value="not-started">Belum Mulai</option>
               </select>
 
+              <select
+                value={picFilter}
+                onChange={(e) => setPicFilter(e.target.value)}
+                className="px-2 py-1 text-xs bg-base-surface border border-base-border rounded-lg outline-none focus:border-base-accent h-[32px] cursor-pointer font-medium text-base-muted2 focus:text-base-text max-w-[140px] shrink-0"
+                title="Filter cepat per PIC / Operator"
+              >
+                <option value="ALL">Semua PIC</option>
+                <option value="__UNASSIGNED__">Belum Ada PIC</option>
+                {availablePics.map((pic) => (
+                  <option key={pic} value={pic}>
+                    {pic}
+                  </option>
+                ))}
+              </select>
+
               {isFilterActive && (
                 <button
                   type="button"
                   onClick={() => {
                     setSearchQuery('');
                     setStatusFilter('all');
+                    setPicFilter('ALL');
                   }}
                   className="px-2 text-[11px] hover:text-base-red transition-all flex items-center justify-center bg-base-surface border border-base-border rounded-lg h-[32px] cursor-pointer font-bold gap-1 text-base-muted2 whitespace-nowrap shrink-0"
-                  title="Reset filter pencarian & status"
+                  title="Reset filter pencarian, status & PIC"
                 >
                   <X className="h-3 w-3 shrink-0" />
                   <span>Reset</span>
@@ -3940,6 +4305,71 @@ export default function GanttView({
 
           {/* Global Actions kept inline right next to primary controls (never stranded far-right on ultrawide screens) */}
           <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {/* Saved View Presets Dropdown */}
+            <div className="relative shrink-0" ref={presetDropdownRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setPresetAlignRight(shouldAlignMenuRight(presetDropdownRef.current, 230));
+                  setIsPresetDropdownOpen(prev => !prev);
+                  setIsExportDropdownOpen(false);
+                  setIsPrefsDropdownOpen(false);
+                  setShowBaselineMenu(false);
+                }}
+                className={`flex items-center gap-1 px-2.5 rounded-lg border transition-all cursor-pointer font-condensed font-extrabold uppercase tracking-wider text-[10px] h-[32px] whitespace-nowrap shrink-0 ${
+                  activePresetId
+                    ? 'bg-base-accent/15 border-base-accent/50 text-base-accent'
+                    : 'bg-base-surface border-base-border text-base-text hover:bg-base-surface2 hover:border-base-accent/50'
+                }`}
+                title="Terapkan preset tampilan Gantt dalam 1 klik"
+              >
+                <Bookmark className="h-3.5 w-3.5 shrink-0" />
+                <span>
+                  {activePresetId === 'delay-review'
+                    ? 'Review Delay'
+                    : activePresetId === 'weekly-meeting'
+                      ? 'Rapat Mingguan'
+                      : activePresetId === 'compact'
+                        ? 'Ringkas'
+                        : activePresetId === 'standard'
+                          ? 'Standar'
+                          : 'Preset'}
+                </span>
+                <ChevronDown className="h-3 w-3 shrink-0" />
+              </button>
+              {isPresetDropdownOpen && (
+                <div className={`absolute ${presetAlignRight ? 'right-0' : 'left-0'} top-full mt-1.5 w-60 bg-base-surface border border-base-border rounded-xl shadow-xl p-1.5 z-[160] space-y-1 font-sans`}>
+                  <div className="px-2 py-1 text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted border-b border-base-border/60">
+                    Preset Tampilan Cepat
+                  </div>
+                  {([
+                    { id: 'standard', label: 'Standar', desc: 'Tampilan kerja default + baseline' },
+                    { id: 'delay-review', label: 'Review Delay', desc: 'Task terlambat + Critical Path' },
+                    { id: 'weekly-meeting', label: 'Rapat Mingguan', desc: 'Lookahead 2 minggu + Resource' },
+                    { id: 'compact', label: 'Ringkas', desc: 'Sembunyikan panel analisis & layer' },
+                  ] as const).map((preset) => (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => applyViewPreset(preset.id)}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                        activePresetId === preset.id
+                          ? 'bg-base-accent text-white'
+                          : 'hover:bg-base-surface2 text-base-text'
+                      }`}
+                    >
+                      <div className="text-xs font-condensed font-extrabold uppercase tracking-wide">
+                        {preset.label}
+                      </div>
+                      <div className={`text-[10px] ${activePresetId === preset.id ? 'text-white/80' : 'text-base-muted'}`}>
+                        {preset.desc}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <button
               type="button"
               onClick={() => setIsFilterDrawerOpen(true)}
@@ -3990,6 +4420,7 @@ export default function GanttView({
                   setIsExportDropdownOpen(prev => !prev);
                   setIsPrefsDropdownOpen(false);
                   setShowBaselineMenu(false);
+                  setIsPresetDropdownOpen(false);
                 }}
                 disabled={isExporting}
                 className="flex items-center gap-1 px-2.5 rounded-lg border border-base-border bg-base-surface font-condensed font-bold uppercase tracking-wider text-[10px] text-base-muted2 hover:text-base-text hover:bg-base-surface2 transition-colors cursor-pointer h-[32px] whitespace-nowrap shrink-0"
@@ -4201,6 +4632,7 @@ export default function GanttView({
                         setShowBaselineMenu(prev => !prev);
                         setIsPrefsDropdownOpen(false);
                         setIsExportDropdownOpen(false);
+                        setIsPresetDropdownOpen(false);
                       }}
                       className="flex items-center gap-1 px-2.5 rounded-lg border border-base-border bg-base-surface text-base-text hover:bg-base-accent/10 hover:border-base-accent/50 hover:text-base-accent transition-all cursor-pointer font-extrabold uppercase tracking-wider text-[10px] font-condensed whitespace-nowrap shrink-0 h-[30px]"
                       title="Kelola Jadwal Target Baseline (Kunci, Ubah, Geser, atau Reset)"
@@ -4405,6 +4837,7 @@ export default function GanttView({
                     setIsPrefsDropdownOpen(prev => !prev);
                     setShowBaselineMenu(false);
                     setIsExportDropdownOpen(false);
+                    setIsPresetDropdownOpen(false);
                   }}
                   className="flex items-center gap-1.5 px-2.5 rounded-lg border border-base-border bg-base-surface hover:bg-base-surface2 transition-all cursor-pointer font-bold uppercase tracking-wider text-[10px] font-condensed text-base-muted2 hover:text-base-text h-[30px] whitespace-nowrap shrink-0"
                   title="Atur preferensi lapisan tampilan Gantt (Panah, Progres, Kurva-S, dll)"
@@ -4596,6 +5029,114 @@ export default function GanttView({
         )}
       </div>
 
+      {/* CONTEXTUAL BULK ACTION BAR (shown when multi-select checkboxes are active) */}
+      {selectedTaskIds.size > 0 && onUpdateProject && (
+        <div className="flex flex-wrap items-center justify-start gap-2 px-3 py-1.5 bg-base-accent/10 border border-base-accent/40 rounded-lg mb-1.5 text-xs shrink-0 animate-fade-in">
+          <div className="flex items-center gap-1.5 font-condensed font-extrabold uppercase tracking-wider text-base-accent shrink-0">
+            <CheckSquare className="h-3.5 w-3.5 shrink-0" />
+            <span className="tabular-nums">{selectedTaskIds.size} Task Dipilih</span>
+          </div>
+
+          <div className="hidden sm:block w-[1px] h-4 bg-base-accent/30 shrink-0" />
+
+          {/* Quick Day Shift Buttons */}
+          <div className="flex items-center gap-1 shrink-0">
+            <span className="text-[10px] font-condensed font-bold uppercase text-base-muted2 mr-0.5">Geser:</span>
+            {([-7, -1, 1, 7] as const).map((delta) => (
+              <button
+                key={delta}
+                type="button"
+                onClick={() => handleBulkShiftDates(delta)}
+                className="px-2 py-1 rounded border border-base-border bg-base-surface hover:bg-base-accent hover:text-white hover:border-base-accent text-[10px] font-mono font-bold transition-colors cursor-pointer whitespace-nowrap tabular-nums"
+                title={`Geser tanggal mulai & selesai ${delta > 0 ? `+${delta}` : delta} hari`}
+              >
+                {delta > 0 ? `+${delta}d` : `${delta}d`}
+              </button>
+            ))}
+            <div className="flex items-center gap-1 ml-1">
+              <input
+                type="number"
+                value={bulkShiftDaysInput}
+                onChange={(e) => setBulkShiftDaysInput(e.target.value)}
+                className="w-12 px-1.5 py-0.5 rounded border border-base-border bg-base-surface text-[11px] font-mono font-bold text-center outline-none focus:border-base-accent"
+                title="Jumlah hari pergeseran (positif=maju, negatif=mundur)"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const n = parseInt(bulkShiftDaysInput, 10);
+                  if (!isNaN(n) && n !== 0) handleBulkShiftDates(n);
+                }}
+                className="px-2 py-1 rounded bg-base-accent text-white hover:bg-base-accent/90 text-[10px] font-condensed font-extrabold uppercase tracking-wider cursor-pointer whitespace-nowrap"
+              >
+                Terapkan
+              </button>
+            </div>
+          </div>
+
+          <div className="hidden md:block w-[1px] h-4 bg-base-accent/30 shrink-0" />
+
+          {/* Batch Workflow Status */}
+          <select
+            value=""
+            onChange={(e) => {
+              if (e.target.value) {
+                handleBulkChangeStatus(e.target.value as WorkflowStatusType);
+              }
+            }}
+            className="px-2 py-1 rounded border border-base-border bg-base-surface text-[11px] font-semibold text-base-text outline-none focus:border-base-accent cursor-pointer"
+            title="Ubah status semua task yang dipilih sekaligus"
+          >
+            <option value="">Ubah Status Masal...</option>
+            <option value="not_started">Belum Mulai</option>
+            <option value="on_track">On Track</option>
+            <option value="verify">Verifikasi / QC</option>
+            <option value="delayed">Terlambat</option>
+            <option value="complete">Selesai (100%)</option>
+          </select>
+
+          {/* Batch PIC Assignment */}
+          <div className="flex items-center gap-1 shrink-0">
+            <input
+              type="text"
+              list="gantt-bulk-pics"
+              value={bulkPicInput}
+              onChange={(e) => setBulkPicInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && bulkPicInput.trim()) {
+                  e.preventDefault();
+                  handleBulkAssignPic(bulkPicInput);
+                }
+              }}
+              placeholder="Assign PIC masal..."
+              className="w-32 px-2 py-1 rounded border border-base-border bg-base-surface text-[11px] text-base-text outline-none focus:border-base-accent"
+            />
+            <datalist id="gantt-bulk-pics">
+              {availablePics.map((p) => (
+                <option key={p} value={p} />
+              ))}
+            </datalist>
+            <button
+              type="button"
+              disabled={!bulkPicInput.trim()}
+              onClick={() => handleBulkAssignPic(bulkPicInput)}
+              className="px-2 py-1 rounded border border-base-border bg-base-surface hover:bg-base-surface2 disabled:opacity-40 text-[10px] font-condensed font-extrabold uppercase tracking-wider text-base-text cursor-pointer whitespace-nowrap"
+            >
+              Set PIC
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setSelectedTaskIds(new Set())}
+            className="ml-auto px-2 py-1 rounded border border-base-border bg-base-surface hover:text-base-red text-[10px] font-condensed font-bold uppercase tracking-wider text-base-muted2 cursor-pointer flex items-center gap-1 whitespace-nowrap shrink-0"
+          >
+            <X className="h-3 w-3 shrink-0" />
+            <span>Batal Pilih</span>
+          </button>
+        </div>
+      )}
+
       {/* CORE GANTT WORKSPACE BOX */}
       <div ref={ganttWorkspaceRef} className="shadow-card border border-base-border rounded-xl bg-base-surface flex flex-1 min-h-0 overflow-hidden relative">
         
@@ -4655,6 +5196,10 @@ export default function GanttView({
           getProjectIdOfRow={getProjectIdOfRow}
           isFilterActive={isFilterActive || activeTab === 'lookahead'}
           onScrollToBar={scrollToRowOnTimeline}
+          onQuickAddTask={onUpdateProject ? handleOpenQuickAddTask : undefined}
+          selectedTaskIds={selectedTaskIds}
+          onToggleTaskSelect={onUpdateProject ? handleToggleTaskSelect : undefined}
+          onToggleSelectAllVisibleTasks={onUpdateProject ? handleToggleSelectAllVisibleTasks : undefined}
           onSaveDuration={allowedToEdit ? saveDuration : undefined}
           onUpdateProject={onUpdateProject}
           editingHoursCell={editingHoursCell}
@@ -4757,6 +5302,7 @@ export default function GanttView({
           isFilterActive={isFilterActive}
           setSearchQuery={setSearchQuery}
           setStatusFilter={setStatusFilter}
+          setPicFilter={setPicFilter}
           topSpacerHeight={topSpacerHeight}
           bottomSpacerHeight={bottomSpacerHeight}
           visibleRows={visibleRows}
@@ -5075,6 +5621,11 @@ export default function GanttView({
           setSearchQuery={setSearchQuery}
           statusFilter={statusFilter}
           setStatusFilter={setStatusFilter}
+          picFilter={picFilter}
+          setPicFilter={setPicFilter}
+          availablePics={availablePics}
+          activePresetId={activePresetId}
+          onApplyPreset={applyViewPreset}
           selectedMonth={selectedMonth}
           setSelectedMonth={setSelectedMonth}
           availableMonths={availableMonths}
@@ -6067,6 +6618,158 @@ export default function GanttView({
                 </div>
               </div>
             </div>
+          </div>
+        )}
+
+        {/* QUICK ADD TASK / MILESTONE MODAL */}
+        {quickAddTarget && (
+          <div
+            className="fixed inset-0 z-[320] flex items-center justify-center bg-black/55 backdrop-blur-[1px] p-4 animate-in fade-in duration-150"
+            onClick={() => setQuickAddTarget(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Tambah Task Cepat"
+          >
+            <form
+              onSubmit={handleConfirmQuickAddTask}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md bg-base-surface border border-base-border rounded-2xl shadow-2xl overflow-hidden flex flex-col"
+            >
+              <div className="px-4 py-3 border-b border-base-border bg-base-surface2/70 flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="font-condensed font-black text-sm uppercase tracking-wider text-base-text flex items-center gap-1.5">
+                    <Plus className="h-4 w-4 text-emerald-500 shrink-0" />
+                    <span>Tambah Task / Milestone Cepat</span>
+                  </h3>
+                  <p className="text-[11px] text-base-muted truncate">
+                    {quickAddTarget.projectName} → <strong className="text-base-text">{quickAddTarget.assemblyName}</strong>
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setQuickAddTarget(null)}
+                  className="p-1 rounded-lg hover:bg-base-surface3 text-base-muted hover:text-base-text cursor-pointer shrink-0"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="p-4 space-y-3 text-xs">
+                <div className="space-y-1">
+                  <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                    Nama Aktivitas / Milestone *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    autoFocus
+                    value={quickAddName}
+                    onChange={(e) => setQuickAddName(e.target.value)}
+                    placeholder="Contoh: Laser Cutting Plate 12mm"
+                    className="w-full px-3 py-2 rounded-xl border border-base-border bg-base-surface2 text-base-text outline-none focus:border-base-accent font-medium"
+                  />
+                </div>
+
+                <label className="flex items-center justify-between px-3 py-2 rounded-xl border border-base-border bg-base-surface2/60 cursor-pointer">
+                  <span className="font-semibold text-base-text">Tandai sebagai Milestone (0 hari)</span>
+                  <input
+                    type="checkbox"
+                    checked={quickAddIsMilestone}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setQuickAddIsMilestone(next);
+                      if (next && quickAddStart) setQuickAddFinish(quickAddStart);
+                    }}
+                    className="h-4 w-4 accent-base-accent rounded cursor-pointer"
+                  />
+                </label>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                      Tanggal Mulai
+                    </label>
+                    <input
+                      type="date"
+                      value={quickAddStart}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setQuickAddStart(v);
+                        if (quickAddIsMilestone || (quickAddFinish && v > quickAddFinish)) {
+                          setQuickAddFinish(v);
+                        }
+                      }}
+                      className="w-full px-2.5 py-2 rounded-xl border border-base-border bg-base-surface2 text-base-text font-mono text-xs outline-none focus:border-base-accent"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                      Tanggal Selesai
+                    </label>
+                    <input
+                      type="date"
+                      disabled={quickAddIsMilestone}
+                      value={quickAddIsMilestone ? quickAddStart : quickAddFinish}
+                      min={quickAddStart || undefined}
+                      onChange={(e) => setQuickAddFinish(e.target.value)}
+                      className="w-full px-2.5 py-2 rounded-xl border border-base-border bg-base-surface2 text-base-text font-mono text-xs outline-none focus:border-base-accent disabled:opacity-50"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                      PIC / Operator
+                    </label>
+                    <input
+                      type="text"
+                      list="gantt-quick-add-pics"
+                      value={quickAddAssigned}
+                      onChange={(e) => setQuickAddAssigned(e.target.value)}
+                      placeholder="Opsional"
+                      className="w-full px-2.5 py-2 rounded-xl border border-base-border bg-base-surface2 text-base-text outline-none focus:border-base-accent"
+                    />
+                    <datalist id="gantt-quick-add-pics">
+                      {availablePics.map((p) => (
+                        <option key={p} value={p} />
+                      ))}
+                    </datalist>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                      Anggaran Jam (Plan)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.5"
+                      value={quickAddBudgetHours}
+                      onChange={(e) => setQuickAddBudgetHours(e.target.value)}
+                      placeholder="Contoh: 16"
+                      className="w-full px-2.5 py-2 rounded-xl border border-base-border bg-base-surface2 text-base-text font-mono outline-none focus:border-base-accent"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-4 py-3 border-t border-base-border bg-base-surface2/50 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickAddTarget(null)}
+                  className="px-3.5 py-1.5 rounded-xl border border-base-border bg-base-surface hover:bg-base-surface3 text-xs font-bold text-base-text cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  <span>Tambahkan ke Jadwal</span>
+                </button>
+              </div>
+            </form>
           </div>
         )}
       </div>

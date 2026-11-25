@@ -14,6 +14,7 @@ interface ManpowerTimesheetHubProps {
   timesheetDate: string;
   setTimesheetDate: (date: string) => void;
   openAddTimesheet: () => void;
+  openAddTimesheetForEmployee?: (empId: string) => void;
   openEditTimesheet: (id: string) => void;
   deleteTsEntry: (id: string) => void;
   exportTimesheetDaily: () => void;
@@ -30,6 +31,7 @@ export default function ManpowerTimesheetHub({
   timesheetDate,
   setTimesheetDate,
   openAddTimesheet,
+  openAddTimesheetForEmployee,
   openEditTimesheet,
   deleteTsEntry,
   exportTimesheetDaily,
@@ -103,12 +105,15 @@ export default function ManpowerTimesheetHub({
             employees={employees}
             projects={projects}
             initialDate={timesheetDate}
+            selectedDate={timesheetDate}
+            onDateChange={setTimesheetDate}
             currentUser={currentUser}
             onNavigateToTimesheet={(date) => {
               if (date) setTimesheetDate(date);
               onSubTabChange('timesheet');
             }}
             openAddTimesheet={openAddTimesheet}
+            openAddTimesheetForEmployee={openAddTimesheetForEmployee}
           />
         </Suspense>
       )}

@@ -18,6 +18,7 @@ export interface GanttTimelineProps {
   isFilterActive: boolean;
   setSearchQuery: (q: string) => void;
   setStatusFilter: (s: any) => void;
+  setPicFilter?: (p: string) => void;
 
   // Windowing & Rows
   topSpacerHeight: number;
@@ -112,6 +113,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
   isFilterActive,
   setSearchQuery,
   setStatusFilter,
+  setPicFilter,
 
   topSpacerHeight,
   bottomSpacerHeight,
@@ -381,6 +383,7 @@ export const GanttTimeline: React.FC<GanttTimelineProps> = ({
                 onClick={() => {
                   setSearchQuery('');
                   setStatusFilter('all');
+                  setPicFilter?.('ALL');
                 }}
                 className="mt-4 px-3 py-1.5 text-[10px] uppercase tracking-wider font-condensed font-extrabold bg-base-accent text-white rounded-lg hover:bg-base-accent/90 transition-all cursor-pointer shadow-sm"
               >

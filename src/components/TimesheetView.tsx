@@ -26,6 +26,7 @@ import { DailyTimesheetTab } from './timesheet/DailyTimesheetTab';
 import { PerformanceReportTab } from './timesheet/PerformanceReportTab';
 import { ProjectHoursAllTimeTab } from './timesheet/ProjectHoursAllTimeTab';
 import { useAppStore } from '../store';
+import { matchesProjectEntry } from '../utils/timesheetHelpers';
 
 interface TimesheetViewProps {
   timesheets?: TimesheetEntry[];
@@ -80,6 +81,7 @@ export default function TimesheetView({
   const [searchQuery, setSearchQuery] = useState('');
   const [projectFilter, setProjectFilter] = useState('');
   const [employeeFilter, setEmployeeFilter] = useState('');
+  const [auditFilter, setAuditFilter] = useState<'all' | 'overtime' | 'issues'>('all');
 
   // Daily states
   const [tsGroupCollapsed, setTsGroupCollapsed] = useState<Record<string, boolean>>({});
@@ -89,6 +91,7 @@ export default function TimesheetView({
     setSearchQuery('');
     setProjectFilter('');
     setEmployeeFilter('');
+    setAuditFilter('all');
   }, [timesheetDate, activeSegment]);
 
   const shiftDate = (d: number) => {
@@ -151,22 +154,46 @@ export default function TimesheetView({
 
   const dayEntries = timesheets.filter(e => e.date === timesheetDate);
 
+  // Per-employee total hours on selected date (accurately sums across split WOs)
+  const empDailyTotalMap = new Map<string, number>();
+  dayEntries.forEach(e => {
+    const prev = empDailyTotalMap.get(e.empId) || 0;
+    empDailyTotalMap.set(e.empId, Math.round((prev + (e.totalHours || 0)) * 10) / 10);
+  });
+
+  const auditCounts = {
+    all: dayEntries.length,
+    overtime: dayEntries.filter(e => (empDailyTotalMap.get(e.empId) || 0) > 8).length,
+    issues: dayEntries.filter(e => e.status === 'late' || e.status === 'absent' || e.status === 'leave').length,
+  };
+
+  const targetFilterProj = projectFilter ? projects.find(p => p.id === projectFilter) : undefined;
+
   const filteredDayEntries = dayEntries.filter(e => {
-    const matchesSearch = searchQuery === '' || 
+    const matchesSearch = searchQuery === '' ||
       e.empName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.workOrder || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.category || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.taskName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.assemblyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (e.desc || '').toLowerCase().includes(searchQuery.toLowerCase());
-      
-    const matchesProject = projectFilter === '' || 
-      (e.workOrder || '').trim().toLowerCase() === projectFilter.trim().toLowerCase();
-      
-    const matchesEmployee = employeeFilter === '' || 
+
+    const matchesProject = projectFilter === '' || (
+      targetFilterProj
+        ? matchesProjectEntry(e, targetFilterProj)
+        : (e.workOrder || '').trim().toLowerCase() === projectFilter.trim().toLowerCase()
+    );
+
+    const matchesEmployee = employeeFilter === '' ||
       e.empId === employeeFilter;
-      
-    return matchesSearch && matchesProject && matchesEmployee;
+
+    const empDayTotal = empDailyTotalMap.get(e.empId) || 0;
+    const matchesAudit =
+      auditFilter === 'all' ||
+      (auditFilter === 'overtime' && empDayTotal > 8) ||
+      (auditFilter === 'issues' && (e.status === 'late' || e.status === 'absent' || e.status === 'leave'));
+
+    return matchesSearch && matchesProject && matchesEmployee && matchesAudit;
   });
 
   // Group stats counts (derived from filtered entries)
@@ -275,22 +302,17 @@ export default function TimesheetView({
 
   // Aggregate project data for range
   const reportProjectsData = projects.map(p => {
-    // Total historical all-time man hours logged
+    // Total historical all-time man hours logged (matches projectId, client, gaNumber, or name)
     const cumulativeHrs = timesheets
-      .filter(e => e.workOrder?.toLowerCase().trim() === p.client?.toLowerCase().trim())
+      .filter(e => matchesProjectEntry(e, p))
       .reduce((sum, e) => sum + (e.totalHours || 0), 0);
 
     // Filter range hours logged
-    const periodHrs = rangeEntries
-      .filter(e => e.workOrder?.toLowerCase().trim() === p.client?.toLowerCase().trim())
-      .reduce((sum, e) => sum + (e.totalHours || 0), 0);
+    const periodEntries = rangeEntries.filter(e => matchesProjectEntry(e, p));
+    const periodHrs = periodEntries.reduce((sum, e) => sum + (e.totalHours || 0), 0);
 
     // Distinct crew listing
-    const crewNames = Array.from(new Set(
-      rangeEntries
-        .filter(e => e.workOrder?.toLowerCase().trim() === p.client?.toLowerCase().trim())
-        .map(e => e.empName)
-    ));
+    const crewNames = Array.from(new Set(periodEntries.map(e => e.empName)));
 
     const budget = p.budgetHours || 0;
     const variance = budget - cumulativeHrs;
@@ -379,14 +401,8 @@ export default function TimesheetView({
     document.body.removeChild(linkObj);
   };
 
-  // Printer Action handler for PDF prints
+  // Printer Action handler for PDF prints (hidden iframe, avoids popup blocker / window.open)
   const handlePrintPDF = () => {
-    const printWindow = window.open('', '_blank', 'width=1000,height=800');
-    if (!printWindow) {
-      alert('Could not open print window. Please check if browser popups are blocked!');
-      return;
-    }
-
     const tableRowsHtml = reportProjectsData.map(d => {
       let statusLabel = 'No Budget';
       let statusClass = 'badge-gray';
@@ -394,17 +410,17 @@ export default function TimesheetView({
       if (d.statusGroup === 'warning') { statusLabel = 'Warning 85%'; statusClass = 'badge-warning'; }
       if (d.statusGroup === 'danger') { statusLabel = 'Over Budget'; statusClass = 'badge-danger'; }
 
-      const vtext = d.budget > 0 
-        ? d.variance < 0 
+      const vtext = d.budget > 0
+        ? d.variance < 0
           ? `<span style="color:#b91c1c;font-weight:bold">${d.variance.toFixed(1)}h over</span>`
           : `<span style="color:#166534;font-weight:bold">${d.variance.toFixed(1)}h remaining</span>`
         : '—';
 
       return `
         <tr>
-          <td style="font-weight:bold;color:#0f172a">${d.project.client}</td>
+          <td style="font-weight:bold;color:#0f172a">${esc(d.project.client || d.project.gaNumber || '—')}</td>
           <td>
-            <div style="font-weight:600">${d.project.name}</div>
+            <div style="font-weight:600">${esc(d.project.name)}</div>
             <div style="font-size:9px;color:#64748b">${d.project.location === 'workshop1' ? 'Workshop 1' : 'Workshop 2'}</div>
           </td>
           <td>${d.budget > 0 ? d.budget + 'h' : '—'}</td>
@@ -420,17 +436,18 @@ export default function TimesheetView({
             ` : ''}
           </td>
           <td><span class="badge ${statusClass}">${statusLabel}</span></td>
-          <td class="crew">${d.crewNames.join(', ') || '—'}</td>
+          <td class="crew">${esc(d.crewNames.join(', ') || '—')}</td>
         </tr>
       `;
     }).join('');
 
-    printWindow.document.write(`
+    const htmlContent = `
+      <!DOCTYPE html>
       <html>
         <head>
-          <title>Executive Man-hours Performance Report — ${activePeriod.label}</title>
+          <title>Executive Man-hours Performance Report — ${esc(activePeriod.label)}</title>
           <style>
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 40px; color: #1e293b; background: #fff; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 32px; color: #1e293b; background: #fff; }
             .header-wrap { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #0f172a; padding-bottom: 20px; margin-bottom: 25px; }
             .title { font-size: 20px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: #0f172a; margin: 0; }
             .sub { font-size: 11px; color: #64748b; margin-top: 4px; font-weight: bold; }
@@ -438,7 +455,7 @@ export default function TimesheetView({
             .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
             .card { border: 1px solid #e2e8f0; padding: 12px; border-radius: 8px; text-align: center; background: #f8fafc; }
             .card-val { font-size: 20px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
-            .card-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #64748b; tracking: 0.05em; }
+            .card-lbl { font-size: 9px; font-weight: 700; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; }
             table { width: 100%; border-collapse: collapse; margin-bottom: 40px; font-size: 11px; }
             th { background: #f1f5f9; border-bottom: 2px solid #cbd5e1; padding: 10px; text-align: left; font-weight: 700; text-transform: uppercase; color: #475569; font-size: 10px; }
             td { border-bottom: 1px solid #e2e8f0; padding: 10px; vertical-align: middle; color: #334155; }
@@ -461,11 +478,11 @@ export default function TimesheetView({
           <div class="header-wrap">
             <div>
               <h1 class="title">EPC Control System Performance</h1>
-              <div class="sub">PROJECT-LEVEL MAN-HOURS AUDIT LOG — ${activePeriod.label}</div>
+              <div class="sub">PROJECT-LEVEL MAN-HOURS AUDIT LOG — ${esc(activePeriod.label)}</div>
             </div>
             <div class="logo-placeholder">EPC CONTROL SYSTEM</div>
           </div>
-          
+
           <div class="meta-grid">
             <div class="card">
               <div class="card-val">${rangeTotalHours.toFixed(1)}h</div>
@@ -505,14 +522,38 @@ export default function TimesheetView({
           </table>
 
           <div style="font-size:10px;color:#94a3b8;border-top:1px solid #e2e8f0;padding-top:15px;display:flex;justify-content:space-between">
-            <span>Report generated automatically by EPC Control System on: ${new Date().toLocaleString()}</span>
+            <span>Report generated automatically by EPC Control System on: ${esc(new Date().toLocaleString())}</span>
             <span>Signature Verified PPC</span>
           </div>
         </body>
       </html>
-    `);
-    printWindow.document.close();
-    printWindow.print();
+    `;
+
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    iframe.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(iframe);
+
+    const frameDoc = iframe.contentDocument || iframe.contentWindow?.document;
+    if (frameDoc) {
+      frameDoc.open();
+      frameDoc.write(htmlContent);
+      frameDoc.close();
+      setTimeout(() => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+        setTimeout(() => {
+          if (iframe.parentNode) iframe.parentNode.removeChild(iframe);
+        }, 1500);
+      }, 250);
+    } else if (iframe.parentNode) {
+      iframe.parentNode.removeChild(iframe);
+    }
   };
 
   return (
@@ -611,6 +652,10 @@ export default function TimesheetView({
           setProjectFilter={setProjectFilter}
           employeeFilter={employeeFilter}
           setEmployeeFilter={setEmployeeFilter}
+          auditFilter={auditFilter}
+          setAuditFilter={setAuditFilter}
+          auditCounts={auditCounts}
+          empDailyTotalMap={empDailyTotalMap}
           currentUser={currentUser}
           onNavigateToManpower={onNavigateToManpower}
           onNavigateToProjectHours={() => setActiveSegment('alltime')}

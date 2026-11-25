@@ -677,13 +677,17 @@ export function FormsAndModals({
       {/* Bulk Timesheet Modal Dialog viewport loader */}
       <TimesheetModal
         isOpen={timesheetsHook.timesheetModalOpen}
-        onClose={() => timesheetsHook.setTimesheetModalOpen(false)}
+        onClose={() => {
+          timesheetsHook.setPreselectedEmpId(null);
+          timesheetsHook.setTimesheetModalOpen(false);
+        }}
         timesheetDate={timesheetsHook.timesheetDate}
         setTimesheetDate={timesheetsHook.setTimesheetDate}
         timesheets={timesheets}
         employees={employeesHook.employees}
         projects={projectsHook.projects}
         editingId={timesheetsHook.editingTsId}
+        preselectedEmpId={timesheetsHook.preselectedEmpId}
         onSave={timesheetsHook.saveTimesheetsBulkImport}
       />
 

@@ -22,8 +22,11 @@ import {
   Users,
   AlertTriangle,
   RotateCcw,
+  Bookmark,
 } from 'lucide-react';
 import { Project } from '../types';
+
+export type GanttViewPresetId = 'standard' | 'delay-review' | 'weekly-meeting' | 'compact';
 
 export interface GanttViewFilterDrawerProps {
   isOpen: boolean;
@@ -45,6 +48,11 @@ export interface GanttViewFilterDrawerProps {
   setSearchQuery: (q: string) => void;
   statusFilter: 'all' | 'on-track' | 'overdue' | 'done' | 'not-started';
   setStatusFilter: (s: 'all' | 'on-track' | 'overdue' | 'done' | 'not-started') => void;
+  picFilter: string;
+  setPicFilter: (p: string) => void;
+  availablePics: string[];
+  activePresetId?: GanttViewPresetId | null;
+  onApplyPreset: (presetId: GanttViewPresetId) => void;
   selectedMonth?: string;
   setSelectedMonth?: (m: string) => void;
   availableMonths?: string[];
@@ -118,6 +126,11 @@ export const GanttViewFilterDrawer: React.FC<GanttViewFilterDrawerProps> = ({
   setSearchQuery,
   statusFilter,
   setStatusFilter,
+  picFilter,
+  setPicFilter,
+  availablePics,
+  activePresetId,
+  onApplyPreset,
   selectedMonth,
   setSelectedMonth,
   availableMonths,
@@ -228,8 +241,55 @@ export const GanttViewFilterDrawer: React.FC<GanttViewFilterDrawerProps> = ({
 
         {/* Scrollable Drawer Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
+          {/* 0. Preset Tampilan Cepat (Saved Views) */}
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted flex items-center gap-1.5">
+                <Bookmark className="h-3 w-3 text-[#9b1c2e] dark:text-[#f87171]" />
+                Preset Tampilan Cepat
+              </span>
+              {activePresetId && (
+                <span className="text-[9px] font-condensed font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-base-accent/15 text-base-accent">
+                  Aktif
+                </span>
+              )}
+            </div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {([
+                { id: 'standard', label: 'Standar', desc: 'Tampilan kerja default' },
+                { id: 'delay-review', label: 'Review Delay', desc: 'Terlambat + CPM + Baseline' },
+                { id: 'weekly-meeting', label: 'Rapat Mingguan', desc: 'Lookahead 2w + Resource' },
+                { id: 'compact', label: 'Ringkas', desc: 'Fokus bar & tabel saja' },
+              ] as const).map((preset) => {
+                const isSelected = activePresetId === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => {
+                      onApplyPreset(preset.id);
+                      onClose();
+                    }}
+                    className={`text-left px-2.5 py-2 rounded-xl border transition-all cursor-pointer ${
+                      isSelected
+                        ? 'bg-base-accent text-white border-base-accent shadow-xs'
+                        : 'bg-base-surface2/70 border-base-border hover:bg-base-surface3 hover:border-base-accent/40 text-base-text'
+                    }`}
+                  >
+                    <div className="text-[11px] font-condensed font-extrabold uppercase tracking-wider leading-tight">
+                      {preset.label}
+                    </div>
+                    <div className={`text-[10px] truncate mt-0.5 ${isSelected ? 'text-white/80' : 'text-base-muted'}`}>
+                      {preset.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
           {/* 1. Navigasi & Mode Tampilan */}
-          <section className="space-y-2.5">
+          <section className="space-y-2.5 pt-3 border-t border-base-border/70">
             <div className="text-[10px] font-condensed font-extrabold uppercase tracking-widest text-base-muted">
               Mode & Navigasi Cepat
             </div>
@@ -341,6 +401,7 @@ export const GanttViewFilterDrawer: React.FC<GanttViewFilterDrawerProps> = ({
                   onClick={() => {
                     setSearchQuery('');
                     setStatusFilter('all');
+                    setPicFilter('ALL');
                   }}
                   className="flex items-center gap-1 text-[10px] font-condensed font-bold uppercase text-base-red hover:underline cursor-pointer"
                 >
@@ -386,6 +447,25 @@ export const GanttViewFilterDrawer: React.FC<GanttViewFilterDrawerProps> = ({
                   {opt.label}
                 </button>
               ))}
+            </div>
+
+            <div className="space-y-1.5 pt-1">
+              <label className="text-[11px] font-condensed font-bold uppercase tracking-wider text-base-muted block">
+                Filter PIC / Operator
+              </label>
+              <select
+                value={picFilter}
+                onChange={(e) => setPicFilter(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-base-surface2 border border-base-border rounded-xl outline-none focus:border-base-accent text-base-text font-semibold cursor-pointer"
+              >
+                <option value="ALL">Semua PIC / Operator ({availablePics.length})</option>
+                <option value="__UNASSIGNED__">Belum Ditugaskan</option>
+                {availablePics.map((pic) => (
+                  <option key={pic} value={pic}>
+                    {pic}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {setSelectedMonth && availableMonths && availableMonths.length > 0 && (
